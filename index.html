@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Creative Tools — Image, Audio & Video</title>
+<link rel="icon" type="image/png" href="assets/images/logo.png">
+<link rel="apple-touch-icon" href="assets/images/logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -2402,6 +2404,25 @@
     z-index: 5;
   }
   .br-card .br-remove:hover { background: #ef5350; }
+  .br-card .br-open {
+    position: absolute;
+    top: 8px;
+    right: 44px;
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.2);
+    text-decoration: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    z-index: 5;
+    display: grid;
+    place-items: center;
+  }
+  .br-card .br-open:hover { background: var(--accent); color: #000; }
 
   .clip-panel {
     background: var(--surface);
@@ -2981,10 +3002,10 @@
 
   <!-- Subaru mode sprites — two separate images, sourced from /assets/images -->
   <img id="subaruMascotL" class="subaru-mascot left" alt=""
-       src="assets/images/subaru_left.png"
+       src="assets/images/subaru_left.gif"
        onerror="this.style.display='none'">
   <img id="subaruMascotR" class="subaru-mascot right" alt=""
-       src="assets/images/subaru_right.png"
+       src="assets/images/subaru_right.gif"
        onerror="this.style.display='none'">
 
   <!-- ================= COMPOSITOR ================= -->
@@ -3808,7 +3829,7 @@
 
           <div class="br-section">
             <div class="br-section-title">Add reel</div>
-            <input type="text" id="brSubmit" class="color-input" placeholder="Paste Instagram reel URL...">
+            <input type="text" id="brSubmit" class="color-input" placeholder="Paste Instagram or YouTube URL...">
             <div class="brainrot-actions">
               <button class="dl-btn" id="brAdd" style="flex:1">+ Add</button>
               <button class="dl-btn" id="brShuffle" style="flex:1">↻ Shuffle</button>
@@ -4068,6 +4089,7 @@ CHANNELS.forEach(ch => {
   drop.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', (e) => {
     if (e.target.files[0]) compLoadFile(ch.key, e.target.files[0]);
+    e.target.value = ''; // reset so picking the same file again still triggers change
   });
 
   drop.addEventListener('dragover', (e) => { e.preventDefault(); el.classList.add('drag'); });
@@ -4357,6 +4379,7 @@ remUpload.addEventListener('click', (e) => {
 });
 remFileInput.addEventListener('change', (e) => {
   if (e.target.files[0]) remLoadFile(e.target.files[0]);
+  e.target.value = '';
 });
 remUpload.addEventListener('dragover', (e) => { e.preventDefault(); remUpload.classList.add('drag'); });
 remUpload.addEventListener('dragleave', () => remUpload.classList.remove('drag'));
@@ -5156,6 +5179,7 @@ audUpload.addEventListener('click', (e) => {
 });
 audFileInput.addEventListener('change', e => {
   if (e.target.files[0]) audLoadFile(e.target.files[0]);
+  e.target.value = '';
 });
 audUpload.addEventListener('dragover', e => { e.preventDefault(); audUpload.classList.add('drag'); });
 audUpload.addEventListener('dragleave', () => audUpload.classList.remove('drag'));
@@ -9443,7 +9467,7 @@ setCurrentColor([255, 0, 0]);
       if (Array.isArray(list)) {
         for (const url of list) {
           const r = normalizeReel(typeof url === 'string' ? url : url.url);
-          if (r && !pool.some(p => p.id === r.id)) pool.push(r);
+          if (r && !pool.some(p => p.id === r.id && p.kind === r.kind)) pool.push(r);
         }
         savePool();
         refreshCount();
@@ -9459,22 +9483,30 @@ setCurrentColor([255, 0, 0]);
   }
 
   // ---- URL normalization ----
-  // Accepts /reel/SHORTCODE/, /p/SHORTCODE/, /tv/SHORTCODE/ — extracts shortcode for embed.
+  // Accepts Instagram (/reel/, /p/, /tv/, /reels/) AND YouTube (full, short, /shorts/).
+  // Returns {kind: 'ig'|'yt', id, url} or null.
   function normalizeReel(url) {
     if (!url || typeof url !== 'string') return null;
     url = url.trim();
     if (!url) return null;
-    // Must be an instagram URL
-    const m = url.match(/instagram\.com\/(?:reel|p|tv|reels)\/([A-Za-z0-9_-]+)/i);
-    if (!m) return null;
-    const id = m[1];
-    return { id, url: `https://www.instagram.com/reel/${id}/` };
+    // YouTube full / short / Shorts
+    let m = url.match(/youtube\.com\/shorts\/([A-Za-z0-9_-]+)/i);
+    if (m) return { kind: 'yt', id: m[1], url: `https://www.youtube.com/shorts/${m[1]}` };
+    m = url.match(/youtube\.com\/watch\?[^#]*v=([A-Za-z0-9_-]+)/i);
+    if (m) return { kind: 'yt', id: m[1], url: `https://www.youtube.com/watch?v=${m[1]}` };
+    m = url.match(/youtu\.be\/([A-Za-z0-9_-]+)/i);
+    if (m) return { kind: 'yt', id: m[1], url: `https://youtu.be/${m[1]}` };
+    m = url.match(/youtube\.com\/embed\/([A-Za-z0-9_-]+)/i);
+    if (m) return { kind: 'yt', id: m[1], url: `https://www.youtube.com/watch?v=${m[1]}` };
+    // Instagram
+    m = url.match(/instagram\.com\/(?:reel|p|tv|reels)\/([A-Za-z0-9_-]+)/i);
+    if (m) return { kind: 'ig', id: m[1], url: `https://www.instagram.com/reel/${m[1]}/` };
+    return null;
   }
 
   // ---- Render ----
   function shuffleAndRender() {
     order = pool.map((_, i) => i);
-    // Fisher-Yates
     for (let i = order.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [order[i], order[j]] = [order[j], order[i]];
@@ -9494,44 +9526,60 @@ setCurrentColor([255, 0, 0]);
       cursor++;
       mountCard(reel);
     }
-    // Add a sentinel that triggers loading more when scrolled into view
+    // Sentinel triggers either more cards OR a fresh shuffled batch (endless loop)
     let sentinel = feed.querySelector('.br-sentinel');
     if (sentinel) sentinel.remove();
-    if (cursor < order.length) {
-      sentinel = document.createElement('div');
-      sentinel.className = 'br-sentinel';
-      sentinel.style.height = '1px';
-      feed.appendChild(sentinel);
-      const obs = new IntersectionObserver((entries) => {
-        for (const en of entries) {
-          if (en.isIntersecting) {
-            obs.disconnect();
+    sentinel = document.createElement('div');
+    sentinel.className = 'br-sentinel';
+    sentinel.style.height = '1px';
+    feed.appendChild(sentinel);
+    const obs = new IntersectionObserver((entries) => {
+      for (const en of entries) {
+        if (en.isIntersecting) {
+          obs.disconnect();
+          if (cursor < order.length) {
             mountNextBatch(LOAD_AHEAD);
-            break;
+          } else if (pool.length > 0) {
+            // Endless: reshuffle a new order and append, keep scrolling forever
+            const newOrder = pool.map((_, i) => i);
+            for (let i = newOrder.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [newOrder[i], newOrder[j]] = [newOrder[j], newOrder[i]];
+            }
+            // Avoid placing the same reel back-to-back at the seam
+            if (newOrder.length > 1 && order.length > 0 && newOrder[0] === order[order.length - 1]) {
+              [newOrder[0], newOrder[1]] = [newOrder[1], newOrder[0]];
+            }
+            order = order.concat(newOrder);
+            mountNextBatch(LOAD_AHEAD);
           }
+          break;
         }
-      }, { root: feed, rootMargin: '200px 0px' });
-      obs.observe(sentinel);
-    } else if (pool.length > LOAD_AHEAD) {
-      // Loop: when we run out, reshuffle so the feed is endless
-      const loopBtn = document.createElement('div');
-      loopBtn.className = 'brainrot-empty';
-      loopBtn.style.scrollSnapAlign = 'start';
-      loopBtn.innerHTML = `<p>You've seen them all — <button class="dl-btn" id="brReshuffle">↻ Reshuffle</button></p>`;
-      feed.appendChild(loopBtn);
-      loopBtn.querySelector('#brReshuffle').addEventListener('click', shuffleAndRender);
-    }
+      }
+    }, { root: feed, rootMargin: '300px 0px' });
+    obs.observe(sentinel);
   }
 
   function mountCard(reel) {
     const card = document.createElement('div');
     card.className = 'br-card';
     card.dataset.id = reel.id;
-    // Instagram embed URL — works for public reels.
-    const embedSrc = `https://www.instagram.com/reel/${reel.id}/embed/`;
+    card.dataset.kind = reel.kind;
+    let embedSrc, allow;
+    if (reel.kind === 'yt') {
+      // YouTube: autoplay muted (browsers require muted to autoplay), loop the single
+      // video while it's on screen. We use the playlist=ID trick to make `loop` work.
+      embedSrc = `https://www.youtube.com/embed/${reel.id}?autoplay=1&mute=1&loop=1&playlist=${reel.id}&rel=0&modestbranding=1&playsinline=1`;
+      allow = 'autoplay; encrypted-media; picture-in-picture';
+    } else {
+      embedSrc = `https://www.instagram.com/reel/${reel.id}/embed/?utm_source=ig_embed&autoplay=1`;
+      allow = 'autoplay; encrypted-media';
+    }
+    const platform = reel.kind === 'yt' ? '▶ YouTube' : '◐ Instagram';
     card.innerHTML = `
-      <iframe src="${embedSrc}" loading="lazy" allow="encrypted-media" allowtransparency="true" scrolling="no"></iframe>
-      <div class="br-meta">@${reel.id}</div>
+      <iframe src="${embedSrc}" loading="lazy" allow="${allow}" allowfullscreen allowtransparency="true" scrolling="no"></iframe>
+      <div class="br-meta">${platform} · ${reel.id}</div>
+      <a class="br-open" href="${reel.url}" target="_blank" rel="noopener" title="Open in original site">↗</a>
       <button class="br-remove" title="Remove from pool">×</button>
     `;
     card.querySelector('.br-remove').addEventListener('click', () => {
@@ -9551,7 +9599,7 @@ setCurrentColor([255, 0, 0]);
       toast('Not a valid Instagram URL');
       return;
     }
-    if (pool.some(p => p.id === reel.id)) {
+    if (pool.some(p => p.id === reel.id && p.kind === reel.kind)) {
       toast('Already in pool');
       submitInput.value = '';
       return;
@@ -9594,7 +9642,7 @@ setCurrentColor([255, 0, 0]);
       for (const entry of arr) {
         const url = (typeof entry === 'string') ? entry : (entry && entry.url);
         const r = normalizeReel(url);
-        if (r && !pool.some(p => p.id === r.id)) {
+        if (r && !pool.some(p => p.id === r.id && p.kind === r.kind)) {
           pool.push(r); added++;
         }
       }
