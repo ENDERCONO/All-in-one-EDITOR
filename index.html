@@ -3918,11 +3918,12 @@
 
           <div class="br-section">
             <div class="br-section-title">Add reel</div>
-            <input type="text" id="brSubmit" class="color-input" placeholder="Paste Instagram or YouTube URL...">
+            <input type="text" id="brSubmit" class="color-input" placeholder="Paste YouTube or TikTok URL...">
             <div class="brainrot-actions">
               <button class="dl-btn" id="brAdd" style="flex:1">+ Add</button>
               <button class="dl-btn" id="brShuffle" style="flex:1">↻ Shuffle</button>
             </div>
+            <button class="dl-btn" id="brSuggest" style="width:100%; margin-top:6px" title="Submit a reel for everyone (opens a GitHub issue)">📮 Suggest for public list</button>
           </div>
 
           <div class="br-section">
@@ -3938,7 +3939,7 @@
           </div>
 
           <div class="brainrot-hint">
-            Pool persists in this browser only — there's no server. Export to share with friends, import to merge their list.
+            Supports <strong>YouTube</strong> (videos + Shorts) and <strong>TikTok</strong> — both play inline. Pool persists in this browser only. Export to share, import to merge.
           </div>
         </div>
       </aside>
@@ -9620,8 +9621,8 @@ setCurrentColor([255, 0, 0]);
   }
 
   // ---- URL normalization ----
-  // Accepts Instagram (/reel/, /p/, /tv/, /reels/) AND YouTube (full, short, /shorts/).
-  // Returns {kind: 'ig'|'yt', id, url} or null.
+  // Accepts YouTube (full, short, /shorts/, /embed/) and TikTok (full + vm.tiktok.com short links).
+  // Returns {kind: 'yt'|'tt', id, url, author?} or null.
   function normalizeReel(url) {
     if (!url || typeof url !== 'string') return null;
     url = url.trim();
@@ -9635,9 +9636,20 @@ setCurrentColor([255, 0, 0]);
     if (m) return { kind: 'yt', id: m[1], url: `https://youtu.be/${m[1]}` };
     m = url.match(/youtube\.com\/embed\/([A-Za-z0-9_-]+)/i);
     if (m) return { kind: 'yt', id: m[1], url: `https://www.youtube.com/watch?v=${m[1]}` };
-    // Instagram
-    m = url.match(/instagram\.com\/(?:reel|p|tv|reels)\/([A-Za-z0-9_-]+)/i);
-    if (m) return { kind: 'ig', id: m[1], url: `https://www.instagram.com/reel/${m[1]}/` };
+    // TikTok long form: https://www.tiktok.com/@username/video/1234567890
+    m = url.match(/tiktok\.com\/@([\w.\-_]+)\/video\/(\d+)/i);
+    if (m) return { kind: 'tt', id: m[2], author: m[1], url: `https://www.tiktok.com/@${m[1]}/video/${m[2]}` };
+    // TikTok short form: https://vm.tiktok.com/XXXXXXXX/  — TikTok's embed accepts the numeric ID,
+    // not the short code. We can't resolve the short URL client-side (no CORS), so we save the
+    // raw URL and fall back to a click-to-open card.
+    m = url.match(/(?:vm|vt)\.tiktok\.com\/([A-Za-z0-9]+)/i);
+    if (m) return { kind: 'tt', id: '__short__', shortCode: m[1], url: url };
+    // Instagram explicitly rejected — IG embeds don't play inline reliably.
+    m = url.match(/instagram\.com\//i);
+    if (m) {
+      toast('Instagram links don\'t play inline (IG blocks embeds). Use YouTube or TikTok.');
+      return null;
+    }
     return null;
   }
 
@@ -9711,26 +9723,31 @@ setCurrentColor([255, 0, 0]);
         <a class="br-open" href="${reel.url}" target="_blank" rel="noopener" title="Open on YouTube">↗</a>
         <button class="br-remove" title="Remove from pool">×</button>
       `;
-    } else {
-      // Instagram embeds keep blocking inline playback in many cases, so we render
-      // a click-to-open card with the poster image fetched from IG's CDN.
-      // The poster URL is the standard "media/?size=l" endpoint that returns the JPG.
-      const poster = `https://www.instagram.com/p/${reel.id}/media/?size=l`;
+    } else if (reel.kind === 'tt' && reel.id !== '__short__') {
+      // TikTok official embed — works for public videos, plays inline.
+      // Note: the TikTok embed is wider than tall by default; we wrap in a centered iframe.
+      const embedSrc = `https://www.tiktok.com/embed/v2/${reel.id}?lang=en-US`;
       card.innerHTML = `
-        <a class="br-poster" href="${reel.url}" target="_blank" rel="noopener" title="Open on Instagram to watch">
-          <img class="br-poster-img" src="${poster}" alt="" loading="lazy" referrerpolicy="no-referrer"
-               onerror="this.parentNode.classList.add('no-poster')">
+        <iframe src="${embedSrc}" loading="lazy" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen scrolling="no"></iframe>
+        <div class="br-meta">♪ TikTok · @${reel.author || reel.id}</div>
+        <a class="br-open" href="${reel.url}" target="_blank" rel="noopener" title="Open on TikTok">↗</a>
+        <button class="br-remove" title="Remove from pool">×</button>
+      `;
+    } else {
+      // TikTok short URL we couldn't resolve — click-to-open card
+      card.innerHTML = `
+        <a class="br-poster no-poster" href="${reel.url}" target="_blank" rel="noopener" title="Open on TikTok">
           <div class="br-play-overlay">
             <div class="br-play-icon">
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <polygon points="6,4 20,12 6,20"/>
               </svg>
             </div>
-            <div class="br-play-label">Watch on Instagram</div>
+            <div class="br-play-label">Watch on TikTok</div>
           </div>
         </a>
-        <div class="br-meta">◐ Instagram · ${reel.id}</div>
-        <a class="br-open" href="${reel.url}" target="_blank" rel="noopener" title="Open on Instagram">↗</a>
+        <div class="br-meta">♪ TikTok · short link</div>
+        <a class="br-open" href="${reel.url}" target="_blank" rel="noopener" title="Open on TikTok">↗</a>
         <button class="br-remove" title="Remove from pool">×</button>
       `;
     }
@@ -9775,6 +9792,31 @@ setCurrentColor([255, 0, 0]);
     if (e.key === 'Enter') { e.preventDefault(); tryAddFromInput(); }
   });
   shuffleBtn.addEventListener('click', shuffleAndRender);
+
+  // Suggest a reel for the public list — opens a pre-filled GitHub issue.
+  // Set GITHUB_REPO below to "<owner>/<repo>" for your repo, or leave blank to disable.
+  const GITHUB_REPO = ''; // e.g. "username/my-tools"
+  const suggestBtn = document.getElementById('brSuggest');
+  if (suggestBtn) {
+    if (!GITHUB_REPO) {
+      suggestBtn.disabled = true;
+      suggestBtn.title = 'Edit GITHUB_REPO in the HTML to enable suggestions';
+    }
+    suggestBtn.addEventListener('click', () => {
+      if (!GITHUB_REPO) {
+        toast('Owner needs to set GITHUB_REPO in the HTML first');
+        return;
+      }
+      const url = (submitInput.value || '').trim();
+      const reel = url ? normalizeReel(url) : null;
+      const title = reel ? `Reel suggestion: ${reel.kind === 'yt' ? 'YouTube' : 'TikTok'} · ${reel.id}` : 'Reel suggestion';
+      const body = reel
+        ? `Please add this to the public reels pool:\n\n${reel.url}\n\nPlatform: ${reel.kind === 'yt' ? 'YouTube' : 'TikTok'}`
+        : 'Paste a YouTube or TikTok URL above before clicking Suggest, or write it here:\n\n<URL>';
+      const issueUrl = `https://github.com/${GITHUB_REPO}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}&labels=reel-suggestion`;
+      window.open(issueUrl, '_blank', 'noopener');
+    });
+  }
 
   exportBtn.addEventListener('click', () => {
     const blob = new Blob([JSON.stringify(pool.map(p => p.url), null, 2)], { type: 'application/json' });
