@@ -4,9 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Creative Tools — Image, Audio & Video</title>
-
-<link rel="icon" type="image/png" href="favicon.png">
-
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -2225,6 +2222,187 @@
   /* Old modal hidden in favor of inline panel */
   .autograph-overlay { display: none !important; }
 
+  /* Site logo (top-right) */
+  .site-logo {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    height: 36px;
+    width: auto;
+    z-index: 130;
+    opacity: 0.85;
+    transition: opacity 0.2s;
+    pointer-events: none;
+  }
+  .site-logo:hover { opacity: 1; }
+  body[data-current-tab="brainrot"] .site-logo { opacity: 0; }
+  @media (max-width: 720px) {
+    .site-logo { height: 28px; top: 12px; right: 12px; }
+  }
+
+  /* =====================================================
+     Brainrot: Instagram reels feed (left/center) + settings (right)
+     ===================================================== */
+  .brainrot-wrap {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 16px;
+    height: calc(100vh - 80px);
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  @media (max-width: 800px) {
+    .brainrot-wrap {
+      grid-template-columns: 1fr;
+      grid-template-rows: 1fr auto;
+    }
+  }
+  .brainrot-side {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+  }
+  .brainrot-toolbar {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .brainrot-title {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: 28px;
+    margin: 0;
+  }
+  .br-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .br-section-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    color: var(--text-faint);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .brainrot-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .brainrot-actions .dl-btn { flex: 1; min-width: 0; }
+  .brainrot-actions input.color-input { flex: 1; min-width: 140px; }
+  .brainrot-side input.color-input,
+  .brainrot-toolbar input.color-input {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    width: 100%;
+  }
+  .brainrot-hint {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-faint);
+    letter-spacing: 0.03em;
+    line-height: 1.5;
+  }
+  .br-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    background: var(--bg-2);
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    align-self: flex-start;
+  }
+  .brainrot-feed {
+    overflow-y: auto;
+    overflow-x: hidden;
+    scroll-snap-type: y mandatory;
+    border-radius: 14px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    padding: 0;
+    scroll-behavior: smooth;
+    height: 100%;
+  }
+  .brainrot-empty {
+    text-align: center;
+    padding: 80px 20px;
+    color: var(--text-faint);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+  }
+  .br-card {
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+    height: calc(100vh - 100px);
+    min-height: 480px;
+    max-height: 900px;
+    background: #000;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .br-card iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #000;
+  }
+  .br-card .br-fallback {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .br-card .br-fallback a {
+    color: var(--accent);
+    word-break: break-all;
+  }
+  .br-card .br-meta {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.04em;
+    pointer-events: none;
+  }
+  .br-card .br-remove {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.2);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    z-index: 5;
+  }
+  .br-card .br-remove:hover { background: #ef5350; }
+
   .clip-panel {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -2432,7 +2610,7 @@
     right: 0;
     transform: translateX(30px) rotate(2deg);
   }
-  body.femboy .femboy-mascot.has-src {
+  body.femboy .femboy-mascot {
     opacity: 1;
     transform: translateX(0) rotate(0);
   }
@@ -2543,7 +2721,7 @@
     right: 0;
     transform: translateX(30px);
   }
-  body.subaru .subaru-mascot.has-src {
+  body.subaru .subaru-mascot {
     opacity: 1;
     transform: translateX(0);
   }
@@ -2749,6 +2927,10 @@
         <span class="sb-icon">↻</span>
         <span class="sb-label">Converter</span>
       </button>
+      <button class="sb-tab" data-tab="brainrot" title="Brainrot — Instagram reels feed">
+        <span class="sb-icon">🧠</span>
+        <span class="sb-label">Brainrot</span>
+      </button>
     </nav>
 
     <!-- Bottom of sidebar: theme toggles -->
@@ -2786,34 +2968,24 @@
     </label>
   </div>
 
-  <!-- Bottom-right corner: sprite pickers (formerly mascots) -->
-  <div class="corner-panel corner-br" id="cornerSprites">
-    <div class="cp-title">Sprites</div>
-    <label class="mascot-picker" id="mascotPickerL" title="Pick a left sprite for femboy mode">
-      <input type="file" accept="image/*" id="mascotFileL" style="display:none">
-      🎀 Left
-    </label>
-    <label class="mascot-picker" id="mascotPickerR" title="Pick a right sprite for femboy mode">
-      <input type="file" accept="image/*" id="mascotFileR" style="display:none">
-      🎀 Right
-    </label>
-    <label class="mascot-picker subaru" id="subaruMascotPickerL" title="Pick a left sprite for Subaru mode">
-      <input type="file" accept="image/*" id="subaruMascotFileL" style="display:none">
-      🌿 Left
-    </label>
-    <label class="mascot-picker subaru" id="subaruMascotPickerR" title="Pick a right sprite for Subaru mode">
-      <input type="file" accept="image/*" id="subaruMascotFileR" style="display:none">
-      🌿 Right
-    </label>
-  </div>
+  <!-- Site logo (top-right corner, visible only when not on Brainrot tab) -->
+  <img id="siteLogo" class="site-logo" src="assets/images/logo.png" alt="" onerror="this.style.display='none'">
 
-  <!-- Femboy mode sprites — two separate images, no mirroring -->
-  <img id="mascotLeft" class="femboy-mascot left" alt="">
-  <img id="mascotRight" class="femboy-mascot right" alt="">
+  <!-- Femboy mode sprites — two separate images, sourced from /assets/images -->
+  <img id="mascotLeft" class="femboy-mascot left" alt=""
+       src="assets/images/femboy_left.png"
+       onerror="this.style.display='none'">
+  <img id="mascotRight" class="femboy-mascot right" alt=""
+       src="assets/images/femboy_right.png"
+       onerror="this.style.display='none'">
 
-  <!-- Subaru mode sprites — two separate images -->
-  <img id="subaruMascotL" class="subaru-mascot left" alt="">
-  <img id="subaruMascotR" class="subaru-mascot right" alt="">
+  <!-- Subaru mode sprites — two separate images, sourced from /assets/images -->
+  <img id="subaruMascotL" class="subaru-mascot left" alt=""
+       src="assets/images/subaru_left.png"
+       onerror="this.style.display='none'">
+  <img id="subaruMascotR" class="subaru-mascot right" alt=""
+       src="assets/images/subaru_right.png"
+       onerror="this.style.display='none'">
 
   <!-- ================= COMPOSITOR ================= -->
   <main data-mode="compositor">
@@ -3614,6 +3786,52 @@
         </div>
       </section>
 
+    </div>
+  </main>
+
+  <!-- ================= BRAINROT (Instagram reels feed) ================= -->
+  <main data-mode="brainrot" hidden>
+    <div class="brainrot-wrap">
+      <!-- Left/center: the actual feed -->
+      <div class="brainrot-feed" id="brFeed">
+        <div class="brainrot-empty" id="brEmpty">
+          <div style="font-size:60px; opacity:0.3">🧠</div>
+          <p>No reels in your pool yet — paste an Instagram URL on the right to start.</p>
+        </div>
+      </div>
+
+      <!-- Right: controls / pool management -->
+      <aside class="brainrot-side">
+        <div class="brainrot-toolbar">
+          <h2 class="brainrot-title">Brainrot</h2>
+          <span class="br-count" id="brCount">0 reels in pool</span>
+
+          <div class="br-section">
+            <div class="br-section-title">Add reel</div>
+            <input type="text" id="brSubmit" class="color-input" placeholder="Paste Instagram reel URL...">
+            <div class="brainrot-actions">
+              <button class="dl-btn" id="brAdd" style="flex:1">+ Add</button>
+              <button class="dl-btn" id="brShuffle" style="flex:1">↻ Shuffle</button>
+            </div>
+          </div>
+
+          <div class="br-section">
+            <div class="br-section-title">Pool</div>
+            <div class="brainrot-actions">
+              <button class="dl-btn" id="brExport">Export</button>
+              <label class="dl-btn" style="cursor:pointer">
+                Import
+                <input type="file" accept="application/json,.json" id="brImportFile" style="display:none">
+              </label>
+              <button class="dl-btn danger" id="brClear">Clear</button>
+            </div>
+          </div>
+
+          <div class="brainrot-hint">
+            Pool persists in this browser only — there's no server. Export to share with friends, import to merge their list.
+          </div>
+        </div>
+      </aside>
     </div>
   </main>
 
@@ -5767,56 +5985,10 @@ themeToggle.addEventListener('click', () => {
 
 /* Mascot pickers (femboy) — two SEPARATE images, one for left, one for right.
    Each persists independently in localStorage. */
+/* Femboy mascots are now hardcoded from /assets/images — no picker needed.
+   Keeping a no-op so any callers don't break. */
 (function setupFemboyMascots() {
-  const slots = [
-    { side: 'L', img: document.getElementById('mascotLeft'),  input: document.getElementById('mascotFileL'), key: 'femboyMascotL' },
-    { side: 'R', img: document.getElementById('mascotRight'), input: document.getElementById('mascotFileR'), key: 'femboyMascotR' },
-  ];
-
-  function applyTo(slot, dataUrl) {
-    if (!dataUrl) return;
-    slot.img.src = dataUrl;
-    slot.img.classList.add('has-src');
-  }
-  function clearSlot(slot) {
-    slot.img.removeAttribute('src');
-    slot.img.classList.remove('has-src');
-    try { localStorage.removeItem(slot.key); } catch (e) {}
-  }
-
-  // Restore from previous session (try both new keys, then fall back to legacy single-image key)
-  for (const slot of slots) {
-    try {
-      const saved = localStorage.getItem(slot.key);
-      if (saved) { applyTo(slot, saved); continue; }
-      const legacy = localStorage.getItem('femboyMascot');
-      if (legacy) applyTo(slot, legacy); // legacy mirroring
-    } catch (e) {}
-  }
-
-  // Wire pickers
-  for (const slot of slots) {
-    slot.input.addEventListener('change', (e) => {
-      const f = e.target.files && e.target.files[0];
-      if (!f) return;
-      const r = new FileReader();
-      r.onload = () => {
-        const dataUrl = r.result;
-        applyTo(slot, dataUrl);
-        try { localStorage.setItem(slot.key, dataUrl); } catch (err) {}
-        toast(`Femboy ${slot.side === 'L' ? 'left' : 'right'} mascot set 💖`);
-      };
-      r.onerror = () => toast('Could not load image');
-      r.readAsDataURL(f);
-    });
-    // Right-click clears just that one
-    slot.img.style.pointerEvents = 'auto';
-    slot.img.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      clearSlot(slot);
-      toast(`${slot.side === 'L' ? 'Left' : 'Right'} mascot cleared`);
-    });
-  }
+  // Images are loaded directly via <img src="assets/images/femboy_left.png"> etc.
 })();
 
 /* ============================================================
@@ -5826,10 +5998,6 @@ themeToggle.addEventListener('click', () => {
 (function setupSubaru() {
   const toggle = document.getElementById('subaruToggle');
   const musicFile = document.getElementById('subaruMusicFile');
-  const slots = [
-    { side: 'L', img: document.getElementById('subaruMascotL'), input: document.getElementById('subaruMascotFileL'), key: 'subaruMascotL' },
-    { side: 'R', img: document.getElementById('subaruMascotR'), input: document.getElementById('subaruMascotFileR'), key: 'subaruMascotR' },
-  ];
 
   // Hidden audio element. Volume is faded in/out by hand for the slow-creep effect.
   const audioEl = new Audio();
@@ -5854,43 +6022,24 @@ themeToggle.addEventListener('click', () => {
       }
     }, 30);
   }
-
-  function applyTo(slot, dataUrl) {
-    if (!dataUrl) return;
-    slot.img.src = dataUrl;
-    slot.img.classList.add('has-src');
-  }
-  function clearSlot(slot) {
-    slot.img.removeAttribute('src');
-    slot.img.classList.remove('has-src');
-    try { localStorage.removeItem(slot.key); } catch (e) {}
-  }
   function applyMusic(dataUrl) {
     if (!dataUrl) return;
     audioEl.src = dataUrl;
   }
 
-  // Restore from localStorage
-  for (const slot of slots) {
+  // Try a hardcoded music file first, fall back to localStorage
+  audioEl.src = 'assets/audio/subaru_loop.mp3';
+  audioEl.addEventListener('error', () => {
+    // The hardcoded file isn't there — use saved upload if any
     try {
-      const saved = localStorage.getItem(slot.key);
-      if (saved) applyTo(slot, saved);
-      else {
-        // Legacy single-key fallback
-        const legacy = localStorage.getItem('subaruMascot');
-        if (legacy) applyTo(slot, legacy);
-      }
+      const savedMusic = localStorage.getItem('subaruMusic');
+      if (savedMusic) applyMusic(savedMusic);
     } catch (e) {}
-  }
-  try {
-    const savedMusic = localStorage.getItem('subaruMusic');
-    if (savedMusic) applyMusic(savedMusic);
-  } catch (e) {}
+  }, { once: true });
 
   toggle.addEventListener('click', () => {
     document.body.classList.toggle('subaru');
     if (document.body.classList.contains('subaru')) {
-      // Turn off femboy mode (themes mutually exclusive)
       document.body.classList.remove('femboy');
       if (audioEl.src) {
         audioEl.volume = 0;
@@ -5905,36 +6054,11 @@ themeToggle.addEventListener('click', () => {
         }
       }
     } else {
-      // Fade out, then pause
-      fadeAudioTo(0, FADE_MS, () => {
-        audioEl.pause();
-      });
+      fadeAudioTo(0, FADE_MS, () => audioEl.pause());
     }
   });
 
-  // Wire mascot pickers
-  for (const slot of slots) {
-    slot.input.addEventListener('change', (e) => {
-      const f = e.target.files && e.target.files[0];
-      if (!f) return;
-      const r = new FileReader();
-      r.onload = () => {
-        const dataUrl = r.result;
-        applyTo(slot, dataUrl);
-        try { localStorage.setItem(slot.key, dataUrl); } catch (err) {}
-        toast(`Subaru ${slot.side === 'L' ? 'left' : 'right'} mascot set 🌿`);
-      };
-      r.readAsDataURL(f);
-    });
-    slot.img.style.pointerEvents = 'auto';
-    slot.img.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      clearSlot(slot);
-      toast(`${slot.side === 'L' ? 'Left' : 'Right'} mascot cleared`);
-    });
-  }
-
-  musicFile.addEventListener('change', (e) => {
+  if (musicFile) musicFile.addEventListener('change', (e) => {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
     const objectUrl = URL.createObjectURL(f);
@@ -5954,7 +6078,7 @@ themeToggle.addEventListener('click', () => {
     toast('Subaru music ready 🎵');
   });
 
-  // Mutual exclusion: if femboy gets clicked while subaru is on, fade out + stop
+  // Mutual exclusion: clicking femboy disables subaru
   document.getElementById('themeToggle').addEventListener('click', () => {
     if (document.body.classList.contains('femboy')) {
       document.body.classList.remove('subaru');
@@ -6252,25 +6376,50 @@ function getIR(ctx, preset) {
 function makeBrokenBuffer(buf, ctx) {
   const out = ctx.createBuffer(buf.numberOfChannels, buf.length, buf.sampleRate);
   const sr = buf.sampleRate;
-  const sliceSamples = Math.floor(0.3 * sr);
-  const intervalSamples = Math.floor(1.1 * sr);
+  const totalSamples = buf.length;
+
+  // Build a deterministic-yet-varied schedule of glitches.
+  // Each cycle: 1-3s of normal audio, then a 0.1-0.3s slice repeated 1-2 extra times
+  // (so 2-3 total stamps, with the first stamp = the original slice content).
+  // Use a seeded LCG so repeated decodes give the same pattern.
+  let seed = 1234567;
+  function rand() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 0x100000000; }
+
+  // First copy original audio everywhere
   for (let c = 0; c < buf.numberOfChannels; c++) {
-    const src = buf.getChannelData(c);
-    const dst = out.getChannelData(c);
-    dst.set(src); // start as identity
-    for (let pos = 0; pos + sliceSamples < src.length; pos += intervalSamples) {
-      // Randomly choose between 2 and 3 repeats
-      const repeats = 2 + ((pos / intervalSamples) | 0) % 2;
-      const sliceStart = pos;
-      for (let r = 1; r <= repeats; r++) {
+    out.getChannelData(c).set(buf.getChannelData(c));
+  }
+
+  let pos = 0;
+  while (pos < totalSamples) {
+    // 1) advance through 1-3 seconds of normal audio
+    const normalSec = 1 + rand() * 2;
+    pos += Math.floor(normalSec * sr);
+    if (pos >= totalSamples) break;
+
+    // 2) glitch: pick a slice 0.1-0.3s starting at pos
+    const sliceSec = 0.1 + rand() * 0.2;
+    const sliceSamples = Math.floor(sliceSec * sr);
+    const repeatsExtra = 1 + Math.floor(rand() * 2); // 1 or 2 extra (so 2 or 3 total)
+    const sliceStart = pos;
+    if (sliceStart + sliceSamples >= totalSamples) break;
+
+    // The slice itself stays as the original audio (already copied via set()).
+    // We overwrite the next `repeatsExtra` slice-lengths with copies of [sliceStart..sliceStart+sliceSamples)
+    for (let c = 0; c < buf.numberOfChannels; c++) {
+      const dst = out.getChannelData(c);
+      const srcCh = buf.getChannelData(c);
+      for (let r = 1; r <= repeatsExtra; r++) {
         const destStart = sliceStart + r * sliceSamples;
         if (destStart + sliceSamples > dst.length) break;
         for (let i = 0; i < sliceSamples; i++) {
-          // Mix with a tiny bit of existing content for gritty feel
-          dst[destStart + i] = src[sliceStart + i] * 0.9;
+          dst[destStart + i] = srcCh[sliceStart + i];
         }
       }
     }
+
+    // Advance past the glitch region
+    pos = sliceStart + (1 + repeatsExtra) * sliceSamples;
   }
   return out;
 }
@@ -6792,6 +6941,18 @@ edPlayheadHandle.addEventListener('mousedown', (e) => {
     const lh = trackHeight();
     const trackUnder = Math.max(0, Math.min(tracks.length - 1, Math.floor(yRel / lh)));
     setActiveTrack(trackUnder);
+
+    // Live preview: if the selected clip exists and the playhead is inside it,
+    // sample all its automation curves at this time and update the panel sliders.
+    const sel = getSelectedClip();
+    if (sel) {
+      const rel = t - sel.startTime;
+      if (rel >= 0 && rel <= sel.duration) {
+        previewSlidersAt(sel, rel);
+      }
+    }
+    if (typeof drawAutoGraph === 'function') drawAutoGraph();
+    if (typeof refreshDiamonds === 'function') refreshDiamonds();
   }
   function up() {
     window.removeEventListener('mousemove', move);
@@ -7069,7 +7230,7 @@ function buildClipGraph(sourceNode, clip, ctx = au.ctx) {
 
 // Apply automation to a running clip's audio params.
 // For each param with automation nodes, schedule setValueAtTime + linearRampToValueAtTime.
-function applyAutomation(graph, clip, clipPlayStartCtxTime, intoClipOffset, playDur) {
+function applyAutomation(graph, clip, clipPlayStartCtxTime, intoClipOffset, playDur, sourceNode) {
   if (!clip.automation) return;
   const speedRate = clip.params.speed; // wall-clock stretch
   const paramBinding = {
@@ -7081,6 +7242,7 @@ function applyAutomation(graph, clip, clipPlayStartCtxTime, intoClipOffset, play
     bits: graph.crusher ? { node: graph.crusher.parameters.get('bits'), fn: v => v } : null,
     sr: graph.crusher ? { node: graph.crusher.parameters.get('sampleRate'), fn: v => v } : null,
     bass: graph.bass ? { node: graph.bass.gain, fn: v => v } : null,
+    speed: (sourceNode && sourceNode.playbackRate) ? { node: sourceNode.playbackRate, fn: v => v } : null,
     reverb: (graph.reverbAmount && graph.reverbDry) ? null : null, // handled specially below
   };
   for (const [paramName, nodes] of Object.entries(clip.automation)) {
@@ -7201,7 +7363,7 @@ async function edStartPlayback() {
     }
 
     // Apply automation
-    applyAutomation(graph, clip, scheduleAt, intoClip, playDur);
+    applyAutomation(graph, clip, scheduleAt, intoClip, playDur, src);
 
     src.start(scheduleAt, offsetInBuffer, playDur);
     editor.activeSources.push(src);
@@ -8399,14 +8561,29 @@ function drawAutoGraph() {
     // Nodes
     sorted.forEach((n, i) => {
       const x = nx(n.t), y = ny(param, n.v);
-      ctx.fillStyle = (isActive && i === ag.hoverIdx) ? '#fff' : r.color;
-      ctx.strokeStyle = '#0a0a0a';
-      ctx.lineWidth = 1.8;
-      ctx.beginPath();
-      const radius = isActive ? 5.5 : 3.5;
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
+      const isSelectedNode = (ag.selectedNodeParam === param && ag.selectedNodeIdx === i);
+      if (isSelectedNode) {
+        // White outer glow
+        ctx.shadowColor = '#ffffff';
+        ctx.shadowBlur = 14;
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = r.color;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(x, y, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      } else {
+        ctx.fillStyle = (isActive && i === ag.hoverIdx) ? '#fff' : r.color;
+        ctx.strokeStyle = '#0a0a0a';
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        const radius = isActive ? 5.5 : 3.5;
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
     });
   }
 
@@ -8442,6 +8619,71 @@ function agCanvasCoordToData(e) {
   return { x, y, t, v, rect };
 }
 
+// Sample all automation curves at a clip-relative time and return {paramName: value}.
+// For params without automation, returns the clip's stored param value.
+function sampleClipAtTime(clip, t) {
+  const out = {};
+  if (!clip) return out;
+  for (const param of Object.keys(AUTO_PARAM_RANGES)) {
+    const arr = (clip.automation && clip.automation[param]) || [];
+    if (arr.length === 0) {
+      out[param] = (clip.params[param] != null) ? clip.params[param] : AUTO_PARAM_RANGES[param].min;
+      continue;
+    }
+    const sorted = arr.slice().sort((a,b) => a.t - b.t);
+    const interp = (clip.automationInterp && clip.automationInterp[param]) || 'linear';
+    if (t <= sorted[0].t) { out[param] = sorted[0].v; continue; }
+    if (t >= sorted[sorted.length-1].t) { out[param] = sorted[sorted.length-1].v; continue; }
+    // Find segment
+    let i = 0;
+    while (i < sorted.length - 1 && sorted[i+1].t < t) i++;
+    const a = sorted[i], b = sorted[i+1];
+    if (interp === 'smooth' && sorted.length >= 2) {
+      const p0 = sorted[i-1] || a;
+      const p1 = a;
+      const p2 = b;
+      const p3 = sorted[i+2] || b;
+      const tt = (t - a.t) / Math.max(0.0001, (b.t - a.t));
+      const t2 = tt*tt, t3 = t2*tt;
+      out[param] = 0.5 * ((2*p1.v) + (-p0.v + p2.v)*tt + (2*p0.v - 5*p1.v + 4*p2.v - p3.v)*t2 + (-p0.v + 3*p1.v - 3*p2.v + p3.v)*t3);
+    } else {
+      const f = (t - a.t) / Math.max(0.0001, (b.t - a.t));
+      out[param] = a.v + (b.v - a.v) * f;
+    }
+  }
+  return out;
+}
+
+// Update the panel's slider and value-readout visuals (display only; doesn't mutate clip.params)
+// to reflect a preview at a particular clip-relative time. Marks panel as previewing.
+const PARAM_TO_SLIDER = {
+  volumeDb: { id: 'pVol', valId: 'pVolVal', fmt: v => `${v >= 0 ? '+' : ''}${v.toFixed(1)} dB` },
+  fadeIn:   { id: 'pFadeIn', valId: 'pFadeInVal', fmt: v => `${v.toFixed(2)}s` },
+  fadeOut:  { id: 'pFadeOut', valId: 'pFadeOutVal', fmt: v => `${v.toFixed(2)}s` },
+  speed:    { id: 'pSpeed', valId: 'pSpeedVal', fmt: v => `${v.toFixed(2)}×` },
+  muffle:   { id: 'pMuffle', valId: 'pMuffleVal', fmt: v => `${Math.round(v)}%` },
+  hp:       { id: 'pHp', valId: 'pHpVal', fmt: v => `${Math.round(v)} Hz` },
+  bits:     { id: 'pBits', valId: 'pBitsVal', fmt: v => `${Math.round(v)} bit` },
+  sr:       { id: 'pSr', valId: 'pSrVal', fmt: v => `${Math.round(v)} Hz` },
+  ad:       { id: 'pAd', valId: 'pAdVal', fmt: v => `${Math.round(v)}%` },
+  da:       { id: 'pDa', valId: 'pDaVal', fmt: v => `${Math.round(v)}%` },
+  bass:     { id: 'pBass', valId: 'pBassVal', fmt: v => `${v >= 0 ? '+' : ''}${v.toFixed(1)} dB` },
+  reverb:   { id: 'pReverb', valId: 'pReverbVal', fmt: v => `${Math.round(v)}%` },
+  reverbSize: { id: 'pReverbSize', valId: 'pReverbSizeVal', fmt: v => `${v.toFixed(1)}s` },
+};
+function previewSlidersAt(clip, t) {
+  const sample = sampleClipAtTime(clip, t);
+  for (const [param, info] of Object.entries(PARAM_TO_SLIDER)) {
+    const sl = document.getElementById(info.id);
+    const vl = document.getElementById(info.valId);
+    if (!sl) continue;
+    const v = sample[param];
+    if (v == null || isNaN(v)) continue;
+    sl.value = v;
+    if (vl) vl.textContent = info.fmt(v) + ' *';
+  }
+}
+
 ag.canvas.addEventListener('mousedown', (e) => {
   const data = agCanvasCoordToData(e);
   if (!data) return;
@@ -8459,6 +8701,15 @@ ag.canvas.addEventListener('mousedown', (e) => {
   }
   if (hitIdx >= 0) {
     ag.draggingIdx = hitIdx;
+    ag.selectedNodeIdx = hitIdx;
+    ag.selectedNodeParam = activeParam();
+    const cc = getClipForGraph();
+    // Move playhead to the node's time and preview the slider values there
+    const nodeTime = sorted[hitIdx].t;
+    editor.currentPos = cc.startTime + nodeTime;
+    edPlayheadEl.style.left = (editor.currentPos * pxPerSec) + 'px';
+    previewSlidersAt(cc, nodeTime);
+    drawAutoGraph();
     function mv(ev) {
       const d2 = agCanvasCoordToData(ev);
       if (!d2) return;
@@ -8469,6 +8720,10 @@ ag.canvas.addEventListener('mousedown', (e) => {
         nodes[origIdx].t = d2.t;
         nodes[origIdx].v = d2.v;
       }
+      // Move playhead with the node + re-preview
+      editor.currentPos = cc.startTime + d2.t;
+      edPlayheadEl.style.left = (editor.currentPos * pxPerSec) + 'px';
+      previewSlidersAt(cc, d2.t);
       drawAutoGraph();
     }
     function up() {
@@ -8479,13 +8734,17 @@ ag.canvas.addEventListener('mousedown', (e) => {
       nodes.sort((a,b) => a.t - b.t);
       drawAutoGraph();
       refreshAutoList();
-      // Update clip's dot overlay
-      const cc = getClipForGraph();
-      const el = document.querySelector(`.clip[data-id="${cc.id}"]`);
-      if (el) renderClipAutomationDots(cc, el);
+      const cc2 = getClipForGraph();
+      const el = document.querySelector(`.clip[data-id="${cc2.id}"]`);
+      if (el) renderClipAutomationDots(cc2, el);
     }
     window.addEventListener('mousemove', mv);
     window.addEventListener('mouseup', up);
+  } else {
+    // Click empty graph area → clear selection
+    ag.selectedNodeIdx = -1;
+    ag.selectedNodeParam = null;
+    drawAutoGraph();
   }
 });
 
@@ -8635,7 +8894,7 @@ async function renderEditorOffline() {
       graph.fadeGain.gain.setValueAtTime(1, foStart);
       graph.fadeGain.gain.linearRampToValueAtTime(0, foStart + fout / clip.params.speed);
     }
-    applyAutomation(graph, clip, scheduleAt, 0, clip.duration);
+    applyAutomation(graph, clip, scheduleAt, 0, clip.duration, src);
     src.start(scheduleAt, clip.offset, clip.duration);
   }
   return await offline.startRendering();
@@ -9151,6 +9410,229 @@ setCurrentColor([255, 0, 0]);
 ['dragover','drop'].forEach(e =>
   window.addEventListener(e, ev => { if (ev.target === document.body) ev.preventDefault(); })
 );
+
+/* ============================================================
+   BRAINROT — Instagram reels feed (localStorage-backed)
+   ============================================================ */
+(function setupBrainrot() {
+  const STORAGE_KEY = 'brainrotPool';
+  const PUBLIC_LIST_URL = 'assets/reels.json'; // optional curated list
+  const feed = document.getElementById('brFeed');
+  const empty = document.getElementById('brEmpty');
+  const submitInput = document.getElementById('brSubmit');
+  const addBtn = document.getElementById('brAdd');
+  const shuffleBtn = document.getElementById('brShuffle');
+  const exportBtn = document.getElementById('brExport');
+  const importInput = document.getElementById('brImportFile');
+  const clearBtn = document.getElementById('brClear');
+  const countEl = document.getElementById('brCount');
+
+  let pool = [];          // array of normalized reel objects: {id, url}
+  let order = [];         // shuffled indices into pool
+  let cursor = 0;         // how many cards have been mounted
+  const LOAD_AHEAD = 3;   // how many cards to mount ahead of viewport
+
+  // ---- Storage ----
+  function loadPool() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) pool = JSON.parse(raw) || [];
+    } catch (e) { pool = []; }
+    // Try to merge with curated list — fail silently if missing
+    fetch(PUBLIC_LIST_URL).then(r => r.ok ? r.json() : null).then(list => {
+      if (Array.isArray(list)) {
+        for (const url of list) {
+          const r = normalizeReel(typeof url === 'string' ? url : url.url);
+          if (r && !pool.some(p => p.id === r.id)) pool.push(r);
+        }
+        savePool();
+        refreshCount();
+        if (pool.length && cursor === 0) shuffleAndRender();
+      }
+    }).catch(() => {});
+  }
+  function savePool() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(pool)); } catch (e) {}
+  }
+  function refreshCount() {
+    countEl.textContent = `${pool.length} reel${pool.length === 1 ? '' : 's'} in pool`;
+  }
+
+  // ---- URL normalization ----
+  // Accepts /reel/SHORTCODE/, /p/SHORTCODE/, /tv/SHORTCODE/ — extracts shortcode for embed.
+  function normalizeReel(url) {
+    if (!url || typeof url !== 'string') return null;
+    url = url.trim();
+    if (!url) return null;
+    // Must be an instagram URL
+    const m = url.match(/instagram\.com\/(?:reel|p|tv|reels)\/([A-Za-z0-9_-]+)/i);
+    if (!m) return null;
+    const id = m[1];
+    return { id, url: `https://www.instagram.com/reel/${id}/` };
+  }
+
+  // ---- Render ----
+  function shuffleAndRender() {
+    order = pool.map((_, i) => i);
+    // Fisher-Yates
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    cursor = 0;
+    feed.innerHTML = '';
+    if (pool.length === 0) {
+      feed.appendChild(empty);
+      return;
+    }
+    mountNextBatch(LOAD_AHEAD);
+  }
+
+  function mountNextBatch(n) {
+    for (let i = 0; i < n && cursor < order.length; i++) {
+      const reel = pool[order[cursor]];
+      cursor++;
+      mountCard(reel);
+    }
+    // Add a sentinel that triggers loading more when scrolled into view
+    let sentinel = feed.querySelector('.br-sentinel');
+    if (sentinel) sentinel.remove();
+    if (cursor < order.length) {
+      sentinel = document.createElement('div');
+      sentinel.className = 'br-sentinel';
+      sentinel.style.height = '1px';
+      feed.appendChild(sentinel);
+      const obs = new IntersectionObserver((entries) => {
+        for (const en of entries) {
+          if (en.isIntersecting) {
+            obs.disconnect();
+            mountNextBatch(LOAD_AHEAD);
+            break;
+          }
+        }
+      }, { root: feed, rootMargin: '200px 0px' });
+      obs.observe(sentinel);
+    } else if (pool.length > LOAD_AHEAD) {
+      // Loop: when we run out, reshuffle so the feed is endless
+      const loopBtn = document.createElement('div');
+      loopBtn.className = 'brainrot-empty';
+      loopBtn.style.scrollSnapAlign = 'start';
+      loopBtn.innerHTML = `<p>You've seen them all — <button class="dl-btn" id="brReshuffle">↻ Reshuffle</button></p>`;
+      feed.appendChild(loopBtn);
+      loopBtn.querySelector('#brReshuffle').addEventListener('click', shuffleAndRender);
+    }
+  }
+
+  function mountCard(reel) {
+    const card = document.createElement('div');
+    card.className = 'br-card';
+    card.dataset.id = reel.id;
+    // Instagram embed URL — works for public reels.
+    const embedSrc = `https://www.instagram.com/reel/${reel.id}/embed/`;
+    card.innerHTML = `
+      <iframe src="${embedSrc}" loading="lazy" allow="encrypted-media" allowtransparency="true" scrolling="no"></iframe>
+      <div class="br-meta">@${reel.id}</div>
+      <button class="br-remove" title="Remove from pool">×</button>
+    `;
+    card.querySelector('.br-remove').addEventListener('click', () => {
+      pool = pool.filter(p => p.id !== reel.id);
+      savePool();
+      refreshCount();
+      card.remove();
+    });
+    feed.appendChild(card);
+  }
+
+  // ---- Wiring ----
+  function tryAddFromInput() {
+    const url = submitInput.value;
+    const reel = normalizeReel(url);
+    if (!reel) {
+      toast('Not a valid Instagram URL');
+      return;
+    }
+    if (pool.some(p => p.id === reel.id)) {
+      toast('Already in pool');
+      submitInput.value = '';
+      return;
+    }
+    pool.push(reel);
+    savePool();
+    refreshCount();
+    submitInput.value = '';
+    toast(`Added ${reel.id}`);
+    if (cursor === 0) shuffleAndRender();
+    else if (cursor >= order.length) {
+      // Append the new one inline so it's instantly viewable
+      order.push(pool.length - 1);
+      mountCard(reel);
+    }
+  }
+  addBtn.addEventListener('click', tryAddFromInput);
+  submitInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); tryAddFromInput(); }
+  });
+  shuffleBtn.addEventListener('click', shuffleAndRender);
+
+  exportBtn.addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(pool.map(p => p.url), null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `brainrot-pool-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  importInput.addEventListener('change', async (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    try {
+      const text = await f.text();
+      const arr = JSON.parse(text);
+      if (!Array.isArray(arr)) throw new Error('Not an array');
+      let added = 0;
+      for (const entry of arr) {
+        const url = (typeof entry === 'string') ? entry : (entry && entry.url);
+        const r = normalizeReel(url);
+        if (r && !pool.some(p => p.id === r.id)) {
+          pool.push(r); added++;
+        }
+      }
+      savePool();
+      refreshCount();
+      shuffleAndRender();
+      toast(`Imported ${added} new reels`);
+    } catch (err) {
+      toast('Import failed — invalid JSON');
+    }
+    e.target.value = '';
+  });
+
+  clearBtn.addEventListener('click', () => {
+    if (!confirm('Clear all reels from your local pool?')) return;
+    pool = [];
+    savePool();
+    refreshCount();
+    shuffleAndRender();
+  });
+
+  // Render when the user opens the Brainrot tab
+  document.querySelector('[data-tab="brainrot"]').addEventListener('click', () => {
+    document.body.dataset.currentTab = 'brainrot';
+    if (cursor === 0 && pool.length > 0) shuffleAndRender();
+  });
+  // Reset the data attribute when leaving brainrot
+  document.querySelectorAll('.sb-tab').forEach(t => {
+    if (t.dataset.tab !== 'brainrot') {
+      t.addEventListener('click', () => {
+        document.body.dataset.currentTab = t.dataset.tab;
+      });
+    }
+  });
+
+  loadPool();
+  refreshCount();
+})();
 </script>
 </body>
 </html>
