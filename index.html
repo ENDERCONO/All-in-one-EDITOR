@@ -2424,6 +2424,93 @@
   }
   .br-card .br-open:hover { background: var(--accent); color: #000; }
 
+  /* Instagram poster card (clickable, opens in new tab) */
+  .br-card .br-poster {
+    display: block;
+    width: 100%;
+    height: 100%;
+    position: relative;
+    text-decoration: none;
+    color: inherit;
+    background: #000;
+    overflow: hidden;
+  }
+  .br-card .br-poster-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+    background: #0a0a0a;
+  }
+  .br-card .br-poster.no-poster {
+    background: linear-gradient(135deg, #2a0e3f, #410d3a);
+  }
+  .br-card .br-poster.no-poster .br-poster-img { display: none; }
+  .br-card .br-play-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: linear-gradient(to bottom, transparent, rgba(0,0,0,0.4) 70%);
+    transition: background 0.18s;
+  }
+  .br-card .br-poster:hover .br-play-overlay {
+    background: linear-gradient(to bottom, rgba(0,0,0,0.2), rgba(0,0,0,0.55) 70%);
+  }
+  .br-card .br-play-icon {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.95);
+    color: #000;
+    display: grid;
+    place-items: center;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    transition: transform 0.18s;
+  }
+  .br-card .br-poster:hover .br-play-icon {
+    transform: scale(1.1);
+  }
+  .br-card .br-play-icon svg {
+    width: 36px;
+    height: 36px;
+    margin-left: 4px; /* nudge play triangle visually centered */
+  }
+  .br-card .br-play-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #fff;
+    background: rgba(0,0,0,0.6);
+    padding: 6px 14px;
+    border-radius: 999px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  /* Floating "clear" button used in Image Editor + Audio Tools */
+  .clear-x {
+    background: var(--bg-2);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    transition: all 0.15s;
+    display: grid;
+    place-items: center;
+  }
+  .clear-x:hover {
+    background: #ef5350;
+    color: #fff;
+    border-color: #ef5350;
+  }
+
   .clip-panel {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -3091,6 +3178,7 @@
         <div class="rem-preview-head">
           <h3>Preview</h3>
           <div class="info" id="remInfo">No image</div>
+          <button class="clear-x" id="remClearBtn" title="Clear image and pick a new one" hidden>✕</button>
         </div>
         <div class="rem-canvas-wrap" id="remCanvasWrap">
           <canvas id="remCanvas"></canvas>
@@ -3271,6 +3359,7 @@
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px">
           <h3>Player</h3>
           <div class="audio-meta" id="audInfo">No audio loaded</div>
+          <button class="clear-x" id="audClearBtn" title="Clear audio and pick a new one" hidden>✕</button>
         </div>
 
         <div class="audio-upload" id="audUpload">
@@ -4400,6 +4489,30 @@ remCanvasWrap.addEventListener('drop', (e) => {
   if (f && f.type.startsWith('image/')) remLoadFile(f);
 });
 
+// Clear button — drops the current image so a new one can be loaded
+document.getElementById('remClearBtn').addEventListener('click', () => {
+  rem.sourceImg = null;
+  rem.sourceData = null;
+  rem.w = 0;
+  rem.h = 0;
+  rem.committedMask = null;
+  rem.previewMask = null;
+  rem.history = [];
+  rem.cursor = -1;
+  const ctx = remCanvas.getContext('2d');
+  ctx.clearRect(0, 0, remCanvas.width, remCanvas.height);
+  remCanvas.width = 0; remCanvas.height = 0;
+  remCanvas.style.display = 'none';
+  remUpload.style.display = '';
+  remInfo.textContent = 'No image';
+  remApply.disabled = true;
+  remDownloadPng.disabled = true;
+  remDownloadJpeg.disabled = true;
+  document.getElementById('remClearBtn').hidden = true;
+  if (typeof updateHistoryUI === 'function') updateHistoryUI();
+  toast('Cleared — drop or pick a new image');
+});
+
 function remLoadFile(file) {
   const url = URL.createObjectURL(file);
   const img = new Image();
@@ -4435,6 +4548,7 @@ function remLoadFile(file) {
     remApply.disabled = false;
     remDownloadPng.disabled = false;
     remDownloadJpeg.disabled = false;
+    document.getElementById('remClearBtn').hidden = false;
     remCopyBtn.disabled = false;
 
     updateHistoryUI();
@@ -5215,12 +5329,35 @@ async function audLoadFile(file) {
     audCur.textContent = '0:00';
     drawWaveform(buffer);
     updateAudioSizeEstimate();
+    document.getElementById('audClearBtn').hidden = false;
     toast(`Loaded ${file.name}`);
   } catch (err) {
     console.error(err);
     toast('Could not decode audio');
   }
 }
+
+// Clear current audio so the dropzone is shown again and a new file can be picked
+document.getElementById('audClearBtn').addEventListener('click', () => {
+  audStop(false);
+  au.buffer = null;
+  au.source = null;
+  au.filename = null;
+  au.startOffset = 0;
+  audUpload.style.display = '';
+  audWaveWrap.hidden = true;
+  audTransport.hidden = true;
+  const recorder = document.getElementById('audRecorder');
+  if (recorder) recorder.hidden = true;
+  audPlay.disabled = true;
+  audDownloadWav.disabled = true;
+  audDownloadOgg.disabled = true;
+  audInfo.textContent = 'No audio loaded';
+  audDur.textContent = '0:00';
+  audCur.textContent = '0:00';
+  document.getElementById('audClearBtn').hidden = true;
+  toast('Cleared — drop or pick a new audio file');
+});
 
 function fmtTime(s) {
   if (!isFinite(s)) return '0:00';
@@ -9565,25 +9702,42 @@ setCurrentColor([255, 0, 0]);
     card.className = 'br-card';
     card.dataset.id = reel.id;
     card.dataset.kind = reel.kind;
-    let embedSrc, allow;
     if (reel.kind === 'yt') {
-      // YouTube: autoplay muted (browsers require muted to autoplay), loop the single
-      // video while it's on screen. We use the playlist=ID trick to make `loop` work.
-      embedSrc = `https://www.youtube.com/embed/${reel.id}?autoplay=1&mute=1&loop=1&playlist=${reel.id}&rel=0&modestbranding=1&playsinline=1`;
-      allow = 'autoplay; encrypted-media; picture-in-picture';
+      // YouTube embeds inline — autoplay muted, loops the single video
+      const embedSrc = `https://www.youtube.com/embed/${reel.id}?autoplay=1&mute=1&loop=1&playlist=${reel.id}&rel=0&modestbranding=1&playsinline=1`;
+      card.innerHTML = `
+        <iframe src="${embedSrc}" loading="lazy" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen allowtransparency="true" scrolling="no"></iframe>
+        <div class="br-meta">▶ YouTube · ${reel.id}</div>
+        <a class="br-open" href="${reel.url}" target="_blank" rel="noopener" title="Open on YouTube">↗</a>
+        <button class="br-remove" title="Remove from pool">×</button>
+      `;
     } else {
-      embedSrc = `https://www.instagram.com/reel/${reel.id}/embed/?utm_source=ig_embed&autoplay=1`;
-      allow = 'autoplay; encrypted-media';
+      // Instagram embeds keep blocking inline playback in many cases, so we render
+      // a click-to-open card with the poster image fetched from IG's CDN.
+      // The poster URL is the standard "media/?size=l" endpoint that returns the JPG.
+      const poster = `https://www.instagram.com/p/${reel.id}/media/?size=l`;
+      card.innerHTML = `
+        <a class="br-poster" href="${reel.url}" target="_blank" rel="noopener" title="Open on Instagram to watch">
+          <img class="br-poster-img" src="${poster}" alt="" loading="lazy" referrerpolicy="no-referrer"
+               onerror="this.parentNode.classList.add('no-poster')">
+          <div class="br-play-overlay">
+            <div class="br-play-icon">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="6,4 20,12 6,20"/>
+              </svg>
+            </div>
+            <div class="br-play-label">Watch on Instagram</div>
+          </div>
+        </a>
+        <div class="br-meta">◐ Instagram · ${reel.id}</div>
+        <a class="br-open" href="${reel.url}" target="_blank" rel="noopener" title="Open on Instagram">↗</a>
+        <button class="br-remove" title="Remove from pool">×</button>
+      `;
     }
-    const platform = reel.kind === 'yt' ? '▶ YouTube' : '◐ Instagram';
-    card.innerHTML = `
-      <iframe src="${embedSrc}" loading="lazy" allow="${allow}" allowfullscreen allowtransparency="true" scrolling="no"></iframe>
-      <div class="br-meta">${platform} · ${reel.id}</div>
-      <a class="br-open" href="${reel.url}" target="_blank" rel="noopener" title="Open in original site">↗</a>
-      <button class="br-remove" title="Remove from pool">×</button>
-    `;
-    card.querySelector('.br-remove').addEventListener('click', () => {
-      pool = pool.filter(p => p.id !== reel.id);
+    card.querySelector('.br-remove').addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      pool = pool.filter(p => !(p.id === reel.id && p.kind === reel.kind));
       savePool();
       refreshCount();
       card.remove();
