@@ -2477,6 +2477,73 @@
 
   /* Comments drawer — slides up from the bottom of the card */
   .br-comments-drawer {
+    /* Old in-card drawer — disabled in favor of the side panel */
+    display: none !important;
+  }
+
+  /* Comments panel pinned in the right aside, below the upload toolbar */
+  .brainrot-comments-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .br-cmt-panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-shrink: 0;
+  }
+  .br-cmt-panel-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+  .br-cmt-panel-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--text-faint);
+    letter-spacing: 0.04em;
+  }
+  .br-cmt-panel-list {
+    flex: 1;
+    overflow-y: auto;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 80px;
+  }
+  .br-cmt-panel-list .br-comments-empty {
+    text-align: center;
+    color: var(--text-faint);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    padding: 16px;
+  }
+  .br-cmt-panel-compose {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .br-cmt-panel-compose textarea.br-msg-input {
+    min-height: 50px;
+    max-height: 100px;
+  }
+
     position: absolute;
     bottom: 0; left: 0; right: 0;
     height: 72%;
@@ -4356,7 +4423,7 @@
         </div>
       </div>
 
-      <!-- Right: controls -->
+      <!-- Right: controls + comments for currently focused reel -->
       <aside class="brainrot-side">
         <div class="brainrot-toolbar">
           <h2 class="brainrot-title">Brainrot</h2>
@@ -4373,6 +4440,39 @@
 
           <div class="brainrot-hint">
             Supports <strong>YouTube</strong> (videos + Shorts) and <strong>TikTok</strong> — both play inline. Added reels go into the shared public pool for everyone.
+          </div>
+        </div>
+
+        <!-- Comments panel (fixed below uploads, follows the focused reel) -->
+        <div class="brainrot-comments-panel" id="brCommentsPanel">
+          <div class="br-cmt-panel-head">
+            <span class="br-cmt-panel-title">Comments</span>
+            <span class="br-cmt-panel-meta" id="brCmtPanelMeta">Scroll to a reel</span>
+          </div>
+          <div class="br-cmt-panel-list" id="brCmtPanelList">
+            <div class="br-comments-empty">No reel focused.</div>
+          </div>
+          <div class="br-cmt-panel-compose" id="brCmtPanelCompose" hidden>
+            <div class="br-compose-name-row">
+              <span class="br-compose-label">Name</span>
+              <input class="br-name-input" id="brCmtPanelName" type="text" maxlength="24" placeholder="Your name…">
+            </div>
+            <textarea class="br-msg-input" id="brCmtPanelMsg" rows="2" maxlength="500" placeholder="Say something…"></textarea>
+            <div class="br-gif-picker" id="brCmtPanelGifPicker">
+              <div class="br-gif-search-row">
+                <input type="text" class="br-gif-query" id="brCmtPanelGifQuery" placeholder="Search GIFs…">
+                <button class="br-gif-search-btn" id="brCmtPanelGifSearch">Search</button>
+              </div>
+              <div class="br-gif-grid" id="brCmtPanelGifGrid"></div>
+              <div class="br-gif-paste-row">
+                <span class="br-compose-label">or paste URL</span>
+                <input type="text" class="br-gif-url-input" id="brCmtPanelGifUrl" placeholder="https://media.tenor.com/…">
+              </div>
+            </div>
+            <div class="br-compose-actions">
+              <button class="br-gif-btn" id="brCmtPanelGifBtn">GIF</button>
+              <button class="br-send-btn" id="brCmtPanelSend">Send</button>
+            </div>
           </div>
         </div>
       </aside>
@@ -10206,12 +10306,49 @@ setCurrentColor([255, 0, 0]);
   }
 
   let socialPushTimer = null;
-  function scheduleSocialPush() {
-    clearTimeout(socialPushTimer);
-    socialPushTimer = setTimeout(async () => {
-      try { await apiFetch(JSONBIN_SOCIAL_BIN_ID, 'PUT', social); } catch(e) {}
-    }, 700);
+  let socialPushPending = false;
+  async function flushSocialNow() {
+    if (socialPushTimer) { clearTimeout(socialPushTimer); socialPushTimer = null; }
+    if (!socialPushPending) return;
+    socialPushPending = false;
+    try {
+      await apiFetch(JSONBIN_SOCIAL_BIN_ID, 'PUT', social);
+      console.log('[brainrot] social flush OK', Object.keys(social).length, 'reels');
+    } catch (e) {
+      console.error('[brainrot] social flush FAILED', e);
+      toast('Save failed — check the JSONBIN_KEY in the HTML');
+      // Re-arm so a future scheduleSocialPush will try again
+      socialPushPending = true;
+    }
   }
+  function scheduleSocialPush() {
+    socialPushPending = true;
+    clearTimeout(socialPushTimer);
+    socialPushTimer = setTimeout(flushSocialNow, 700);
+  }
+  // Force a flush before the page unloads — sendBeacon would be ideal but jsonbin
+  // requires a custom header (X-Master-Key) which sendBeacon can't set.
+  // Instead we force a synchronous-ish push.
+  window.addEventListener('beforeunload', () => {
+    if (socialPushPending) {
+      // navigator.sendBeacon won't work for jsonbin (needs X-Master-Key header),
+      // so we use a regular fetch with keepalive.
+      try {
+        fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_SOCIAL_BIN_ID}`, {
+          method: 'PUT',
+          headers: { 'X-Master-Key': JSONBIN_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify(social),
+          keepalive: true,
+        });
+      } catch (e) {}
+    }
+  });
+  // Also flush when tab is hidden (mobile, tab switch)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && socialPushPending) {
+      flushSocialNow();
+    }
+  });
 
   function getReelSocial(id) {
     if (!social[id]) social[id] = { likes: 0, comments: [] };
@@ -10562,9 +10699,15 @@ setCurrentColor([255, 0, 0]);
   }
   // Default muted (browser autoplay policy requires muted to start)
   let __brGlobalMuted = (localStorage.getItem('brMuted') !== '0');
+  let __brFocusedReelId = null;
 
   function applyVisibility(card, focused) {
     const iframe = card.querySelector('iframe');
+    if (focused) {
+      // Update the side comment panel to point at this reel
+      __brFocusedReelId = card.dataset.reelId;
+      renderSidePanelForFocused();
+    }
     if (!iframe) return;
     // Detect kind from iframe src
     const ytLike = iframe.src.includes('youtube');
@@ -10591,6 +10734,130 @@ setCurrentColor([255, 0, 0]);
       }
     }
   }
+
+  function renderSidePanelForFocused() {
+    const list = document.getElementById('brCmtPanelList');
+    const compose = document.getElementById('brCmtPanelCompose');
+    const meta = document.getElementById('brCmtPanelMeta');
+    if (!list || !compose) return;
+    if (!__brFocusedReelId) {
+      list.innerHTML = '<div class="br-comments-empty">No reel focused.</div>';
+      compose.hidden = true;
+      meta.textContent = 'Scroll to a reel';
+      return;
+    }
+    const s = getReelSocial(__brFocusedReelId);
+    meta.textContent = `${s.comments.length} comment${s.comments.length === 1 ? '' : 's'}`;
+    if (s.comments.length === 0) {
+      list.innerHTML = '<div class="br-comments-empty">No comments yet — be the first.</div>';
+    } else {
+      list.innerHTML = s.comments.map(c => `
+        <div class="br-comment">
+          <div class="br-comment-head">
+            <span class="br-comment-name">${escHtml(c.n || 'anon')}</span>
+            <span class="br-comment-time">${fmtTime(c.t)}</span>
+          </div>
+          <div class="br-comment-body">${escHtml(c.b || '')}${c.gif ? `<img class="br-gif" src="${escHtml(c.gif)}" alt="gif" loading="lazy">` : ''}</div>
+        </div>
+      `).join('');
+      list.scrollTop = list.scrollHeight;
+    }
+    compose.hidden = false;
+    // Sync username field
+    const nameEl = document.getElementById('brCmtPanelName');
+    if (nameEl && !nameEl.value) nameEl.value = brUsername || '';
+  }
+
+  // Wire side-panel send button (once)
+  (function wireSidePanelCompose() {
+    const sendBtn = document.getElementById('brCmtPanelSend');
+    const nameEl  = document.getElementById('brCmtPanelName');
+    const msgEl   = document.getElementById('brCmtPanelMsg');
+    const gifBtn  = document.getElementById('brCmtPanelGifBtn');
+    const gifPicker = document.getElementById('brCmtPanelGifPicker');
+    const gifQuery = document.getElementById('brCmtPanelGifQuery');
+    const gifSearchBtn = document.getElementById('brCmtPanelGifSearch');
+    const gifGrid = document.getElementById('brCmtPanelGifGrid');
+    const gifUrl  = document.getElementById('brCmtPanelGifUrl');
+    if (!sendBtn) return;
+    let selectedGifUrl = null;
+
+    if (nameEl) nameEl.value = brUsername || '';
+    if (nameEl) nameEl.addEventListener('input', () => {
+      brUsername = nameEl.value.slice(0, 24);
+      localStorage.setItem('brUsername', brUsername);
+      localStorage.setItem('chatUsername', brUsername);
+    });
+
+    gifBtn.addEventListener('click', () => {
+      const open = gifPicker.classList.toggle('open');
+      gifBtn.classList.toggle('active', open);
+      if (!open) { selectedGifUrl = null; gifGrid.querySelectorAll('.br-gif-thumb').forEach(t => t.classList.remove('selected')); gifBtn.textContent = 'GIF'; }
+    });
+    async function searchGifs(q) {
+      if (!q.trim()) return;
+      gifGrid.innerHTML = '<div class="br-gif-hint">Searching…</div>';
+      try {
+        const r = await fetch(`https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(q)}&key=${TENOR_KEY}&limit=12&media_filter=gif`);
+        const j = await r.json();
+        if (!j.results || !j.results.length) { gifGrid.innerHTML = '<div class="br-gif-hint">No results</div>'; return; }
+        gifGrid.innerHTML = '';
+        j.results.forEach(result => {
+          const gif = result.media_formats.gif;
+          const tiny = result.media_formats.tinygif || gif;
+          const img = document.createElement('img');
+          img.className = 'br-gif-thumb';
+          img.src = tiny.url;
+          img.dataset.gifUrl = gif.url;
+          img.loading = 'lazy';
+          img.addEventListener('click', () => {
+            gifGrid.querySelectorAll('.br-gif-thumb').forEach(t => t.classList.remove('selected'));
+            img.classList.add('selected');
+            selectedGifUrl = gif.url;
+            gifUrl.value = gif.url;
+            gifBtn.textContent = 'GIF ✓';
+          });
+          gifGrid.appendChild(img);
+        });
+      } catch(e) { gifGrid.innerHTML = '<div class="br-gif-hint">Search failed</div>'; }
+    }
+    gifSearchBtn.addEventListener('click', () => searchGifs(gifQuery.value));
+    gifQuery.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); searchGifs(gifQuery.value); } });
+    gifUrl.addEventListener('input', () => {
+      selectedGifUrl = gifUrl.value.trim() || null;
+      gifBtn.textContent = selectedGifUrl ? 'GIF ✓' : 'GIF';
+    });
+
+    async function postIt() {
+      if (!__brFocusedReelId) { toast('Scroll to a reel first'); return; }
+      const name = (nameEl.value || '').trim();
+      const body = (msgEl.value || '').trim();
+      const g = (gifUrl.value.trim()) || selectedGifUrl || null;
+      if (!name) { toast('Enter a name first'); nameEl.focus(); return; }
+      if (!body && !g) { toast('Say something or pick a GIF'); return; }
+      sendBtn.disabled = true;
+      const s = getReelSocial(__brFocusedReelId);
+      s.comments.push({ n: name.slice(0, 24), b: body.slice(0, 500), gif: g, t: Date.now() });
+      // Push immediately (not just debounced) so reload sees it
+      try { await apiFetch(JSONBIN_SOCIAL_BIN_ID, 'PUT', social); } catch (e) { toast('Save failed — try again'); }
+      msgEl.value = '';
+      gifUrl.value = '';
+      selectedGifUrl = null;
+      gifPicker.classList.remove('open');
+      gifBtn.classList.remove('active');
+      gifBtn.textContent = 'GIF';
+      // Refresh side panel + the focused card's count
+      renderSidePanelForFocused();
+      const focusedCard = feed.querySelector(`.br-card[data-reel-id="${__brFocusedReelId}"]`);
+      if (focusedCard) {
+        const cc = focusedCard.querySelector('.br-comment-count');
+        if (cc) cc.textContent = s.comments.length;
+      }
+      sendBtn.disabled = false;
+    }
+    sendBtn.addEventListener('click', postIt);
+    msgEl.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); postIt(); } });
+  })();
   window.__brVisibilityObserver = new IntersectionObserver((entries) => {
     for (const en of entries) {
       // 55%+ visible = focused. Avoids cross-fade thrashing while scrolling.
