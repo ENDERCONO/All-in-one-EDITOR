@@ -4135,7 +4135,7 @@
               <button class="dl-btn" id="brAdd" style="flex:1">+ Add</button>
               <button class="dl-btn" id="brShuffle" style="flex:1">↻ Shuffle</button>
             </div>
-            <button class="dl-btn" id="brSuggest" style="width:100%; margin-top:6px" title="Submit a reel for everyone (opens a GitHub issue)">🌍 Add to public pool</button>
+            <button class="dl-btn" id="brSuggest" style="width:100%; margin-top:6px" title="Submit a reel for everyone (opens a GitHub issue)">📮 Suggest for public list</button>
           </div>
 
           <div class="br-section">
@@ -9881,13 +9881,11 @@ setCurrentColor([255, 0, 0]);
 );
 
 /* ============================================================
-   BRAINROT — reels feed (localStorage + jsonbin public pool)
+   BRAINROT — Instagram reels feed (localStorage-backed)
    ============================================================ */
 (function setupBrainrot() {
   const STORAGE_KEY = 'brainrotPool';
   const PUBLIC_LIST_URL = 'assets/reels.json'; // optional curated list
-    const JSONBIN_REELS_BIN_ID = '69ef2a33856a682189793467'; // paste your reels bin id here
-  const JSONBIN_REELS_KEY = '$2a$10$MesbOMhiwNyZ2SE1vR8kHOUpnKXj0iauXG1lAtwD7W0aIu6zHMS4u';
   const feed = document.getElementById('brFeed');
   const empty = document.getElementById('brEmpty');
   const submitInput = document.getElementById('brSubmit');
@@ -9904,19 +9902,11 @@ setCurrentColor([255, 0, 0]);
   const LOAD_AHEAD = 3;   // how many cards to mount ahead of viewport
 
   // ---- Storage ----
-  async function loadPool() {
+  function loadPool() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) pool = JSON.parse(raw) || [];
     } catch (e) { pool = []; }
-    const shared = await fetchPublicPool();
-    if (Array.isArray(shared)) {
-      for (const item of shared) {
-        const r = normalizeReel(typeof item === 'string' ? item : item.url);
-        if (r && !pool.some(p => p.id === r.id && p.kind === r.kind)) pool.push(r);
-      }
-    }
-
     // Try to merge with curated list — fail silently if missing
     fetch(PUBLIC_LIST_URL).then(r => r.ok ? r.json() : null).then(list => {
       if (Array.isArray(list)) {
@@ -9930,41 +9920,8 @@ setCurrentColor([255, 0, 0]);
       }
     }).catch(() => {});
   }
-  let reelsSyncTimer = null;
-
   function savePool() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(pool)); } catch (e) {}
-    if (!JSONBIN_REELS_BIN_ID) return;
-    clearTimeout(reelsSyncTimer);
-    reelsSyncTimer = setTimeout(pushPublicPool, 900);
-  }
-
-  async function fetchPublicPool() {
-    if (!JSONBIN_REELS_BIN_ID) return [];
-    try {
-      const r = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_REELS_BIN_ID}/latest`, {
-        headers: { 'X-Master-Key': JSONBIN_REELS_KEY }
-      });
-      if (!r.ok) throw new Error();
-      const j = await r.json();
-      return Array.isArray(j.record) ? j.record : [];
-    } catch (e) {
-      return [];
-    }
-  }
-
-  async function pushPublicPool() {
-    if (!JSONBIN_REELS_BIN_ID) return;
-    try {
-      await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_REELS_BIN_ID}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Master-Key': JSONBIN_REELS_KEY
-        },
-        body: JSON.stringify(pool.slice(0, 1000))
-      });
-    } catch (e) {}
   }
   function refreshCount() {
     countEl.textContent = `${pool.length} reel${pool.length === 1 ? '' : 's'} in pool`;
@@ -10143,20 +10100,15 @@ setCurrentColor([255, 0, 0]);
   });
   shuffleBtn.addEventListener('click', shuffleAndRender);
 
-  // Public pool button
+  // Suggest a reel for the public list — opens a pre-filled GitHub issue.
+  // Set GITHUB_REPO below to "<owner>/<repo>" for your repo, or leave blank to disable.
+  const GITHUB_REPO = ''; // e.g. "username/my-tools"
   const suggestBtn = document.getElementById('brSuggest');
   if (suggestBtn) {
-    suggestBtn.textContent = '🌍 Add to public pool';
-    suggestBtn.title = 'Push your local pool to the shared public list';
-    suggestBtn.addEventListener('click', async () => {
-      if (!JSONBIN_REELS_BIN_ID) {
-        toast('Set JSONBIN_REELS_BIN_ID first');
-        return;
-      }
-      await pushPublicPool();
-      toast('Public pool updated');
-    });
-  }
+    if (!GITHUB_REPO) {
+      suggestBtn.disabled = true;
+      suggestBtn.title = 'Edit GITHUB_REPO in the HTML to enable suggestions';
+    }
     suggestBtn.addEventListener('click', () => {
       if (!GITHUB_REPO) {
         toast('Owner needs to set GITHUB_REPO in the HTML first');
