@@ -1,18 +1,15 @@
 """
-pumpkin_reactor.py
-Watches for new messages from Pumpkin in the DM thread and replies
-with a random message from the pool. Uses Instagram's internal API
-via the browser's existing login session.
+pumpkin_reactor.py - sends a random comment message whenever Pumpkin sends something
 """
-import time, random, json, traceback
+import time, random, json
 from playwright.sync_api import sync_playwright
 
 DM_URL     = "https://www.instagram.com/direct/t/17846556129068988/"
 THREAD_ID  = "17846556129068988"
 DEBUG_PORT = 9222
-CHECK_INTERVAL  = 30   # seconds between checks
-INITIAL_COUNT   = 10   # reply to this many past messages on first run
-SEND_DELAY      = (4, 9)
+CHECK_INTERVAL = 30
+INITIAL_COUNT  = 10
+SEND_DELAY     = (4, 9)
 
 MESSAGES = [
     "lmaooo this is actually hilarious 😭",
@@ -119,219 +116,145 @@ MESSAGES = [
 
 def log(msg): print(f"[bot] {msg}", flush=True)
 
-def get_messages(page, cursor=None):
-    """Fetch thread messages via Instagram's internal API using browser cookies."""
+def api_get_items(page, cursor=None):
     url = f"https://www.instagram.com/api/v1/direct_v2/threads/{THREAD_ID}/?limit=20"
     if cursor:
         url += f"&cursor={cursor}"
     raw = page.evaluate(f"""async () => {{
         try {{
-            const r = await fetch("{url}", {{headers: {{"x-ig-app-id": "936619743392459"}}}});
+            const r = await fetch("{url}", {{headers:{{"x-ig-app-id":"936619743392459"}}}});
             return await r.text();
-        }} catch(e) {{ return "ERR:" + e; }}
+        }} catch(e) {{ return "ERR:"+e; }}
     }}""")
     if not raw or raw.startswith("ERR:"):
-        log(f"  API error: {raw}")
         return [], None
     try:
-        data = json.loads(raw)
-        thread = data.get("thread", {})
-        return thread.get("items", []), thread.get("oldest_cursor")
+        d = json.loads(raw)
+        t = d.get("thread", {})
+        return t.get("items", []), t.get("oldest_cursor")
     except:
-        log(f"  Parse error. Raw: {raw[:200]}")
         return [], None
 
-def get_pumpkin_message_ids(page, limit=20):
-    """Get the last `limit` message IDs sent by pumpkin in the thread."""
-    all_ids = []
-    seen = set()
-    cursor = None
-    for _ in range(15):
-        items, cursor = get_messages(page, cursor)
-        if not items:
-            break
-        for item in items:
-            sender = item.get("user_id") or (item.get("user", {}) or {}).get("pk", "")
-            iid = item.get("item_id", "")
-            itype = item.get("item_type", "")
-            # Include any message from pumpkin that's a reel/media/share
-            # Also accept ALL message types so user can see what comes through
-            if str(sender) and iid and iid not in seen:
-                seen.add(iid)
-                all_ids.append({
-                    "id": iid,
-                    "sender": str(sender),
-                    "type": itype,
-                    "timestamp": item.get("timestamp", 0),
-                })
-        if len(all_ids) >= limit:
-            break
-        if not cursor:
-            break
-        time.sleep(0.8)
-    return all_ids
+def my_user_id(page):
+    uid = page.evaluate("""() => {
+        for (const c of document.cookie.split(';')) {
+            const t = c.trim();
+            if (t.startsWith('ds_user_id=')) return t.split('=')[1];
+        }
+        return null;
+    }""")
+    return str(uid).strip() if uid else None
 
-def send_message(page, text):
-    """Send a text message in the DM thread."""
+def type_and_send(page, text):
+    """Click the message box, type, and hit Enter."""
     try:
-        for sel in ['div[aria-label="Message"]', 'div[role="textbox"]', 'p[data-lexical-editor="true"]']:
-            els = page.locator(sel)
-            if els.count() > 0:
-                box = els.last
+        for sel in ['div[aria-label="Message"]', 'div[role="textbox"]']:
+            if page.locator(sel).count() > 0:
+                box = page.locator(sel).last
                 box.click()
                 time.sleep(0.3)
-                box.fill(text)
-                time.sleep(0.5)
+                # Use keyboard typing so emojis work
+                page.keyboard.type(text)
+                time.sleep(0.4)
                 page.keyboard.press("Enter")
-                log(f"  ✓ Sent: {text[:70]}...")
+                log(f"  ✓ {text[:70]}")
                 time.sleep(random.uniform(*SEND_DELAY))
                 return True
         log("  ✗ Message box not found")
         return False
     except Exception as e:
-        log(f"  ✗ Send error: {e}")
+        log(f"  ✗ {e}")
         return False
 
-def connect_with_retry(p, retries=5, wait=4):
-    for attempt in range(1, retries + 1):
-        try:
-            log(f"  Connection attempt {attempt}/{retries}...")
-            browser = p.chromium.connect_over_cdp(
-                f"http://localhost:{DEBUG_PORT}",
-                timeout=15000
-            )
-            return browser
-        except Exception as e:
-            log(f"  Failed: {e}")
-            if attempt < retries:
-                log(f"  Waiting {wait}s before retry...")
-                time.sleep(wait)
-    return None
-
 def main():
-    log("🎃 Pumpkin Reactor starting...")
-    log(f"Connecting to Opera GX on localhost:{DEBUG_PORT}...")
-    log("(Make sure you ran launch_opera.bat first and saw 'DEBUG PORT IS OPEN')")
-
+    log("🎃 Starting...")
     with sync_playwright() as p:
-        browser = connect_with_retry(p)
-        if not browser:
-            log("✗ Could not connect after all retries.")
-            log("  Steps to fix:")
-            log("  1. Close Opera GX completely (check system tray)")
-            log("  2. Run launch_opera.bat")
-            log("  3. Wait until you see 'SUCCESS: Debug port is open!'")
-            log("  4. Run this exe")
-            input("\nPress Enter to exit..."); return
+        # Retry connection a few times
+        browser = None
+        for attempt in range(6):
+            try:
+                log(f"Connecting to Opera GX (attempt {attempt+1}/6)...")
+                browser = p.chromium.connect_over_cdp(f"http://localhost:{DEBUG_PORT}", timeout=10000)
+                break
+            except Exception as e:
+                log(f"  Failed: {e}")
+                if attempt < 5: time.sleep(3)
 
-        log("✓ Connected to Opera GX!")
+        if not browser:
+            log("✗ Could not connect. Run launch_opera.bat first and wait for 'SUCCESS'.")
+            input("Press Enter to exit..."); return
+
+        log("✓ Connected!")
         context = browser.contexts[0]
 
         page = next((pg for pg in context.pages if "instagram.com" in pg.url), None)
-        if page is None:
+        if not page:
             page = context.new_page()
 
         page.bring_to_front()
-        log("Opening DM thread...")
         page.goto(DM_URL, wait_until="domcontentloaded")
         time.sleep(5)
 
-        if "login" in page.url or page.locator('input[name="username"]').count() > 0:
-            log("⚠  Please log in to Instagram in the browser (2 min)...")
-            try:
-                page.wait_for_url("https://www.instagram.com/**", timeout=120_000)
-                time.sleep(3)
-                page.goto(DM_URL, wait_until="domcontentloaded")
-                time.sleep(4)
-            except:
-                log("✗ Login timed out."); return
+        # Get my ID so we only reply to Pumpkin's messages, not our own
+        me = my_user_id(page)
+        log(f"My user ID: {me}")
 
-        # ── Figure out who Pumpkin is (get her user ID) ───────────────────
-        log("Loading thread info to identify Pumpkin's user ID...")
-        items, _ = get_messages(page)
+        # Load recent messages
+        items, _ = api_get_items(page)
         if not items:
-            log("⚠  Could not load messages. Are you logged in to Instagram in Opera GX?")
+            log("✗ Could not load messages. Make sure you're logged in to Instagram in Opera GX.")
             input("Press Enter to exit..."); return
 
-        # Find pumpkin's user_id (anyone who isn't us — the last sender)
-        sender_ids = set()
-        for item in items:
-            uid = str(item.get("user_id", ""))
-            if uid:
-                sender_ids.add(uid)
-        log(f"Sender IDs in thread: {sender_ids}")
+        log(f"Loaded {len(items)} recent messages.")
 
-        # Get my own user ID (the one that sent the most recent message or from whoami)
-        my_id_raw = page.evaluate("""() => {
-            try {
-                const cookies = document.cookie.split(';');
-                for (const c of cookies) {
-                    if (c.trim().startsWith('ds_user_id=')) return c.trim().split('=')[1];
-                }
-            } catch(e) {}
-            return null;
-        }""")
-        my_id = str(my_id_raw).strip() if my_id_raw else None
-        log(f"My user ID from cookie: {my_id}")
+        # Collect last INITIAL_COUNT messages NOT from me
+        reacted = set()
+        to_reply = []
+        cursor = None
+        all_items = list(items)
 
-        pumpkin_id = None
-        for uid in sender_ids:
-            if uid != my_id:
-                pumpkin_id = uid
-                break
+        # Page back until we have enough
+        while len([x for x in all_items if str(x.get("user_id","")) != me]) < INITIAL_COUNT:
+            _, cursor = api_get_items(page, cursor)  # get cursor from first call
+            break  # one page is enough for now
 
-        if not pumpkin_id:
-            log("⚠  Could not detect Pumpkin's user ID. Will react to ALL messages.")
-        else:
-            log(f"✓ Pumpkin's user ID: {pumpkin_id}")
+        for item in all_items:
+            if str(item.get("user_id", "")) != me:
+                to_reply.append(item.get("item_id"))
 
-        # ── Initial pass: react to last N messages ────────────────────────
-        log(f"\nLoading last {INITIAL_COUNT} messages to react to...")
-        all_msgs = get_pumpkin_message_ids(page, limit=50)
+        to_reply = [x for x in to_reply if x][:INITIAL_COUNT]
+        log(f"Replying to last {len(to_reply)} message(s) from Pumpkin...")
 
-        # Filter to only pumpkin's messages if we know her ID
-        if pumpkin_id:
-            pumpkin_msgs = [m for m in all_msgs if m["sender"] == pumpkin_id]
-        else:
-            pumpkin_msgs = all_msgs
+        for iid in to_reply:
+            log(f"  → message {iid}")
+            if type_and_send(page, random.choice(MESSAGES)):
+                reacted.add(iid)
 
-        log(f"Found {len(pumpkin_msgs)} message(s) from Pumpkin.")
-        log(f"Message types: {set(m['type'] for m in pumpkin_msgs)}")
+        log(f"✓ Done. Sent {len(reacted)} replies.")
+        log(f"Watching for new messages every {CHECK_INTERVAL}s... (Ctrl+C to stop)")
 
-        reacted_ids = set()
-        targets = pumpkin_msgs[:INITIAL_COUNT]
-
-        for msg in targets:
-            log(f"Reacting to message {msg['id']} (type: {msg['type']})")
-            if send_message(page, random.choice(MESSAGES)):
-                reacted_ids.add(msg["id"])
-
-        log(f"\n✓ Done — reacted to {len(reacted_ids)} message(s).")
-        log(f"Watching for new messages every {CHECK_INTERVAL}s... (Ctrl+C to stop)\n")
-
-        # ── Watch loop ─────────────────────────────────────────────────────
         while True:
             time.sleep(CHECK_INTERVAL)
             try:
-                items, _ = get_messages(page)
-                new_count = 0
-                for item in items:
-                    uid = str(item.get("user_id", ""))
+                new_items, _ = api_get_items(page)
+                sent = 0
+                for item in new_items:
                     iid = item.get("item_id", "")
-                    if not iid or iid in reacted_ids:
+                    if not iid or iid in reacted:
                         continue
-                    if pumpkin_id and uid != pumpkin_id:
+                    if str(item.get("user_id", "")) == me:
+                        reacted.add(iid)  # skip our own messages silently
                         continue
-                    log(f"🆕 New message from Pumpkin! (type={item.get('item_type')}) Reacting...")
-                    if send_message(page, random.choice(MESSAGES)):
-                        reacted_ids.add(iid)
-                        new_count += 1
-                if new_count == 0:
-                    log("No new messages. Still watching...")
+                    log(f"🆕 New message from Pumpkin!")
+                    if type_and_send(page, random.choice(MESSAGES)):
+                        reacted.add(iid)
+                        sent += 1
+                if sent == 0:
+                    log("No new messages. Watching...")
             except KeyboardInterrupt:
                 log("Stopped. Bye! 🎃"); break
             except Exception as e:
-                log(f"Watch error: {e}")
+                log(f"Error: {e}")
 
 if __name__ == "__main__":
     main()
