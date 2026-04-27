@@ -4135,7 +4135,7 @@
               <button class="dl-btn" id="brAdd" style="flex:1">+ Add</button>
               <button class="dl-btn" id="brShuffle" style="flex:1">↻ Shuffle</button>
             </div>
-            <button class="dl-btn" id="brSuggest" style="width:100%; margin-top:6px" title="Submit a reel for everyone (opens a GitHub issue)">🌍 Add to public pool</button>
+            <button class="dl-btn" id="brSuggest" style="width:100%; margin-top:6px" title="Submit a reel for everyone (opens a GitHub issue)">📮 Suggest for public list</button>
           </div>
 
           <div class="br-section">
@@ -9881,13 +9881,19 @@ setCurrentColor([255, 0, 0]);
 );
 
 /* ============================================================
-   BRAINROT — reels feed (localStorage + jsonbin public pool)
+   BRAINROT — reels feed (localStorage + optional jsonbin public pool)
    ============================================================ */
 (function setupBrainrot() {
   const STORAGE_KEY = 'brainrotPool';
   const PUBLIC_LIST_URL = 'assets/reels.json'; // optional curated list
-    const JSONBIN_REELS_BIN_ID = '69ef2a33856a682189793467'; // paste your reels bin id here
+
+  // ---- jsonbin config (optional shared pool) ----
+  // Set these to enable a shared public pool via jsonbin.io.
+  // Leave JSONBIN_REELS_BIN_ID blank to disable (local-only mode).
+  const JSONBIN_REELS_BIN_ID = '69ef2a33856a682189793467';
   const JSONBIN_REELS_KEY = '$2a$10$MesbOMhiwNyZ2SE1vR8kHOUpnKXj0iauXG1lAtwD7W0aIu6zHMS4u';
+  // ---- end config ----
+
   const feed = document.getElementById('brFeed');
   const empty = document.getElementById('brEmpty');
   const submitInput = document.getElementById('brSubmit');
@@ -9903,68 +9909,72 @@ setCurrentColor([255, 0, 0]);
   let cursor = 0;         // how many cards have been mounted
   const LOAD_AHEAD = 3;   // how many cards to mount ahead of viewport
 
-  // ---- Storage ----
-  async function loadPool() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) pool = JSON.parse(raw) || [];
-    } catch (e) { pool = []; }
-    const shared = await fetchPublicPool();
-    if (Array.isArray(shared)) {
-      for (const item of shared) {
-        const r = normalizeReel(typeof item === 'string' ? item : item.url);
-        if (r && !pool.some(p => p.id === r.id && p.kind === r.kind)) pool.push(r);
-      }
-    }
-
-    // Try to merge with curated list — fail silently if missing
-    fetch(PUBLIC_LIST_URL).then(r => r.ok ? r.json() : null).then(list => {
-      if (Array.isArray(list)) {
-        for (const url of list) {
-          const r = normalizeReel(typeof url === 'string' ? url : url.url);
-          if (r && !pool.some(p => p.id === r.id && p.kind === r.kind)) pool.push(r);
-        }
-        savePool();
-        refreshCount();
-        if (pool.length && cursor === 0) shuffleAndRender();
-      }
-    }).catch(() => {});
-  }
-  let reelsSyncTimer = null;
-
-  function savePool() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(pool)); } catch (e) {}
-    if (!JSONBIN_REELS_BIN_ID) return;
-    clearTimeout(reelsSyncTimer);
-    reelsSyncTimer = setTimeout(pushPublicPool, 900);
-  }
-
+  // ---- jsonbin helpers ----
   async function fetchPublicPool() {
     if (!JSONBIN_REELS_BIN_ID) return [];
     try {
       const r = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_REELS_BIN_ID}/latest`, {
         headers: { 'X-Master-Key': JSONBIN_REELS_KEY }
       });
-      if (!r.ok) throw new Error();
+      if (!r.ok) return [];
       const j = await r.json();
       return Array.isArray(j.record) ? j.record : [];
-    } catch (e) {
-      return [];
-    }
+    } catch (e) { return []; }
   }
 
-  async function pushPublicPool() {
+  let reelsSyncTimer = null;
+  function schedulePushPublicPool() {
     if (!JSONBIN_REELS_BIN_ID) return;
+    clearTimeout(reelsSyncTimer);
+    reelsSyncTimer = setTimeout(async () => {
+      try {
+        await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_REELS_BIN_ID}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_REELS_KEY },
+          body: JSON.stringify(pool.slice(0, 1000))
+        });
+      } catch (e) {}
+    }, 900);
+  }
+
+  // ---- Storage ----
+  async function loadPool() {
+    // 1. Load local
     try {
-      await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_REELS_BIN_ID}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Master-Key': JSONBIN_REELS_KEY
-        },
-        body: JSON.stringify(pool.slice(0, 1000))
-      });
-    } catch (e) {}
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) pool = JSON.parse(raw) || [];
+    } catch (e) { pool = []; }
+
+    // 2. Merge shared jsonbin pool
+    const shared = await fetchPublicPool();
+    let mergedFromJsonbin = 0;
+    if (Array.isArray(shared)) {
+      for (const item of shared) {
+        const r = normalizeReel(typeof item === 'string' ? item : item.url);
+        if (r && !pool.some(p => p.id === r.id && p.kind === r.kind)) {
+          pool.push(r);
+          mergedFromJsonbin++;
+        }
+      }
+    }
+    if (mergedFromJsonbin > 0) { savePool(); refreshCount(); }
+    if (pool.length && cursor === 0) shuffleAndRender();
+
+    // 3. Merge static curated list (assets/reels.json) — fail silently
+    fetch(PUBLIC_LIST_URL).then(r => r.ok ? r.json() : null).then(list => {
+      if (!Array.isArray(list)) return;
+      let added = 0;
+      for (const url of list) {
+        const r = normalizeReel(typeof url === 'string' ? url : url.url);
+        if (r && !pool.some(p => p.id === r.id && p.kind === r.kind)) { pool.push(r); added++; }
+      }
+      if (added) { savePool(); refreshCount(); if (pool.length && cursor === 0) shuffleAndRender(); }
+    }).catch(() => {});
+  }
+
+  function savePool() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(pool)); } catch (e) {}
+    schedulePushPublicPool();
   }
   function refreshCount() {
     countEl.textContent = `${pool.length} reel${pool.length === 1 ? '' : 's'} in pool`;
@@ -10143,34 +10153,31 @@ setCurrentColor([255, 0, 0]);
   });
   shuffleBtn.addEventListener('click', shuffleAndRender);
 
-  // Public pool button
+  // "Add to public pool" button — pushes current local pool to jsonbin.
   const suggestBtn = document.getElementById('brSuggest');
   if (suggestBtn) {
-    suggestBtn.textContent = '🌍 Add to public pool';
-    suggestBtn.title = 'Push your local pool to the shared public list';
-    suggestBtn.addEventListener('click', async () => {
-      if (!JSONBIN_REELS_BIN_ID) {
-        toast('Set JSONBIN_REELS_BIN_ID first');
-        return;
-      }
-      await pushPublicPool();
-      toast('Public pool updated');
-    });
-  }
-    suggestBtn.addEventListener('click', () => {
-      if (!GITHUB_REPO) {
-        toast('Owner needs to set GITHUB_REPO in the HTML first');
-        return;
-      }
-      const url = (submitInput.value || '').trim();
-      const reel = url ? normalizeReel(url) : null;
-      const title = reel ? `Reel suggestion: ${reel.kind === 'yt' ? 'YouTube' : 'TikTok'} · ${reel.id}` : 'Reel suggestion';
-      const body = reel
-        ? `Please add this to the public reels pool:\n\n${reel.url}\n\nPlatform: ${reel.kind === 'yt' ? 'YouTube' : 'TikTok'}`
-        : 'Paste a YouTube or TikTok URL above before clicking Suggest, or write it here:\n\n<URL>';
-      const issueUrl = `https://github.com/${GITHUB_REPO}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}&labels=reel-suggestion`;
-      window.open(issueUrl, '_blank', 'noopener');
-    });
+    if (!JSONBIN_REELS_BIN_ID) {
+      suggestBtn.disabled = true;
+      suggestBtn.title = 'Set JSONBIN_REELS_BIN_ID in the HTML to enable';
+    } else {
+      suggestBtn.textContent = '🌍 Add to public pool';
+      suggestBtn.title = 'Push your local pool to the shared public list';
+      suggestBtn.addEventListener('click', async () => {
+        suggestBtn.disabled = true;
+        try {
+          await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_REELS_BIN_ID}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_REELS_KEY },
+            body: JSON.stringify(pool.slice(0, 1000))
+          });
+          toast('Public pool updated \u2713');
+        } catch (e) {
+          toast('Failed to push pool \u2014 check your connection');
+        } finally {
+          suggestBtn.disabled = false;
+        }
+      });
+    }
   }
 
   exportBtn.addEventListener('click', () => {
