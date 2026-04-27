@@ -2280,7 +2280,7 @@
   }
 
   /* =====================================================
-     Brainrot: Instagram reels feed (left/center) + settings (right)
+     Brainrot: feed + sidebar + likes/comments
      ===================================================== */
   .brainrot-wrap {
     display: grid;
@@ -2400,18 +2400,6 @@
     border: 0;
     background: #000;
   }
-  .br-card .br-fallback {
-    text-align: center;
-    padding: 40px 20px;
-    color: var(--text-dim);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    line-height: 1.6;
-  }
-  .br-card .br-fallback a {
-    color: var(--accent);
-    word-break: break-all;
-  }
   .br-card .br-meta {
     position: absolute;
     top: 8px;
@@ -2424,27 +2412,12 @@
     border-radius: 4px;
     letter-spacing: 0.04em;
     pointer-events: none;
+    z-index: 6;
   }
-  .br-card .br-remove {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    background: rgba(0,0,0,0.6);
-    color: #fff;
-    border: 1px solid rgba(255,255,255,0.2);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    cursor: pointer;
-    z-index: 5;
-  }
-  .br-card .br-remove:hover { background: #ef5350; }
   .br-card .br-open {
     position: absolute;
     top: 8px;
-    right: 44px;
+    right: 8px;
     background: rgba(0,0,0,0.6);
     color: #fff;
     border: 1px solid rgba(255,255,255,0.2);
@@ -2455,13 +2428,304 @@
     height: 28px;
     border-radius: 50%;
     cursor: pointer;
-    z-index: 5;
+    z-index: 6;
     display: grid;
     place-items: center;
   }
   .br-card .br-open:hover { background: var(--accent); color: #000; }
 
-  /* Instagram poster card (clickable, opens in new tab) */
+  /* Right-side action strip (like + comment buttons) */
+  .br-actions {
+    position: absolute;
+    right: 10px;
+    bottom: 80px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    z-index: 6;
+  }
+  .br-action-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    background: rgba(0,0,0,0.55);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 50px;
+    padding: 10px 10px 8px;
+    cursor: pointer;
+    transition: all 0.18s;
+    color: #fff;
+    min-width: 44px;
+  }
+  .br-action-btn:hover { background: rgba(255,255,255,0.18); }
+  .br-action-btn .br-ab-icon {
+    font-size: 22px;
+    line-height: 1;
+    transition: transform 0.2s;
+  }
+  .br-action-btn .br-ab-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .br-action-btn.liked { border-color: #ff3b5c; background: rgba(255,59,92,0.3); }
+  .br-action-btn.liked .br-ab-icon { transform: scale(1.25); }
+  .br-action-btn.liked .br-ab-count { color: #ff6b85; }
+
+  /* Comments drawer — slides up from the bottom of the card */
+  .br-comments-drawer {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 72%;
+    background: rgba(10,10,14,0.97);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-top: 1px solid rgba(255,255,255,0.1);
+    border-radius: 20px 20px 0 0;
+    display: flex;
+    flex-direction: column;
+    z-index: 20;
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .br-comments-drawer.open { transform: translateY(0); }
+  .br-drawer-handle {
+    width: 36px; height: 4px;
+    background: rgba(255,255,255,0.22);
+    border-radius: 2px;
+    margin: 10px auto 0;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .br-drawer-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px 8px;
+    flex-shrink: 0;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+  }
+  .br-drawer-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.7);
+  }
+  .br-drawer-close {
+    background: transparent;
+    border: none;
+    color: rgba(255,255,255,0.5);
+    font-size: 18px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+  }
+  .br-drawer-close:hover { color: #fff; }
+  .br-comments-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .br-comment {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .br-comment-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .br-comment-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.03em;
+  }
+  .br-comment-time {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: rgba(255,255,255,0.3);
+  }
+  .br-comment-body {
+    font-size: 13px;
+    color: rgba(255,255,255,0.88);
+    line-height: 1.45;
+    word-break: break-word;
+  }
+  .br-comment-body img.br-gif {
+    display: block;
+    max-width: 200px;
+    max-height: 150px;
+    border-radius: 8px;
+    margin-top: 4px;
+    object-fit: cover;
+  }
+  .br-comments-empty {
+    text-align: center;
+    padding: 32px 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: rgba(255,255,255,0.25);
+    letter-spacing: 0.04em;
+  }
+  /* Compose row */
+  .br-compose {
+    padding: 10px 12px;
+    border-top: 1px solid rgba(255,255,255,0.07);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .br-compose-name-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .br-compose-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    color: rgba(255,255,255,0.35);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .br-compose input, .br-compose textarea {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px;
+    color: #fff;
+    font-family: 'Manrope', sans-serif;
+    font-size: 12px;
+    padding: 8px 10px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .br-compose input:focus, .br-compose textarea:focus {
+    border-color: rgba(255,255,255,0.35);
+  }
+  .br-compose input.br-name-input { flex: 1; }
+  .br-compose textarea {
+    width: 100%;
+    resize: none;
+    min-height: 40px;
+    max-height: 90px;
+  }
+  .br-compose-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .br-gif-btn {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.14);
+    color: rgba(255,255,255,0.7);
+    border-radius: 8px;
+    padding: 7px 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+  .br-gif-btn:hover { background: rgba(255,255,255,0.14); color: #fff; }
+  .br-gif-btn.active { background: rgba(77,139,255,0.25); border-color: rgba(77,139,255,0.5); color: #9cdfff; }
+  .br-send-btn {
+    flex: 1;
+    background: linear-gradient(135deg, rgba(255,59,92,0.8), rgba(255,100,120,0.7));
+    border: 1px solid rgba(255,59,92,0.5);
+    color: #fff;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-family: 'Manrope', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .br-send-btn:hover { background: linear-gradient(135deg, rgba(255,59,92,1), rgba(255,100,120,0.9)); transform: translateY(-1px); }
+  .br-send-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+  /* GIF picker panel */
+  .br-gif-picker {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    padding: 8px;
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .br-gif-picker.open { display: flex; }
+  .br-gif-search-row {
+    display: flex;
+    gap: 6px;
+  }
+  .br-gif-search-row input {
+    flex: 1;
+  }
+  .br-gif-search-btn {
+    background: rgba(77,139,255,0.25);
+    border: 1px solid rgba(77,139,255,0.4);
+    color: #9cdfff;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  .br-gif-search-btn:hover { background: rgba(77,139,255,0.4); }
+  .br-gif-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 5px;
+    max-height: 140px;
+    overflow-y: auto;
+  }
+  .br-gif-thumb {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+    border: 2px solid transparent;
+  }
+  .br-gif-thumb:hover { transform: scale(1.05); }
+  .br-gif-thumb.selected { border-color: #4d8bff; box-shadow: 0 0 0 2px rgba(77,139,255,0.4); }
+  .br-gif-hint {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    color: rgba(255,255,255,0.25);
+    text-align: center;
+    padding: 8px;
+  }
+  .br-gif-paste-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .br-gif-paste-row .br-compose-label { white-space: nowrap; }
+  .br-gif-paste-row input { flex: 1; }
+
+  /* poster card (TikTok short) */
   .br-card .br-poster {
     display: block;
     width: 100%;
@@ -2472,59 +2736,29 @@
     background: #000;
     overflow: hidden;
   }
-  .br-card .br-poster-img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    display: block;
-    background: #0a0a0a;
-  }
-  .br-card .br-poster.no-poster {
-    background: linear-gradient(135deg, #2a0e3f, #410d3a);
-  }
+  .br-card .br-poster.no-poster { background: linear-gradient(135deg, #2a0e3f, #410d3a); }
   .br-card .br-poster.no-poster .br-poster-img { display: none; }
+  .br-card .br-poster-img { width: 100%; height: 100%; object-fit: contain; display: block; background: #0a0a0a; }
   .br-card .br-play-overlay {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
     background: linear-gradient(to bottom, transparent, rgba(0,0,0,0.4) 70%);
     transition: background 0.18s;
   }
-  .br-card .br-poster:hover .br-play-overlay {
-    background: linear-gradient(to bottom, rgba(0,0,0,0.2), rgba(0,0,0,0.55) 70%);
-  }
+  .br-card .br-poster:hover .br-play-overlay { background: linear-gradient(to bottom, rgba(0,0,0,0.2), rgba(0,0,0,0.55) 70%); }
   .br-card .br-play-icon {
-    width: 72px;
-    height: 72px;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.95);
-    color: #000;
-    display: grid;
-    place-items: center;
+    width: 72px; height: 72px; border-radius: 50%;
+    background: rgba(255,255,255,0.95); color: #000;
+    display: grid; place-items: center;
     box-shadow: 0 8px 32px rgba(0,0,0,0.5);
     transition: transform 0.18s;
   }
-  .br-card .br-poster:hover .br-play-icon {
-    transform: scale(1.1);
-  }
-  .br-card .br-play-icon svg {
-    width: 36px;
-    height: 36px;
-    margin-left: 4px; /* nudge play triangle visually centered */
-  }
+  .br-card .br-poster:hover .br-play-icon { transform: scale(1.1); }
+  .br-card .br-play-icon svg { width: 36px; height: 36px; margin-left: 4px; }
   .br-card .br-play-label {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: #fff;
-    background: rgba(0,0,0,0.6);
-    padding: 6px 14px;
-    border-radius: 999px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #fff;
+    background: rgba(0,0,0,0.6); padding: 6px 14px; border-radius: 999px;
+    letter-spacing: 0.06em; text-transform: uppercase;
   }
 
   /* =====================================================
@@ -4118,40 +4352,27 @@
       <div class="brainrot-feed" id="brFeed">
         <div class="brainrot-empty" id="brEmpty">
           <div style="font-size:60px; opacity:0.3">🧠</div>
-          <p>No reels in your pool yet — paste an Instagram URL on the right to start.</p>
+          <p>Loading pool…</p>
         </div>
       </div>
 
-      <!-- Right: controls / pool management -->
+      <!-- Right: controls -->
       <aside class="brainrot-side">
         <div class="brainrot-toolbar">
           <h2 class="brainrot-title">Brainrot</h2>
-          <span class="br-count" id="brCount">0 reels in pool</span>
+          <span class="br-count" id="brCount">Loading…</span>
 
           <div class="br-section">
-            <div class="br-section-title">Add reel</div>
+            <div class="br-section-title">Add to pool</div>
             <input type="text" id="brSubmit" class="color-input" placeholder="Paste YouTube or TikTok URL...">
             <div class="brainrot-actions">
               <button class="dl-btn" id="brAdd" style="flex:1">+ Add</button>
               <button class="dl-btn" id="brShuffle" style="flex:1">↻ Shuffle</button>
             </div>
-            <button class="dl-btn" id="brSuggest" style="width:100%; margin-top:6px" title="Submit a reel for everyone (opens a GitHub issue)">📮 Suggest for public list</button>
-          </div>
-
-          <div class="br-section">
-            <div class="br-section-title">Pool</div>
-            <div class="brainrot-actions">
-              <button class="dl-btn" id="brExport">Export</button>
-              <label class="dl-btn" style="cursor:pointer">
-                Import
-                <input type="file" accept="application/json,.json" id="brImportFile" style="display:none">
-              </label>
-              <button class="dl-btn danger" id="brClear">Clear</button>
-            </div>
           </div>
 
           <div class="brainrot-hint">
-            Supports <strong>YouTube</strong> (videos + Shorts) and <strong>TikTok</strong> — both play inline. Pool persists in this browser only. Export to share, import to merge.
+            Supports <strong>YouTube</strong> (videos + Shorts) and <strong>TikTok</strong> — both play inline. Added reels go into the shared public pool for everyone.
           </div>
         </div>
       </aside>
@@ -9881,113 +10102,86 @@ setCurrentColor([255, 0, 0]);
 );
 
 /* ============================================================
-   BRAINROT — reels feed (localStorage + optional jsonbin public pool)
+   BRAINROT — reels feed + likes + comments + GIFs
+   All social data lives in a separate jsonbin (JSONBIN_SOCIAL_BIN_ID).
+   Structure: { "reelId": { likes: 0, comments: [{n,b,gif,t}] } }
    ============================================================ */
 (function setupBrainrot() {
-  const STORAGE_KEY = 'brainrotPool';
-  const PUBLIC_LIST_URL = 'assets/reels.json'; // optional curated list
-
-  // ---- jsonbin config (optional shared pool) ----
-  // Set these to enable a shared public pool via jsonbin.io.
-  // Leave JSONBIN_REELS_BIN_ID blank to disable (local-only mode).
+  // Pool bin (list of reel URLs)
   const JSONBIN_REELS_BIN_ID = '69ef2a33856a682189793467';
-  const JSONBIN_REELS_KEY = '$2a$10$MesbOMhiwNyZ2SE1vR8kHOUpnKXj0iauXG1lAtwD7W0aIu6zHMS4u';
-  // ---- end config ----
+  // Social bin (likes + comments per reel)
+  const JSONBIN_SOCIAL_BIN_ID = '6836f8f28a456b796691572e';
+  const JSONBIN_KEY = '$2a$10$MesbOMhiwNyZ2SE1vR8kHOUpnKXj0iauXG1lAtwD7W0aIu6zHMS4u';
+  // Tenor API key (free, for GIF search)
+  const TENOR_KEY = 'AIzaSyB-eRMNv9LqSXarC_HE2-Q9NJ2x4e6f1WQ';
 
   const feed = document.getElementById('brFeed');
   const empty = document.getElementById('brEmpty');
   const submitInput = document.getElementById('brSubmit');
   const addBtn = document.getElementById('brAdd');
   const shuffleBtn = document.getElementById('brShuffle');
-  const exportBtn = document.getElementById('brExport');
-  const importInput = document.getElementById('brImportFile');
-  const clearBtn = document.getElementById('brClear');
   const countEl = document.getElementById('brCount');
 
-  let pool = [];          // array of normalized reel objects: {id, url}
-  let order = [];         // shuffled indices into pool
-  let cursor = 0;         // how many cards have been mounted
-  const LOAD_AHEAD = 3;   // how many cards to mount ahead of viewport
+  let pool = [];
+  let order = [];
+  let cursor = 0;
+  const LOAD_AHEAD = 3;
 
-  // ---- jsonbin helpers ----
-  async function fetchPublicPool() {
-    if (!JSONBIN_REELS_BIN_ID) return [];
-    try {
-      const r = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_REELS_BIN_ID}/latest`, {
-        headers: { 'X-Master-Key': JSONBIN_REELS_KEY }
-      });
-      if (!r.ok) return [];
-      const j = await r.json();
-      return Array.isArray(j.record) ? j.record : [];
-    } catch (e) { return []; }
+  // social: { [reelId]: { likes: number, comments: [{n,b,gif,t}] } }
+  let social = {};
+  // liked set (localStorage — per-browser, one like per reel)
+  let likedSet = new Set(JSON.parse(localStorage.getItem('brLiked') || '[]'));
+  function saveLiked() { try { localStorage.setItem('brLiked', JSON.stringify([...likedSet])); } catch(e) {} }
+
+  // Username (shared with chat)
+  let brUsername = localStorage.getItem('chatUsername') || localStorage.getItem('brUsername') || '';
+
+  // ===================== jsonbin helpers =====================
+  async function apiFetch(binId, method = 'GET', body = null) {
+    const opts = { method: method === 'GET' ? 'GET' : 'PUT',
+      headers: { 'X-Master-Key': JSONBIN_KEY, ...(body ? { 'Content-Type': 'application/json' } : {}) } };
+    if (body) opts.body = JSON.stringify(body);
+    const url = method === 'GET'
+      ? `https://api.jsonbin.io/v3/b/${binId}/latest`
+      : `https://api.jsonbin.io/v3/b/${binId}`;
+    const r = await fetch(url, opts);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return (await r.json()).record;
   }
 
-  let reelsSyncTimer = null;
-  function schedulePushPublicPool() {
-    if (!JSONBIN_REELS_BIN_ID) return;
-    clearTimeout(reelsSyncTimer);
-    reelsSyncTimer = setTimeout(async () => {
-      try {
-        await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_REELS_BIN_ID}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_REELS_KEY },
-          body: JSON.stringify(pool.slice(0, 1000))
-        });
-      } catch (e) {}
+  async function fetchPool() {
+    try { return await apiFetch(JSONBIN_REELS_BIN_ID); } catch(e) { return []; }
+  }
+  async function fetchSocial() {
+    try { const d = await apiFetch(JSONBIN_SOCIAL_BIN_ID); return (d && typeof d === 'object' && !Array.isArray(d)) ? d : {}; }
+    catch(e) { return {}; }
+  }
+
+  let poolPushTimer = null;
+  function schedulePoolPush() {
+    clearTimeout(poolPushTimer);
+    poolPushTimer = setTimeout(async () => {
+      try { await apiFetch(JSONBIN_REELS_BIN_ID, 'PUT', pool.slice(0, 1000)); } catch(e) {}
     }, 900);
   }
 
-  // ---- Storage ----
-  async function loadPool() {
-    // 1. Load local
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) pool = JSON.parse(raw) || [];
-    } catch (e) { pool = []; }
-
-    // 2. Merge shared jsonbin pool
-    const shared = await fetchPublicPool();
-    let mergedFromJsonbin = 0;
-    if (Array.isArray(shared)) {
-      for (const item of shared) {
-        const r = normalizeReel(typeof item === 'string' ? item : item.url);
-        if (r && !pool.some(p => p.id === r.id && p.kind === r.kind)) {
-          pool.push(r);
-          mergedFromJsonbin++;
-        }
-      }
-    }
-    if (mergedFromJsonbin > 0) { savePool(); refreshCount(); }
-    if (pool.length && cursor === 0) shuffleAndRender();
-
-    // 3. Merge static curated list (assets/reels.json) — fail silently
-    fetch(PUBLIC_LIST_URL).then(r => r.ok ? r.json() : null).then(list => {
-      if (!Array.isArray(list)) return;
-      let added = 0;
-      for (const url of list) {
-        const r = normalizeReel(typeof url === 'string' ? url : url.url);
-        if (r && !pool.some(p => p.id === r.id && p.kind === r.kind)) { pool.push(r); added++; }
-      }
-      if (added) { savePool(); refreshCount(); if (pool.length && cursor === 0) shuffleAndRender(); }
-    }).catch(() => {});
+  let socialPushTimer = null;
+  function scheduleSocialPush() {
+    clearTimeout(socialPushTimer);
+    socialPushTimer = setTimeout(async () => {
+      try { await apiFetch(JSONBIN_SOCIAL_BIN_ID, 'PUT', social); } catch(e) {}
+    }, 700);
   }
 
-  function savePool() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(pool)); } catch (e) {}
-    schedulePushPublicPool();
-  }
-  function refreshCount() {
-    countEl.textContent = `${pool.length} reel${pool.length === 1 ? '' : 's'} in pool`;
+  function getReelSocial(id) {
+    if (!social[id]) social[id] = { likes: 0, comments: [] };
+    return social[id];
   }
 
-  // ---- URL normalization ----
-  // Accepts YouTube (full, short, /shorts/, /embed/) and TikTok (full + vm.tiktok.com short links).
-  // Returns {kind: 'yt'|'tt', id, url, author?} or null.
+  // ===================== URL normalization =====================
   function normalizeReel(url) {
     if (!url || typeof url !== 'string') return null;
-    url = url.trim();
-    if (!url) return null;
-    // YouTube full / short / Shorts
+    url = url.trim(); if (!url) return null;
     let m = url.match(/youtube\.com\/shorts\/([A-Za-z0-9_-]+)/i);
     if (m) return { kind: 'yt', id: m[1], url: `https://www.youtube.com/shorts/${m[1]}` };
     m = url.match(/youtube\.com\/watch\?[^#]*v=([A-Za-z0-9_-]+)/i);
@@ -9996,74 +10190,65 @@ setCurrentColor([255, 0, 0]);
     if (m) return { kind: 'yt', id: m[1], url: `https://youtu.be/${m[1]}` };
     m = url.match(/youtube\.com\/embed\/([A-Za-z0-9_-]+)/i);
     if (m) return { kind: 'yt', id: m[1], url: `https://www.youtube.com/watch?v=${m[1]}` };
-    // TikTok long form: https://www.tiktok.com/@username/video/1234567890
     m = url.match(/tiktok\.com\/@([\w.\-_]+)\/video\/(\d+)/i);
     if (m) return { kind: 'tt', id: m[2], author: m[1], url: `https://www.tiktok.com/@${m[1]}/video/${m[2]}` };
-    // TikTok short form: https://vm.tiktok.com/XXXXXXXX/  — TikTok's embed accepts the numeric ID,
-    // not the short code. We can't resolve the short URL client-side (no CORS), so we save the
-    // raw URL and fall back to a click-to-open card.
     m = url.match(/(?:vm|vt)\.tiktok\.com\/([A-Za-z0-9]+)/i);
-    if (m) return { kind: 'tt', id: '__short__', shortCode: m[1], url: url };
-    // Instagram explicitly rejected — IG embeds don't play inline reliably.
+    if (m) return { kind: 'tt', id: '__short__', shortCode: m[1], url };
     m = url.match(/instagram\.com\//i);
-    if (m) {
-      toast('Instagram links don\'t play inline (IG blocks embeds). Use YouTube or TikTok.');
-      return null;
-    }
+    if (m) { toast('Instagram links don\'t embed inline. Use YouTube or TikTok.'); return null; }
     return null;
   }
 
-  // ---- Render ----
+  // ===================== Load =====================
+  function refreshCount() {
+    countEl.textContent = `${pool.length} reel${pool.length === 1 ? '' : 's'} in pool`;
+  }
+
+  async function loadAll() {
+    countEl.textContent = 'Loading…';
+    const [items, soc] = await Promise.all([fetchPool(), fetchSocial()]);
+    social = soc;
+    pool = [];
+    for (const item of (Array.isArray(items) ? items : [])) {
+      const r = normalizeReel(typeof item === 'string' ? item : item.url);
+      if (r && !pool.some(p => p.id === r.id && p.kind === r.kind)) pool.push(r);
+    }
+    refreshCount();
+    if (pool.length) shuffleAndRender();
+    else { feed.innerHTML = ''; feed.appendChild(empty); empty.querySelector('p').textContent = 'Pool is empty — add the first one!'; }
+  }
+
+  // ===================== Render / cards =====================
   function shuffleAndRender() {
     order = pool.map((_, i) => i);
     for (let i = order.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [order[i], order[j]] = [order[j], order[i]];
     }
-    cursor = 0;
-    feed.innerHTML = '';
-    if (pool.length === 0) {
-      feed.appendChild(empty);
-      return;
-    }
+    cursor = 0; feed.innerHTML = '';
+    if (!pool.length) { feed.appendChild(empty); return; }
     mountNextBatch(LOAD_AHEAD);
   }
 
   function mountNextBatch(n) {
-    for (let i = 0; i < n && cursor < order.length; i++) {
-      const reel = pool[order[cursor]];
-      cursor++;
-      mountCard(reel);
-    }
-    // Sentinel triggers either more cards OR a fresh shuffled batch (endless loop)
+    for (let i = 0; i < n && cursor < order.length; i++) mountCard(pool[order[cursor++]]);
     let sentinel = feed.querySelector('.br-sentinel');
     if (sentinel) sentinel.remove();
     sentinel = document.createElement('div');
-    sentinel.className = 'br-sentinel';
-    sentinel.style.height = '1px';
+    sentinel.className = 'br-sentinel'; sentinel.style.height = '1px';
     feed.appendChild(sentinel);
     const obs = new IntersectionObserver((entries) => {
       for (const en of entries) {
-        if (en.isIntersecting) {
-          obs.disconnect();
-          if (cursor < order.length) {
-            mountNextBatch(LOAD_AHEAD);
-          } else if (pool.length > 0) {
-            // Endless: reshuffle a new order and append, keep scrolling forever
-            const newOrder = pool.map((_, i) => i);
-            for (let i = newOrder.length - 1; i > 0; i--) {
-              const j = Math.floor(Math.random() * (i + 1));
-              [newOrder[i], newOrder[j]] = [newOrder[j], newOrder[i]];
-            }
-            // Avoid placing the same reel back-to-back at the seam
-            if (newOrder.length > 1 && order.length > 0 && newOrder[0] === order[order.length - 1]) {
-              [newOrder[0], newOrder[1]] = [newOrder[1], newOrder[0]];
-            }
-            order = order.concat(newOrder);
-            mountNextBatch(LOAD_AHEAD);
-          }
-          break;
+        if (!en.isIntersecting) continue;
+        obs.disconnect();
+        if (cursor < order.length) { mountNextBatch(LOAD_AHEAD); }
+        else if (pool.length > 0) {
+          const no = pool.map((_, i) => i);
+          for (let i = no.length - 1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [no[i],no[j]]=[no[j],no[i]]; }
+          if (no.length > 1 && order.length > 0 && no[0] === order[order.length-1]) [no[0],no[1]]=[no[1],no[0]];
+          order = order.concat(no); mountNextBatch(LOAD_AHEAD);
         }
+        break;
       }
     }, { root: feed, rootMargin: '300px 0px' });
     obs.observe(sentinel);
@@ -10072,172 +10257,257 @@ setCurrentColor([255, 0, 0]);
   function mountCard(reel) {
     const card = document.createElement('div');
     card.className = 'br-card';
-    card.dataset.id = reel.id;
-    card.dataset.kind = reel.kind;
+    card.dataset.reelId = reel.id;
+
+    // Media content
+    let mediaHtml = '';
     if (reel.kind === 'yt') {
-      // YouTube embeds inline — autoplay muted, loops the single video
-      const embedSrc = `https://www.youtube.com/embed/${reel.id}?autoplay=1&mute=1&loop=1&playlist=${reel.id}&rel=0&modestbranding=1&playsinline=1`;
-      card.innerHTML = `
-        <iframe src="${embedSrc}" loading="lazy" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen allowtransparency="true" scrolling="no"></iframe>
-        <div class="br-meta">▶ YouTube · ${reel.id}</div>
-        <a class="br-open" href="${reel.url}" target="_blank" rel="noopener" title="Open on YouTube">↗</a>
-        <button class="br-remove" title="Remove from pool">×</button>
-      `;
+      const src = `https://www.youtube.com/embed/${reel.id}?autoplay=1&mute=1&loop=1&playlist=${reel.id}&rel=0&modestbranding=1&playsinline=1`;
+      mediaHtml = `<iframe src="${src}" loading="lazy" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen allowtransparency="true" scrolling="no"></iframe>
+        <div class="br-meta">▶ YouTube · ${reel.id}</div>`;
     } else if (reel.kind === 'tt' && reel.id !== '__short__') {
-      // TikTok official embed — works for public videos, plays inline.
-      // Note: the TikTok embed is wider than tall by default; we wrap in a centered iframe.
-      const embedSrc = `https://www.tiktok.com/embed/v2/${reel.id}?lang=en-US`;
-      card.innerHTML = `
-        <iframe src="${embedSrc}" loading="lazy" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen scrolling="no"></iframe>
-        <div class="br-meta">♪ TikTok · @${reel.author || reel.id}</div>
-        <a class="br-open" href="${reel.url}" target="_blank" rel="noopener" title="Open on TikTok">↗</a>
-        <button class="br-remove" title="Remove from pool">×</button>
-      `;
+      const src = `https://www.tiktok.com/embed/v2/${reel.id}?lang=en-US`;
+      mediaHtml = `<iframe src="${src}" loading="lazy" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen scrolling="no"></iframe>
+        <div class="br-meta">♪ TikTok · @${reel.author || reel.id}</div>`;
     } else {
-      // TikTok short URL we couldn't resolve — click-to-open card
-      card.innerHTML = `
-        <a class="br-poster no-poster" href="${reel.url}" target="_blank" rel="noopener" title="Open on TikTok">
-          <div class="br-play-overlay">
-            <div class="br-play-icon">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <polygon points="6,4 20,12 6,20"/>
-              </svg>
-            </div>
-            <div class="br-play-label">Watch on TikTok</div>
-          </div>
-        </a>
-        <div class="br-meta">♪ TikTok · short link</div>
-        <a class="br-open" href="${reel.url}" target="_blank" rel="noopener" title="Open on TikTok">↗</a>
-        <button class="br-remove" title="Remove from pool">×</button>
-      `;
+      mediaHtml = `<a class="br-poster no-poster" href="${reel.url}" target="_blank" rel="noopener">
+        <div class="br-play-overlay"><div class="br-play-icon"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg></div>
+        <div class="br-play-label">Watch on TikTok</div></div></a>
+        <div class="br-meta">♪ TikTok · short link</div>`;
     }
-    card.querySelector('.br-remove').addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      pool = pool.filter(p => !(p.id === reel.id && p.kind === reel.kind));
-      savePool();
-      refreshCount();
-      card.remove();
+
+    const s = getReelSocial(reel.id);
+    const liked = likedSet.has(reel.id);
+
+    card.innerHTML = `
+      ${mediaHtml}
+      <a class="br-open" href="${reel.url}" target="_blank" rel="noopener" title="Open original">↗</a>
+      <div class="br-actions">
+        <button class="br-action-btn br-like-btn${liked ? ' liked' : ''}" title="Like this reel">
+          <span class="br-ab-icon">${liked ? '❤️' : '🤍'}</span>
+          <span class="br-ab-count br-like-count">${s.likes}</span>
+        </button>
+        <button class="br-action-btn br-comment-btn" title="Comments">
+          <span class="br-ab-icon">💬</span>
+          <span class="br-ab-count br-comment-count">${s.comments.length}</span>
+        </button>
+      </div>
+      <div class="br-comments-drawer">
+        <div class="br-drawer-handle"></div>
+        <div class="br-drawer-head">
+          <span class="br-drawer-title">Comments · <span class="br-cmt-count-head">${s.comments.length}</span></span>
+          <button class="br-drawer-close">✕</button>
+        </div>
+        <div class="br-comments-list"></div>
+        <div class="br-compose">
+          <div class="br-compose-name-row">
+            <span class="br-compose-label">Name</span>
+            <input class="br-name-input" type="text" maxlength="24" placeholder="Your name…" value="${escHtml(brUsername)}">
+          </div>
+          <textarea class="br-msg-input" rows="2" maxlength="500" placeholder="Say something…"></textarea>
+          <div class="br-gif-picker">
+            <div class="br-gif-search-row">
+              <input type="text" class="br-gif-query" placeholder="Search GIFs…">
+              <button class="br-gif-search-btn">Search</button>
+            </div>
+            <div class="br-gif-grid"></div>
+            <div class="br-gif-paste-row">
+              <span class="br-compose-label">or paste URL</span>
+              <input type="text" class="br-gif-url-input" placeholder="https://media.tenor.com/…">
+            </div>
+          </div>
+          <div class="br-compose-actions">
+            <button class="br-gif-btn">GIF</button>
+            <button class="br-send-btn">Send</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Refs
+    const likeBtn = card.querySelector('.br-like-btn');
+    const likeCount = card.querySelector('.br-like-count');
+    const commentBtn = card.querySelector('.br-comment-btn');
+    const commentCount = card.querySelector('.br-comment-count');
+    const drawer = card.querySelector('.br-comments-drawer');
+    const drawerClose = card.querySelector('.br-drawer-close');
+    const drawerHandle = card.querySelector('.br-drawer-handle');
+    const commentsList = card.querySelector('.br-comments-list');
+    const cmtCountHead = card.querySelector('.br-cmt-count-head');
+    const nameInput = card.querySelector('.br-name-input');
+    const msgInput = card.querySelector('.br-msg-input');
+    const gifBtn = card.querySelector('.br-gif-btn');
+    const gifPicker = card.querySelector('.br-gif-picker');
+    const gifGrid = card.querySelector('.br-gif-grid');
+    const gifQuery = card.querySelector('.br-gif-query');
+    const gifSearchBtn = card.querySelector('.br-gif-search-btn');
+    const gifUrlInput = card.querySelector('.br-gif-url-input');
+    const sendBtn = card.querySelector('.br-send-btn');
+
+    let selectedGifUrl = null;
+
+    // Render existing comments
+    function renderComments() {
+      const cs = getReelSocial(reel.id).comments;
+      if (!cs.length) {
+        commentsList.innerHTML = '<div class="br-comments-empty">No comments yet — be the first!</div>';
+      } else {
+        commentsList.innerHTML = cs.map(c => `
+          <div class="br-comment">
+            <div class="br-comment-head">
+              <span class="br-comment-name">${escHtml(c.n || 'anon')}</span>
+              <span class="br-comment-time">${fmtTime(c.t)}</span>
+            </div>
+            <div class="br-comment-body">${escHtml(c.b || '')}${c.gif ? `<img class="br-gif" src="${escHtml(c.gif)}" alt="gif" loading="lazy">` : ''}</div>
+          </div>
+        `).join('');
+        commentsList.scrollTop = commentsList.scrollHeight;
+      }
+      const n = cs.length;
+      commentCount.textContent = n;
+      cmtCountHead.textContent = n;
+    }
+    renderComments();
+
+    // Like
+    likeBtn.addEventListener('click', () => {
+      const s = getReelSocial(reel.id);
+      if (likedSet.has(reel.id)) {
+        likedSet.delete(reel.id);
+        s.likes = Math.max(0, s.likes - 1);
+        likeBtn.classList.remove('liked');
+        likeBtn.querySelector('.br-ab-icon').textContent = '🤍';
+      } else {
+        likedSet.add(reel.id);
+        s.likes++;
+        likeBtn.classList.add('liked');
+        likeBtn.querySelector('.br-ab-icon').textContent = '❤️';
+      }
+      likeCount.textContent = s.likes;
+      saveLiked();
+      scheduleSocialPush();
     });
+
+    // Open / close drawer
+    function openDrawer() { drawer.classList.add('open'); renderComments(); }
+    function closeDrawer() { drawer.classList.remove('open'); }
+    commentBtn.addEventListener('click', openDrawer);
+    drawerClose.addEventListener('click', closeDrawer);
+    drawerHandle.addEventListener('click', closeDrawer);
+
+    // GIF picker toggle
+    gifBtn.addEventListener('click', () => {
+      const open = gifPicker.classList.toggle('open');
+      gifBtn.classList.toggle('active', open);
+      if (!open) { selectedGifUrl = null; gifGrid.querySelectorAll('.br-gif-thumb').forEach(t => t.classList.remove('selected')); gifBtn.textContent = 'GIF'; }
+    });
+
+    async function searchGifs(q) {
+      if (!q.trim()) return;
+      gifGrid.innerHTML = '<div class="br-gif-hint">Searching…</div>';
+      try {
+        const r = await fetch(`https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(q)}&key=${TENOR_KEY}&limit=12&media_filter=gif`);
+        const j = await r.json();
+        if (!j.results || !j.results.length) { gifGrid.innerHTML = '<div class="br-gif-hint">No results</div>'; return; }
+        gifGrid.innerHTML = '';
+        j.results.forEach(result => {
+          const gif = result.media_formats.gif;
+          const tiny = result.media_formats.tinygif || gif;
+          const img = document.createElement('img');
+          img.className = 'br-gif-thumb';
+          img.src = tiny.url;
+          img.dataset.gifUrl = gif.url;
+          img.loading = 'lazy';
+          img.addEventListener('click', () => {
+            gifGrid.querySelectorAll('.br-gif-thumb').forEach(t => t.classList.remove('selected'));
+            img.classList.add('selected');
+            selectedGifUrl = gif.url;
+            gifUrlInput.value = gif.url;
+            gifBtn.textContent = 'GIF ✓';
+          });
+          gifGrid.appendChild(img);
+        });
+      } catch(e) { gifGrid.innerHTML = '<div class="br-gif-hint">Search failed</div>'; }
+    }
+    gifSearchBtn.addEventListener('click', () => searchGifs(gifQuery.value));
+    gifQuery.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); searchGifs(gifQuery.value); } });
+    gifUrlInput.addEventListener('input', () => {
+      selectedGifUrl = gifUrlInput.value.trim() || null;
+      gifBtn.textContent = selectedGifUrl ? 'GIF ✓' : 'GIF';
+    });
+
+    // Name persistence
+    nameInput.addEventListener('input', () => {
+      brUsername = nameInput.value.slice(0, 24);
+      localStorage.setItem('brUsername', brUsername);
+      localStorage.setItem('chatUsername', brUsername);
+      // sync other open drawers
+      document.querySelectorAll('.br-name-input').forEach(el => { if (el !== nameInput) el.value = brUsername; });
+    });
+
+    // Send comment
+    sendBtn.addEventListener('click', async () => {
+      const name = nameInput.value.trim();
+      const body = msgInput.value.trim();
+      const gifUrl = (gifUrlInput.value.trim()) || selectedGifUrl || null;
+      if (!name) { toast('Enter a name first'); nameInput.focus(); return; }
+      if (!body && !gifUrl) { toast('Say something or pick a GIF'); return; }
+      sendBtn.disabled = true;
+      const s = getReelSocial(reel.id);
+      s.comments.push({ n: name.slice(0,24), b: body.slice(0,500), gif: gifUrl, t: Date.now() });
+      scheduleSocialPush();
+      msgInput.value = '';
+      gifUrlInput.value = '';
+      selectedGifUrl = null;
+      gifPicker.classList.remove('open');
+      gifBtn.classList.remove('active');
+      gifBtn.textContent = 'GIF';
+      renderComments();
+      sendBtn.disabled = false;
+    });
+    msgInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendBtn.click(); } });
+
     feed.appendChild(card);
   }
 
-  // ---- Wiring ----
+  // ===================== Helpers =====================
+  function escHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function fmtTime(ts) {
+    if (!ts) return '';
+    const d = new Date(ts), now = new Date();
+    const sameDay = d.toDateString() === now.toDateString();
+    return sameDay ? d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : d.toLocaleDateString();
+  }
+
+  // ===================== Add reel =====================
   function tryAddFromInput() {
     const url = submitInput.value;
     const reel = normalizeReel(url);
-    if (!reel) {
-      toast('Not a valid Instagram URL');
-      return;
-    }
-    if (pool.some(p => p.id === reel.id && p.kind === reel.kind)) {
-      toast('Already in pool');
-      submitInput.value = '';
-      return;
-    }
+    if (!reel) { toast('Not a valid YouTube or TikTok URL'); return; }
+    if (pool.some(p => p.id === reel.id && p.kind === reel.kind)) { toast('Already in pool'); submitInput.value = ''; return; }
     pool.push(reel);
-    savePool();
+    schedulePoolPush();
     refreshCount();
     submitInput.value = '';
-    toast(`Added ${reel.id}`);
-    if (cursor === 0) shuffleAndRender();
-    else if (cursor >= order.length) {
-      // Append the new one inline so it's instantly viewable
-      order.push(pool.length - 1);
-      mountCard(reel);
-    }
+    toast('Added to public pool');
+    order.push(pool.length - 1);
+    mountCard(reel);
   }
   addBtn.addEventListener('click', tryAddFromInput);
-  submitInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); tryAddFromInput(); }
-  });
+  submitInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); tryAddFromInput(); } });
   shuffleBtn.addEventListener('click', shuffleAndRender);
 
-  // "Add to public pool" button — pushes current local pool to jsonbin.
-  const suggestBtn = document.getElementById('brSuggest');
-  if (suggestBtn) {
-    if (!JSONBIN_REELS_BIN_ID) {
-      suggestBtn.disabled = true;
-      suggestBtn.title = 'Set JSONBIN_REELS_BIN_ID in the HTML to enable';
-    } else {
-      suggestBtn.textContent = '🌍 Add to public pool';
-      suggestBtn.title = 'Push your local pool to the shared public list';
-      suggestBtn.addEventListener('click', async () => {
-        suggestBtn.disabled = true;
-        try {
-          await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_REELS_BIN_ID}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_REELS_KEY },
-            body: JSON.stringify(pool.slice(0, 1000))
-          });
-          toast('Public pool updated \u2713');
-        } catch (e) {
-          toast('Failed to push pool \u2014 check your connection');
-        } finally {
-          suggestBtn.disabled = false;
-        }
-      });
-    }
-  }
-
-  exportBtn.addEventListener('click', () => {
-    const blob = new Blob([JSON.stringify(pool.map(p => p.url), null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `brainrot-pool-${new Date().toISOString().slice(0,10)}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  });
-
-  importInput.addEventListener('change', async (e) => {
-    const f = e.target.files && e.target.files[0];
-    if (!f) return;
-    try {
-      const text = await f.text();
-      const arr = JSON.parse(text);
-      if (!Array.isArray(arr)) throw new Error('Not an array');
-      let added = 0;
-      for (const entry of arr) {
-        const url = (typeof entry === 'string') ? entry : (entry && entry.url);
-        const r = normalizeReel(url);
-        if (r && !pool.some(p => p.id === r.id && p.kind === r.kind)) {
-          pool.push(r); added++;
-        }
-      }
-      savePool();
-      refreshCount();
-      shuffleAndRender();
-      toast(`Imported ${added} new reels`);
-    } catch (err) {
-      toast('Import failed — invalid JSON');
-    }
-    e.target.value = '';
-  });
-
-  clearBtn.addEventListener('click', () => {
-    if (!confirm('Clear all reels from your local pool?')) return;
-    pool = [];
-    savePool();
-    refreshCount();
-    shuffleAndRender();
-  });
-
-  // Render when the user opens the Brainrot tab
   document.querySelector('[data-tab="brainrot"]').addEventListener('click', () => {
     document.body.dataset.currentTab = 'brainrot';
     if (cursor === 0 && pool.length > 0) shuffleAndRender();
   });
-  // Reset the data attribute when leaving brainrot
   document.querySelectorAll('.sb-tab').forEach(t => {
-    if (t.dataset.tab !== 'brainrot') {
-      t.addEventListener('click', () => {
-        document.body.dataset.currentTab = t.dataset.tab;
-      });
-    }
+    if (t.dataset.tab !== 'brainrot') t.addEventListener('click', () => { document.body.dataset.currentTab = t.dataset.tab; });
   });
 
-  loadPool();
-  refreshCount();
+  loadAll();
 })();
 
 /* ============================================================
