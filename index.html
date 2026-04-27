@@ -2221,6 +2221,43 @@
     border-radius: 4px;
     pointer-events: none;
   }
+  /* Per-slot source-channel selection row */
+  .src-channel-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 10px;
+    border-top: 1px solid var(--border);
+    margin-top: 4px;
+  }
+  .src-channel-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--text-faint);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-right: 4px;
+  }
+  .src-ch-btn {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-2);
+    color: var(--text-faint);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .src-ch-btn:hover { color: var(--text); border-color: var(--border-hover); }
+  .src-ch-btn.active { color: #fff; }
+  .src-ch-btn[data-src="r"].active { background: #ef5350; border-color: #ef5350; }
+  .src-ch-btn[data-src="g"].active { background: #66bb6a; border-color: #66bb6a; }
+  .src-ch-btn[data-src="b"].active { background: #42a5f5; border-color: #42a5f5; }
+  .src-ch-btn[data-src="a"].active { background: #ab47bc; border-color: #ab47bc; }
+
   /* Old modal hidden in favor of inline panel */
   .autograph-overlay { display: none !important; }
 
@@ -2488,6 +2525,177 @@
     border-radius: 999px;
     letter-spacing: 0.06em;
     text-transform: uppercase;
+  }
+
+  /* =====================================================
+     Chat (jsonbin-backed)
+     ===================================================== */
+  .chat-wrap {
+    max-width: 760px;
+    margin: 0 auto;
+    height: calc(100vh - 80px);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .chat-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .chat-title {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: 28px;
+    margin: 0;
+  }
+  .chat-status {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-faint);
+    background: var(--bg-2);
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    letter-spacing: 0.04em;
+  }
+  .chat-status.connected { color: #2fd47f; border-color: rgba(47,212,127,0.3); }
+  .chat-status.error { color: #ef5350; border-color: rgba(239,83,80,0.3); }
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    scroll-behavior: smooth;
+  }
+  .chat-empty {
+    text-align: center;
+    color: var(--text-faint);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 40px 20px;
+  }
+  .chat-msg {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .chat-msg .chat-msg-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+  }
+  .chat-msg .chat-msg-name {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .chat-msg .chat-msg-time {
+    color: var(--text-faint);
+    font-size: 9px;
+    letter-spacing: 0.03em;
+  }
+  .chat-msg .chat-msg-body {
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+  }
+  .chat-msg.mine {
+    background: var(--surface-3);
+    border-color: var(--border-hover);
+  }
+  .chat-compose {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .chat-username-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .chat-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-faint);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .chat-username {
+    flex: 1;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    padding: 6px 10px !important;
+  }
+  .chat-input-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+  }
+  .chat-textarea {
+    flex: 1;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 10px 12px;
+    font-family: 'Manrope', system-ui, sans-serif;
+    font-size: 13px;
+    resize: vertical;
+    min-height: 50px;
+    max-height: 200px;
+  }
+  .chat-textarea:focus {
+    outline: none;
+    border-color: var(--border-hover);
+  }
+  .chat-textarea:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  #chatSend {
+    align-self: stretch;
+    min-width: 80px;
+  }
+  #chatSend:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .chat-meta-row {
+    display: flex;
+    justify-content: space-between;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-faint);
+  }
+  .chat-charcount.over {
+    color: #ef5350;
+    font-weight: 600;
+  }
+  .chat-warning {
+    color: #ffb74d;
   }
 
   /* Floating "clear" button used in Image Editor + Audio Tools */
@@ -3038,6 +3246,10 @@
       <button class="sb-tab" data-tab="brainrot" title="Brainrot — Instagram reels feed">
         <span class="sb-icon">🧠</span>
         <span class="sb-label">Brainrot</span>
+      </button>
+      <button class="sb-tab" data-tab="chat" title="Chat — public messages">
+        <span class="sb-icon">💬</span>
+        <span class="sb-label">Chat</span>
       </button>
     </nav>
 
@@ -3946,6 +4158,33 @@
     </div>
   </main>
 
+  <!-- ================= CHAT (jsonbin-backed public messages) ================= -->
+  <main data-mode="chat" hidden>
+    <div class="chat-wrap">
+      <div class="chat-header">
+        <h2 class="chat-title">Chat</h2>
+        <div class="chat-status" id="chatStatus">Connecting…</div>
+      </div>
+      <div class="chat-messages" id="chatMessages">
+        <div class="chat-empty" id="chatEmpty">Loading messages…</div>
+      </div>
+      <div class="chat-compose">
+        <div class="chat-username-row">
+          <label class="chat-label">As</label>
+          <input type="text" id="chatUsername" class="color-input chat-username" maxlength="24" placeholder="Your name (visible to all)">
+        </div>
+        <div class="chat-input-row">
+          <textarea id="chatInput" class="chat-textarea" rows="2" maxlength="1000" placeholder="Say something… (1000 char limit)"></textarea>
+          <button class="dl-btn primary" id="chatSend">Send</button>
+        </div>
+        <div class="chat-meta-row">
+          <span class="chat-charcount" id="chatCharCount">0 / 1000</span>
+          <span class="chat-warning" id="chatWarning"></span>
+        </div>
+      </div>
+    </div>
+  </main>
+
   <footer>
     <span>Luminance</span> = 0.299·R + 0.587·G + 0.114·B &nbsp;·&nbsp; <span>Color distance</span> = √(Δr² + Δg² + Δb²) &nbsp;·&nbsp; All processing is local
   </footer>
@@ -4137,6 +4376,15 @@ const CHANNELS = [
 
 const compState = { r: null, g: null, b: null, a: null };
 
+// Per-output-slot, which source-image channels contribute to the value.
+// Default: R+G+B on, alpha off (matches old luminance behavior closely).
+const slotChannels = {
+  r: { r: true, g: true, b: true, a: false },
+  g: { r: true, g: true, b: true, a: false },
+  b: { r: true, g: true, b: true, a: false },
+  a: { r: true, g: true, b: true, a: false },
+};
+
 const grid = document.getElementById('channels');
 CHANNELS.forEach(ch => {
   const el = document.createElement('div');
@@ -4168,6 +4416,13 @@ CHANNELS.forEach(ch => {
       <span class="filename">—</span>
       <span class="dims">empty → ${ch.empty}</span>
     </div>
+    <div class="src-channel-row" title="Which channels of the source image to include in the average">
+      <span class="src-channel-label">Source:</span>
+      <button class="src-ch-btn active" data-src="r" title="Include red from source">R</button>
+      <button class="src-ch-btn active" data-src="g" title="Include green from source">G</button>
+      <button class="src-ch-btn active" data-src="b" title="Include blue from source">B</button>
+      <button class="src-ch-btn" data-src="a" title="Include alpha from source">A</button>
+    </div>
   `;
   grid.appendChild(el);
 
@@ -4194,6 +4449,34 @@ CHANNELS.forEach(ch => {
 
   fillBtn.addEventListener('click', (e) => { e.stopPropagation(); compFillWhite(ch.key); });
   clearBtn.addEventListener('click', (e) => { e.stopPropagation(); compClear(ch.key); });
+
+  // Per-slot source-channel toggles. Default: R+G+B on, A off.
+  const srcBtns = el.querySelectorAll('.src-ch-btn');
+  // Initialize selection in slotChannels (separate from compState so it persists
+  // across image swaps — user picks "use only red from source" once, applies forever).
+  if (!slotChannels[ch.key]) slotChannels[ch.key] = { r: true, g: true, b: true, a: false };
+  // Sync UI to state
+  srcBtns.forEach(btn => {
+    const k = btn.dataset.src;
+    btn.classList.toggle('active', !!slotChannels[ch.key][k]);
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const cur = !slotChannels[ch.key][k];
+      // Don't allow disabling all four — at least one must remain on
+      const otherOn = ['r','g','b','a'].some(o => o !== k && slotChannels[ch.key][o]);
+      if (!cur && !otherOn) {
+        toast('At least one source channel must stay on');
+        return;
+      }
+      slotChannels[ch.key][k] = cur;
+      btn.classList.toggle('active', cur);
+      // Re-render output if we already had a composition
+      if (typeof compose === 'function' && compState[ch.key]) {
+        // Auto-recompose if we already had output once
+        if (compLastFullImageData) compose();
+      }
+    });
+  });
 });
 
 function compLoadFile(key, file) {
@@ -4321,7 +4604,7 @@ function compose() {
     return;
   }
 
-  function getGrayData(img) {
+  function getGrayData(img, slotKey) {
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
     const ctx = c.getContext('2d');
@@ -4330,16 +4613,40 @@ function compose() {
     ctx.drawImage(img, 0, 0, w, h);
     const raw = ctx.getImageData(0, 0, w, h).data;
     const gray = new Uint8ClampedArray(w * h);
-    for (let i = 0, j = 0; i < raw.length; i += 4, j++) {
-      gray[j] = (0.299 * raw[i] + 0.587 * raw[i+1] + 0.114 * raw[i+2]) | 0;
+    const sel = slotChannels[slotKey] || { r: true, g: true, b: true, a: false };
+    // Build a list of byte offsets for the active source channels.
+    const offsets = [];
+    if (sel.r) offsets.push(0);
+    if (sel.g) offsets.push(1);
+    if (sel.b) offsets.push(2);
+    if (sel.a) offsets.push(3);
+    const n = offsets.length || 1; // safety
+    if (offsets.length === 1) {
+      // Single-channel pick — pure copy of that channel
+      const off = offsets[0];
+      for (let i = 0, j = 0; i < raw.length; i += 4, j++) {
+        gray[j] = raw[i + off];
+      }
+    } else if (sel.r && sel.g && sel.b && !sel.a) {
+      // Classic luminance for the default RGB combination — preserves perceptual brightness
+      for (let i = 0, j = 0; i < raw.length; i += 4, j++) {
+        gray[j] = (0.299 * raw[i] + 0.587 * raw[i+1] + 0.114 * raw[i+2]) | 0;
+      }
+    } else {
+      // General case: simple average of the picked channels
+      for (let i = 0, j = 0; i < raw.length; i += 4, j++) {
+        let sum = 0;
+        for (let k = 0; k < offsets.length; k++) sum += raw[i + offsets[k]];
+        gray[j] = (sum / n) | 0;
+      }
     }
     return gray;
   }
 
-  const rData = compState.r ? getGrayData(compState.r.image) : null;
-  const gData = compState.g ? getGrayData(compState.g.image) : null;
-  const bData = compState.b ? getGrayData(compState.b.image) : null;
-  const aData = compState.a ? getGrayData(compState.a.image) : null;
+  const rData = compState.r ? getGrayData(compState.r.image, 'r') : null;
+  const gData = compState.g ? getGrayData(compState.g.image, 'g') : null;
+  const bData = compState.b ? getGrayData(compState.b.image, 'b') : null;
+  const aData = compState.a ? getGrayData(compState.a.image, 'a') : null;
 
   outputCanvas.width = w;
   outputCanvas.height = h;
@@ -9876,6 +10183,306 @@ setCurrentColor([255, 0, 0]);
 
   loadPool();
   refreshCount();
+})();
+
+/* ============================================================
+   CHAT — jsonbin.io backed public messages
+   --------------------------------------------------------------
+   SETUP:
+   1. Sign up at https://jsonbin.io (free)
+   2. Create a new bin with the initial content: []
+   3. Copy the Bin ID (from the URL after /b/) into JSONBIN_BIN_ID
+   4. Copy your X-Master-Key (from your account page) into JSONBIN_KEY
+   --------------------------------------------------------------
+   IMPORTANT: The master key is visible in this HTML to anyone who
+   views the page source. Anyone can read AND write the bin. This is
+   acceptable for small/private sites but not for public ones.
+   --------------------------------------------------------------
+   Slowmode rules (client-side, persists in localStorage):
+   - Max 1000 chars per message
+   - Hitting the limit twice consecutively → 1h slowmode
+   - In slowmode: 1 message per 10 minutes
+   ============================================================ */
+(function setupChat() {
+  // ===== CONFIG (edit these) =====
+  const JSONBIN_BIN_ID = ''; // e.g. '6543abcdef0123456789'
+  const JSONBIN_KEY    = ''; // e.g. '$2a$10$....'
+  // ================================
+
+  const POLL_MS = 4000;
+  const MAX_LEN = 1000;
+  const STRIKES_NEEDED_FOR_SLOWMODE = 2; // consecutive max-length hits
+  const SLOWMODE_DURATION_MS = 60 * 60 * 1000;     // 1 hour
+  const SLOWMODE_INTERVAL_MS = 10 * 60 * 1000;     // 1 message per 10 min
+
+  const messagesEl = document.getElementById('chatMessages');
+  const emptyEl = document.getElementById('chatEmpty');
+  const statusEl = document.getElementById('chatStatus');
+  const inputEl = document.getElementById('chatInput');
+  const sendBtn = document.getElementById('chatSend');
+  const usernameEl = document.getElementById('chatUsername');
+  const charCountEl = document.getElementById('chatCharCount');
+  const warningEl = document.getElementById('chatWarning');
+
+  // Restore username
+  usernameEl.value = localStorage.getItem('chatUsername') || '';
+  usernameEl.addEventListener('input', () => {
+    localStorage.setItem('chatUsername', usernameEl.value.slice(0, 24));
+  });
+
+  // Local state
+  let lastMessages = [];      // last fetched array
+  let pollTimer = null;
+  let configured = !!(JSONBIN_BIN_ID && JSONBIN_KEY);
+
+  // Strike + slowmode state (localStorage)
+  function getStrikes() {
+    return parseInt(localStorage.getItem('chatStrikes') || '0', 10);
+  }
+  function setStrikes(n) {
+    localStorage.setItem('chatStrikes', String(n));
+  }
+  function getSlowmodeUntil() {
+    return parseInt(localStorage.getItem('chatSlowmodeUntil') || '0', 10);
+  }
+  function setSlowmodeUntil(ts) {
+    localStorage.setItem('chatSlowmodeUntil', String(ts));
+  }
+  function getLastSendTs() {
+    return parseInt(localStorage.getItem('chatLastSend') || '0', 10);
+  }
+  function setLastSendTs(ts) {
+    localStorage.setItem('chatLastSend', String(ts));
+  }
+
+  function inSlowmode() {
+    return Date.now() < getSlowmodeUntil();
+  }
+  function nextAllowedSend() {
+    if (!inSlowmode()) return 0;
+    return getLastSendTs() + SLOWMODE_INTERVAL_MS;
+  }
+
+  function updateWarning() {
+    const slowEnd = getSlowmodeUntil();
+    if (Date.now() < slowEnd) {
+      const minsLeft = Math.ceil((slowEnd - Date.now()) / 60000);
+      const nextSend = nextAllowedSend();
+      const waitMs = Math.max(0, nextSend - Date.now());
+      const waitMins = Math.ceil(waitMs / 60000);
+      if (waitMs > 0) {
+        warningEl.textContent = `Slowmode (${minsLeft}m left) · next send in ${waitMins}m`;
+      } else {
+        warningEl.textContent = `Slowmode (${minsLeft}m left) · you can send now`;
+      }
+      sendBtn.disabled = waitMs > 0 || !configured;
+    } else {
+      const strikes = getStrikes();
+      if (strikes > 0) {
+        warningEl.textContent = `Strike ${strikes}/${STRIKES_NEEDED_FOR_SLOWMODE} — hit the 1000-char limit again and you'll be slowmoded`;
+      } else {
+        warningEl.textContent = '';
+      }
+      sendBtn.disabled = !configured;
+    }
+  }
+  setInterval(updateWarning, 5000);
+
+  function setStatus(text, cls) {
+    statusEl.textContent = text;
+    statusEl.classList.remove('connected','error');
+    if (cls) statusEl.classList.add(cls);
+  }
+
+  if (!configured) {
+    setStatus('Not configured — edit JSONBIN_BIN_ID & JSONBIN_KEY in the HTML', 'error');
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    inputEl.placeholder = 'Chat is offline (config missing)';
+    emptyEl.textContent = 'Chat backend not configured. The owner needs to set up jsonbin.io.';
+    return;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
+
+  function fmtTime(ts) {
+    const d = new Date(ts);
+    const today = new Date();
+    const sameDay = d.toDateString() === today.toDateString();
+    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (sameDay) return time;
+    return d.toLocaleDateString() + ' ' + time;
+  }
+
+  function renderMessages(messages) {
+    if (!Array.isArray(messages)) messages = [];
+    // Only re-render if changed (compare lengths + last id)
+    const same = messages.length === lastMessages.length &&
+      (messages.length === 0 ||
+        (messages[messages.length-1].t === lastMessages[lastMessages.length-1]?.t &&
+         messages[messages.length-1].n === lastMessages[lastMessages.length-1]?.n));
+    if (same) return;
+    lastMessages = messages.slice();
+
+    if (messages.length === 0) {
+      messagesEl.innerHTML = `<div class="chat-empty">No messages yet — be the first.</div>`;
+      return;
+    }
+    const myName = usernameEl.value.trim();
+    const wasAtBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 80;
+    messagesEl.innerHTML = messages.map(m => {
+      const mine = myName && m.n === myName;
+      return `
+        <div class="chat-msg ${mine ? 'mine' : ''}">
+          <div class="chat-msg-head">
+            <span class="chat-msg-name">${escapeHtml(m.n || 'anon')}</span>
+            <span class="chat-msg-time">${fmtTime(m.t || Date.now())}</span>
+          </div>
+          <div class="chat-msg-body">${escapeHtml(m.b || '')}</div>
+        </div>
+      `;
+    }).join('');
+    if (wasAtBottom) {
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+  }
+
+  async function fetchBin() {
+    const r = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
+      headers: { 'X-Master-Key': JSONBIN_KEY }
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json();
+    return Array.isArray(j.record) ? j.record : [];
+  }
+
+  async function writeBin(messages) {
+    const r = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': JSONBIN_KEY,
+      },
+      body: JSON.stringify(messages),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  }
+
+  async function poll() {
+    try {
+      const messages = await fetchBin();
+      setStatus(`${messages.length} messages`, 'connected');
+      renderMessages(messages);
+    } catch (e) {
+      setStatus('Connection error · retrying…', 'error');
+    }
+  }
+
+  async function sendMessage() {
+    const name = (usernameEl.value || '').trim();
+    if (!name) {
+      toast('Pick a username first');
+      usernameEl.focus();
+      return;
+    }
+    let body = (inputEl.value || '').trim();
+    if (!body) return;
+
+    // Slowmode enforcement
+    if (inSlowmode()) {
+      const next = nextAllowedSend();
+      if (Date.now() < next) {
+        const mins = Math.ceil((next - Date.now()) / 60000);
+        toast(`Slowmode active — wait ${mins}m before sending again`);
+        return;
+      }
+    }
+
+    // Length check + strike system
+    const hitLimit = body.length >= MAX_LEN;
+    if (body.length > MAX_LEN) {
+      body = body.slice(0, MAX_LEN);
+    }
+    if (hitLimit) {
+      const strikes = getStrikes() + 1;
+      setStrikes(strikes);
+      if (strikes >= STRIKES_NEEDED_FOR_SLOWMODE) {
+        setSlowmodeUntil(Date.now() + SLOWMODE_DURATION_MS);
+        setStrikes(0);
+        toast('You hit the limit twice — slowmode ON for 1h (1 msg / 10 min)');
+      } else {
+        toast(`Hit max length · strike ${strikes}/${STRIKES_NEEDED_FOR_SLOWMODE}`);
+      }
+    } else {
+      // Reset strike counter on a non-max message
+      if (getStrikes() > 0) setStrikes(0);
+    }
+
+    sendBtn.disabled = true;
+    setStatus('Sending…');
+    try {
+      // Read-then-write — there's a small race window if two users send at once.
+      // For chat scale this is acceptable; bigger apps use Firestore.
+      const current = await fetchBin();
+      const msg = { n: name.slice(0, 24), b: body, t: Date.now() };
+      current.push(msg);
+      // Cap total messages stored to avoid unbounded growth
+      const MAX_STORED = 500;
+      const trimmed = current.slice(-MAX_STORED);
+      await writeBin(trimmed);
+      setLastSendTs(Date.now());
+      inputEl.value = '';
+      updateCharCount();
+      lastMessages = []; // force re-render
+      await poll();
+    } catch (e) {
+      setStatus('Send failed', 'error');
+      toast('Could not send — check your connection');
+    } finally {
+      updateWarning();
+    }
+  }
+
+  function updateCharCount() {
+    const len = inputEl.value.length;
+    charCountEl.textContent = `${len} / ${MAX_LEN}`;
+    charCountEl.classList.toggle('over', len >= MAX_LEN);
+  }
+
+  inputEl.addEventListener('input', updateCharCount);
+  inputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+  sendBtn.addEventListener('click', sendMessage);
+
+  // Start polling when the chat tab opens
+  function startPolling() {
+    if (pollTimer) return;
+    poll();
+    pollTimer = setInterval(poll, POLL_MS);
+  }
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+  document.querySelector('[data-tab="chat"]').addEventListener('click', () => {
+    startPolling();
+  });
+  document.querySelectorAll('.sb-tab').forEach(t => {
+    if (t.dataset.tab !== 'chat') {
+      t.addEventListener('click', stopPolling);
+    }
+  });
+
+  updateCharCount();
+  updateWarning();
 })();
 </script>
 </body>
