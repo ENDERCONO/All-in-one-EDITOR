@@ -5837,13 +5837,27 @@ audUpload.addEventListener('drop', e => {
 async function audLoadFile(file) {
   toast('Decoding audio…');
   await ensureAudioCtx();
+  // Defensive full-reset before loading the new file. This kills any in-flight
+  // playback, disconnects/destroys the source, resets transport position, and
+  // restores all sliders to default — so the new file plays totally clean.
+  try { audStop(false); } catch (e) {}
+  if (au.source) {
+    try { au.source.stop(); } catch (e) {}
+    try { au.source.disconnect(); } catch (e) {}
+    au.source = null;
+  }
+  au.buffer = null;
+  au.startOffset = 0;
+  au.playing = false;
+  // Reset every effect slider so the new audio starts neutral instead of
+  // inheriting the previous file's FX settings.
+  resetAudioFxSliders();
   try {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = await au.ctx.decodeAudioData(arrayBuffer.slice(0));
     au.buffer = buffer;
     au.filename = file.name;
     au.startOffset = 0;
-    audStop(false);
 
     // UI updates
     audUpload.style.display = 'none';
@@ -5866,13 +5880,39 @@ async function audLoadFile(file) {
   }
 }
 
+// Reset every FX slider back to its default — used on Clear and on new load.
+function resetAudioFxSliders() {
+  const defaults = {
+    audSpeed: 1, audSpeedNum: 1,
+    audMuffle: 0, audHp: 20, audGain: 0,
+    audBits: 16, audSr: 48000, audAd: 0, audDa: 0,
+    audBass: 0, audReverb: 0, audReverbSize: 1.5,
+  };
+  for (const [id, val] of Object.entries(defaults)) {
+    const el = document.getElementById(id);
+    if (el && 'value' in el) {
+      el.value = val;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+}
+
 // Clear current audio so the dropzone is shown again and a new file can be picked
 document.getElementById('audClearBtn').addEventListener('click', () => {
-  audStop(false);
+  try { audStop(false); } catch (e) {}
+  if (au.source) {
+    try { au.source.stop(); } catch (e) {}
+    try { au.source.disconnect(); } catch (e) {}
+    au.source = null;
+  }
   au.buffer = null;
-  au.source = null;
   au.filename = null;
   au.startOffset = 0;
+  au.playing = false;
+  resetAudioFxSliders();
+  // Reset the file input so picking the same file again works
+  const fi = document.getElementById('audFile');
+  if (fi) fi.value = '';
   audUpload.style.display = '';
   audWaveWrap.hidden = true;
   audTransport.hidden = true;
@@ -10262,7 +10302,7 @@ setCurrentColor([255, 0, 0]);
     // Media content
     let mediaHtml = '';
     if (reel.kind === 'yt') {
-      const src = `https://www.youtube.com/embed/${reel.id}?autoplay=1&mute=1&loop=1&playlist=${reel.id}&rel=0&modestbranding=1&playsinline=1`;
+      const src = `https://www.youtube.com/embed/${reel.id}?autoplay=1&mute=1&loop=1&playlist=${reel.id}&rel=0&modestbranding=1&playsinline=1&enablejsapi=1`;
       mediaHtml = `<iframe src="${src}" loading="lazy" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen allowtransparency="true" scrolling="no"></iframe>
         <div class="br-meta">▶ YouTube · ${reel.id}</div>`;
     } else if (reel.kind === 'tt' && reel.id !== '__short__') {
@@ -10468,6 +10508,8 @@ setCurrentColor([255, 0, 0]);
     msgInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendBtn.click(); } });
 
     feed.appendChild(card);
+    // Hook the visibility observer so playback follows scroll
+    if (window.__brVisibilityObserver) window.__brVisibilityObserver.observe(card);
   }
 
   // ===================== Helpers =====================
@@ -10505,6 +10547,153 @@ setCurrentColor([255, 0, 0]);
   });
   document.querySelectorAll('.sb-tab').forEach(t => {
     if (t.dataset.tab !== 'brainrot') t.addEventListener('click', () => { document.body.dataset.currentTab = t.dataset.tab; });
+  });
+
+  // =============================================================
+  // Per-card playback control (only visible reel plays + has audio)
+  // =============================================================
+  function ytCommand(iframe, fn, args) {
+    if (!iframe || !iframe.contentWindow) return;
+    try {
+      iframe.contentWindow.postMessage(JSON.stringify({
+        event: 'command', func: fn, args: args || []
+      }), '*');
+    } catch (e) {}
+  }
+  // Default muted (browser autoplay policy requires muted to start)
+  let __brGlobalMuted = (localStorage.getItem('brMuted') !== '0');
+
+  function applyVisibility(card, focused) {
+    const iframe = card.querySelector('iframe');
+    if (!iframe) return;
+    // Detect kind from iframe src
+    const ytLike = iframe.src.includes('youtube');
+    const ttLike = iframe.src.includes('tiktok');
+    if (ytLike) {
+      if (focused) {
+        ytCommand(iframe, 'playVideo');
+        ytCommand(iframe, __brGlobalMuted ? 'mute' : 'unMute');
+      } else {
+        ytCommand(iframe, 'pauseVideo');
+        ytCommand(iframe, 'mute');
+      }
+    } else if (ttLike) {
+      // TikTok has no public JS API. Pause by clearing src; restore on focus.
+      if (focused) {
+        if (!iframe.src && iframe.dataset.savedSrc) {
+          iframe.src = iframe.dataset.savedSrc;
+        }
+      } else {
+        if (iframe.src) {
+          iframe.dataset.savedSrc = iframe.src;
+          iframe.src = '';
+        }
+      }
+    }
+  }
+  window.__brVisibilityObserver = new IntersectionObserver((entries) => {
+    for (const en of entries) {
+      // 55%+ visible = focused. Avoids cross-fade thrashing while scrolling.
+      applyVisibility(en.target, en.intersectionRatio > 0.55);
+    }
+  }, { root: feed, threshold: [0, 0.55, 1] });
+  // Apply to any cards already in the DOM at this point
+  feed.querySelectorAll('.br-card').forEach(c => window.__brVisibilityObserver.observe(c));
+
+  // Global mute toggle in the right-side panel
+  (function buildMuteToggle() {
+    const side = document.querySelector('.brainrot-side .brainrot-toolbar');
+    if (!side || side.querySelector('#brMuteBtn')) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'br-section';
+    wrap.innerHTML = `
+      <div class="br-section-title">Audio</div>
+      <button class="dl-btn" id="brMuteBtn" style="width:100%">${__brGlobalMuted ? '🔇 Muted (click to unmute)' : '🔊 Sound on'}</button>
+    `;
+    // Insert near the top of the side panel
+    const firstSection = side.querySelector('.br-section');
+    if (firstSection && firstSection.nextSibling) side.insertBefore(wrap, firstSection.nextSibling);
+    else side.appendChild(wrap);
+    const btn = document.getElementById('brMuteBtn');
+    btn.addEventListener('click', () => {
+      __brGlobalMuted = !__brGlobalMuted;
+      localStorage.setItem('brMuted', __brGlobalMuted ? '1' : '0');
+      btn.textContent = __brGlobalMuted ? '🔇 Muted (click to unmute)' : '🔊 Sound on';
+      // Update the focused card immediately
+      feed.querySelectorAll('.br-card').forEach(card => {
+        const iframe = card.querySelector('iframe');
+        if (!iframe || !iframe.src.includes('youtube')) return;
+        const rect = card.getBoundingClientRect();
+        const fRect = feed.getBoundingClientRect();
+        const center = rect.top + rect.height / 2;
+        if (center > fRect.top && center < fRect.bottom) {
+          ytCommand(iframe, __brGlobalMuted ? 'mute' : 'unMute');
+        }
+      });
+    });
+  })();
+
+  // =============================================================
+  // Periodic social refresh — pulls likes/comments from other users
+  // =============================================================
+  let __socialPollTimer = null;
+  async function refreshSocialFromBin() {
+    try {
+      const fresh = await fetchSocial();
+      // Merge: prefer the higher like count, dedupe comments by timestamp+name
+      for (const id of Object.keys(fresh)) {
+        if (!social[id]) social[id] = { likes: 0, comments: [] };
+        social[id].likes = Math.max(social[id].likes, fresh[id].likes || 0);
+        const seen = new Set(social[id].comments.map(c => `${c.t}|${c.n}`));
+        for (const c of (fresh[id].comments || [])) {
+          const k = `${c.t}|${c.n}`;
+          if (!seen.has(k)) { social[id].comments.push(c); seen.add(k); }
+        }
+        social[id].comments.sort((a,b) => (a.t||0) - (b.t||0));
+      }
+      // Also pull in IDs only in fresh
+      for (const id of Object.keys(fresh)) {
+        if (!social[id]) social[id] = fresh[id];
+      }
+      // Update visible cards
+      feed.querySelectorAll('.br-card').forEach(card => {
+        const id = card.dataset.reelId;
+        const s = social[id]; if (!s) return;
+        const lc = card.querySelector('.br-like-count');
+        const cc = card.querySelector('.br-comment-count');
+        const ch = card.querySelector('.br-cmt-count-head');
+        if (lc) lc.textContent = s.likes;
+        if (cc) cc.textContent = s.comments.length;
+        if (ch) ch.textContent = s.comments.length;
+        // If drawer is open, re-render
+        const drawer = card.querySelector('.br-comments-drawer');
+        if (drawer && drawer.classList.contains('open')) {
+          const list = card.querySelector('.br-comments-list');
+          if (list && s.comments.length) {
+            list.innerHTML = s.comments.map(c => `
+              <div class="br-comment">
+                <div class="br-comment-head">
+                  <span class="br-comment-name">${escHtml(c.n || 'anon')}</span>
+                  <span class="br-comment-time">${fmtTime(c.t)}</span>
+                </div>
+                <div class="br-comment-body">${escHtml(c.b || '')}${c.gif ? `<img class="br-gif" src="${escHtml(c.gif)}" alt="gif" loading="lazy">` : ''}</div>
+              </div>
+            `).join('');
+          }
+        }
+      });
+    } catch (e) {}
+  }
+  function startSocialPoll() {
+    if (__socialPollTimer) return;
+    __socialPollTimer = setInterval(refreshSocialFromBin, 6000);
+  }
+  function stopSocialPoll() {
+    if (__socialPollTimer) { clearInterval(__socialPollTimer); __socialPollTimer = null; }
+  }
+  document.querySelector('[data-tab="brainrot"]').addEventListener('click', startSocialPoll);
+  document.querySelectorAll('.sb-tab').forEach(t => {
+    if (t.dataset.tab !== 'brainrot') t.addEventListener('click', stopSocialPoll);
   });
 
   loadAll();
