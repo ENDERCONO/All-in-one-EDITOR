@@ -4126,23 +4126,23 @@
 
           <div class="cp-section" data-cp-section="clip">
             <div class="field-group">
-              <div class="field-label"><button type="button" class="auto-diamond" data-param="speed" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>Volume</span><span class="color-rgb-display" id="pVolVal">0.0 dB</span></div>
+              <div class="field-label"><button type="button" class="auto-diamond" data-param="volumeDb" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>Volume</span><span class="color-rgb-display" id="pVolVal">0.0 dB</span></div>
               <input type="range" id="pVol" min="-60" max="12" value="0" step="0.1">
             </div>
             <div class="field-group">
-              <div class="field-label"><button type="button" class="auto-diamond" data-param="bass" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>Fade in</span><span class="color-rgb-display" id="pFadeInVal">0.0s</span></div>
+              <div class="field-label"><button type="button" class="auto-diamond" data-param="fadeIn" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>Fade in</span><span class="color-rgb-display" id="pFadeInVal">0.0s</span></div>
               <input type="range" id="pFadeIn" min="0" max="10" value="0" step="0.05">
             </div>
             <div class="field-group">
-              <div class="field-label"><button type="button" class="auto-diamond" data-param="reverb" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>Fade out</span><span class="color-rgb-display" id="pFadeOutVal">0.0s</span></div>
+              <div class="field-label"><button type="button" class="auto-diamond" data-param="fadeOut" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>Fade out</span><span class="color-rgb-display" id="pFadeOutVal">0.0s</span></div>
               <input type="range" id="pFadeOut" min="0" max="10" value="0" step="0.05">
             </div>
             <div class="field-group">
-              <div class="field-label"><button type="button" class="auto-diamond" data-param="reverbSize" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>Speed</span><span class="color-rgb-display" id="pSpeedVal">1.00×</span></div>
+              <div class="field-label"><button type="button" class="auto-diamond" data-param="speed" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>Speed</span><span class="color-rgb-display" id="pSpeedVal">1.00×</span></div>
               <input type="range" id="pSpeed" min="0.25" max="4" value="1" step="0.01">
             </div>
             <div class="field-group">
-              <div class="field-label"><button type="button" class="auto-diamond" data-param="muffle" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>Voice preset</span></div>
+              <div class="field-label"><span>Voice preset</span></div>
               <select class="color-input" id="pPreset">
                 <option value="none">None</option>
                 <option value="phone">Phone</option>
@@ -4156,42 +4156,42 @@
 
           <div class="cp-section" data-cp-section="space" hidden>
             <div class="field-group">
-              <div class="field-label"><button type="button" class="auto-diamond" data-param="hp" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>Bass boom</span><span class="color-rgb-display" id="pBassVal">+0.0 dB</span></div>
+              <div class="field-label"><button type="button" class="auto-diamond" data-param="bass" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>Bass boom</span><span class="color-rgb-display" id="pBassVal">+0.0 dB</span></div>
               <input type="range" id="pBass" min="0" max="24" value="0" step="0.1">
             </div>
             <div class="field-group">
-              <div class="field-label"><button type="button" class="auto-diamond" data-param="bits" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>Reverb wet</span><span class="color-rgb-display" id="pReverbVal">0%</span></div>
+              <div class="field-label"><button type="button" class="auto-diamond" data-param="reverb" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>Reverb wet</span><span class="color-rgb-display" id="pReverbVal">0%</span></div>
               <input type="range" id="pReverb" min="0" max="100" value="0" step="1">
             </div>
             <div class="field-group">
-              <div class="field-label"><button type="button" class="auto-diamond" data-param="sr" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>Reverb size</span><span class="color-rgb-display" id="pReverbSizeVal">1.5s</span></div>
+              <div class="field-label"><button type="button" class="auto-diamond" data-param="reverbSize" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>Reverb size</span><span class="color-rgb-display" id="pReverbSizeVal">1.5s</span></div>
               <input type="range" id="pReverbSize" min="0.2" max="6" value="1.5" step="0.1">
             </div>
             <div class="field-group">
-              <div class="field-label"><button type="button" class="auto-diamond" data-param="ad" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>Muffle</span><span class="color-rgb-display" id="pMuffleVal">0%</span></div>
+              <div class="field-label"><button type="button" class="auto-diamond" data-param="muffle" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>Muffle</span><span class="color-rgb-display" id="pMuffleVal">0%</span></div>
               <input type="range" id="pMuffle" min="0" max="100" value="0" step="1">
             </div>
             <div class="field-group">
-              <div class="field-label"><button type="button" class="auto-diamond" data-param="da" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>High-pass</span><span class="color-rgb-display" id="pHpVal">20 Hz</span></div>
+              <div class="field-label"><button type="button" class="auto-diamond" data-param="hp" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>High-pass</span><span class="color-rgb-display" id="pHpVal">20 Hz</span></div>
               <input type="range" id="pHp" min="20" max="2000" value="20" step="1">
             </div>
           </div>
 
           <div class="cp-section" data-cp-section="crush" hidden>
             <div class="field-group">
-              <div class="field-label"><span>Bit depth</span><span class="color-rgb-display" id="pBitsVal">16 bit</span></div>
+              <div class="field-label"><button type="button" class="auto-diamond" data-param="bits" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>Bit depth</span><span class="color-rgb-display" id="pBitsVal">16 bit</span></div>
               <input type="range" id="pBits" min="1" max="16" value="16" step="1">
             </div>
             <div class="field-group">
-              <div class="field-label"><span>Resample rate</span><span class="color-rgb-display" id="pSrVal">48000 Hz</span></div>
+              <div class="field-label"><button type="button" class="auto-diamond" data-param="sr" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>Resample rate</span><span class="color-rgb-display" id="pSrVal">48000 Hz</span></div>
               <input type="range" id="pSr" min="500" max="48000" value="48000" step="100">
             </div>
             <div class="field-group">
-              <div class="field-label"><span>AD aliasing</span><span class="color-rgb-display" id="pAdVal">0%</span></div>
+              <div class="field-label"><button type="button" class="auto-diamond" data-param="ad" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>AD aliasing</span><span class="color-rgb-display" id="pAdVal">0%</span></div>
               <input type="range" id="pAd" min="0" max="100" value="0" step="1">
             </div>
             <div class="field-group">
-              <div class="field-label"><span>DA aliasing</span><span class="color-rgb-display" id="pDaVal">0%</span></div>
+              <div class="field-label"><button type="button" class="auto-diamond" data-param="da" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>DA aliasing</span><span class="color-rgb-display" id="pDaVal">0%</span></div>
               <input type="range" id="pDa" min="0" max="100" value="0" step="1">
             </div>
           </div>
