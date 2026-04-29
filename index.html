@@ -3513,6 +3513,323 @@
     letter-spacing: 0.03em;
     text-align: center;
   }
+
+  /* =====================================================
+     Programming — Sorting Algorithms section
+     ===================================================== */
+  .prog-section-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 6px;
+  }
+  .prog-section-title {
+    font-family: 'Instrument Serif', serif;
+    font-weight: 400;
+    font-size: clamp(28px, 4vw, 42px);
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+    margin-bottom: 6px;
+  }
+  .prog-section-title em {
+    font-style: italic;
+    background: linear-gradient(100deg, var(--b), var(--g) 55%, var(--accent));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .prog-section-desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    max-width: 560px;
+    line-height: 1.6;
+  }
+  .prog-subsection {
+    margin-top: 36px;
+    padding-top: 32px;
+    border-top: 1px solid var(--border);
+  }
+  .prog-subsection-hd {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+  .prog-subsection-hd h3 {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: 26px;
+    letter-spacing: -0.01em;
+  }
+  .prog-subsection-hd .prog-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    padding: 3px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+  }
+  /* Two-column layout: visualizer left, explanation right */
+  .sort-layout {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 24px;
+    align-items: start;
+  }
+  @media (max-width: 1100px) {
+    .sort-layout { grid-template-columns: 1fr; }
+  }
+  .sort-viz-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 22px 24px;
+  }
+  .sort-explain-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 22px 24px;
+    position: sticky;
+    top: 20px;
+  }
+  .sort-explain-panel h4 {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: 20px;
+    margin-bottom: 14px;
+    letter-spacing: -0.01em;
+  }
+  .algo-explain {
+    display: none;
+  }
+  .algo-explain.visible {
+    display: block;
+  }
+  .algo-explain-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--b);
+    margin-bottom: 8px;
+  }
+  .algo-explain-desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.7;
+    margin-bottom: 16px;
+  }
+  .algo-complexity {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+    margin-bottom: 16px;
+  }
+  .algo-complexity .cpill {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    padding: 5px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text-dim);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+  }
+  .algo-complexity .cpill .cpill-label {
+    color: var(--text-faint);
+  }
+  .algo-complexity .cpill .cpill-val {
+    color: var(--text);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .algo-steps-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 10px;
+  }
+  .algo-steps {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .algo-steps li {
+    display: flex;
+    gap: 10px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    line-height: 1.55;
+  }
+  .algo-steps li .step-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--b);
+    background: color-mix(in srgb, var(--b) 12%, transparent);
+    border-radius: 4px;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    margin-top: 1px;
+  }
+  .algo-code-note {
+    margin-top: 16px;
+    padding: 12px 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    border-left: 3px solid var(--b);
+  }
+  .algo-code-note-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--b);
+    margin-bottom: 6px;
+  }
+  .algo-code-note p {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+  /* Override sort-viz inner styles to match dark theme */
+  .sort-viz-panel .s-tab {
+    padding: 5px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: transparent;
+    font-size: 11.5px;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 500;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: background .15s, border-color .15s, color .15s;
+    letter-spacing: 0.04em;
+  }
+  .sort-viz-panel .s-tab:hover { color: var(--text); border-color: var(--border-hover); }
+  .sort-viz-panel .s-tab.active {
+    background: var(--surface-3);
+    color: var(--text);
+    border-color: var(--border-hover);
+  }
+  .sort-viz-panel .s-bar { flex: 1; border-radius: 3px 3px 0 0; transition: height .1s ease, background .12s ease; min-width: 0; }
+  .sort-viz-panel .s-bar.def { background: var(--border); }
+  .sort-viz-panel .s-bar.cmp { background: #EF9F27; }
+  .sort-viz-panel .s-bar.swp { background: #D85A30; }
+  .sort-viz-panel .s-bar.pvt { background: #7F77DD; }
+  .sort-viz-panel .s-bar.srt { background: #1D9E75; }
+  .sort-viz-panel .cln {
+    padding: 2px 10px;
+    border-radius: 4px;
+    white-space: pre;
+    font-size: 11.5px;
+    line-height: 1.65;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .sort-viz-panel .cln.hl { background: color-mix(in srgb, var(--b) 18%, transparent); color: var(--text); }
+  .sort-viz-panel .leg-dot { display: inline-block; width: 9px; height: 9px; border-radius: 3px; vertical-align: middle; margin-right: 4px; }
+  .sort-viz-panel #sv-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 220px;
+    padding: 8px 8px 0;
+    background: var(--bg-2);
+    border-radius: 10px;
+    border: 1px solid var(--border);
+  }
+  .sort-viz-panel #sv-code {
+    height: 300px;
+    overflow-y: auto;
+    background: var(--bg-2);
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    padding: 8px 4px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .sort-viz-bottom {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .sort-viz-bottom button {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 7px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text-dim);
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    transition: all 0.15s;
+  }
+  .sort-viz-bottom button:hover { color: var(--text); border-color: var(--border-hover); background: var(--surface-3); }
+  .sort-viz-bottom label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 4px;
+  }
+  .sv-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .sv-desc { font-size: 12px; color: var(--text-dim); max-width: 380px; }
+  .sv-step { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--text-faint); white-space: nowrap; }
+  .sv-inner {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+  .sv-bars-col { width: 240px; flex-shrink: 0; }
+  .sv-code-col { flex: 1; min-width: 0; }
+  .sv-legend {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  @media (max-width: 800px) {
+    .sv-inner { flex-direction: column; }
+    .sv-bars-col { width: 100%; }
+  }
 </style>
 </head>
 <body>
@@ -3551,6 +3868,10 @@
       <button class="sb-tab" data-tab="chat" title="Chat — public messages">
         <span class="sb-icon">💬</span>
         <span class="sb-label">Chat</span>
+      </button>
+      <button class="sb-tab" data-tab="programming" title="Programming — Sorting Algorithms">
+        <span class="sb-icon">&lt;/&gt;</span>
+        <span class="sb-label">Programming</span>
       </button>
     </nav>
 
@@ -4505,6 +4826,174 @@
       </div>
     </div>
   </main>
+
+  <!-- ================= PROGRAMMING ================= -->
+  <main data-mode="programming" hidden>
+    <header style="padding-bottom:28px;border-bottom:1px solid var(--border);margin-bottom:36px">
+      <div class="prog-section-label">Programming</div>
+      <h1 class="prog-section-title">Algorithms &amp; <em>Concepts</em></h1>
+      <p class="prog-section-desc">Interactive visualizations and deep-dives into fundamental computer science topics. Step through the logic line by line, see exactly what the code does at every stage.</p>
+    </header>
+
+    <!-- ── Sorting Algorithms sub-section ── -->
+    <section class="prog-subsection">
+      <div class="prog-subsection-hd">
+        <h3>Sorting Algorithms</h3>
+        <span class="prog-tag">C++ · Visualizer</span>
+      </div>
+
+      <div class="sort-layout">
+        <!-- Left: the interactive visualizer -->
+        <div class="sort-viz-panel">
+          <div id="sv-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px"></div>
+          <div class="sv-info-row">
+            <span class="sv-desc" id="sv-desc"></span>
+            <span class="sv-step" id="sv-sinfo"></span>
+          </div>
+          <div class="sv-inner">
+            <div class="sv-bars-col">
+              <div id="sv-bars"></div>
+              <div class="sv-legend">
+                <span><span class="leg-dot" style="background:#EF9F27"></span>Compare</span>
+                <span><span class="leg-dot" style="background:#D85A30"></span>Swap</span>
+                <span><span class="leg-dot" style="background:#7F77DD"></span>Pivot / key</span>
+                <span><span class="leg-dot" style="background:#1D9E75"></span>Sorted</span>
+              </div>
+            </div>
+            <div class="sv-code-col">
+              <div id="sv-code"></div>
+            </div>
+          </div>
+          <div class="sort-viz-bottom">
+            <button id="sv-play-btn" onclick="svTogglePlay()">▶ Play</button>
+            <button onclick="svDoStep()">Step ▸</button>
+            <button onclick="svDoReset()">↺ Reset</button>
+            <label>Speed <input type="range" id="sv-spd" min="1" max="3" value="2" step="1" style="width:64px"></label>
+          </div>
+        </div>
+
+        <!-- Right: explanation panel -->
+        <div class="sort-explain-panel">
+          <h4>How it works</h4>
+
+          <!-- Bubble Sort -->
+          <div class="algo-explain visible" id="exp-bubble">
+            <div class="algo-explain-name">Bubble Sort</div>
+            <p class="algo-explain-desc">Bubble Sort repeatedly walks through the array comparing adjacent elements. If two neighbours are out of order it swaps them, causing the largest unsorted value to "bubble up" to the right on every pass. This continues until no swaps are needed.</p>
+            <div class="algo-complexity">
+              <div class="cpill"><span class="cpill-label">Best</span><span class="cpill-val">O(n)</span></div>
+              <div class="cpill"><span class="cpill-label">Average</span><span class="cpill-val">O(n²)</span></div>
+              <div class="cpill"><span class="cpill-label">Worst</span><span class="cpill-val">O(n²)</span></div>
+              <div class="cpill"><span class="cpill-label">Space</span><span class="cpill-val">O(1)</span></div>
+            </div>
+            <div class="algo-steps-title">Step-by-step</div>
+            <ol class="algo-steps">
+              <li><span class="step-num">1</span>Outer loop runs n−1 passes (line 2). After each pass the last i elements are guaranteed sorted.</li>
+              <li><span class="step-num">2</span>Inner loop compares <code style="font-size:11px;font-family:var(--font-mono,monospace)">arr[j]</code> with its right neighbour (line 3). The window shrinks each pass because the end is already sorted.</li>
+              <li><span class="step-num">3</span>If the left element is greater (line 4), <code style="font-size:11px;font-family:var(--font-mono,monospace)">swap()</code> exchanges the two values in-place (line 5).</li>
+              <li><span class="step-num">4</span>Repeat until the outer loop finishes — the array is now fully sorted.</li>
+            </ol>
+            <div class="algo-code-note">
+              <div class="algo-code-note-title">Code insight</div>
+              <p>The condition <code style="font-family:var(--font-mono,monospace);font-size:11.5px">j &lt; n-i-1</code> is the key optimisation — it avoids re-checking elements that have already bubbled to their correct positions at the tail of the array.</p>
+            </div>
+          </div>
+
+          <!-- Selection Sort -->
+          <div class="algo-explain" id="exp-selection">
+            <div class="algo-explain-name">Selection Sort</div>
+            <p class="algo-explain-desc">Selection Sort divides the array into a sorted left region and an unsorted right region. On each pass it scans the entire unsorted region to find the minimum element, then swaps it into the first unsorted position — growing the sorted region by one each time.</p>
+            <div class="algo-complexity">
+              <div class="cpill"><span class="cpill-label">Best</span><span class="cpill-val">O(n²)</span></div>
+              <div class="cpill"><span class="cpill-label">Average</span><span class="cpill-val">O(n²)</span></div>
+              <div class="cpill"><span class="cpill-label">Worst</span><span class="cpill-val">O(n²)</span></div>
+              <div class="cpill"><span class="cpill-label">Space</span><span class="cpill-val">O(1)</span></div>
+            </div>
+            <div class="algo-steps-title">Step-by-step</div>
+            <ol class="algo-steps">
+              <li><span class="step-num">1</span>Outer loop advances the sorted boundary <code style="font-size:11px;font-family:var(--font-mono,monospace)">i</code> from 0 to n−2 (line 2).</li>
+              <li><span class="step-num">2</span>Assume index <code style="font-size:11px;font-family:var(--font-mono,monospace)">i</code> holds the minimum, store it as <code style="font-size:11px;font-family:var(--font-mono,monospace)">minIdx</code> (line 3).</li>
+              <li><span class="step-num">3</span>Inner loop scans positions i+1…n−1. Whenever a smaller value is found, update <code style="font-size:11px;font-family:var(--font-mono,monospace)">minIdx</code> (lines 4–6).</li>
+              <li><span class="step-num">4</span>Swap the true minimum into position <code style="font-size:11px;font-family:var(--font-mono,monospace)">i</code> (line 8) — exactly one swap per outer iteration.</li>
+            </ol>
+            <div class="algo-code-note">
+              <div class="algo-code-note-title">Code insight</div>
+              <p>Selection Sort always does O(n²) comparisons but at most O(n) swaps — making it attractive when writes are expensive (e.g. flash memory), even though its overall complexity is the same as Bubble Sort.</p>
+            </div>
+          </div>
+
+          <!-- Insertion Sort -->
+          <div class="algo-explain" id="exp-insertion">
+            <div class="algo-explain-name">Insertion Sort</div>
+            <p class="algo-explain-desc">Insertion Sort builds a sorted sub-array one element at a time. For each new element it scans leftward through the sorted region, shifting elements right to make room, then drops the element into its correct slot — like sorting a hand of playing cards.</p>
+            <div class="algo-complexity">
+              <div class="cpill"><span class="cpill-label">Best</span><span class="cpill-val">O(n)</span></div>
+              <div class="cpill"><span class="cpill-label">Average</span><span class="cpill-val">O(n²)</span></div>
+              <div class="cpill"><span class="cpill-label">Worst</span><span class="cpill-val">O(n²)</span></div>
+              <div class="cpill"><span class="cpill-label">Space</span><span class="cpill-val">O(1)</span></div>
+            </div>
+            <div class="algo-steps-title">Step-by-step</div>
+            <ol class="algo-steps">
+              <li><span class="step-num">1</span>Save the current element as <code style="font-size:11px;font-family:var(--font-mono,monospace)">key</code> (line 3). It may be overwritten during shifting so we must preserve it.</li>
+              <li><span class="step-num">2</span><code style="font-size:11px;font-family:var(--font-mono,monospace)">while</code> loop (line 5) moves left as long as the sorted element is larger than <code style="font-size:11px;font-family:var(--font-mono,monospace)">key</code>, copying each element one position right (line 6).</li>
+              <li><span class="step-num">3</span>When the correct position is found, place <code style="font-size:11px;font-family:var(--font-mono,monospace)">key</code> there (line 8).</li>
+              <li><span class="step-num">4</span>Repeat for every element from index 1 to n−1.</li>
+            </ol>
+            <div class="algo-code-note">
+              <div class="algo-code-note-title">Code insight</div>
+              <p>On nearly-sorted data Insertion Sort approaches O(n) — the inner <code style="font-family:var(--font-mono,monospace);font-size:11.5px">while</code> loop exits immediately when each element is already in place. This is why real-world sort implementations (like Timsort) fall back to Insertion Sort for small or nearly-sorted sub-arrays.</p>
+            </div>
+          </div>
+
+          <!-- Merge Sort -->
+          <div class="algo-explain" id="exp-merge">
+            <div class="algo-explain-name">Merge Sort</div>
+            <p class="algo-explain-desc">Merge Sort uses divide-and-conquer: recursively split the array into two halves until each sub-array is a single element (trivially sorted), then merge pairs of sorted sub-arrays back together. The merge step is where the real work happens.</p>
+            <div class="algo-complexity">
+              <div class="cpill"><span class="cpill-label">Best</span><span class="cpill-val">O(n log n)</span></div>
+              <div class="cpill"><span class="cpill-label">Average</span><span class="cpill-val">O(n log n)</span></div>
+              <div class="cpill"><span class="cpill-label">Worst</span><span class="cpill-val">O(n log n)</span></div>
+              <div class="cpill"><span class="cpill-label">Space</span><span class="cpill-val">O(n)</span></div>
+            </div>
+            <div class="algo-steps-title">Step-by-step</div>
+            <ol class="algo-steps">
+              <li><span class="step-num">1</span><code style="font-size:11px;font-family:var(--font-mono,monospace)">mergeSort</code> finds the midpoint <code style="font-size:11px;font-family:var(--font-mono,monospace)">m</code> and recursively sorts both halves (lines 15–17).</li>
+              <li><span class="step-num">2</span><code style="font-size:11px;font-family:var(--font-mono,monospace)">merge</code> copies both halves into temporary arrays <code style="font-size:11px;font-family:var(--font-mono,monospace)">L[]</code> and <code style="font-size:11px;font-family:var(--font-mono,monospace)">R[]</code> (lines 3–5).</li>
+              <li><span class="step-num">3</span>Two pointers walk through L and R comparing front elements; the smaller value is placed back into the original array (lines 7–9).</li>
+              <li><span class="step-num">4</span>Any remaining elements in L or R are copied over — they're already in sorted order (lines 11–12).</li>
+            </ol>
+            <div class="algo-code-note">
+              <div class="algo-code-note-title">Code insight</div>
+              <p>Merge Sort guarantees O(n log n) in all cases, making it predictable. Its downside is O(n) auxiliary space for the temporary arrays. It's the basis of <strong>Timsort</strong> — the algorithm used by Python and Java's standard libraries.</p>
+            </div>
+          </div>
+
+          <!-- Quick Sort -->
+          <div class="algo-explain" id="exp-quick">
+            <div class="algo-explain-name">Quick Sort</div>
+            <p class="algo-explain-desc">Quick Sort picks a pivot element and partitions the array so everything smaller goes left of the pivot, and everything larger goes right. It then recursively sorts both sides. No extra memory is needed — all partitioning happens in-place.</p>
+            <div class="algo-complexity">
+              <div class="cpill"><span class="cpill-label">Best</span><span class="cpill-val">O(n log n)</span></div>
+              <div class="cpill"><span class="cpill-label">Average</span><span class="cpill-val">O(n log n)</span></div>
+              <div class="cpill"><span class="cpill-label">Worst</span><span class="cpill-val">O(n²)</span></div>
+              <div class="cpill"><span class="cpill-label">Space</span><span class="cpill-val">O(log n)</span></div>
+            </div>
+            <div class="algo-steps-title">Step-by-step</div>
+            <ol class="algo-steps">
+              <li><span class="step-num">1</span><code style="font-size:11px;font-family:var(--font-mono,monospace)">partition</code> picks the last element as <code style="font-size:11px;font-family:var(--font-mono,monospace)">pivot</code> and sets up a boundary pointer <code style="font-size:11px;font-family:var(--font-mono,monospace)">i</code> (line 2).</li>
+              <li><span class="step-num">2</span>For each element ≤ pivot, expand the left region by incrementing <code style="font-size:11px;font-family:var(--font-mono,monospace)">i</code> and swapping <code style="font-size:11px;font-family:var(--font-mono,monospace)">a[i]</code> with <code style="font-size:11px;font-family:var(--font-mono,monospace)">a[j]</code> (lines 3–5).</li>
+              <li><span class="step-num">3</span>Place the pivot in its final sorted position by swapping <code style="font-size:11px;font-family:var(--font-mono,monospace)">a[i+1]</code> with <code style="font-size:11px;font-family:var(--font-mono,monospace)">a[hi]</code> (line 7). Return the pivot index.</li>
+              <li><span class="step-num">4</span><code style="font-size:11px;font-family:var(--font-mono,monospace)">quickSort</code> recursively sorts the sub-arrays to the left and right of the pivot (lines 13–14).</li>
+            </ol>
+            <div class="algo-code-note">
+              <div class="algo-code-note-title">Code insight</div>
+              <p>The worst case O(n²) occurs when the pivot is always the smallest or largest element (e.g. an already-sorted array with this last-element pivot strategy). Real implementations use <em>median-of-three</em> or random pivot selection to avoid this. Quick Sort is often the fastest in practice due to excellent cache locality.</p>
+            </div>
+          </div>
+        </div><!-- /sort-explain-panel -->
+      </div><!-- /sort-layout -->
+    </section><!-- /prog-subsection -->
+  </main><!-- /programming -->
 
   <footer>
     <span>Luminance</span> = 0.299·R + 0.587·G + 0.114·B &nbsp;·&nbsp; <span>Color distance</span> = √(Δr² + Δg² + Δb²) &nbsp;·&nbsp; All processing is local
@@ -11264,6 +11753,219 @@ setCurrentColor([255, 0, 0]);
 
   updateCharCount();
   updateWarning();
+})();
+/* ============================================================
+   Programming — Sorting Algorithms Visualizer
+   ============================================================ */
+(function() {
+  const SV_A0=[64,34,25,12,22,11,90,45,78,56], SV_MX=90;
+
+  const SV_CODES={
+    bubble:[
+      'void bubbleSort(int arr[], int n) {',
+      '  for (int i = 0; i < n-1; i++) {',
+      '    for (int j = 0; j < n-i-1; j++) {',
+      '      if (arr[j] > arr[j+1]) {',
+      '        swap(arr[j], arr[j+1]);',
+      '      }',
+      '    }',
+      '  }',
+      '}'],
+    selection:[
+      'void selectionSort(int arr[], int n) {',
+      '  for (int i = 0; i < n-1; i++) {',
+      '    int minIdx = i;',
+      '    for (int j = i+1; j < n; j++) {',
+      '      if (arr[j] < arr[minIdx])',
+      '        minIdx = j;',
+      '    }',
+      '    swap(arr[minIdx], arr[i]);',
+      '  }',
+      '}'],
+    insertion:[
+      'void insertionSort(int arr[], int n) {',
+      '  for (int i = 1; i < n; i++) {',
+      '    int key = arr[i];',
+      '    int j = i - 1;',
+      '    while (j >= 0 && arr[j] > key) {',
+      '      arr[j+1] = arr[j];',
+      '      j--;',
+      '    }',
+      '    arr[j+1] = key;',
+      '  }',
+      '}'],
+    merge:[
+      'void merge(int a[], int l, int m, int r) {',
+      '  int n1=m-l+1, n2=r-m;',
+      '  int L[n1], R[n2];',
+      '  for(int i=0;i<n1;i++) L[i]=a[l+i];',
+      '  for(int j=0;j<n2;j++) R[j]=a[m+1+j];',
+      '  int i=0, j=0, k=l;',
+      '  while (i<n1 && j<n2) {',
+      '    if (L[i]<=R[j]) a[k++]=L[i++];',
+      '    else             a[k++]=R[j++];',
+      '  }',
+      '  while (i<n1) a[k++]=L[i++];',
+      '  while (j<n2) a[k++]=R[j++];',
+      '}',
+      'void mergeSort(int a[], int l, int r) {',
+      '  if (l >= r) return;',
+      '  int m = l + (r-l)/2;',
+      '  mergeSort(a, l, m);',
+      '  mergeSort(a, m+1, r);',
+      '  merge(a, l, m, r);',
+      '}'],
+    quick:[
+      'int partition(int a[], int lo, int hi) {',
+      '  int pivot=a[hi], i=lo-1;',
+      '  for (int j = lo; j < hi; j++) {',
+      '    if (a[j] <= pivot) {',
+      '      swap(a[++i], a[j]);',
+      '    }',
+      '  }',
+      '  swap(a[i+1], a[hi]);',
+      '  return i+1;',
+      '}',
+      'void quickSort(int a[], int lo, int hi) {',
+      '  if (lo >= hi) return;',
+      '  int p = partition(a, lo, hi);',
+      '  quickSort(a, lo, p-1);',
+      '  quickSort(a, p+1, hi);',
+      '}']
+  };
+
+  const SV_DESCS={
+    bubble:'Compares adjacent pairs and swaps if out of order — the largest value "bubbles" to the end each pass.',
+    selection:'Scans the unsorted region for the minimum element, then swaps it into its final position.',
+    insertion:'Takes each element and inserts it into the correct spot in the already-sorted left region.',
+    merge:'Recursively splits the array in half, sorts each half, then merges the two sorted halves.',
+    quick:'Picks a pivot, partitions elements smaller/larger around it, then recursively sorts each side.'
+  };
+
+  const SV_NAMES={bubble:'Bubble',selection:'Selection',insertion:'Insertion',merge:'Merge',quick:'Quick'};
+  const SV_ORDER=['bubble','selection','insertion','merge','quick'];
+
+  function svMkStep(a,cmp,swp,pvt,srt,ln,done){
+    return{a:[...a],cmp:cmp||[],swp:!!swp,pvt:pvt==null?-1:pvt,srt:new Set(srt),ln:ln,done:!!done};
+  }
+  function svGenBubble(a0){
+    const a=[...a0],s=[],n=a.length,srt=new Set();
+    for(let i=0;i<n-1;i++){for(let j=0;j<n-i-1;j++){s.push(svMkStep(a,[j,j+1],0,-1,srt,3));if(a[j]>a[j+1]){[a[j],a[j+1]]=[a[j+1],a[j]];s.push(svMkStep(a,[j,j+1],1,-1,srt,4));}}srt.add(n-1-i);}
+    srt.add(0);s.push(svMkStep(a,[],0,-1,srt,-1,true));return s;
+  }
+  function svGenSelection(a0){
+    const a=[...a0],s=[],n=a.length,srt=new Set();
+    for(let i=0;i<n-1;i++){let mi=i;s.push(svMkStep(a,[i],0,mi,srt,2));for(let j=i+1;j<n;j++){s.push(svMkStep(a,[j,mi],0,mi,srt,4));if(a[j]<a[mi]){mi=j;s.push(svMkStep(a,[],0,mi,srt,5));}}const pm=mi;[a[mi],a[i]]=[a[i],a[mi]];srt.add(i);s.push(svMkStep(a,[pm,i],1,-1,srt,7));}
+    srt.add(n-1);s.push(svMkStep(a,[],0,-1,srt,-1,true));return s;
+  }
+  function svGenInsertion(a0){
+    const a=[...a0],s=[],n=a.length,srt=new Set([0]);
+    for(let i=1;i<n;i++){const key=a[i];let j=i-1;s.push(svMkStep(a,[i],0,i,srt,2));while(j>=0&&a[j]>key){s.push(svMkStep(a,[j,j+1],0,-1,srt,4));a[j+1]=a[j];s.push(svMkStep(a,[j,j+1],1,-1,srt,5));j--;}a[j+1]=key;for(let k=0;k<=i;k++)srt.add(k);s.push(svMkStep(a,[],0,-1,srt,8));}
+    s.push(svMkStep(a,[],0,-1,srt,-1,true));return s;
+  }
+  function svGenMerge(a0){
+    const a=[...a0],s=[],n=a.length,srt=new Set();
+    function mg(l,m,r){const L=a.slice(l,m+1),R=a.slice(m+1,r+1);let i=0,j=0,k=l;while(i<L.length&&j<R.length){s.push(svMkStep(a,[l+i,m+1+j],0,-1,srt,6));if(L[i]<=R[j]){a[k++]=L[i++];s.push(svMkStep(a,[],1,-1,srt,7));}else{a[k++]=R[j++];s.push(svMkStep(a,[],1,-1,srt,8));}}while(i<L.length){a[k++]=L[i++];s.push(svMkStep(a,[],1,-1,srt,10));}while(j<R.length){a[k++]=R[j++];s.push(svMkStep(a,[],1,-1,srt,11));}}
+    function ms(l,r){if(l>=r)return;const m=Math.floor(l+(r-l)/2);s.push(svMkStep(a,[],0,-1,srt,15));ms(l,m);s.push(svMkStep(a,[],0,-1,srt,16));ms(m+1,r);s.push(svMkStep(a,[],0,-1,srt,17));mg(l,m,r);}
+    ms(0,n-1);for(let i=0;i<n;i++)srt.add(i);s.push(svMkStep(a,[],0,-1,srt,-1,true));return s;
+  }
+  function svGenQuick(a0){
+    const a=[...a0],s=[],n=a.length,srt=new Set();
+    function pt(lo,hi){let i=lo-1;s.push(svMkStep(a,[],0,hi,srt,1));for(let j=lo;j<hi;j++){s.push(svMkStep(a,[j,hi],0,hi,srt,3));if(a[j]<=a[hi]){i++;[a[i],a[j]]=[a[j],a[i]];s.push(svMkStep(a,[i,j],1,hi,srt,4));}}[a[i+1],a[hi]]=[a[hi],a[i+1]];srt.add(i+1);s.push(svMkStep(a,[i+1,hi],1,i+1,srt,7));return i+1;}
+    function qs(lo,hi){if(lo>=hi){if(lo===hi)srt.add(lo);return;}const p=pt(lo,hi);qs(lo,p-1);qs(p+1,hi);}
+    qs(0,n-1);for(let i=0;i<n;i++)srt.add(i);s.push(svMkStep(a,[],0,-1,srt,-1,true));return s;
+  }
+
+  const SV_GENS={bubble:svGenBubble,selection:svGenSelection,insertion:svGenInsertion,merge:svGenMerge,quick:svGenQuick};
+  let svCache={},svCur='bubble',svIdx=0,svPlaying=false,svTimer=null;
+
+  function svGetS(name){if(!svCache[name])svCache[name]=SV_GENS[name](SV_A0);return svCache[name];}
+
+  function svRenderBars(step){
+    const el=document.getElementById('sv-bars');
+    if(!el)return;
+    el.innerHTML=step.a.map((v,i)=>{
+      let cl='def';
+      if(step.done||step.srt.has(i))cl='srt';
+      else if(step.swp&&step.cmp.includes(i))cl='swp';
+      else if(step.cmp.includes(i))cl='cmp';
+      else if(i===step.pvt)cl='pvt';
+      const h=Math.round((v/SV_MX)*200);
+      return`<div class="s-bar ${cl}" style="height:${h}px" title="${v}"></div>`;
+    }).join('');
+  }
+
+  function svRenderCode(name,ln){
+    const codeEl=document.getElementById('sv-code');
+    if(!codeEl)return;
+    const lines=SV_CODES[name];
+    codeEl.innerHTML=lines.map((l,i)=>{
+      const e=l.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return`<div class="cln${i===ln?' hl':''}">${e}</div>`;
+    }).join('');
+    if(ln>=0){const active=codeEl.querySelectorAll('.cln')[ln];if(active)active.scrollIntoView({block:'nearest',behavior:'smooth'});}
+  }
+
+  function svRender(){
+    const ss=svGetS(svCur),step=ss[svIdx];
+    svRenderBars(step);
+    svRenderCode(svCur,step.ln);
+    const descEl=document.getElementById('sv-desc');
+    const sinfoEl=document.getElementById('sv-sinfo');
+    const playBtn=document.getElementById('sv-play-btn');
+    if(descEl)descEl.textContent=SV_DESCS[svCur];
+    if(sinfoEl)sinfoEl.textContent=`Step ${svIdx+1} / ${ss.length}`;
+    if(playBtn)playBtn.textContent=svPlaying?'⏸ Pause':'▶ Play';
+    document.querySelectorAll('#sv-tabs .s-tab').forEach(t=>t.classList.toggle('active',t.dataset.a===svCur));
+    // Update explanation panel
+    document.querySelectorAll('.algo-explain').forEach(el=>el.classList.remove('visible'));
+    const expEl=document.getElementById('exp-'+svCur);
+    if(expEl)expEl.classList.add('visible');
+  }
+
+  function svSelectAlgo(name){svStopPlay();svCur=name;svIdx=0;svRender();}
+  function svDoStep(){svStopPlay();if(svIdx<svGetS(svCur).length-1){svIdx++;svRender();}}
+  function svDoReset(){svStopPlay();svIdx=0;svRender();}
+
+  function svTogglePlay(){if(svPlaying)svStopPlay();else svStartPlay();}
+  function svStartPlay(){
+    const ss=svGetS(svCur);if(svIdx>=ss.length-1)svIdx=0;
+    svPlaying=true;
+    const spd=parseInt((document.getElementById('sv-spd')||{value:2}).value);
+    const d=[600,220,70][3-spd];
+    svTimer=setInterval(()=>{if(svIdx<svGetS(svCur).length-1){svIdx++;svRender();}else svStopPlay();},d);
+    svRender();
+  }
+  function svStopPlay(){svPlaying=false;if(svTimer){clearInterval(svTimer);svTimer=null;}svRender();}
+
+  // Expose to global (onclick attributes)
+  window.svTogglePlay=svTogglePlay;
+  window.svDoStep=svDoStep;
+  window.svDoReset=svDoReset;
+
+  // Build tabs
+  function svInit(){
+    const tabsEl=document.getElementById('sv-tabs');
+    if(!tabsEl)return;
+    SV_ORDER.forEach(name=>{
+      const b=document.createElement('button');
+      b.className='s-tab';b.dataset.a=name;
+      b.textContent=SV_NAMES[name]+' Sort';
+      b.onclick=()=>svSelectAlgo(name);
+      tabsEl.appendChild(b);
+    });
+    svRender();
+  }
+
+  // Init when the Programming tab is first opened
+  let svInited=false;
+  document.querySelectorAll('.sb-tab').forEach(tab=>{
+    if(tab.dataset.tab==='programming'){
+      tab.addEventListener('click',()=>{
+        if(!svInited){svInited=true;setTimeout(svInit,0);}
+      });
+    }
+  });
 })();
 </script>
 </body>
