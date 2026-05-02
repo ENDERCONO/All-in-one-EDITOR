@@ -3513,323 +3513,6 @@
     letter-spacing: 0.03em;
     text-align: center;
   }
-
-  /* =====================================================
-     Programming — Sorting Algorithms section
-     ===================================================== */
-  .prog-section-label {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--text-faint);
-    margin-bottom: 6px;
-  }
-  .prog-section-title {
-    font-family: 'Instrument Serif', serif;
-    font-weight: 400;
-    font-size: clamp(28px, 4vw, 42px);
-    letter-spacing: -0.02em;
-    line-height: 1.05;
-    margin-bottom: 6px;
-  }
-  .prog-section-title em {
-    font-style: italic;
-    background: linear-gradient(100deg, var(--b), var(--g) 55%, var(--accent));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-  .prog-section-desc {
-    font-size: 13px;
-    color: var(--text-dim);
-    max-width: 560px;
-    line-height: 1.6;
-  }
-  .prog-subsection {
-    margin-top: 36px;
-    padding-top: 32px;
-    border-top: 1px solid var(--border);
-  }
-  .prog-subsection-hd {
-    display: flex;
-    align-items: baseline;
-    gap: 14px;
-    margin-bottom: 20px;
-  }
-  .prog-subsection-hd h3 {
-    font-family: 'Instrument Serif', serif;
-    font-style: italic;
-    font-weight: 400;
-    font-size: 26px;
-    letter-spacing: -0.01em;
-  }
-  .prog-subsection-hd .prog-tag {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    font-weight: 500;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--text-faint);
-    padding: 3px 10px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-  }
-  /* Two-column layout: visualizer left, explanation right */
-  .sort-layout {
-    display: grid;
-    grid-template-columns: 1fr 380px;
-    gap: 24px;
-    align-items: start;
-  }
-  @media (max-width: 1100px) {
-    .sort-layout { grid-template-columns: 1fr; }
-  }
-  .sort-viz-panel {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 22px 24px;
-  }
-  .sort-explain-panel {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 22px 24px;
-    position: sticky;
-    top: 20px;
-  }
-  .sort-explain-panel h4 {
-    font-family: 'Instrument Serif', serif;
-    font-style: italic;
-    font-weight: 400;
-    font-size: 20px;
-    margin-bottom: 14px;
-    letter-spacing: -0.01em;
-  }
-  .algo-explain {
-    display: none;
-  }
-  .algo-explain.visible {
-    display: block;
-  }
-  .algo-explain-name {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--b);
-    margin-bottom: 8px;
-  }
-  .algo-explain-desc {
-    font-size: 13px;
-    color: var(--text-dim);
-    line-height: 1.7;
-    margin-bottom: 16px;
-  }
-  .algo-complexity {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 6px;
-    margin-bottom: 16px;
-  }
-  .algo-complexity .cpill {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10.5px;
-    padding: 5px 10px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    background: var(--surface-2);
-    color: var(--text-dim);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 6px;
-  }
-  .algo-complexity .cpill .cpill-label {
-    color: var(--text-faint);
-  }
-  .algo-complexity .cpill .cpill-val {
-    color: var(--text);
-    font-weight: 500;
-    white-space: nowrap;
-  }
-  .algo-steps-title {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--text-faint);
-    margin-bottom: 10px;
-  }
-  .algo-steps {
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .algo-steps li {
-    display: flex;
-    gap: 10px;
-    font-size: 12.5px;
-    color: var(--text-dim);
-    line-height: 1.55;
-  }
-  .algo-steps li .step-num {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--b);
-    background: color-mix(in srgb, var(--b) 12%, transparent);
-    border-radius: 4px;
-    width: 20px;
-    height: 20px;
-    flex-shrink: 0;
-    display: grid;
-    place-items: center;
-    margin-top: 1px;
-  }
-  .algo-code-note {
-    margin-top: 16px;
-    padding: 12px 14px;
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    border-left: 3px solid var(--b);
-  }
-  .algo-code-note-title {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 9.5px;
-    font-weight: 600;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--b);
-    margin-bottom: 6px;
-  }
-  .algo-code-note p {
-    font-size: 12px;
-    color: var(--text-dim);
-    line-height: 1.6;
-  }
-  /* Override sort-viz inner styles to match dark theme */
-  .sort-viz-panel .s-tab {
-    padding: 5px 12px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: transparent;
-    font-size: 11.5px;
-    font-family: 'JetBrains Mono', monospace;
-    font-weight: 500;
-    color: var(--text-dim);
-    cursor: pointer;
-    transition: background .15s, border-color .15s, color .15s;
-    letter-spacing: 0.04em;
-  }
-  .sort-viz-panel .s-tab:hover { color: var(--text); border-color: var(--border-hover); }
-  .sort-viz-panel .s-tab.active {
-    background: var(--surface-3);
-    color: var(--text);
-    border-color: var(--border-hover);
-  }
-  .sort-viz-panel .s-bar { flex: 1; border-radius: 3px 3px 0 0; transition: height .1s ease, background .12s ease; min-width: 0; }
-  .sort-viz-panel .s-bar.def { background: var(--border); }
-  .sort-viz-panel .s-bar.cmp { background: #EF9F27; }
-  .sort-viz-panel .s-bar.swp { background: #D85A30; }
-  .sort-viz-panel .s-bar.pvt { background: #7F77DD; }
-  .sort-viz-panel .s-bar.srt { background: #1D9E75; }
-  .sort-viz-panel .cln {
-    padding: 2px 10px;
-    border-radius: 4px;
-    white-space: pre;
-    font-size: 11.5px;
-    line-height: 1.65;
-    color: var(--text-dim);
-    font-family: 'JetBrains Mono', monospace;
-  }
-  .sort-viz-panel .cln.hl { background: color-mix(in srgb, var(--b) 18%, transparent); color: var(--text); }
-  .sort-viz-panel .leg-dot { display: inline-block; width: 9px; height: 9px; border-radius: 3px; vertical-align: middle; margin-right: 4px; }
-  .sort-viz-panel #sv-bars {
-    display: flex;
-    align-items: flex-end;
-    gap: 3px;
-    height: 220px;
-    padding: 8px 8px 0;
-    background: var(--bg-2);
-    border-radius: 10px;
-    border: 1px solid var(--border);
-  }
-  .sort-viz-panel #sv-code {
-    height: 300px;
-    overflow-y: auto;
-    background: var(--bg-2);
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    padding: 8px 4px;
-    scrollbar-width: thin;
-    scrollbar-color: var(--border) transparent;
-  }
-  .sort-viz-bottom {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 12px;
-    flex-wrap: wrap;
-  }
-  .sort-viz-bottom button {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    font-weight: 500;
-    padding: 7px 14px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--surface-2);
-    color: var(--text-dim);
-    cursor: pointer;
-    letter-spacing: 0.04em;
-    transition: all 0.15s;
-  }
-  .sort-viz-bottom button:hover { color: var(--text); border-color: var(--border-hover); background: var(--surface-3); }
-  .sort-viz-bottom label {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: var(--text-dim);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-left: 4px;
-  }
-  .sv-info-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-  .sv-desc { font-size: 12px; color: var(--text-dim); max-width: 380px; }
-  .sv-step { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--text-faint); white-space: nowrap; }
-  .sv-inner {
-    display: flex;
-    gap: 14px;
-    align-items: flex-start;
-  }
-  .sv-bars-col { width: 240px; flex-shrink: 0; }
-  .sv-code-col { flex: 1; min-width: 0; }
-  .sv-legend {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-    margin-top: 8px;
-    font-size: 11px;
-    color: var(--text-dim);
-  }
-  @media (max-width: 800px) {
-    .sv-inner { flex-direction: column; }
-    .sv-bars-col { width: 100%; }
-  }
 </style>
 </head>
 <body>
@@ -3868,10 +3551,6 @@
       <button class="sb-tab" data-tab="chat" title="Chat — public messages">
         <span class="sb-icon">💬</span>
         <span class="sb-label">Chat</span>
-      </button>
-      <button class="sb-tab" data-tab="programming" title="Programming — Sorting Algorithms">
-        <span class="sb-icon">&lt;/&gt;</span>
-        <span class="sb-label">Programming</span>
       </button>
     </nav>
 
@@ -4203,8 +3882,8 @@
               <circle cx="6" cy="18" r="3"/>
               <circle cx="18" cy="16" r="3"/>
             </svg>
-            <div class="t">Drop an audio file — or click to browse</div>
-            <div class="s">WAV · MP3 · OGG · FLAC · M4A · WEBM</div>
+            <div class="t">Drop an audio or video file — or click to browse</div>
+            <div class="s">WAV · MP3 · OGG · FLAC · M4A · WEBM · MP4 (audio extracted)</div>
             <input type="file" accept="audio/*,video/*" id="audFileInput">
           </div>
         </div>
@@ -4644,23 +4323,61 @@
         </div>
       </section>
 
-      <!-- YouTube → MP3 / MP4 (browser-limited) -->
+      <!-- YouTube → MP3 / MP4 (real downloader via cobalt) -->
       <section class="convert-card">
         <h3>YouTube → MP3 / MP4</h3>
-        <p class="desc">YouTube blocks direct browser downloads (CORS + DRM). Paste a URL and pick a third-party service to open it in a new tab — once you have the file, drop it back here for clean conversion or trimming.</p>
+        <p class="desc">Paste a YouTube, TikTok, Twitter/X, Reddit, SoundCloud, or Instagram link. Pick a format. Hit download. Streams are fetched via public <a href="https://github.com/imputnet/cobalt" target="_blank" rel="noopener" style="color:var(--text-dim); text-decoration:underline">cobalt</a> instances — if one's rate-limited, the next is tried automatically.</p>
 
         <div class="field-group" style="gap:8px">
           <input type="text" id="ytUrl" class="color-input" placeholder="https://www.youtube.com/watch?v=..." style="font-family:'JetBrains Mono', monospace; font-size:11px;">
         </div>
 
-        <div class="export-buttons" style="flex-wrap:wrap; gap:8px; margin-top:12px">
-          <button class="dl-btn" id="ytOpenCobalt">Open in cobalt.tools ↗</button>
-          <button class="dl-btn" id="ytOpenY2Mate">Open in y2mate ↗</button>
-          <button class="dl-btn" id="ytCopyUrl">Copy URL</button>
+        <div class="convert-settings">
+          <div class="export-slider">
+            <div class="slabel"><span>What do you want?</span></div>
+            <div class="channel-toggle" style="grid-template-columns:1fr 1fr 1fr">
+              <input type="radio" name="ytKind" id="ytKindAudio" value="audio" checked>
+              <label for="ytKindAudio">Audio · MP3</label>
+              <input type="radio" name="ytKind" id="ytKindVideo" value="video">
+              <label for="ytKindVideo">Video · MP4</label>
+              <input type="radio" name="ytKind" id="ytKindMute" value="mute">
+              <label for="ytKindMute">Video (no audio)</label>
+            </div>
+          </div>
+          <div class="export-slider" id="ytAudioRow">
+            <div class="slabel">
+              <span>Audio bitrate</span>
+              <span class="val" id="ytAbVal">128 kbps</span>
+            </div>
+            <input type="range" id="ytAb" min="64" max="320" value="128" step="32">
+          </div>
+          <div class="export-slider" id="ytVideoRow" hidden>
+            <div class="slabel"><span>Max resolution</span></div>
+            <select id="ytVq" class="color-input" style="font-family:'JetBrains Mono', monospace; font-size:11px;">
+              <option value="2160">4K · 2160p</option>
+              <option value="1440">1440p</option>
+              <option value="1080" selected>1080p</option>
+              <option value="720">720p</option>
+              <option value="480">480p</option>
+              <option value="360">360p</option>
+              <option value="max">max available</option>
+            </select>
+          </div>
+          <button class="apply-btn" id="ytFetch">Fetch &amp; Download →</button>
         </div>
 
-        <p class="desc" style="margin-top:14px; opacity:0.7; font-size:10.5px">
-          Recommended: install <code style="background:var(--bg-2); padding:2px 5px; border-radius:3px">yt-dlp</code> on your computer for the cleanest, ad-free downloads. After downloading the MP4, drop it on the MP4 → MP3 / WAV card above to extract audio, or onto the Timeline to start editing.
+        <div class="progress-row" id="ytProgressRow" hidden>
+          <div class="progress-bar"><div class="progress-fill" id="ytFill"></div></div>
+          <div class="progress-text" id="ytText">0%</div>
+        </div>
+
+        <div class="export-buttons" id="ytResult" hidden style="justify-content:flex-start; flex-wrap:wrap; gap:8px">
+          <button class="dl-btn" id="ytDownload">Download <span class="tag" id="ytSize">—</span></button>
+          <button class="dl-btn" id="ytOpenInTab">Open in new tab</button>
+        </div>
+
+        <p class="desc" style="margin-top:6px; opacity:0.7; font-size:10.5px">
+          Tip: if every instance fails, paste the URL into <a href="https://cobalt.tools" target="_blank" rel="noopener" style="color:var(--text-dim); text-decoration:underline">cobalt.tools</a> directly, or run <code style="background:var(--bg-2); padding:2px 5px; border-radius:3px">yt-dlp</code> locally for guaranteed results.
         </p>
       </section>
 
@@ -4727,6 +4444,92 @@
 
         <div class="export-buttons" id="v2gResult" hidden style="justify-content:flex-start">
           <button class="dl-btn" id="v2gDownload">Download GIF <span class="tag" id="v2gSize">—</span></button>
+        </div>
+      </section>
+
+      <!-- Universal Converter — anything → anything via ffmpeg.wasm -->
+      <section class="convert-card" style="grid-column: 1 / -1">
+        <h3>Universal Converter</h3>
+        <p class="desc">Drop a file, pick a target format, hit convert. Powered by <a href="https://ffmpegwasm.netlify.app/" target="_blank" rel="noopener" style="color:var(--text-dim); text-decoration:underline">ffmpeg.wasm</a> running entirely in your browser. Handles most audio &amp; video formats. Big files = slow first run (the ~30 MB engine has to download once).</p>
+
+        <div class="convert-drop" id="uniUpload">
+          <div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+            </svg>
+            <div class="t">Drop any media — or click to browse</div>
+            <div class="s">video · audio · image · whatever</div>
+            <input type="file" id="uniFile" style="display:none">
+          </div>
+        </div>
+
+        <div class="convert-info" id="uniInfo" hidden>—</div>
+
+        <div class="convert-settings" id="uniSettings" hidden>
+          <div class="export-slider">
+            <div class="slabel"><span>Output format</span></div>
+            <select id="uniFormat" class="color-input" style="font-family:'JetBrains Mono', monospace; font-size:11px;">
+              <optgroup label="Video">
+                <option value="mp4">MP4 (H.264 + AAC) — most compatible</option>
+                <option value="webm">WEBM (VP9 + Opus)</option>
+                <option value="mov">MOV (H.264)</option>
+                <option value="mkv">MKV (H.264)</option>
+                <option value="avi">AVI (MPEG-4)</option>
+                <option value="gif">GIF — animated</option>
+              </optgroup>
+              <optgroup label="Audio">
+                <option value="mp3">MP3</option>
+                <option value="wav">WAV (PCM)</option>
+                <option value="ogg">OGG (Vorbis)</option>
+                <option value="opus">OPUS</option>
+                <option value="flac">FLAC (lossless)</option>
+                <option value="aac">AAC</option>
+                <option value="m4a">M4A</option>
+              </optgroup>
+              <optgroup label="Image (single frame from video)">
+                <option value="png">PNG</option>
+                <option value="jpg">JPG</option>
+                <option value="webp">WEBP</option>
+                <option value="bmp">BMP</option>
+              </optgroup>
+              <optgroup label="Custom (best-effort, may fail)">
+                <option value="__custom__">Type any extension…</option>
+              </optgroup>
+            </select>
+          </div>
+
+          <div class="export-slider" id="uniCustomRow" hidden>
+            <div class="slabel"><span>Custom extension</span></div>
+            <input type="text" id="uniCustomExt" class="color-input" placeholder="e.g. fbx, obj, dat, raw…" style="font-family:'JetBrains Mono', monospace; font-size:11px;">
+            <p class="desc" style="margin-top:6px; opacity:0.6; font-size:10px">
+              Non-media formats (3D models, archives, executables, etc.) can't be created from media — ffmpeg will refuse, or you'll get a corrupt file. Use real format-specific tools for those.
+            </p>
+          </div>
+
+          <div class="export-slider" id="uniTrimRow">
+            <div class="slabel">
+              <span>Trim (optional, seconds — leave 0 for full)</span>
+              <span class="val" id="uniTrimVal">full clip</span>
+            </div>
+            <div class="slider-row">
+              <input type="number" class="num-input" id="uniStart" min="0" step="0.1" value="0" placeholder="start">
+              <input type="number" class="num-input" id="uniEnd" min="0" step="0.1" value="0" placeholder="end (0=full)">
+            </div>
+          </div>
+
+          <button class="apply-btn" id="uniConvert">Convert →</button>
+        </div>
+
+        <div class="progress-row" id="uniProgressRow" hidden>
+          <div class="progress-bar"><div class="progress-fill" id="uniFill"></div></div>
+          <div class="progress-text" id="uniText">0%</div>
+        </div>
+
+        <pre id="uniLog" style="display:none; max-height:120px; overflow:auto; background:var(--bg-2); border:1px solid var(--border); border-radius:8px; padding:10px; font-family:'JetBrains Mono', monospace; font-size:10px; color:var(--text-dim); white-space:pre-wrap"></pre>
+
+        <div class="export-buttons" id="uniResult" hidden style="justify-content:flex-start; flex-wrap:wrap; gap:8px">
+          <button class="dl-btn" id="uniDownload">Download <span class="tag" id="uniSize">—</span></button>
+          <button class="dl-btn" id="uniToggleLog">Show log</button>
         </div>
       </section>
 
@@ -4826,174 +4629,6 @@
       </div>
     </div>
   </main>
-
-  <!-- ================= PROGRAMMING ================= -->
-  <main data-mode="programming" hidden>
-    <header style="padding-bottom:28px;border-bottom:1px solid var(--border);margin-bottom:36px">
-      <div class="prog-section-label">Programming</div>
-      <h1 class="prog-section-title">Algorithms &amp; <em>Concepts</em></h1>
-      <p class="prog-section-desc">Interactive visualizations and deep-dives into fundamental computer science topics. Step through the logic line by line, see exactly what the code does at every stage.</p>
-    </header>
-
-    <!-- ── Sorting Algorithms sub-section ── -->
-    <section class="prog-subsection">
-      <div class="prog-subsection-hd">
-        <h3>Sorting Algorithms</h3>
-        <span class="prog-tag">C++ · Visualizer</span>
-      </div>
-
-      <div class="sort-layout">
-        <!-- Left: the interactive visualizer -->
-        <div class="sort-viz-panel">
-          <div id="sv-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px"></div>
-          <div class="sv-info-row">
-            <span class="sv-desc" id="sv-desc"></span>
-            <span class="sv-step" id="sv-sinfo"></span>
-          </div>
-          <div class="sv-inner">
-            <div class="sv-bars-col">
-              <div id="sv-bars"></div>
-              <div class="sv-legend">
-                <span><span class="leg-dot" style="background:#EF9F27"></span>Compare</span>
-                <span><span class="leg-dot" style="background:#D85A30"></span>Swap</span>
-                <span><span class="leg-dot" style="background:#7F77DD"></span>Pivot / key</span>
-                <span><span class="leg-dot" style="background:#1D9E75"></span>Sorted</span>
-              </div>
-            </div>
-            <div class="sv-code-col">
-              <div id="sv-code"></div>
-            </div>
-          </div>
-          <div class="sort-viz-bottom">
-            <button id="sv-play-btn" onclick="svTogglePlay()">▶ Play</button>
-            <button onclick="svDoStep()">Step ▸</button>
-            <button onclick="svDoReset()">↺ Reset</button>
-            <label>Speed <input type="range" id="sv-spd" min="1" max="3" value="2" step="1" style="width:64px"></label>
-          </div>
-        </div>
-
-        <!-- Right: explanation panel -->
-        <div class="sort-explain-panel">
-          <h4>How it works</h4>
-
-          <!-- Bubble Sort -->
-          <div class="algo-explain visible" id="exp-bubble">
-            <div class="algo-explain-name">Bubble Sort</div>
-            <p class="algo-explain-desc">Bubble Sort repeatedly walks through the array comparing adjacent elements. If two neighbours are out of order it swaps them, causing the largest unsorted value to "bubble up" to the right on every pass. This continues until no swaps are needed.</p>
-            <div class="algo-complexity">
-              <div class="cpill"><span class="cpill-label">Best</span><span class="cpill-val">O(n)</span></div>
-              <div class="cpill"><span class="cpill-label">Average</span><span class="cpill-val">O(n²)</span></div>
-              <div class="cpill"><span class="cpill-label">Worst</span><span class="cpill-val">O(n²)</span></div>
-              <div class="cpill"><span class="cpill-label">Space</span><span class="cpill-val">O(1)</span></div>
-            </div>
-            <div class="algo-steps-title">Step-by-step</div>
-            <ol class="algo-steps">
-              <li><span class="step-num">1</span>Outer loop runs n−1 passes (line 2). After each pass the last i elements are guaranteed sorted.</li>
-              <li><span class="step-num">2</span>Inner loop compares <code style="font-size:11px;font-family:var(--font-mono,monospace)">arr[j]</code> with its right neighbour (line 3). The window shrinks each pass because the end is already sorted.</li>
-              <li><span class="step-num">3</span>If the left element is greater (line 4), <code style="font-size:11px;font-family:var(--font-mono,monospace)">swap()</code> exchanges the two values in-place (line 5).</li>
-              <li><span class="step-num">4</span>Repeat until the outer loop finishes — the array is now fully sorted.</li>
-            </ol>
-            <div class="algo-code-note">
-              <div class="algo-code-note-title">Code insight</div>
-              <p>The condition <code style="font-family:var(--font-mono,monospace);font-size:11.5px">j &lt; n-i-1</code> is the key optimisation — it avoids re-checking elements that have already bubbled to their correct positions at the tail of the array.</p>
-            </div>
-          </div>
-
-          <!-- Selection Sort -->
-          <div class="algo-explain" id="exp-selection">
-            <div class="algo-explain-name">Selection Sort</div>
-            <p class="algo-explain-desc">Selection Sort divides the array into a sorted left region and an unsorted right region. On each pass it scans the entire unsorted region to find the minimum element, then swaps it into the first unsorted position — growing the sorted region by one each time.</p>
-            <div class="algo-complexity">
-              <div class="cpill"><span class="cpill-label">Best</span><span class="cpill-val">O(n²)</span></div>
-              <div class="cpill"><span class="cpill-label">Average</span><span class="cpill-val">O(n²)</span></div>
-              <div class="cpill"><span class="cpill-label">Worst</span><span class="cpill-val">O(n²)</span></div>
-              <div class="cpill"><span class="cpill-label">Space</span><span class="cpill-val">O(1)</span></div>
-            </div>
-            <div class="algo-steps-title">Step-by-step</div>
-            <ol class="algo-steps">
-              <li><span class="step-num">1</span>Outer loop advances the sorted boundary <code style="font-size:11px;font-family:var(--font-mono,monospace)">i</code> from 0 to n−2 (line 2).</li>
-              <li><span class="step-num">2</span>Assume index <code style="font-size:11px;font-family:var(--font-mono,monospace)">i</code> holds the minimum, store it as <code style="font-size:11px;font-family:var(--font-mono,monospace)">minIdx</code> (line 3).</li>
-              <li><span class="step-num">3</span>Inner loop scans positions i+1…n−1. Whenever a smaller value is found, update <code style="font-size:11px;font-family:var(--font-mono,monospace)">minIdx</code> (lines 4–6).</li>
-              <li><span class="step-num">4</span>Swap the true minimum into position <code style="font-size:11px;font-family:var(--font-mono,monospace)">i</code> (line 8) — exactly one swap per outer iteration.</li>
-            </ol>
-            <div class="algo-code-note">
-              <div class="algo-code-note-title">Code insight</div>
-              <p>Selection Sort always does O(n²) comparisons but at most O(n) swaps — making it attractive when writes are expensive (e.g. flash memory), even though its overall complexity is the same as Bubble Sort.</p>
-            </div>
-          </div>
-
-          <!-- Insertion Sort -->
-          <div class="algo-explain" id="exp-insertion">
-            <div class="algo-explain-name">Insertion Sort</div>
-            <p class="algo-explain-desc">Insertion Sort builds a sorted sub-array one element at a time. For each new element it scans leftward through the sorted region, shifting elements right to make room, then drops the element into its correct slot — like sorting a hand of playing cards.</p>
-            <div class="algo-complexity">
-              <div class="cpill"><span class="cpill-label">Best</span><span class="cpill-val">O(n)</span></div>
-              <div class="cpill"><span class="cpill-label">Average</span><span class="cpill-val">O(n²)</span></div>
-              <div class="cpill"><span class="cpill-label">Worst</span><span class="cpill-val">O(n²)</span></div>
-              <div class="cpill"><span class="cpill-label">Space</span><span class="cpill-val">O(1)</span></div>
-            </div>
-            <div class="algo-steps-title">Step-by-step</div>
-            <ol class="algo-steps">
-              <li><span class="step-num">1</span>Save the current element as <code style="font-size:11px;font-family:var(--font-mono,monospace)">key</code> (line 3). It may be overwritten during shifting so we must preserve it.</li>
-              <li><span class="step-num">2</span><code style="font-size:11px;font-family:var(--font-mono,monospace)">while</code> loop (line 5) moves left as long as the sorted element is larger than <code style="font-size:11px;font-family:var(--font-mono,monospace)">key</code>, copying each element one position right (line 6).</li>
-              <li><span class="step-num">3</span>When the correct position is found, place <code style="font-size:11px;font-family:var(--font-mono,monospace)">key</code> there (line 8).</li>
-              <li><span class="step-num">4</span>Repeat for every element from index 1 to n−1.</li>
-            </ol>
-            <div class="algo-code-note">
-              <div class="algo-code-note-title">Code insight</div>
-              <p>On nearly-sorted data Insertion Sort approaches O(n) — the inner <code style="font-family:var(--font-mono,monospace);font-size:11.5px">while</code> loop exits immediately when each element is already in place. This is why real-world sort implementations (like Timsort) fall back to Insertion Sort for small or nearly-sorted sub-arrays.</p>
-            </div>
-          </div>
-
-          <!-- Merge Sort -->
-          <div class="algo-explain" id="exp-merge">
-            <div class="algo-explain-name">Merge Sort</div>
-            <p class="algo-explain-desc">Merge Sort uses divide-and-conquer: recursively split the array into two halves until each sub-array is a single element (trivially sorted), then merge pairs of sorted sub-arrays back together. The merge step is where the real work happens.</p>
-            <div class="algo-complexity">
-              <div class="cpill"><span class="cpill-label">Best</span><span class="cpill-val">O(n log n)</span></div>
-              <div class="cpill"><span class="cpill-label">Average</span><span class="cpill-val">O(n log n)</span></div>
-              <div class="cpill"><span class="cpill-label">Worst</span><span class="cpill-val">O(n log n)</span></div>
-              <div class="cpill"><span class="cpill-label">Space</span><span class="cpill-val">O(n)</span></div>
-            </div>
-            <div class="algo-steps-title">Step-by-step</div>
-            <ol class="algo-steps">
-              <li><span class="step-num">1</span><code style="font-size:11px;font-family:var(--font-mono,monospace)">mergeSort</code> finds the midpoint <code style="font-size:11px;font-family:var(--font-mono,monospace)">m</code> and recursively sorts both halves (lines 15–17).</li>
-              <li><span class="step-num">2</span><code style="font-size:11px;font-family:var(--font-mono,monospace)">merge</code> copies both halves into temporary arrays <code style="font-size:11px;font-family:var(--font-mono,monospace)">L[]</code> and <code style="font-size:11px;font-family:var(--font-mono,monospace)">R[]</code> (lines 3–5).</li>
-              <li><span class="step-num">3</span>Two pointers walk through L and R comparing front elements; the smaller value is placed back into the original array (lines 7–9).</li>
-              <li><span class="step-num">4</span>Any remaining elements in L or R are copied over — they're already in sorted order (lines 11–12).</li>
-            </ol>
-            <div class="algo-code-note">
-              <div class="algo-code-note-title">Code insight</div>
-              <p>Merge Sort guarantees O(n log n) in all cases, making it predictable. Its downside is O(n) auxiliary space for the temporary arrays. It's the basis of <strong>Timsort</strong> — the algorithm used by Python and Java's standard libraries.</p>
-            </div>
-          </div>
-
-          <!-- Quick Sort -->
-          <div class="algo-explain" id="exp-quick">
-            <div class="algo-explain-name">Quick Sort</div>
-            <p class="algo-explain-desc">Quick Sort picks a pivot element and partitions the array so everything smaller goes left of the pivot, and everything larger goes right. It then recursively sorts both sides. No extra memory is needed — all partitioning happens in-place.</p>
-            <div class="algo-complexity">
-              <div class="cpill"><span class="cpill-label">Best</span><span class="cpill-val">O(n log n)</span></div>
-              <div class="cpill"><span class="cpill-label">Average</span><span class="cpill-val">O(n log n)</span></div>
-              <div class="cpill"><span class="cpill-label">Worst</span><span class="cpill-val">O(n²)</span></div>
-              <div class="cpill"><span class="cpill-label">Space</span><span class="cpill-val">O(log n)</span></div>
-            </div>
-            <div class="algo-steps-title">Step-by-step</div>
-            <ol class="algo-steps">
-              <li><span class="step-num">1</span><code style="font-size:11px;font-family:var(--font-mono,monospace)">partition</code> picks the last element as <code style="font-size:11px;font-family:var(--font-mono,monospace)">pivot</code> and sets up a boundary pointer <code style="font-size:11px;font-family:var(--font-mono,monospace)">i</code> (line 2).</li>
-              <li><span class="step-num">2</span>For each element ≤ pivot, expand the left region by incrementing <code style="font-size:11px;font-family:var(--font-mono,monospace)">i</code> and swapping <code style="font-size:11px;font-family:var(--font-mono,monospace)">a[i]</code> with <code style="font-size:11px;font-family:var(--font-mono,monospace)">a[j]</code> (lines 3–5).</li>
-              <li><span class="step-num">3</span>Place the pivot in its final sorted position by swapping <code style="font-size:11px;font-family:var(--font-mono,monospace)">a[i+1]</code> with <code style="font-size:11px;font-family:var(--font-mono,monospace)">a[hi]</code> (line 7). Return the pivot index.</li>
-              <li><span class="step-num">4</span><code style="font-size:11px;font-family:var(--font-mono,monospace)">quickSort</code> recursively sorts the sub-arrays to the left and right of the pivot (lines 13–14).</li>
-            </ol>
-            <div class="algo-code-note">
-              <div class="algo-code-note-title">Code insight</div>
-              <p>The worst case O(n²) occurs when the pivot is always the smallest or largest element (e.g. an already-sorted array with this last-element pivot strategy). Real implementations use <em>median-of-three</em> or random pivot selection to avoid this. Quick Sort is often the fastest in practice due to excellent cache locality.</p>
-            </div>
-          </div>
-        </div><!-- /sort-explain-panel -->
-      </div><!-- /sort-layout -->
-    </section><!-- /prog-subsection -->
-  </main><!-- /programming -->
 
   <footer>
     <span>Luminance</span> = 0.299·R + 0.587·G + 0.114·B &nbsp;·&nbsp; <span>Color distance</span> = √(Δr² + Δg² + Δb²) &nbsp;·&nbsp; All processing is local
@@ -6424,7 +6059,8 @@ audUpload.addEventListener('drop', e => {
 });
 
 async function audLoadFile(file) {
-  toast('Decoding audio…');
+  const isVideo = (file.type && file.type.startsWith('video/')) || /\.(mp4|mov|webm|mkv|avi|m4v|flv)$/i.test(file.name);
+  toast(isVideo ? 'Extracting audio from video…' : 'Decoding audio…');
   await ensureAudioCtx();
   // Defensive full-reset before loading the new file. This kills any in-flight
   // playback, disconnects/destroys the source, resets transport position, and
@@ -6456,7 +6092,7 @@ async function audLoadFile(file) {
     audPlay.disabled = false;
     audDownloadWav.disabled = false;
     audDownloadOgg.disabled = false;
-    audInfo.textContent = `${buffer.duration.toFixed(1)}s · ${buffer.numberOfChannels === 2 ? 'stereo' : 'mono'} · ${buffer.sampleRate} Hz`;
+    audInfo.textContent = `${buffer.duration.toFixed(1)}s · ${buffer.numberOfChannels === 2 ? 'stereo' : 'mono'} · ${buffer.sampleRate} Hz${isVideo ? ' · from video' : ''}`;
     audDur.textContent = fmtTime(buffer.duration);
     audCur.textContent = '0:00';
     drawWaveform(buffer);
@@ -6465,7 +6101,13 @@ async function audLoadFile(file) {
     toast(`Loaded ${file.name}`);
   } catch (err) {
     console.error(err);
-    toast('Could not decode audio');
+    if (isVideo) {
+      // Common case: video container/codec the browser can't decode directly
+      // (e.g. MKV with non-AAC audio). Point the user at the universal converter.
+      toast('Could not extract audio — convert to MP3 first via the Converter tab');
+    } else {
+      toast('Could not decode audio · try converting to MP3 / WAV first');
+    }
   }
 }
 
@@ -10472,47 +10114,232 @@ m2mDownloadWav.addEventListener('click', () => {
 });
 
 /* ============================================================
-   YouTube → MP3 / MP4  (helper-only — browsers can't download YT directly)
-   We just open a third-party converter in a new tab with the URL filled in.
+   YouTube / TikTok / Twitter / SoundCloud / etc. → MP3 / MP4
+   Real downloader using public cobalt API instances.
+   Cobalt is open-source media downloader (github.com/imputnet/cobalt).
+   We POST to /, get back a tunnel URL, then fetch the file.
+   On rate-limit / 4xx, we try the next instance in the fallback list.
    ============================================================ */
-(function setupYtHelper() {
+(function setupYtDownloader() {
   const urlInput = document.getElementById('ytUrl');
   if (!urlInput) return;
+
+  const ytAb = document.getElementById('ytAb');
+  const ytAbVal = document.getElementById('ytAbVal');
+  const ytAudioRow = document.getElementById('ytAudioRow');
+  const ytVideoRow = document.getElementById('ytVideoRow');
+  const ytVq = document.getElementById('ytVq');
+  const ytFetch = document.getElementById('ytFetch');
+  const ytProgressRow = document.getElementById('ytProgressRow');
+  const ytFill = document.getElementById('ytFill');
+  const ytText = document.getElementById('ytText');
+  const ytResult = document.getElementById('ytResult');
+  const ytDownload = document.getElementById('ytDownload');
+  const ytSize = document.getElementById('ytSize');
+  const ytOpenInTab = document.getElementById('ytOpenInTab');
+
+  let ytLastBlob = null;
+  let ytLastFilename = 'download';
+  let ytLastTunnelUrl = null;
+
+  // Fallback list of cobalt instances. Order matters: official first, then community.
+  // If cobalt.tools enables turnstile, the API call will fail with auth error and we
+  // fall through to community instances. Updated list as of 2026 — these come from
+  // the public instance lists (instances.cobalt.best, cobalt.directory).
+  const COBALT_INSTANCES = [
+    'https://api.cobalt.tools',
+    'https://cobalt-api.kwiatekmiki.com',
+    'https://cobalt.synzr.space',
+    'https://co.tskau.team',
+    'https://capi.oak.li',
+    'https://api.co.rooot.gay',
+    'https://cobalt-api.hyper.lol',
+    'https://co.wuk.sh',
+  ];
+
+  ytAb.addEventListener('input', () => { ytAbVal.textContent = `${ytAb.value} kbps`; });
+
+  // Toggle audio/video setting rows based on selected mode
+  function syncModeUI() {
+    const mode = (document.querySelector('input[name="ytKind"]:checked') || {}).value;
+    ytAudioRow.hidden = (mode !== 'audio');
+    ytVideoRow.hidden = (mode === 'audio');
+  }
+  document.querySelectorAll('input[name="ytKind"]').forEach(r => r.addEventListener('change', syncModeUI));
+  syncModeUI();
+
   function getCleanUrl() {
     const v = (urlInput.value || '').trim();
-    if (!v) { toast('Paste a YouTube URL first'); return null; }
-    if (!/^https?:\/\//i.test(v)) {
-      toast('That doesn\'t look like a URL');
-      return null;
-    }
+    if (!v) { toast('Paste a URL first'); return null; }
+    if (!/^https?:\/\//i.test(v)) { toast('That doesn\'t look like a URL'); return null; }
     return v;
   }
-  document.getElementById('ytOpenCobalt')?.addEventListener('click', () => {
-    const u = getCleanUrl();
-    if (!u) return;
-    // cobalt.tools accepts ?u= as a deep-link prefill
-    const dest = 'https://cobalt.tools/?u=' + encodeURIComponent(u);
-    window.open(dest, '_blank', 'noopener');
-    toast('Opened cobalt.tools');
-  });
-  document.getElementById('ytOpenY2Mate')?.addEventListener('click', () => {
-    const u = getCleanUrl();
-    if (!u) return;
-    // y2mate uses /youtube/<videoId> if we can extract it; otherwise just home page
-    const m = u.match(/[?&]v=([^&]+)/) || u.match(/youtu\.be\/([^?&/]+)/) || u.match(/\/shorts\/([^?&/]+)/);
-    const dest = m ? `https://www.y2mate.com/youtube/${m[1]}` : 'https://www.y2mate.com';
-    window.open(dest, '_blank', 'noopener');
-    toast('Opened y2mate');
-  });
-  document.getElementById('ytCopyUrl')?.addEventListener('click', async () => {
-    const u = getCleanUrl();
-    if (!u) return;
-    try {
-      await navigator.clipboard.writeText(u);
-      toast('URL copied');
-    } catch (e) {
-      toast('Copy failed — select and copy manually');
+
+  function setProgress(pct, msg) {
+    ytProgressRow.hidden = false;
+    ytFill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    if (msg) ytText.textContent = msg;
+  }
+
+  // Try each cobalt instance; return the first { status: 'tunnel'|'redirect', url, filename } we get.
+  async function callCobalt(body) {
+    let lastErr = null;
+    for (const inst of COBALT_INSTANCES) {
+      try {
+        ytText.textContent = `Trying ${inst.replace(/^https?:\/\//, '')}…`;
+        const r = await fetch(inst + '/', {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        });
+        // Network OK but maybe rate-limited or auth required → try next instance
+        if (!r.ok) { lastErr = `HTTP ${r.status} on ${inst}`; continue; }
+        const j = await r.json().catch(() => null);
+        if (!j) { lastErr = `Bad JSON from ${inst}`; continue; }
+        if (j.status === 'tunnel' || j.status === 'redirect') {
+          return { ...j, instance: inst };
+        }
+        if (j.status === 'picker') {
+          // Picker is rare for normal YT/TT; just take the first item if it's a video
+          const first = (j.picker || [])[0];
+          if (first && first.url) {
+            return { status: 'redirect', url: first.url, filename: 'media', instance: inst };
+          }
+          lastErr = 'Picker response with no items';
+          continue;
+        }
+        if (j.status === 'error') {
+          // Auth required, rate limited, or actual error — try next instance
+          const code = (j.error && j.error.code) || 'unknown';
+          lastErr = `${inst}: ${code}`;
+          // If it's clearly a permanent error (e.g. content unavailable), no point trying more
+          if (/content\.video\.unavailable|content\.too_long|link\.invalid|link\.unsupported/.test(code)) {
+            throw new Error(code);
+          }
+          continue;
+        }
+      } catch (e) {
+        lastErr = `${inst}: ${e.message || e}`;
+        // If this was a fatal error from cobalt (above), stop
+        if (e.message && /content|link\./i.test(e.message)) throw e;
+      }
     }
+    throw new Error(lastErr || 'No cobalt instance responded');
+  }
+
+  // Stream a URL into a Blob, updating progress.
+  async function fetchBlobWithProgress(url) {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`Tunnel returned HTTP ${r.status}`);
+    const total = parseInt(r.headers.get('Content-Length') || r.headers.get('Estimated-Content-Length') || '0', 10);
+    const reader = r.body && r.body.getReader ? r.body.getReader() : null;
+    if (!reader) {
+      // Fallback for old browsers / opaque responses
+      return await r.blob();
+    }
+    const chunks = [];
+    let received = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.length;
+      if (total > 0) {
+        const pct = Math.round((received / total) * 80) + 10; // 10–90%
+        setProgress(pct, `Downloading · ${formatBytes(received)} / ${formatBytes(total)}`);
+      } else {
+        setProgress(50, `Downloading · ${formatBytes(received)}`);
+      }
+    }
+    return new Blob(chunks);
+  }
+
+  ytFetch.addEventListener('click', async () => {
+    const url = getCleanUrl();
+    if (!url) return;
+
+    const mode = document.querySelector('input[name="ytKind"]:checked').value; // audio / video / mute
+    const audioBitrate = String(ytAb.value);
+    const videoQuality = ytVq.value;
+
+    const body = {
+      url,
+      downloadMode: (mode === 'audio') ? 'audio' : (mode === 'mute' ? 'mute' : 'auto'),
+      audioFormat: 'mp3',
+      audioBitrate,
+      videoQuality,
+      youtubeVideoCodec: 'h264',
+      filenameStyle: 'basic',
+    };
+
+    ytFetch.disabled = true;
+    ytResult.hidden = true;
+    ytLastBlob = null;
+    setProgress(5, 'Asking cobalt…');
+
+    try {
+      const resp = await callCobalt(body);
+      const tunnelUrl = resp.url;
+      const filename = resp.filename || (mode === 'audio' ? 'audio.mp3' : 'video.mp4');
+      ytLastTunnelUrl = tunnelUrl;
+      ytLastFilename = filename;
+
+      setProgress(10, 'Got link · downloading file…');
+
+      // Try to fetch the tunnel URL as a blob (gives us proper filename + progress).
+      // If CORS blocks it, fall back to opening it in a new tab.
+      try {
+        const blob = await fetchBlobWithProgress(tunnelUrl);
+        ytLastBlob = blob;
+        setProgress(100, 'Done');
+        ytSize.textContent = formatBytes(blob.size);
+        ytResult.hidden = false;
+        toast('File ready — click Download to save');
+      } catch (corsErr) {
+        console.warn('Direct fetch blocked, falling back to direct link', corsErr);
+        // Show "Open in tab" — the browser will save the file directly via Content-Disposition
+        ytSize.textContent = '— direct link';
+        ytResult.hidden = false;
+        setProgress(100, 'Ready · use Open in new tab (CORS blocked direct fetch)');
+        toast('Direct download blocked — use "Open in new tab"');
+      }
+    } catch (err) {
+      console.error('[yt-dl]', err);
+      const msg = (err && err.message) ? err.message : String(err);
+      let userMsg = 'All instances failed';
+      if (/content\.video\.unavailable/i.test(msg)) userMsg = 'Video unavailable (private, age-gated, or region-locked)';
+      else if (/content\.too_long/i.test(msg)) userMsg = 'Video too long for free instances';
+      else if (/link\.invalid|link\.unsupported/i.test(msg)) userMsg = 'Link not supported';
+      else if (/auth|turnstile|captcha/i.test(msg)) userMsg = 'All instances require captcha — try cobalt.tools directly';
+      else if (/rate/i.test(msg)) userMsg = 'All instances rate-limited — try again in a few minutes';
+      ytText.textContent = userMsg;
+      toast(userMsg);
+    } finally {
+      ytFetch.disabled = false;
+    }
+  });
+
+  ytDownload.addEventListener('click', () => {
+    if (!ytLastBlob) {
+      // Fall back: open the tunnel URL
+      if (ytLastTunnelUrl) window.open(ytLastTunnelUrl, '_blank', 'noopener');
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(ytLastBlob);
+    a.download = ytLastFilename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+
+  ytOpenInTab.addEventListener('click', () => {
+    if (!ytLastTunnelUrl) { toast('Fetch first'); return; }
+    window.open(ytLastTunnelUrl, '_blank', 'noopener');
   });
 })();
 
@@ -10731,6 +10558,313 @@ setCurrentColor([255, 0, 0]);
 );
 
 /* ============================================================
+   UNIVERSAL CONVERTER — anything → anything via ffmpeg.wasm
+   Loads ffmpeg.wasm lazily on first use (the engine is ~30MB).
+   For most media-to-media conversions this works great.
+   For non-media targets (FBX, OBJ, etc) ffmpeg refuses or you get a corrupt file.
+   ============================================================ */
+(function setupUniversalConverter() {
+  const uniUpload = document.getElementById('uniUpload');
+  const uniFile = document.getElementById('uniFile');
+  const uniInfo = document.getElementById('uniInfo');
+  const uniSettings = document.getElementById('uniSettings');
+  const uniFormat = document.getElementById('uniFormat');
+  const uniCustomRow = document.getElementById('uniCustomRow');
+  const uniCustomExt = document.getElementById('uniCustomExt');
+  const uniStart = document.getElementById('uniStart');
+  const uniEnd = document.getElementById('uniEnd');
+  const uniTrimVal = document.getElementById('uniTrimVal');
+  const uniConvert = document.getElementById('uniConvert');
+  const uniProgressRow = document.getElementById('uniProgressRow');
+  const uniFill = document.getElementById('uniFill');
+  const uniText = document.getElementById('uniText');
+  const uniLog = document.getElementById('uniLog');
+  const uniResult = document.getElementById('uniResult');
+  const uniDownload = document.getElementById('uniDownload');
+  const uniSize = document.getElementById('uniSize');
+  const uniToggleLog = document.getElementById('uniToggleLog');
+
+  if (!uniUpload) return;
+
+  let uniSourceFile = null;   // raw File from user
+  let uniOutBlob = null;
+  let uniOutName = 'output';
+  let ffmpeg = null;          // FFmpeg instance (lazy-loaded)
+  let ffmpegLoading = null;   // promise while loading
+
+  // ---- File picker / drop wiring ----
+  uniUpload.addEventListener('click', (e) => { if (e.target.tagName !== 'INPUT') uniFile.click(); });
+  uniFile.addEventListener('change', e => { if (e.target.files[0]) uniLoadFile(e.target.files[0]); e.target.value = ''; });
+  uniUpload.addEventListener('dragover', e => { e.preventDefault(); uniUpload.classList.add('drag'); });
+  uniUpload.addEventListener('dragleave', () => uniUpload.classList.remove('drag'));
+  uniUpload.addEventListener('drop', e => {
+    e.preventDefault(); uniUpload.classList.remove('drag');
+    const f = e.dataTransfer.files[0];
+    if (f) uniLoadFile(f);
+  });
+
+  // ---- Settings UI ----
+  uniFormat.addEventListener('change', () => {
+    uniCustomRow.hidden = (uniFormat.value !== '__custom__');
+  });
+
+  function syncTrimLabel() {
+    const s = +uniStart.value || 0, e = +uniEnd.value || 0;
+    uniTrimVal.textContent = (s === 0 && e === 0) ? 'full clip' : `${s.toFixed(1)} – ${e === 0 ? 'end' : e.toFixed(1) + 's'}`;
+  }
+  uniStart.addEventListener('input', syncTrimLabel);
+  uniEnd.addEventListener('input', syncTrimLabel);
+
+  function uniLoadFile(file) {
+    uniSourceFile = file;
+    uniOutBlob = null;
+    uniOutName = (file.name.replace(/\.[^.]+$/, '') || 'output');
+    uniInfo.hidden = false;
+    uniInfo.textContent = `${file.name} · ${formatBytes(file.size)} · ${file.type || 'unknown type'}`;
+    uniSettings.hidden = false;
+    uniResult.hidden = true;
+    uniProgressRow.hidden = true;
+    uniLog.textContent = '';
+    uniLog.style.display = 'none';
+    uniToggleLog.textContent = 'Show log';
+    syncTrimLabel();
+    // Default suggestion: video files → GIF, audio → MP3
+    if (file.type.startsWith('audio/')) uniFormat.value = 'mp3';
+    else if (file.type.startsWith('image/')) uniFormat.value = 'png';
+    else uniFormat.value = 'gif'; // default for video
+    uniCustomRow.hidden = (uniFormat.value !== '__custom__');
+  }
+
+  // ---- ffmpeg.wasm loader ----
+  // Loads the UMD bundle from a CDN. Single-threaded core works without
+  // SharedArrayBuffer / cross-origin isolation — slower but no deployment hassles.
+  async function loadFFmpeg() {
+    if (ffmpeg) return ffmpeg;
+    if (ffmpegLoading) return ffmpegLoading;
+
+    ffmpegLoading = (async () => {
+      uniText.textContent = 'Loading ffmpeg engine (~30 MB, one-time)…';
+      uniProgressRow.hidden = false;
+      uniFill.style.width = '5%';
+
+      // Inject UMD scripts if missing
+      async function loadScript(src) {
+        return new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = src;
+          s.onload = () => resolve();
+          s.onerror = () => reject(new Error(`Failed to load ${src}`));
+          document.head.appendChild(s);
+        });
+      }
+
+      if (typeof FFmpegWASM === 'undefined' && typeof FFmpeg === 'undefined') {
+        await loadScript('https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js');
+      }
+      if (typeof FFmpegUtil === 'undefined') {
+        await loadScript('https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js');
+      }
+
+      uniFill.style.width = '15%';
+
+      // Different versions of the UMD wrapper expose different globals
+      const FFmpegClass = (window.FFmpegWASM && window.FFmpegWASM.FFmpeg) || (window.FFmpeg && window.FFmpeg.FFmpeg) || window.FFmpeg;
+      if (!FFmpegClass) throw new Error('FFmpeg global not found after loading');
+
+      const ff = new FFmpegClass();
+      ff.on('log', ({ message }) => {
+        uniLog.textContent += message + '\n';
+        uniLog.scrollTop = uniLog.scrollHeight;
+      });
+      ff.on('progress', ({ progress, time }) => {
+        // progress is 0..1 during conversion
+        const pct = 30 + Math.round(progress * 65); // 30%–95% reserved for ffmpeg execution
+        uniFill.style.width = Math.min(95, pct) + '%';
+        uniText.textContent = `Converting · ${Math.round(progress * 100)}%`;
+      });
+
+      // Use the single-threaded core (no SharedArrayBuffer required)
+      const coreBase = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+      uniText.textContent = 'Loading ffmpeg core…';
+      uniFill.style.width = '20%';
+      await ff.load({
+        coreURL: `${coreBase}/ffmpeg-core.js`,
+        wasmURL: `${coreBase}/ffmpeg-core.wasm`,
+      });
+      uniFill.style.width = '30%';
+      ffmpeg = ff;
+      return ff;
+    })();
+    return ffmpegLoading;
+  }
+
+  // Map output format → ffmpeg args. Returns { args, ext, mime }.
+  function buildFfmpegCommand(inputName, outputName, fmt, customExt, trimStart, trimEnd) {
+    const ext = (fmt === '__custom__') ? (customExt || 'bin').toLowerCase().replace(/^\./, '') : fmt;
+    const args = ['-y']; // overwrite output
+    // Trim BEFORE -i for fast keyframe-aligned seek when start > 0
+    if (trimStart && trimStart > 0) args.push('-ss', String(trimStart));
+    args.push('-i', inputName);
+    if (trimEnd && trimEnd > trimStart) args.push('-to', String(trimEnd));
+
+    let mime = 'application/octet-stream';
+    switch (ext) {
+      case 'mp4':
+        args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-c:a', 'aac', '-b:a', '128k', '-pix_fmt', 'yuv420p', '-movflags', '+faststart');
+        mime = 'video/mp4'; break;
+      case 'webm':
+        args.push('-c:v', 'libvpx-vp9', '-deadline', 'realtime', '-cpu-used', '8', '-c:a', 'libopus');
+        mime = 'video/webm'; break;
+      case 'mov':
+        args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac');
+        mime = 'video/quicktime'; break;
+      case 'mkv':
+        args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac');
+        mime = 'video/x-matroska'; break;
+      case 'avi':
+        args.push('-c:v', 'mpeg4', '-c:a', 'libmp3lame');
+        mime = 'video/x-msvideo'; break;
+      case 'gif':
+        // Two-pass-style palette inline; smaller width and 10fps for sane size
+        args.push('-vf', 'fps=12,scale=480:-2:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse');
+        mime = 'image/gif'; break;
+      case 'mp3':
+        args.push('-vn', '-c:a', 'libmp3lame', '-b:a', '192k');
+        mime = 'audio/mpeg'; break;
+      case 'wav':
+        args.push('-vn', '-c:a', 'pcm_s16le');
+        mime = 'audio/wav'; break;
+      case 'ogg':
+        args.push('-vn', '-c:a', 'libvorbis');
+        mime = 'audio/ogg'; break;
+      case 'opus':
+        args.push('-vn', '-c:a', 'libopus');
+        mime = 'audio/opus'; break;
+      case 'flac':
+        args.push('-vn', '-c:a', 'flac');
+        mime = 'audio/flac'; break;
+      case 'aac':
+        args.push('-vn', '-c:a', 'aac', '-b:a', '192k');
+        mime = 'audio/aac'; break;
+      case 'm4a':
+        args.push('-vn', '-c:a', 'aac', '-b:a', '192k');
+        mime = 'audio/mp4'; break;
+      case 'png':
+      case 'jpg':
+      case 'jpeg':
+      case 'webp':
+      case 'bmp':
+        // Single frame: take from trimStart (default 0) — let user trim to pick frame
+        args.push('-vframes', '1');
+        mime = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+        break;
+      default:
+        // Best-effort for unknown extensions — ffmpeg will likely fail, that's fine.
+        mime = 'application/octet-stream';
+        break;
+    }
+    args.push(outputName);
+    return { args, ext, mime, outputName };
+  }
+
+  // ---- Convert button ----
+  uniConvert.addEventListener('click', async () => {
+    if (!uniSourceFile) { toast('Drop a file first'); return; }
+
+    const fmt = uniFormat.value;
+    const customExt = (uniCustomExt.value || '').trim();
+    if (fmt === '__custom__' && !customExt) { toast('Type a custom extension'); return; }
+
+    const trimStart = Math.max(0, +uniStart.value || 0);
+    const trimEndRaw = Math.max(0, +uniEnd.value || 0);
+    const trimEnd = (trimEndRaw > trimStart) ? trimEndRaw : 0;
+
+    // Special-case: GIF — use existing high-quality gif.js path for video files.
+    // Faster, smaller, and avoids forcing ffmpeg to download for the common case.
+    // But ffmpeg path also works and is more flexible.
+
+    uniConvert.disabled = true;
+    uniResult.hidden = true;
+    uniProgressRow.hidden = false;
+    uniFill.style.width = '0%';
+    uniText.textContent = 'Preparing…';
+    uniLog.textContent = '';
+
+    try {
+      const ff = await loadFFmpeg();
+
+      const inputName = 'input' + (uniSourceFile.name.match(/\.[^.]+$/) || ['.bin'])[0];
+      const cmd = buildFfmpegCommand(inputName, 'output.' + ((fmt === '__custom__') ? customExt.replace(/^\./, '') : fmt), fmt, customExt, trimStart, trimEnd);
+
+      // Write input to virtual FS
+      uniText.textContent = 'Loading file into engine…';
+      uniFill.style.width = '32%';
+      const fetchFile = (window.FFmpegUtil && window.FFmpegUtil.fetchFile) || (async (file) => new Uint8Array(await file.arrayBuffer()));
+      const inputData = await fetchFile(uniSourceFile);
+      await ff.writeFile(inputName, inputData);
+
+      uniText.textContent = 'Running ffmpeg…';
+      uniFill.style.width = '35%';
+      const exitCode = await ff.exec(cmd.args);
+      if (exitCode !== 0 && exitCode !== undefined) {
+        // Some ffmpeg.wasm versions return undefined on success — treat that as OK
+        throw new Error(`ffmpeg exited with code ${exitCode}`);
+      }
+
+      uniText.textContent = 'Reading output…';
+      uniFill.style.width = '96%';
+      const outputData = await ff.readFile(cmd.outputName);
+      // outputData is Uint8Array
+      uniOutBlob = new Blob([outputData.buffer], { type: cmd.mime });
+      uniOutName = `${(uniSourceFile.name.replace(/\.[^.]+$/, '') || 'output')}.${cmd.ext}`;
+
+      // Cleanup virtual FS
+      try { await ff.deleteFile(inputName); } catch (e) {}
+      try { await ff.deleteFile(cmd.outputName); } catch (e) {}
+
+      uniFill.style.width = '100%';
+      uniText.textContent = 'Done';
+      uniSize.textContent = formatBytes(uniOutBlob.size);
+      uniDownload.querySelector('.tag') ? null : null; // no-op
+      uniDownload.firstChild && (uniDownload.firstChild.textContent = `Download .${cmd.ext.toUpperCase()} `);
+      uniResult.hidden = false;
+      toast(`Converted to .${cmd.ext} (${formatBytes(uniOutBlob.size)})`);
+    } catch (err) {
+      console.error('[uni-convert]', err);
+      uniText.textContent = 'Failed — see log';
+      uniLog.style.display = 'block';
+      uniToggleLog.textContent = 'Hide log';
+      const msg = (err && err.message) ? err.message : String(err);
+      uniLog.textContent += '\n[error] ' + msg + '\n';
+      toast('Conversion failed — open the log for details');
+    } finally {
+      uniConvert.disabled = false;
+    }
+  });
+
+  uniDownload.addEventListener('click', () => {
+    if (!uniOutBlob) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(uniOutBlob);
+    a.download = uniOutName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+
+  uniToggleLog.addEventListener('click', () => {
+    if (uniLog.style.display === 'none') {
+      uniLog.style.display = 'block';
+      uniToggleLog.textContent = 'Hide log';
+    } else {
+      uniLog.style.display = 'none';
+      uniToggleLog.textContent = 'Show log';
+    }
+  });
+})();
+
+/* ============================================================
    BRAINROT — reels feed + likes + comments + GIFs
    All social data lives in a separate jsonbin (JSONBIN_SOCIAL_BIN_ID).
    Structure: { "reelId": { likes: 0, comments: [{n,b,gif,t}] } }
@@ -10796,32 +10930,55 @@ setCurrentColor([255, 0, 0]);
 
   let socialPushTimer = null;
   let socialPushPending = false;
-  async function flushSocialNow() {
-    if (socialPushTimer) { clearTimeout(socialPushTimer); socialPushTimer = null; }
-    if (!socialPushPending) return;
-    socialPushPending = false;
+  let socialPushInFlight = null; // promise for the currently-running PUT, so we can serialize
+  async function _doSocialPut(retriesLeft) {
     try {
       await apiFetch(JSONBIN_SOCIAL_BIN_ID, 'PUT', social);
-      console.log('[brainrot] social flush OK', Object.keys(social).length, 'reels');
+      console.log('[brainrot] social PUT OK', Object.keys(social).length, 'reels');
+      return true;
     } catch (e) {
-      console.error('[brainrot] social flush FAILED', e);
-      toast('Save failed — check the JSONBIN_KEY in the HTML');
-      // Re-arm so a future scheduleSocialPush will try again
-      socialPushPending = true;
+      console.error('[brainrot] social PUT failed', e, 'retries left:', retriesLeft);
+      if (retriesLeft > 0) {
+        // Brief backoff then retry once
+        await new Promise(r => setTimeout(r, 800));
+        return _doSocialPut(retriesLeft - 1);
+      }
+      return false;
     }
+  }
+  async function flushSocialNow() {
+    if (socialPushTimer) { clearTimeout(socialPushTimer); socialPushTimer = null; }
+    if (!socialPushPending) return true;
+    // Serialize: if a PUT is already in flight, wait for it; mutations have
+    // already updated `social` so the next PUT will include them.
+    if (socialPushInFlight) { try { await socialPushInFlight; } catch (e) {} }
+    socialPushPending = false;
+    socialPushInFlight = _doSocialPut(1);
+    const ok = await socialPushInFlight;
+    socialPushInFlight = null;
+    if (!ok) {
+      toast('Couldn\'t save — will retry on next change');
+      socialPushPending = true; // so future actions retry the write
+    }
+    return ok;
   }
   function scheduleSocialPush() {
     socialPushPending = true;
     clearTimeout(socialPushTimer);
-    socialPushTimer = setTimeout(flushSocialNow, 700);
+    // Tighter debounce — typing/clicking quickly still coalesces, but persists fast.
+    socialPushTimer = setTimeout(flushSocialNow, 250);
+  }
+  // Immediate flush — for important user actions (sending a comment, liking a reel).
+  // Returns a promise so callers can await; failures show a toast.
+  function pushSocialImmediate() {
+    socialPushPending = true;
+    return flushSocialNow();
   }
   // Force a flush before the page unloads — sendBeacon would be ideal but jsonbin
   // requires a custom header (X-Master-Key) which sendBeacon can't set.
-  // Instead we force a synchronous-ish push.
+  // Instead we use fetch with keepalive (browser keeps it alive after unload).
   window.addEventListener('beforeunload', () => {
     if (socialPushPending) {
-      // navigator.sendBeacon won't work for jsonbin (needs X-Master-Key header),
-      // so we use a regular fetch with keepalive.
       try {
         fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_SOCIAL_BIN_ID}`, {
           method: 'PUT',
@@ -10836,6 +10993,12 @@ setCurrentColor([255, 0, 0]);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden' && socialPushPending) {
       flushSocialNow();
+    }
+  });
+  // Flush when leaving the brainrot tab (clicking another sidebar tab)
+  document.querySelectorAll('.sb-tab').forEach(t => {
+    if (t.dataset.tab !== 'brainrot') {
+      t.addEventListener('click', () => { if (socialPushPending) flushSocialNow(); });
     }
   });
 
@@ -11035,7 +11198,7 @@ setCurrentColor([255, 0, 0]);
     }
     renderComments();
 
-    // Like
+    // Like — write immediately so it survives a refresh / tab close.
     likeBtn.addEventListener('click', () => {
       const s = getReelSocial(reel.id);
       if (likedSet.has(reel.id)) {
@@ -11051,7 +11214,7 @@ setCurrentColor([255, 0, 0]);
       }
       likeCount.textContent = s.likes;
       saveLiked();
-      scheduleSocialPush();
+      pushSocialImmediate();
     });
 
     // Open / close drawer
@@ -11111,7 +11274,7 @@ setCurrentColor([255, 0, 0]);
       document.querySelectorAll('.br-name-input').forEach(el => { if (el !== nameInput) el.value = brUsername; });
     });
 
-    // Send comment
+    // Send comment — write immediately so reload/refresh sees it.
     sendBtn.addEventListener('click', async () => {
       const name = nameInput.value.trim();
       const body = msgInput.value.trim();
@@ -11121,7 +11284,7 @@ setCurrentColor([255, 0, 0]);
       sendBtn.disabled = true;
       const s = getReelSocial(reel.id);
       s.comments.push({ n: name.slice(0,24), b: body.slice(0,500), gif: gifUrl, t: Date.now() });
-      scheduleSocialPush();
+      // Optimistic UI render — show the comment right away
       msgInput.value = '';
       gifUrlInput.value = '';
       selectedGifUrl = null;
@@ -11129,6 +11292,14 @@ setCurrentColor([255, 0, 0]);
       gifBtn.classList.remove('active');
       gifBtn.textContent = 'GIF';
       renderComments();
+      // Push to bin immediately, await result
+      const ok = await pushSocialImmediate();
+      if (!ok) {
+        // Roll back local state on failure so the user knows it didn't go through
+        s.comments.pop();
+        renderComments();
+        toast('Could not send — try again');
+      }
       sendBtn.disabled = false;
     });
     msgInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendBtn.click(); } });
@@ -11327,20 +11498,29 @@ setCurrentColor([255, 0, 0]);
       sendBtn.disabled = true;
       const s = getReelSocial(__brFocusedReelId);
       s.comments.push({ n: name.slice(0, 24), b: body.slice(0, 500), gif: g, t: Date.now() });
-      // Push immediately (not just debounced) so reload sees it
-      try { await apiFetch(JSONBIN_SOCIAL_BIN_ID, 'PUT', social); } catch (e) { toast('Save failed — try again'); }
+      // Optimistic UI
       msgEl.value = '';
       gifUrl.value = '';
       selectedGifUrl = null;
       gifPicker.classList.remove('open');
       gifBtn.classList.remove('active');
       gifBtn.textContent = 'GIF';
-      // Refresh side panel + the focused card's count
       renderSidePanelForFocused();
       const focusedCard = feed.querySelector(`.br-card[data-reel-id="${__brFocusedReelId}"]`);
       if (focusedCard) {
         const cc = focusedCard.querySelector('.br-comment-count');
         if (cc) cc.textContent = s.comments.length;
+      }
+      // Push immediately with retry; roll back on failure
+      const ok = await pushSocialImmediate();
+      if (!ok) {
+        s.comments.pop();
+        renderSidePanelForFocused();
+        if (focusedCard) {
+          const cc = focusedCard.querySelector('.br-comment-count');
+          if (cc) cc.textContent = s.comments.length;
+        }
+        toast('Could not send — try again');
       }
       sendBtn.disabled = false;
     }
@@ -11753,219 +11933,6 @@ setCurrentColor([255, 0, 0]);
 
   updateCharCount();
   updateWarning();
-})();
-/* ============================================================
-   Programming — Sorting Algorithms Visualizer
-   ============================================================ */
-(function() {
-  const SV_A0=[64,34,25,12,22,11,90,45,78,56], SV_MX=90;
-
-  const SV_CODES={
-    bubble:[
-      'void bubbleSort(int arr[], int n) {',
-      '  for (int i = 0; i < n-1; i++) {',
-      '    for (int j = 0; j < n-i-1; j++) {',
-      '      if (arr[j] > arr[j+1]) {',
-      '        swap(arr[j], arr[j+1]);',
-      '      }',
-      '    }',
-      '  }',
-      '}'],
-    selection:[
-      'void selectionSort(int arr[], int n) {',
-      '  for (int i = 0; i < n-1; i++) {',
-      '    int minIdx = i;',
-      '    for (int j = i+1; j < n; j++) {',
-      '      if (arr[j] < arr[minIdx])',
-      '        minIdx = j;',
-      '    }',
-      '    swap(arr[minIdx], arr[i]);',
-      '  }',
-      '}'],
-    insertion:[
-      'void insertionSort(int arr[], int n) {',
-      '  for (int i = 1; i < n; i++) {',
-      '    int key = arr[i];',
-      '    int j = i - 1;',
-      '    while (j >= 0 && arr[j] > key) {',
-      '      arr[j+1] = arr[j];',
-      '      j--;',
-      '    }',
-      '    arr[j+1] = key;',
-      '  }',
-      '}'],
-    merge:[
-      'void merge(int a[], int l, int m, int r) {',
-      '  int n1=m-l+1, n2=r-m;',
-      '  int L[n1], R[n2];',
-      '  for(int i=0;i<n1;i++) L[i]=a[l+i];',
-      '  for(int j=0;j<n2;j++) R[j]=a[m+1+j];',
-      '  int i=0, j=0, k=l;',
-      '  while (i<n1 && j<n2) {',
-      '    if (L[i]<=R[j]) a[k++]=L[i++];',
-      '    else             a[k++]=R[j++];',
-      '  }',
-      '  while (i<n1) a[k++]=L[i++];',
-      '  while (j<n2) a[k++]=R[j++];',
-      '}',
-      'void mergeSort(int a[], int l, int r) {',
-      '  if (l >= r) return;',
-      '  int m = l + (r-l)/2;',
-      '  mergeSort(a, l, m);',
-      '  mergeSort(a, m+1, r);',
-      '  merge(a, l, m, r);',
-      '}'],
-    quick:[
-      'int partition(int a[], int lo, int hi) {',
-      '  int pivot=a[hi], i=lo-1;',
-      '  for (int j = lo; j < hi; j++) {',
-      '    if (a[j] <= pivot) {',
-      '      swap(a[++i], a[j]);',
-      '    }',
-      '  }',
-      '  swap(a[i+1], a[hi]);',
-      '  return i+1;',
-      '}',
-      'void quickSort(int a[], int lo, int hi) {',
-      '  if (lo >= hi) return;',
-      '  int p = partition(a, lo, hi);',
-      '  quickSort(a, lo, p-1);',
-      '  quickSort(a, p+1, hi);',
-      '}']
-  };
-
-  const SV_DESCS={
-    bubble:'Compares adjacent pairs and swaps if out of order — the largest value "bubbles" to the end each pass.',
-    selection:'Scans the unsorted region for the minimum element, then swaps it into its final position.',
-    insertion:'Takes each element and inserts it into the correct spot in the already-sorted left region.',
-    merge:'Recursively splits the array in half, sorts each half, then merges the two sorted halves.',
-    quick:'Picks a pivot, partitions elements smaller/larger around it, then recursively sorts each side.'
-  };
-
-  const SV_NAMES={bubble:'Bubble',selection:'Selection',insertion:'Insertion',merge:'Merge',quick:'Quick'};
-  const SV_ORDER=['bubble','selection','insertion','merge','quick'];
-
-  function svMkStep(a,cmp,swp,pvt,srt,ln,done){
-    return{a:[...a],cmp:cmp||[],swp:!!swp,pvt:pvt==null?-1:pvt,srt:new Set(srt),ln:ln,done:!!done};
-  }
-  function svGenBubble(a0){
-    const a=[...a0],s=[],n=a.length,srt=new Set();
-    for(let i=0;i<n-1;i++){for(let j=0;j<n-i-1;j++){s.push(svMkStep(a,[j,j+1],0,-1,srt,3));if(a[j]>a[j+1]){[a[j],a[j+1]]=[a[j+1],a[j]];s.push(svMkStep(a,[j,j+1],1,-1,srt,4));}}srt.add(n-1-i);}
-    srt.add(0);s.push(svMkStep(a,[],0,-1,srt,-1,true));return s;
-  }
-  function svGenSelection(a0){
-    const a=[...a0],s=[],n=a.length,srt=new Set();
-    for(let i=0;i<n-1;i++){let mi=i;s.push(svMkStep(a,[i],0,mi,srt,2));for(let j=i+1;j<n;j++){s.push(svMkStep(a,[j,mi],0,mi,srt,4));if(a[j]<a[mi]){mi=j;s.push(svMkStep(a,[],0,mi,srt,5));}}const pm=mi;[a[mi],a[i]]=[a[i],a[mi]];srt.add(i);s.push(svMkStep(a,[pm,i],1,-1,srt,7));}
-    srt.add(n-1);s.push(svMkStep(a,[],0,-1,srt,-1,true));return s;
-  }
-  function svGenInsertion(a0){
-    const a=[...a0],s=[],n=a.length,srt=new Set([0]);
-    for(let i=1;i<n;i++){const key=a[i];let j=i-1;s.push(svMkStep(a,[i],0,i,srt,2));while(j>=0&&a[j]>key){s.push(svMkStep(a,[j,j+1],0,-1,srt,4));a[j+1]=a[j];s.push(svMkStep(a,[j,j+1],1,-1,srt,5));j--;}a[j+1]=key;for(let k=0;k<=i;k++)srt.add(k);s.push(svMkStep(a,[],0,-1,srt,8));}
-    s.push(svMkStep(a,[],0,-1,srt,-1,true));return s;
-  }
-  function svGenMerge(a0){
-    const a=[...a0],s=[],n=a.length,srt=new Set();
-    function mg(l,m,r){const L=a.slice(l,m+1),R=a.slice(m+1,r+1);let i=0,j=0,k=l;while(i<L.length&&j<R.length){s.push(svMkStep(a,[l+i,m+1+j],0,-1,srt,6));if(L[i]<=R[j]){a[k++]=L[i++];s.push(svMkStep(a,[],1,-1,srt,7));}else{a[k++]=R[j++];s.push(svMkStep(a,[],1,-1,srt,8));}}while(i<L.length){a[k++]=L[i++];s.push(svMkStep(a,[],1,-1,srt,10));}while(j<R.length){a[k++]=R[j++];s.push(svMkStep(a,[],1,-1,srt,11));}}
-    function ms(l,r){if(l>=r)return;const m=Math.floor(l+(r-l)/2);s.push(svMkStep(a,[],0,-1,srt,15));ms(l,m);s.push(svMkStep(a,[],0,-1,srt,16));ms(m+1,r);s.push(svMkStep(a,[],0,-1,srt,17));mg(l,m,r);}
-    ms(0,n-1);for(let i=0;i<n;i++)srt.add(i);s.push(svMkStep(a,[],0,-1,srt,-1,true));return s;
-  }
-  function svGenQuick(a0){
-    const a=[...a0],s=[],n=a.length,srt=new Set();
-    function pt(lo,hi){let i=lo-1;s.push(svMkStep(a,[],0,hi,srt,1));for(let j=lo;j<hi;j++){s.push(svMkStep(a,[j,hi],0,hi,srt,3));if(a[j]<=a[hi]){i++;[a[i],a[j]]=[a[j],a[i]];s.push(svMkStep(a,[i,j],1,hi,srt,4));}}[a[i+1],a[hi]]=[a[hi],a[i+1]];srt.add(i+1);s.push(svMkStep(a,[i+1,hi],1,i+1,srt,7));return i+1;}
-    function qs(lo,hi){if(lo>=hi){if(lo===hi)srt.add(lo);return;}const p=pt(lo,hi);qs(lo,p-1);qs(p+1,hi);}
-    qs(0,n-1);for(let i=0;i<n;i++)srt.add(i);s.push(svMkStep(a,[],0,-1,srt,-1,true));return s;
-  }
-
-  const SV_GENS={bubble:svGenBubble,selection:svGenSelection,insertion:svGenInsertion,merge:svGenMerge,quick:svGenQuick};
-  let svCache={},svCur='bubble',svIdx=0,svPlaying=false,svTimer=null;
-
-  function svGetS(name){if(!svCache[name])svCache[name]=SV_GENS[name](SV_A0);return svCache[name];}
-
-  function svRenderBars(step){
-    const el=document.getElementById('sv-bars');
-    if(!el)return;
-    el.innerHTML=step.a.map((v,i)=>{
-      let cl='def';
-      if(step.done||step.srt.has(i))cl='srt';
-      else if(step.swp&&step.cmp.includes(i))cl='swp';
-      else if(step.cmp.includes(i))cl='cmp';
-      else if(i===step.pvt)cl='pvt';
-      const h=Math.round((v/SV_MX)*200);
-      return`<div class="s-bar ${cl}" style="height:${h}px" title="${v}"></div>`;
-    }).join('');
-  }
-
-  function svRenderCode(name,ln){
-    const codeEl=document.getElementById('sv-code');
-    if(!codeEl)return;
-    const lines=SV_CODES[name];
-    codeEl.innerHTML=lines.map((l,i)=>{
-      const e=l.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      return`<div class="cln${i===ln?' hl':''}">${e}</div>`;
-    }).join('');
-    if(ln>=0){const active=codeEl.querySelectorAll('.cln')[ln];if(active)active.scrollIntoView({block:'nearest',behavior:'smooth'});}
-  }
-
-  function svRender(){
-    const ss=svGetS(svCur),step=ss[svIdx];
-    svRenderBars(step);
-    svRenderCode(svCur,step.ln);
-    const descEl=document.getElementById('sv-desc');
-    const sinfoEl=document.getElementById('sv-sinfo');
-    const playBtn=document.getElementById('sv-play-btn');
-    if(descEl)descEl.textContent=SV_DESCS[svCur];
-    if(sinfoEl)sinfoEl.textContent=`Step ${svIdx+1} / ${ss.length}`;
-    if(playBtn)playBtn.textContent=svPlaying?'⏸ Pause':'▶ Play';
-    document.querySelectorAll('#sv-tabs .s-tab').forEach(t=>t.classList.toggle('active',t.dataset.a===svCur));
-    // Update explanation panel
-    document.querySelectorAll('.algo-explain').forEach(el=>el.classList.remove('visible'));
-    const expEl=document.getElementById('exp-'+svCur);
-    if(expEl)expEl.classList.add('visible');
-  }
-
-  function svSelectAlgo(name){svStopPlay();svCur=name;svIdx=0;svRender();}
-  function svDoStep(){svStopPlay();if(svIdx<svGetS(svCur).length-1){svIdx++;svRender();}}
-  function svDoReset(){svStopPlay();svIdx=0;svRender();}
-
-  function svTogglePlay(){if(svPlaying)svStopPlay();else svStartPlay();}
-  function svStartPlay(){
-    const ss=svGetS(svCur);if(svIdx>=ss.length-1)svIdx=0;
-    svPlaying=true;
-    const spd=parseInt((document.getElementById('sv-spd')||{value:2}).value);
-    const d=[600,220,70][3-spd];
-    svTimer=setInterval(()=>{if(svIdx<svGetS(svCur).length-1){svIdx++;svRender();}else svStopPlay();},d);
-    svRender();
-  }
-  function svStopPlay(){svPlaying=false;if(svTimer){clearInterval(svTimer);svTimer=null;}svRender();}
-
-  // Expose to global (onclick attributes)
-  window.svTogglePlay=svTogglePlay;
-  window.svDoStep=svDoStep;
-  window.svDoReset=svDoReset;
-
-  // Build tabs
-  function svInit(){
-    const tabsEl=document.getElementById('sv-tabs');
-    if(!tabsEl)return;
-    SV_ORDER.forEach(name=>{
-      const b=document.createElement('button');
-      b.className='s-tab';b.dataset.a=name;
-      b.textContent=SV_NAMES[name]+' Sort';
-      b.onclick=()=>svSelectAlgo(name);
-      tabsEl.appendChild(b);
-    });
-    svRender();
-  }
-
-  // Init when the Programming tab is first opened
-  let svInited=false;
-  document.querySelectorAll('.sb-tab').forEach(tab=>{
-    if(tab.dataset.tab==='programming'){
-      tab.addEventListener('click',()=>{
-        if(!svInited){svInited=true;setTimeout(svInit,0);}
-      });
-    }
-  });
 })();
 </script>
 </body>
