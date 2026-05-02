@@ -4326,7 +4326,7 @@
       <!-- YouTube → MP3 / MP4 (real downloader via cobalt) -->
       <section class="convert-card">
         <h3>YouTube → MP3 / MP4</h3>
-        <p class="desc">Paste a YouTube, TikTok, Twitter/X, Reddit, SoundCloud, or Instagram link. Pick a format. Hit download. Streams are fetched via public <a href="https://github.com/imputnet/cobalt" target="_blank" rel="noopener" style="color:var(--text-dim); text-decoration:underline">cobalt</a> instances — if one's rate-limited, the next is tried automatically.</p>
+        <p class="desc"><strong>Two modes:</strong> Regular Fetch downloads the file fully into the browser (proxied through Piped/Invidious — usually slow because their VPSes are tiny) so you get a one-click .mp3 with a real filename. The ⚡ Fast Direct button below skips the proxy and opens the raw stream URL at full Google CDN speed (10–20 MB/s) but you have to right-click → Save As. If both fail, the green section below has one-click buttons to working sites like flvto, y2mate, ssyoutube.</p>
 
         <div class="field-group" style="gap:8px">
           <input type="text" id="ytUrl" class="color-input" placeholder="https://www.youtube.com/watch?v=..." style="font-family:'JetBrains Mono', monospace; font-size:11px;">
@@ -4363,7 +4363,18 @@
               <option value="max">max available</option>
             </select>
           </div>
+          <details style="margin-top:-4px">
+            <summary style="cursor:pointer; color:var(--text-dim); font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.04em">Advanced</summary>
+            <div style="margin-top:10px; display:flex; flex-direction:column; gap:8px">
+              <div class="slabel"><span>Custom cobalt API URL (optional override)</span></div>
+              <input type="text" id="ytCustomInstance" class="color-input" placeholder="https://your-cobalt-instance.example" style="font-family:'JetBrains Mono', monospace; font-size:11px;">
+              <p class="desc" style="margin:0; opacity:0.7; font-size:10.5px">
+                If built-in providers all fail (rate limits / captchas), self-host <a href="https://github.com/imputnet/cobalt" target="_blank" rel="noopener" style="color:var(--text-dim); text-decoration:underline">cobalt</a> on Railway/Fly/etc. with <code style="background:var(--bg-2); padding:1px 4px; border-radius:3px">CORS_WILDCARD=1</code> and paste its URL here. Saved to your browser only.
+              </p>
+            </div>
+          </details>
           <button class="apply-btn" id="ytFetch">Fetch &amp; Download →</button>
+          <button class="dl-btn" id="ytFastFetch" style="margin-top:6px">⚡ Fast direct link (full CDN speed · right-click → Save As)</button>
         </div>
 
         <div class="progress-row" id="ytProgressRow" hidden>
@@ -4371,14 +4382,40 @@
           <div class="progress-text" id="ytText">0%</div>
         </div>
 
+        <details id="ytErrorDetails" hidden style="margin-top:0">
+          <summary style="cursor:pointer; color:var(--r); font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.04em">▶ Why each provider failed</summary>
+          <pre id="ytErrorLog" style="max-height:160px; overflow:auto; background:var(--bg-2); border:1px solid var(--border); border-radius:8px; padding:10px; font-family:'JetBrains Mono', monospace; font-size:10px; color:var(--text-dim); white-space:pre-wrap; margin-top:8px"></pre>
+          <p class="desc" style="margin-top:8px; opacity:0.8; font-size:10.5px; line-height:1.55">
+            <strong style="color:var(--text)">If nothing works in 2026, you basically have three options:</strong><br>
+            1. <strong>Self-host cobalt</strong> — paste the URL into Advanced above. Easiest is the <a href="https://railway.com/deploy/cobalt-media-downloader" target="_blank" rel="noopener" style="color:var(--text-dim); text-decoration:underline">Railway one-click deploy</a> (~$5/mo, set <code>CORS_WILDCARD=1</code>) or run the Docker image locally with <code>ghcr.io/imputnet/cobalt</code>.<br>
+            2. <strong>yt-dlp on your computer</strong> — <code>pip install yt-dlp</code> then <code>yt-dlp -x --audio-format mp3 URL</code>. Always works, no captchas.<br>
+            3. <strong>A browser extension</strong> like Cobalt Tools userscript (Tampermonkey).<br>
+            YouTube has been aggressively shutting down third-party access since 2024 — pure-browser downloading without a backend or extension is genuinely unreliable now.
+          </p>
+        </details>
+
         <div class="export-buttons" id="ytResult" hidden style="justify-content:flex-start; flex-wrap:wrap; gap:8px">
           <button class="dl-btn" id="ytDownload">Download <span class="tag" id="ytSize">—</span></button>
           <button class="dl-btn" id="ytOpenInTab">Open in new tab</button>
         </div>
 
-        <p class="desc" style="margin-top:6px; opacity:0.7; font-size:10.5px">
-          Tip: if every instance fails, paste the URL into <a href="https://cobalt.tools" target="_blank" rel="noopener" style="color:var(--text-dim); text-decoration:underline">cobalt.tools</a> directly, or run <code style="background:var(--bg-2); padding:2px 5px; border-radius:3px">yt-dlp</code> locally for guaranteed results.
-        </p>
+        <details style="margin-top:8px">
+          <summary style="cursor:pointer; color:var(--g); font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.04em; font-weight:600">▶ Always-works fallback · open in a downloader site</summary>
+          <p class="desc" style="margin-top:8px; opacity:0.85; font-size:11px; line-height:1.55">
+            Sites like flvto, y2mate, ssyoutube etc. have their own backend servers running yt-dlp — that's why they actually work. This page is a single HTML file with no server, so it can't replicate that. These buttons paste your URL into one of those sites and open it in a new tab. Pick whichever you trust:
+          </p>
+          <div class="export-buttons" style="flex-wrap:wrap; gap:6px; margin-top:10px">
+            <button class="dl-btn" id="ytExtFlvto">flvto.best ↗</button>
+            <button class="dl-btn" id="ytExtY2Mate">y2mate ↗</button>
+            <button class="dl-btn" id="ytExtSSYT">ssyoutube ↗</button>
+            <button class="dl-btn" id="ytExtSaveFrom">savefrom ↗</button>
+            <button class="dl-btn" id="ytExtCobaltSite">cobalt.tools ↗</button>
+            <button class="dl-btn" id="ytExtYTMP3">ytmp3.cc ↗</button>
+          </div>
+          <p class="desc" style="margin-top:10px; opacity:0.6; font-size:10px">
+            Heads up: these are third-party sites — they have ads, sometimes shady ones. Use an adblocker. None of them are run by me; pasting your URL is no different from going to the site yourself. <code style="background:var(--bg-2); padding:1px 4px; border-radius:3px">yt-dlp</code> on your computer is still the most reliable, ad-free path.
+          </p>
+        </details>
       </section>
 
       <!-- MP4 → GIF -->
@@ -10114,11 +10151,17 @@ m2mDownloadWav.addEventListener('click', () => {
 });
 
 /* ============================================================
-   YouTube / TikTok / Twitter / SoundCloud / etc. → MP3 / MP4
-   Real downloader using public cobalt API instances.
-   Cobalt is open-source media downloader (github.com/imputnet/cobalt).
-   We POST to /, get back a tunnel URL, then fetch the file.
-   On rate-limit / 4xx, we try the next instance in the fallback list.
+   YouTube / TikTok / etc. → MP3 / MP4
+   Multi-provider strategy:
+     1) Piped API (YouTube only) — fetches direct stream URLs we can grab
+        via the instance's CORS-enabled proxy.
+     2) Cobalt API — for non-YouTube (TikTok, Twitter, Reddit, etc.) and
+        as a YouTube fallback. Tries a list of public instances until one
+        works (most are now Turnstile-protected, but if one is open we use it).
+     3) User-supplied custom cobalt URL — if all of the above fail.
+   The sad reality: in 2026 most public cobalt instances are Turnstile-walled
+   because of scraper abuse, so the most reliable path is Piped for YT and
+   self-hosted cobalt for everything else.
    ============================================================ */
 (function setupYtDownloader() {
   const urlInput = document.getElementById('ytUrl');
@@ -10137,29 +10180,61 @@ m2mDownloadWav.addEventListener('click', () => {
   const ytDownload = document.getElementById('ytDownload');
   const ytSize = document.getElementById('ytSize');
   const ytOpenInTab = document.getElementById('ytOpenInTab');
+  const ytCustomInstance = document.getElementById('ytCustomInstance');
+  const ytErrorDetails = document.getElementById('ytErrorDetails');
+  const ytErrorLog = document.getElementById('ytErrorLog');
 
   let ytLastBlob = null;
   let ytLastFilename = 'download';
   let ytLastTunnelUrl = null;
 
-  // Fallback list of cobalt instances. Order matters: official first, then community.
-  // If cobalt.tools enables turnstile, the API call will fail with auth error and we
-  // fall through to community instances. Updated list as of 2026 — these come from
-  // the public instance lists (instances.cobalt.best, cobalt.directory).
+  // Piped public instances. These have stable CORS and are designed for browser use.
+  // Source: github.com/TeamPiped/Piped/wiki/Instances. List rotates — if all fail,
+  // fetch a fresh list from https://piped-instances.kavin.rocks/ at runtime.
+  const PIPED_INSTANCES = [
+    'https://pipedapi.kavin.rocks',
+    'https://api.piped.yt',
+    'https://pipedapi.adminforge.de',
+    'https://pipedapi.r4fo.com',
+    'https://pipedapi.leptons.xyz',
+    'https://pipedapi-libre.kavin.rocks',
+    'https://api.piped.privacydev.net',
+    'https://pipedapi.drgns.space',
+    'https://pipedapi.darkness.services',
+    'https://pipedapi.orangenet.cc',
+    'https://api.piped.private.coffee',
+  ];
+
+  // Invidious public instances (May 2026). The official list shrunk drastically because
+  // of YouTube's blocking — these 4 are what's left. They run on different infra than
+  // Piped, so they sometimes work when Piped is down. Use ?local=true so stream URLs
+  // are CORS-proxied through the instance.
+  const INVIDIOUS_INSTANCES = [
+    'https://inv.nadeko.net',
+    'https://invidious.nerdvpn.de',
+    'https://inv.thepixora.com',
+    'https://yt.chocolatemoo53.com',
+  ];
+
+  // Cobalt fallback list (mostly Turnstile-walled in 2026 — kept for non-YT services)
   const COBALT_INSTANCES = [
     'https://api.cobalt.tools',
-    'https://cobalt-api.kwiatekmiki.com',
     'https://cobalt.synzr.space',
     'https://co.tskau.team',
     'https://capi.oak.li',
     'https://api.co.rooot.gay',
-    'https://cobalt-api.hyper.lol',
-    'https://co.wuk.sh',
   ];
+
+  // Restore custom instance from localStorage
+  if (ytCustomInstance) {
+    ytCustomInstance.value = localStorage.getItem('ytCustomInstance') || '';
+    ytCustomInstance.addEventListener('input', () => {
+      localStorage.setItem('ytCustomInstance', ytCustomInstance.value.trim());
+    });
+  }
 
   ytAb.addEventListener('input', () => { ytAbVal.textContent = `${ytAb.value} kbps`; });
 
-  // Toggle audio/video setting rows based on selected mode
   function syncModeUI() {
     const mode = (document.querySelector('input[name="ytKind"]:checked') || {}).value;
     ytAudioRow.hidden = (mode !== 'audio');
@@ -10181,82 +10256,310 @@ m2mDownloadWav.addEventListener('click', () => {
     if (msg) ytText.textContent = msg;
   }
 
-  // Try each cobalt instance; return the first { status: 'tunnel'|'redirect', url, filename } we get.
-  async function callCobalt(body) {
-    let lastErr = null;
-    for (const inst of COBALT_INSTANCES) {
-      try {
-        ytText.textContent = `Trying ${inst.replace(/^https?:\/\//, '')}…`;
-        const r = await fetch(inst + '/', {
-          method: 'POST',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(body),
-        });
-        // Network OK but maybe rate-limited or auth required → try next instance
-        if (!r.ok) { lastErr = `HTTP ${r.status} on ${inst}`; continue; }
-        const j = await r.json().catch(() => null);
-        if (!j) { lastErr = `Bad JSON from ${inst}`; continue; }
-        if (j.status === 'tunnel' || j.status === 'redirect') {
-          return { ...j, instance: inst };
-        }
-        if (j.status === 'picker') {
-          // Picker is rare for normal YT/TT; just take the first item if it's a video
-          const first = (j.picker || [])[0];
-          if (first && first.url) {
-            return { status: 'redirect', url: first.url, filename: 'media', instance: inst };
-          }
-          lastErr = 'Picker response with no items';
-          continue;
-        }
-        if (j.status === 'error') {
-          // Auth required, rate limited, or actual error — try next instance
-          const code = (j.error && j.error.code) || 'unknown';
-          lastErr = `${inst}: ${code}`;
-          // If it's clearly a permanent error (e.g. content unavailable), no point trying more
-          if (/content\.video\.unavailable|content\.too_long|link\.invalid|link\.unsupported/.test(code)) {
-            throw new Error(code);
-          }
-          continue;
-        }
-      } catch (e) {
-        lastErr = `${inst}: ${e.message || e}`;
-        // If this was a fatal error from cobalt (above), stop
-        if (e.message && /content|link\./i.test(e.message)) throw e;
-      }
-    }
-    throw new Error(lastErr || 'No cobalt instance responded');
+  // Extract a YouTube video ID from any common YT URL shape.
+  function extractYtId(url) {
+    const patterns = [
+      /[?&]v=([A-Za-z0-9_-]{11})/,
+      /youtu\.be\/([A-Za-z0-9_-]{11})/,
+      /\/shorts\/([A-Za-z0-9_-]{11})/,
+      /\/embed\/([A-Za-z0-9_-]{11})/,
+      /\/watch\/([A-Za-z0-9_-]{11})/,
+    ];
+    for (const re of patterns) { const m = url.match(re); if (m) return m[1]; }
+    return null;
   }
 
-  // Stream a URL into a Blob, updating progress.
-  async function fetchBlobWithProgress(url) {
+  // Stream a URL into a Blob, updating progress. Used for both Piped proxy URLs
+  // and cobalt tunnel URLs (both should have CORS enabled).
+  async function fetchBlobWithProgress(url, label) {
     const r = await fetch(url);
-    if (!r.ok) throw new Error(`Tunnel returned HTTP ${r.status}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status} fetching ${label || 'stream'}`);
     const total = parseInt(r.headers.get('Content-Length') || r.headers.get('Estimated-Content-Length') || '0', 10);
     const reader = r.body && r.body.getReader ? r.body.getReader() : null;
-    if (!reader) {
-      // Fallback for old browsers / opaque responses
-      return await r.blob();
-    }
+    if (!reader) return await r.blob();
     const chunks = [];
     let received = 0;
+    const t0 = Date.now();
+    let lastUpdate = 0;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       chunks.push(value);
       received += value.length;
-      if (total > 0) {
-        const pct = Math.round((received / total) * 80) + 10; // 10–90%
-        setProgress(pct, `Downloading · ${formatBytes(received)} / ${formatBytes(total)}`);
-      } else {
-        setProgress(50, `Downloading · ${formatBytes(received)}`);
+      const now = Date.now();
+      // Throttle UI updates so we don't repaint every chunk
+      if (now - lastUpdate >= 200 || done) {
+        lastUpdate = now;
+        const elapsedSec = Math.max(0.1, (now - t0) / 1000);
+        const speed = received / elapsedSec; // B/s
+        const speedStr = formatBytes(speed) + '/s';
+        if (total > 0) {
+          const pct = Math.round((received / total) * 70) + 20; // 20%–90%
+          const remaining = Math.max(0, total - received);
+          const etaSec = Math.round(remaining / Math.max(1, speed));
+          const etaStr = etaSec >= 60 ? `${Math.floor(etaSec/60)}m${etaSec%60}s` : `${etaSec}s`;
+          setProgress(pct, `${label || 'Downloading'} · ${formatBytes(received)} / ${formatBytes(total)} · ${speedStr} · ETA ${etaStr}`);
+        } else {
+          setProgress(50, `${label || 'Downloading'} · ${formatBytes(received)} · ${speedStr}`);
+        }
       }
     }
     return new Blob(chunks);
   }
 
+  // ============================================================
+  // PIPED PROVIDER (YouTube only)
+  // ============================================================
+  async function piped_fetchStreams(videoId) {
+    let lastErr = null;
+    for (const inst of PIPED_INSTANCES) {
+      try {
+        setProgress(10, `Trying piped · ${inst.replace(/^https?:\/\//, '')}…`);
+        const r = await fetch(`${inst}/streams/${videoId}`, {
+          headers: { 'Accept': 'application/json' },
+        });
+        if (!r.ok) { lastErr = `${inst}: HTTP ${r.status}`; continue; }
+        const j = await r.json();
+        if (j.error) { lastErr = `${inst}: ${j.error}`; continue; }
+        if (!j.audioStreams && !j.videoStreams) { lastErr = `${inst}: empty response`; continue; }
+        return { ...j, _instance: inst };
+      } catch (e) {
+        lastErr = `${inst}: ${e.message || e}`;
+      }
+    }
+    throw new Error(`Piped: ${lastErr || 'all instances unreachable'}`);
+  }
+
+  // Pick best audio stream from Piped response
+  function piped_pickAudio(streams) {
+    const audios = streams.audioStreams || [];
+    if (!audios.length) return null;
+    // Prefer m4a/aac (decodes well in Web Audio for re-encoding to MP3) but accept anything
+    const sorted = audios.slice().sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+    return sorted[0];
+  }
+
+  // Pick best video stream — prefer ones that include audio (videoOnly:false)
+  function piped_pickVideo(streams, maxQuality) {
+    const videos = streams.videoStreams || [];
+    if (!videos.length) return null;
+    const targetH = parseInt(maxQuality, 10) || 1080;
+    // Score: prefer combined audio+video, then prefer mp4, then closest-to-target height
+    function heightOf(s) { const m = (s.quality || '').match(/(\d+)p/); return m ? +m[1] : 0; }
+    const scored = videos.map(s => {
+      const h = heightOf(s);
+      const isMp4 = (s.mimeType || '').includes('mp4') || (s.format || '').toLowerCase().includes('mp4');
+      let score = 0;
+      if (!s.videoOnly) score += 10000; // prefer combined streams hugely
+      if (isMp4) score += 1000;
+      // Closer to target height = higher score (cap at target)
+      score += Math.max(0, 500 - Math.abs(Math.min(h, targetH) - targetH));
+      return { s, h, score };
+    });
+    scored.sort((a, b) => b.score - a.score);
+    return scored[0] && scored[0].s;
+  }
+
+  // Decode audio Blob → re-encode as MP3 via lamejs (already loaded for the M2M card)
+  async function audioBlobToMp3(blob, kbps) {
+    if (typeof lamejs === 'undefined') throw new Error('MP3 encoder not loaded (refresh the page)');
+    setProgress(82, 'Decoding audio…');
+    const arr = await blob.arrayBuffer();
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const buf = await ctx.decodeAudioData(arr.slice(0));
+    ctx.close();
+
+    setProgress(85, 'Encoding MP3…');
+    const sr = buf.sampleRate;
+    const ch = Math.min(2, buf.numberOfChannels);
+    const left = buf.getChannelData(0);
+    const right = buf.numberOfChannels > 1 ? buf.getChannelData(1) : left;
+    const toI16 = (f32) => {
+      const i16 = new Int16Array(f32.length);
+      for (let i = 0; i < f32.length; i++) {
+        const s = Math.max(-1, Math.min(1, f32[i]));
+        i16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+      return i16;
+    };
+    const li = toI16(left), ri = ch === 2 ? toI16(right) : null;
+    const enc = new lamejs.Mp3Encoder(ch, sr, kbps);
+    const block = 1152;
+    const parts = [];
+    const total = li.length;
+    for (let i = 0; i + block <= total; i += block) {
+      const a = li.subarray(i, i + block);
+      const out = ri ? enc.encodeBuffer(a, ri.subarray(i, i + block)) : enc.encodeBuffer(a);
+      if (out.length) parts.push(out);
+      if ((i % (block * 64)) === 0) {
+        const pct = 85 + Math.round((i / total) * 10);
+        setProgress(pct, `Encoding MP3 · ${pct - 85}%`);
+        await new Promise(r => setTimeout(r, 0)); // yield to UI
+      }
+    }
+    const tail = enc.flush();
+    if (tail.length) parts.push(tail);
+    return new Blob(parts, { type: 'audio/mpeg' });
+  }
+
+  async function fetchViaPiped(url, mode, audioBitrate, videoQuality) {
+    const id = extractYtId(url);
+    if (!id) throw new Error('Not a YouTube URL — Piped only supports YouTube');
+    const streams = await piped_fetchStreams(id);
+    const baseTitle = (streams.title || `youtube-${id}`).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
+
+    if (mode === 'audio') {
+      const a = piped_pickAudio(streams);
+      if (!a) throw new Error('Piped: no audio stream available');
+      const streamUrl = a.proxyUrl || a.url; // proxyUrl is CORS-friendly
+      setProgress(20, `Downloading audio · ${a.bitrate ? Math.round(a.bitrate/1000)+' kbps' : a.quality || ''}`);
+      const audioBlob = await fetchBlobWithProgress(streamUrl, 'Audio');
+      // If it's already mp3, just label it. Otherwise re-encode.
+      const isMp3 = (a.mimeType || '').includes('mpeg') || /mp3/i.test(a.format || '');
+      if (isMp3) {
+        return { blob: audioBlob, filename: `${baseTitle}.mp3` };
+      }
+      // Re-encode m4a/webm → mp3 at requested bitrate
+      const mp3 = await audioBlobToMp3(audioBlob, +audioBitrate);
+      return { blob: mp3, filename: `${baseTitle}.mp3` };
+    } else {
+      const v = piped_pickVideo(streams, videoQuality);
+      if (!v) throw new Error('Piped: no video stream available');
+      if (v.videoOnly) {
+        // Combined streams aren't available — Piped only has separate video/audio.
+        // Muxing them in-browser requires ffmpeg.wasm. Tell the user.
+        throw new Error(`Piped: only video-only streams available at this quality. Lower quality (try 720p or 360p) or use the Universal Converter to mux.`);
+      }
+      const streamUrl = v.proxyUrl || v.url;
+      setProgress(20, `Downloading video · ${v.quality}`);
+      const videoBlob = await fetchBlobWithProgress(streamUrl, 'Video');
+      const ext = ((v.mimeType || 'video/mp4').split('/')[1] || 'mp4').replace(/;.*$/, '');
+      return { blob: videoBlob, filename: `${baseTitle}.${ext}` };
+    }
+  }
+
+  // ============================================================
+  // INVIDIOUS PROVIDER (YouTube only — different infra than Piped)
+  // ============================================================
+  async function invidious_fetchVideo(videoId) {
+    let lastErr = null;
+    for (const inst of INVIDIOUS_INSTANCES) {
+      try {
+        setProgress(12, `Trying invidious · ${inst.replace(/^https?:\/\//, '')}…`);
+        // local=true makes adaptiveFormats/formatStreams URLs CORS-proxied through the instance
+        const r = await fetch(`${inst}/api/v1/videos/${videoId}?local=true`, {
+          headers: { 'Accept': 'application/json' },
+        });
+        if (!r.ok) { lastErr = `${inst}: HTTP ${r.status}`; continue; }
+        const j = await r.json().catch(() => null);
+        if (!j) { lastErr = `${inst}: bad JSON`; continue; }
+        if (j.error) { lastErr = `${inst}: ${j.error}`; continue; }
+        if (!j.formatStreams && !j.adaptiveFormats) { lastErr = `${inst}: empty response`; continue; }
+        return { ...j, _instance: inst };
+      } catch (e) {
+        lastErr = `${inst}: ${e.message || e}`;
+      }
+    }
+    throw new Error(`Invidious: ${lastErr || 'all instances unreachable'}`);
+  }
+
+  async function fetchViaInvidious(url, mode, audioBitrate, videoQuality) {
+    const id = extractYtId(url);
+    if (!id) throw new Error('Not a YouTube URL — Invidious only supports YouTube');
+    const data = await invidious_fetchVideo(id);
+    const baseTitle = (data.title || `youtube-${id}`).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
+
+    if (mode === 'audio') {
+      // adaptiveFormats has audio-only streams; pick highest bitrate
+      const audios = (data.adaptiveFormats || []).filter(f => (f.type || '').startsWith('audio/'));
+      if (!audios.length) throw new Error('Invidious: no audio streams');
+      audios.sort((a, b) => (parseInt(b.bitrate) || 0) - (parseInt(a.bitrate) || 0));
+      const a = audios[0];
+      setProgress(20, `Downloading audio · ${Math.round((parseInt(a.bitrate)||0)/1000)} kbps`);
+      const audioBlob = await fetchBlobWithProgress(a.url, 'Audio');
+      // Re-encode to MP3 (Invidious typically gives webm/opus or m4a/aac)
+      const isMp3 = (a.type || '').includes('mpeg');
+      if (isMp3) return { blob: audioBlob, filename: `${baseTitle}.mp3` };
+      const mp3 = await audioBlobToMp3(audioBlob, +audioBitrate);
+      return { blob: mp3, filename: `${baseTitle}.mp3` };
+    } else {
+      // formatStreams = combined audio+video (legacy, capped at 720p but works in browser)
+      const targetH = parseInt(videoQuality, 10) || 1080;
+      const combined = (data.formatStreams || []).slice();
+      if (!combined.length) {
+        throw new Error('Invidious: no combined streams (try lower quality, or use the Universal Converter to mux)');
+      }
+      // Score by closeness to target resolution
+      function heightOf(s) { const m = (s.resolution || s.qualityLabel || s.quality || '').match(/(\d+)/); return m ? +m[1] : 0; }
+      combined.sort((a, b) => Math.abs(heightOf(a) - targetH) - Math.abs(heightOf(b) - targetH));
+      const v = combined[0];
+      setProgress(20, `Downloading video · ${v.resolution || v.qualityLabel || v.quality}`);
+      const videoBlob = await fetchBlobWithProgress(v.url, 'Video');
+      const ext = ((v.type || 'video/mp4').split('/')[1] || 'mp4').replace(/;.*$/, '');
+      return { blob: videoBlob, filename: `${baseTitle}.${ext}` };
+    }
+  }
+
+  // ============================================================
+  // COBALT PROVIDER (any service, fallback)
+  // ============================================================
+  async function tryCobaltAt(inst, body) {
+    setProgress(15, `Trying cobalt · ${inst.replace(/^https?:\/\//, '')}…`);
+    const r = await fetch(inst.replace(/\/+$/, '') + '/', {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json().catch(() => null);
+    if (!j) throw new Error('bad JSON');
+    if (j.status === 'tunnel' || j.status === 'redirect') return j;
+    if (j.status === 'picker') {
+      const first = (j.picker || [])[0];
+      if (first && first.url) return { status: 'redirect', url: first.url, filename: 'media' };
+      throw new Error('picker with no items');
+    }
+    if (j.status === 'error') {
+      const code = (j.error && j.error.code) || 'unknown';
+      const fatal = /content\.video\.unavailable|content\.too_long|link\.invalid|link\.unsupported/.test(code);
+      const err = new Error(code);
+      err.fatal = fatal;
+      throw err;
+    }
+    throw new Error(`unexpected status: ${j.status}`);
+  }
+
+  async function fetchViaCobalt(url, mode, audioBitrate, videoQuality) {
+    const body = {
+      url,
+      downloadMode: (mode === 'audio') ? 'audio' : (mode === 'mute' ? 'mute' : 'auto'),
+      audioFormat: 'mp3',
+      audioBitrate: String(audioBitrate),
+      videoQuality: String(videoQuality),
+      youtubeVideoCodec: 'h264',
+      filenameStyle: 'basic',
+    };
+    const tries = [];
+    const custom = (ytCustomInstance && ytCustomInstance.value || '').trim();
+    if (custom) tries.push(custom);
+    tries.push(...COBALT_INSTANCES);
+
+    let lastErr = null;
+    for (const inst of tries) {
+      try {
+        const resp = await tryCobaltAt(inst, body);
+        return { tunnelUrl: resp.url, filename: resp.filename || (mode === 'audio' ? 'audio.mp3' : 'video.mp4') };
+      } catch (e) {
+        lastErr = `${inst}: ${e.message || e}`;
+        if (e.fatal) throw e;
+      }
+    }
+    throw new Error(lastErr || 'all cobalt instances failed');
+  }
+
+  // ============================================================
+  // MAIN — orchestrate providers (Piped → Invidious → Cobalt for YT; Cobalt-only otherwise)
+  // ============================================================
   ytFetch.addEventListener('click', async () => {
     const url = getCleanUrl();
     if (!url) return;
@@ -10265,57 +10568,102 @@ m2mDownloadWav.addEventListener('click', () => {
     const audioBitrate = String(ytAb.value);
     const videoQuality = ytVq.value;
 
-    const body = {
-      url,
-      downloadMode: (mode === 'audio') ? 'audio' : (mode === 'mute' ? 'mute' : 'auto'),
-      audioFormat: 'mp3',
-      audioBitrate,
-      videoQuality,
-      youtubeVideoCodec: 'h264',
-      filenameStyle: 'basic',
-    };
-
     ytFetch.disabled = true;
     ytResult.hidden = true;
+    ytErrorDetails.hidden = true;
+    ytErrorLog.textContent = '';
     ytLastBlob = null;
-    setProgress(5, 'Asking cobalt…');
+    ytLastTunnelUrl = null;
+    setProgress(5, 'Starting…');
 
+    const isYT = !!extractYtId(url);
+    const errors = [];
+    function logErr(provider, e) {
+      const msg = (e && e.message) ? e.message : String(e);
+      errors.push(`[${provider}] ${msg}`);
+      console.warn(`[yt-dl] ${provider} failed:`, e);
+    }
+
+    // Strategy:
+    //   YouTube → Piped, then Invidious, then Cobalt.
+    //   Other  → Cobalt only.
     try {
-      const resp = await callCobalt(body);
-      const tunnelUrl = resp.url;
-      const filename = resp.filename || (mode === 'audio' ? 'audio.mp3' : 'video.mp4');
-      ytLastTunnelUrl = tunnelUrl;
-      ytLastFilename = filename;
+      // ----- 1) Piped (YouTube only) -----
+      if (isYT) {
+        try {
+          const out = await fetchViaPiped(url, mode, audioBitrate, videoQuality);
+          ytLastBlob = out.blob;
+          ytLastFilename = out.filename;
+          setProgress(100, 'Done · via Piped');
+          ytSize.textContent = formatBytes(out.blob.size);
+          ytResult.hidden = false;
+          toast('Ready — click Download');
+          return;
+        } catch (e) {
+          logErr('Piped', e);
+          setProgress(12, 'Piped failed · trying invidious…');
+        }
 
-      setProgress(10, 'Got link · downloading file…');
+        // ----- 2) Invidious (YouTube only, fallback) -----
+        try {
+          const out = await fetchViaInvidious(url, mode, audioBitrate, videoQuality);
+          ytLastBlob = out.blob;
+          ytLastFilename = out.filename;
+          setProgress(100, 'Done · via Invidious');
+          ytSize.textContent = formatBytes(out.blob.size);
+          ytResult.hidden = false;
+          toast('Ready — click Download (via Invidious)');
+          return;
+        } catch (e) {
+          logErr('Invidious', e);
+          setProgress(15, 'Invidious failed · trying cobalt…');
+        }
+      }
 
-      // Try to fetch the tunnel URL as a blob (gives us proper filename + progress).
-      // If CORS blocks it, fall back to opening it in a new tab.
+      // ----- 3) Cobalt (final fallback / non-YT) -----
+      let cobaltResult;
       try {
-        const blob = await fetchBlobWithProgress(tunnelUrl);
+        cobaltResult = await fetchViaCobalt(url, mode, audioBitrate, videoQuality);
+      } catch (e) {
+        logErr('Cobalt', e);
+        throw new Error('all-providers-failed');
+      }
+      ytLastTunnelUrl = cobaltResult.tunnelUrl;
+      ytLastFilename = cobaltResult.filename;
+
+      try {
+        const blob = await fetchBlobWithProgress(cobaltResult.tunnelUrl, 'Downloading');
         ytLastBlob = blob;
-        setProgress(100, 'Done');
+        setProgress(100, 'Done · via cobalt');
         ytSize.textContent = formatBytes(blob.size);
         ytResult.hidden = false;
-        toast('File ready — click Download to save');
+        toast('Ready — click Download');
       } catch (corsErr) {
-        console.warn('Direct fetch blocked, falling back to direct link', corsErr);
-        // Show "Open in tab" — the browser will save the file directly via Content-Disposition
+        // CORS blocked direct fetch — the cobalt tunnel URL still works in a new tab
+        console.warn('CORS blocked tunnel fetch', corsErr);
         ytSize.textContent = '— direct link';
         ytResult.hidden = false;
-        setProgress(100, 'Ready · use Open in new tab (CORS blocked direct fetch)');
-        toast('Direct download blocked — use "Open in new tab"');
+        setProgress(100, 'Ready · use "Open in new tab" (CORS blocked)');
+        toast('Direct download blocked — try "Open in new tab"');
       }
     } catch (err) {
-      console.error('[yt-dl]', err);
-      const msg = (err && err.message) ? err.message : String(err);
-      let userMsg = 'All instances failed';
-      if (/content\.video\.unavailable/i.test(msg)) userMsg = 'Video unavailable (private, age-gated, or region-locked)';
-      else if (/content\.too_long/i.test(msg)) userMsg = 'Video too long for free instances';
-      else if (/link\.invalid|link\.unsupported/i.test(msg)) userMsg = 'Link not supported';
-      else if (/auth|turnstile|captcha/i.test(msg)) userMsg = 'All instances require captcha — try cobalt.tools directly';
-      else if (/rate/i.test(msg)) userMsg = 'All instances rate-limited — try again in a few minutes';
+      const allMsg = errors.join('\n');
+      let userMsg = 'All providers failed — see details below';
+      if (/content\.video\.unavailable/i.test(allMsg)) userMsg = 'Video unavailable (private, age-gated, or region-locked)';
+      else if (/content\.too_long/i.test(allMsg)) userMsg = 'Video too long for free instances';
+      else if (/link\.invalid|link\.unsupported/i.test(allMsg)) userMsg = 'Link not supported';
+      else if (/Piped: only video-only/i.test(allMsg)) userMsg = 'Try a lower video quality (720p or 360p)';
+      else if (errors.length && errors.every(e => /captcha|turnstile|auth/i.test(e))) userMsg = 'All instances are captcha-walled — only self-hosted cobalt will work';
+      else if (errors.length && errors.every(e => /HTTP 5\d\d|fetch|network/i.test(e))) userMsg = 'All instances unreachable — check your network or try again later';
+
       ytText.textContent = userMsg;
+      // Show the actual breakdown in the UI (not just console)
+      ytErrorLog.textContent = errors.length
+        ? errors.map(e => '• ' + e).join('\n')
+        : '(no provider attempted — likely an internal error)';
+      ytErrorDetails.hidden = false;
+      ytErrorDetails.open = true;
+      console.error('[yt-dl] full errors:', allMsg);
       toast(userMsg);
     } finally {
       ytFetch.disabled = false;
@@ -10324,7 +10672,6 @@ m2mDownloadWav.addEventListener('click', () => {
 
   ytDownload.addEventListener('click', () => {
     if (!ytLastBlob) {
-      // Fall back: open the tunnel URL
       if (ytLastTunnelUrl) window.open(ytLastTunnelUrl, '_blank', 'noopener');
       return;
     }
@@ -10338,8 +10685,146 @@ m2mDownloadWav.addEventListener('click', () => {
   });
 
   ytOpenInTab.addEventListener('click', () => {
-    if (!ytLastTunnelUrl) { toast('Fetch first'); return; }
-    window.open(ytLastTunnelUrl, '_blank', 'noopener');
+    if (ytLastBlob) {
+      // Open the local blob in a new tab (preview)
+      const u = URL.createObjectURL(ytLastBlob);
+      window.open(u, '_blank', 'noopener');
+      setTimeout(() => URL.revokeObjectURL(u), 60000);
+      return;
+    }
+    if (ytLastTunnelUrl) { window.open(ytLastTunnelUrl, '_blank', 'noopener'); return; }
+    toast('Fetch first');
+  });
+
+  // ============================================================
+  // FAST DIRECT MODE — skip the proxy, open the direct googlevideo URL.
+  // This is much faster (full Google CDN speed) but the file plays in a new
+  // tab instead of downloading directly — user has to right-click → Save As.
+  // Only works for YouTube; falls back to running the normal flow otherwise.
+  // ============================================================
+  const ytFastFetch = document.getElementById('ytFastFetch');
+  if (ytFastFetch) {
+    ytFastFetch.addEventListener('click', async () => {
+      const url = getCleanUrl();
+      if (!url) return;
+      const id = extractYtId(url);
+      if (!id) { toast('Fast mode is YouTube-only — use the regular Fetch button or a fallback site'); return; }
+
+      const mode = document.querySelector('input[name="ytKind"]:checked').value;
+      const videoQuality = ytVq.value;
+
+      ytFastFetch.disabled = true;
+      ytErrorDetails.hidden = true;
+      ytErrorLog.textContent = '';
+      ytResult.hidden = true;
+      setProgress(10, 'Asking Piped for direct stream URLs…');
+
+      try {
+        // Try Piped first (returns direct googlevideo URLs in `url` field)
+        let directUrl = null, label = '';
+        try {
+          const streams = await piped_fetchStreams(id);
+          if (mode === 'audio') {
+            const a = piped_pickAudio(streams);
+            if (!a) throw new Error('no audio stream');
+            directUrl = a.url; // direct, NOT proxyUrl
+            label = `audio · ${a.bitrate ? Math.round(a.bitrate/1000)+' kbps' : a.quality || ''} · ${(a.mimeType || '').split('/')[1] || 'audio'}`;
+          } else {
+            const v = piped_pickVideo(streams, videoQuality);
+            if (!v) throw new Error('no video stream');
+            directUrl = v.url;
+            label = `video · ${v.quality}${v.videoOnly ? ' (video-only — no audio)' : ''}`;
+          }
+        } catch (e) {
+          // Fall back to Invidious for direct URLs
+          setProgress(20, 'Piped failed · trying Invidious…');
+          const data = await invidious_fetchVideo(id);
+          if (mode === 'audio') {
+            const audios = (data.adaptiveFormats || []).filter(f => (f.type || '').startsWith('audio/'));
+            audios.sort((a, b) => (parseInt(b.bitrate)||0) - (parseInt(a.bitrate)||0));
+            if (!audios.length) throw new Error('no audio stream from either provider');
+            directUrl = audios[0].url;
+            label = `audio · ${Math.round((parseInt(audios[0].bitrate)||0)/1000)} kbps`;
+          } else {
+            const targetH = parseInt(videoQuality, 10) || 1080;
+            const combined = (data.formatStreams || []).slice();
+            if (!combined.length) throw new Error('no combined video stream — try lower quality');
+            function heightOf(s) { const m = (s.resolution || s.qualityLabel || s.quality || '').match(/(\d+)/); return m ? +m[1] : 0; }
+            combined.sort((a, b) => Math.abs(heightOf(a) - targetH) - Math.abs(heightOf(b) - targetH));
+            directUrl = combined[0].url;
+            label = `video · ${combined[0].resolution || combined[0].qualityLabel || combined[0].quality}`;
+          }
+        }
+
+        if (!directUrl) throw new Error('couldn\'t resolve a direct URL');
+
+        setProgress(100, `Opened direct ${label} — right-click in the new tab → Save As`);
+        window.open(directUrl, '_blank', 'noopener');
+        toast('Opened — right-click → Save As (full Google CDN speed)');
+      } catch (err) {
+        console.error('[yt-dl fast]', err);
+        const msg = (err && err.message) ? err.message : String(err);
+        ytText.textContent = 'Fast mode failed: ' + msg;
+        toast('Fast mode failed — try regular Fetch or a fallback site below');
+      } finally {
+        ytFastFetch.disabled = false;
+      }
+    });
+  }
+
+  // ============================================================
+  // Always-works fallback: open the URL on a third-party converter site
+  // These sites have their own backends, so they actually work — but they're
+  // ad-supported and not run by us. Each button just opens a new tab.
+  // ============================================================
+  function getUrlOrPrompt() {
+    const v = (urlInput.value || '').trim();
+    if (!v) { toast('Paste a URL first'); urlInput.focus(); return null; }
+    return v;
+  }
+  function bindExt(id, builder) {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      const u = getUrlOrPrompt();
+      if (!u) return;
+      const dest = builder(u);
+      if (!dest) { toast('Couldn\'t build URL — only YouTube links work for this one'); return; }
+      window.open(dest, '_blank', 'noopener');
+      toast('Opened in new tab');
+    });
+  }
+
+  // flvto.best uses /convert/{videoId} for YT; otherwise just home page
+  bindExt('ytExtFlvto', (u) => {
+    const id = extractYtId(u);
+    return id ? `https://flvto.best/convert/${id}` : 'https://flvto.best/';
+  });
+
+  // y2mate uses /youtube/{videoId} for YT
+  bindExt('ytExtY2Mate', (u) => {
+    const id = extractYtId(u);
+    return id ? `https://www.y2mate.com/youtube/${id}` : 'https://www.y2mate.com';
+  });
+
+  // ssyoutube — literally just inserts "ss" before "youtube" in the URL
+  bindExt('ytExtSSYT', (u) => {
+    if (!extractYtId(u)) return null;
+    return u
+      .replace(/^https?:\/\/(www\.)?youtube\.com/, 'https://ssyoutube.com')
+      .replace(/^https?:\/\/youtu\.be\//, 'https://ssyoutube.com/youtu.be/');
+  });
+
+  // savefrom.net — accepts ?url=... query param
+  bindExt('ytExtSaveFrom', (u) => `https://en.savefrom.net/#url=${encodeURIComponent(u)}`);
+
+  // cobalt.tools (the website, not the API — Turnstile is solvable manually)
+  bindExt('ytExtCobaltSite', (u) => `https://cobalt.tools/?u=${encodeURIComponent(u)}`);
+
+  // ytmp3.cc — accepts the YT video URL pasted directly into ?vid= or via home redirect
+  bindExt('ytExtYTMP3', (u) => {
+    const id = extractYtId(u);
+    return id ? `https://ytmp3.cc/youtube-to-mp3/?v=${id}` : 'https://ytmp3.cc/';
   });
 })();
 
