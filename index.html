@@ -4326,7 +4326,7 @@
       <!-- YouTube → MP3 / MP4 (real downloader via cobalt) -->
       <section class="convert-card">
         <h3>YouTube → MP3 / MP4</h3>
-        <p class="desc"><strong>Two modes:</strong> Regular Fetch downloads the file fully into the browser (proxied through Piped/Invidious — usually slow because their VPSes are tiny) so you get a one-click .mp3 with a real filename. The ⚡ Fast Direct button below skips the proxy and opens the raw stream URL at full Google CDN speed (10–20 MB/s) but you have to right-click → Save As. If both fail, the green section below has one-click buttons to working sites like flvto, y2mate, ssyoutube.</p>
+        <p class="desc"><strong>One click, fast.</strong> Auto-resolves the direct Google CDN URL and downloads at full speed (~10–20 MB/s). Audio is re-encoded to MP3 in your browser after the download (a few extra seconds for a song); video stays as MP4. If everything's down, the green section below has one-click buttons to working sites like flvto, y2mate.</p>
 
         <div class="field-group" style="gap:8px">
           <input type="text" id="ytUrl" class="color-input" placeholder="https://www.youtube.com/watch?v=..." style="font-family:'JetBrains Mono', monospace; font-size:11px;">
@@ -4373,8 +4373,7 @@
               </p>
             </div>
           </details>
-          <button class="apply-btn" id="ytFetch">Fetch &amp; Download →</button>
-          <button class="dl-btn" id="ytFastFetch" style="margin-top:6px">⚡ Fast direct link (full CDN speed · right-click → Save As)</button>
+          <button class="apply-btn" id="ytFetch">⚡ Download →</button>
         </div>
 
         <div class="progress-row" id="ytProgressRow" hidden>
@@ -10310,24 +10309,52 @@ m2mDownloadWav.addEventListener('click', () => {
   // ============================================================
   // PIPED PROVIDER (YouTube only)
   // ============================================================
-  async function piped_fetchStreams(videoId) {
-    let lastErr = null;
-    for (const inst of PIPED_INSTANCES) {
+  // Race all instances in parallel — first to respond with valid data wins.
+  // 5s timeout per instance (AbortController) so a hung one can't stall the chain.
+  // This cuts resolve time from "up to 8 × default-timeout" to "as fast as the fastest".
+  async function raceFetch(urls, validate, label, timeoutMs) {
+    timeoutMs = timeoutMs || 5000;
+    const controllers = urls.map(() => new AbortController());
+    const errors = [];
+    setProgress(10, `Asking ${urls.length} ${label} instances in parallel…`);
+    const promises = urls.map((u, i) => (async () => {
+      // Per-instance timeout
+      const tid = setTimeout(() => controllers[i].abort(), timeoutMs);
       try {
-        setProgress(10, `Trying piped · ${inst.replace(/^https?:\/\//, '')}…`);
-        const r = await fetch(`${inst}/streams/${videoId}`, {
-          headers: { 'Accept': 'application/json' },
-        });
-        if (!r.ok) { lastErr = `${inst}: HTTP ${r.status}`; continue; }
+        const r = await fetch(u, { signal: controllers[i].signal, headers: { 'Accept': 'application/json' } });
+        clearTimeout(tid);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const j = await r.json();
-        if (j.error) { lastErr = `${inst}: ${j.error}`; continue; }
-        if (!j.audioStreams && !j.videoStreams) { lastErr = `${inst}: empty response`; continue; }
-        return { ...j, _instance: inst };
+        const err = validate(j);
+        if (err) throw new Error(err);
+        return { json: j, instance: u };
       } catch (e) {
-        lastErr = `${inst}: ${e.message || e}`;
+        clearTimeout(tid);
+        const msg = (e.name === 'AbortError') ? 'timeout' : (e.message || e);
+        errors.push(`${u}: ${msg}`);
+        throw e;
       }
+    })());
+
+    // Promise.any → first fulfilled wins; aborts the rest
+    try {
+      const winner = await Promise.any(promises);
+      // Cancel all other in-flight requests
+      controllers.forEach(c => { try { c.abort(); } catch (e) {} });
+      return { ...winner, errors };
+    } catch (e) {
+      throw new Error(`${label}: all ${urls.length} instances failed (${errors.slice(0,3).join(' · ')}${errors.length>3?'…':''})`);
     }
-    throw new Error(`Piped: ${lastErr || 'all instances unreachable'}`);
+  }
+
+  async function piped_fetchStreams(videoId) {
+    const urls = PIPED_INSTANCES.map(i => `${i.replace(/\/+$/, '')}/streams/${videoId}`);
+    const { json, instance } = await raceFetch(urls, (j) => {
+      if (j.error) return j.error;
+      if (!j.audioStreams && !j.videoStreams) return 'empty response';
+      return null;
+    }, 'Piped', 5000);
+    return { ...json, _instance: instance };
   }
 
   // Pick best audio stream from Piped response
@@ -10442,25 +10469,13 @@ m2mDownloadWav.addEventListener('click', () => {
   // INVIDIOUS PROVIDER (YouTube only — different infra than Piped)
   // ============================================================
   async function invidious_fetchVideo(videoId) {
-    let lastErr = null;
-    for (const inst of INVIDIOUS_INSTANCES) {
-      try {
-        setProgress(12, `Trying invidious · ${inst.replace(/^https?:\/\//, '')}…`);
-        // local=true makes adaptiveFormats/formatStreams URLs CORS-proxied through the instance
-        const r = await fetch(`${inst}/api/v1/videos/${videoId}?local=true`, {
-          headers: { 'Accept': 'application/json' },
-        });
-        if (!r.ok) { lastErr = `${inst}: HTTP ${r.status}`; continue; }
-        const j = await r.json().catch(() => null);
-        if (!j) { lastErr = `${inst}: bad JSON`; continue; }
-        if (j.error) { lastErr = `${inst}: ${j.error}`; continue; }
-        if (!j.formatStreams && !j.adaptiveFormats) { lastErr = `${inst}: empty response`; continue; }
-        return { ...j, _instance: inst };
-      } catch (e) {
-        lastErr = `${inst}: ${e.message || e}`;
-      }
-    }
-    throw new Error(`Invidious: ${lastErr || 'all instances unreachable'}`);
+    const urls = INVIDIOUS_INSTANCES.map(i => `${i.replace(/\/+$/, '')}/api/v1/videos/${videoId}?local=true`);
+    const { json, instance } = await raceFetch(urls, (j) => {
+      if (j.error) return j.error;
+      if (!j.formatStreams && !j.adaptiveFormats) return 'empty response';
+      return null;
+    }, 'Invidious', 5000);
+    return { ...json, _instance: instance };
   }
 
   async function fetchViaInvidious(url, mode, audioBitrate, videoQuality) {
@@ -10558,8 +10573,122 @@ m2mDownloadWav.addEventListener('click', () => {
   }
 
   // ============================================================
-  // MAIN — orchestrate providers (Piped → Invidious → Cobalt for YT; Cobalt-only otherwise)
+  // MAIN — smart router
+  // Default = FAST mode: resolve direct CDN URL → trigger auto-download.
+  // "Force MP3" checkbox = SLOW mode: stream through proxy + re-encode.
+  // Non-YouTube URLs always use Cobalt.
   // ============================================================
+
+  // Fetch direct CDN URL into a Blob (so we can trigger a clean .download save).
+  // YouTube's CDN doesn't always set Content-Disposition, so navigating to it
+  // may open inline. Fetching as a Blob then using <a download> sidesteps that
+  // — works on every modern browser. Speed = full CDN speed (not proxied).
+  // CORS: googlevideo.com URLs returned by Piped/Invidious DO send Access-Control-Allow-Origin
+  // when accessed via the right host headers — we'll try and fall back if it doesn't.
+  // Quick CORS test — request just the first 1KB with a 3s timeout.
+  // If it works, full fetch will work too. If not, jump straight to new-tab fallback.
+  async function quickCorsTest(url) {
+    const ctl = new AbortController();
+    const tid = setTimeout(() => ctl.abort(), 3000);
+    try {
+      const r = await fetch(url, {
+        signal: ctl.signal,
+        headers: { 'Range': 'bytes=0-1023' }, // hint to the CDN we want a tiny chunk
+      });
+      clearTimeout(tid);
+      return r.ok || r.status === 206; // 206 = partial content (success)
+    } catch (e) {
+      clearTimeout(tid);
+      return false;
+    }
+  }
+
+  async function downloadBlobFromUrl(directUrl, filename, label) {
+    setProgress(15, `Testing CDN connection…`);
+    const corsOk = await quickCorsTest(directUrl);
+    if (!corsOk) {
+      // Don't even start the full fetch — jump straight to new-tab fallback.
+      console.warn('[yt-dl fast] CORS preflight failed, skipping to new-tab open');
+      window.open(directUrl, '_blank', 'noopener');
+      throw new Error('CORS_FALLBACK_OPENED');
+    }
+    setProgress(20, `Connected · downloading from Google CDN…`);
+    let blob;
+    try {
+      blob = await fetchBlobWithProgress(directUrl, label || 'Downloading');
+    } catch (corsErr) {
+      console.warn('[yt-dl fast] fetch failed mid-stream, opening tab', corsErr);
+      window.open(directUrl, '_blank', 'noopener');
+      throw new Error('CORS_FALLBACK_OPENED');
+    }
+    // Trigger auto-download with the right filename
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    ytLastBlob = blob;
+    ytLastFilename = filename;
+    return blob;
+  }
+
+  // Resolve a direct googlevideo URL via Piped → Invidious. Returns { directUrl, filename, mime }.
+  async function resolveDirectStreamUrl(videoId, mode, videoQuality) {
+    let directUrl = null, baseTitle = '', mime = 'application/octet-stream', extHint = '';
+    let lastErr = null;
+
+    // Try Piped first
+    try {
+      const streams = await piped_fetchStreams(videoId);
+      baseTitle = (streams.title || `youtube-${videoId}`).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
+      if (mode === 'audio') {
+        const a = piped_pickAudio(streams);
+        if (!a) throw new Error('no audio stream');
+        directUrl = a.url; // direct googlevideo URL, NOT proxyUrl
+        mime = a.mimeType || 'audio/mp4';
+        extHint = (mime.includes('webm') || mime.includes('opus')) ? 'webm' : 'm4a';
+      } else {
+        const v = piped_pickVideo(streams, videoQuality);
+        if (!v) throw new Error('no video stream');
+        directUrl = v.url;
+        mime = v.mimeType || 'video/mp4';
+        extHint = mime.includes('webm') ? 'webm' : 'mp4';
+      }
+    } catch (e) {
+      lastErr = `Piped: ${e.message || e}`;
+      // Fall through to Invidious
+      try {
+        const data = await invidious_fetchVideo(videoId);
+        baseTitle = (data.title || `youtube-${videoId}`).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
+        if (mode === 'audio') {
+          const audios = (data.adaptiveFormats || []).filter(f => (f.type || '').startsWith('audio/'));
+          audios.sort((a, b) => (parseInt(b.bitrate)||0) - (parseInt(a.bitrate)||0));
+          if (!audios.length) throw new Error('no audio stream from either provider');
+          directUrl = audios[0].url;
+          mime = audios[0].type || 'audio/mp4';
+          extHint = (mime.includes('webm') || mime.includes('opus')) ? 'webm' : 'm4a';
+        } else {
+          const targetH = parseInt(videoQuality, 10) || 1080;
+          const combined = (data.formatStreams || []).slice();
+          if (!combined.length) throw new Error('no combined video stream — try lower quality');
+          function heightOf(s) { const m = (s.resolution || s.qualityLabel || s.quality || '').match(/(\d+)/); return m ? +m[1] : 0; }
+          combined.sort((a, b) => Math.abs(heightOf(a) - targetH) - Math.abs(heightOf(b) - targetH));
+          directUrl = combined[0].url;
+          mime = combined[0].type || 'video/mp4';
+          extHint = mime.includes('webm') ? 'webm' : 'mp4';
+        }
+      } catch (e2) {
+        const err = new Error(`${lastErr} | Invidious: ${e2.message || e2}`);
+        throw err;
+      }
+    }
+
+    if (!directUrl) throw new Error('couldn\'t resolve direct URL');
+    return { directUrl, filename: `${baseTitle}.${extHint}`, mime };
+  }
+
   ytFetch.addEventListener('click', async () => {
     const url = getCleanUrl();
     if (!url) return;
@@ -10584,43 +10713,128 @@ m2mDownloadWav.addEventListener('click', () => {
       console.warn(`[yt-dl] ${provider} failed:`, e);
     }
 
-    // Strategy:
-    //   YouTube → Piped, then Invidious, then Cobalt.
-    //   Other  → Cobalt only.
+    // Helper: trigger a browser download for a Blob with a given filename
+    function triggerDownload(blob, filename) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    }
+
     try {
-      // ----- 1) Piped (YouTube only) -----
+      // ====================================================================
+      // FAST PATH (default): resolve direct CDN URL, fetch raw Blob at full
+      // CDN speed. For AUDIO mode, re-encode to MP3 in-browser before saving.
+      // For VIDEO mode, keep as MP4 (no re-encoding needed).
+      // ====================================================================
       if (isYT) {
+        try {
+          setProgress(8, 'Resolving direct stream URL…');
+          const resolved = await resolveDirectStreamUrl(extractYtId(url), mode, videoQuality);
+          // Strip any extension from the resolved title — we'll set our own
+          const baseTitle = resolved.filename.replace(/\.[^.]+$/, '');
+          setProgress(14, 'Got CDN URL · checking connection…');
+
+          // CORS preflight
+          const corsOk = await quickCorsTest(resolved.directUrl);
+          if (!corsOk) {
+            // Can't fetch the stream as a Blob → fast path with re-encoding is impossible.
+            // For VIDEO we can still open the direct URL in a new tab (browser saves it).
+            // For AUDIO that gives a .webm/.m4a file — not what the user asked for.
+            // So bail out of fast path and let slow path handle it.
+            throw new Error('CORS preflight failed (CDN blocking direct browser fetch)');
+          }
+
+          setProgress(18, 'Connected · downloading from Google CDN…');
+          const rawBlob = await fetchBlobWithProgress(
+            resolved.directUrl,
+            mode === 'audio' ? 'Audio' : 'Video'
+          );
+
+          if (mode === 'audio') {
+            // Re-encode raw audio (webm/opus or m4a/aac) → MP3
+            setProgress(92, 'Re-encoding to MP3…');
+            const mp3Blob = await audioBlobToMp3(rawBlob, +audioBitrate);
+            const finalName = `${baseTitle}.mp3`;
+            ytLastBlob = mp3Blob;
+            ytLastFilename = finalName;
+            triggerDownload(mp3Blob, finalName);
+            setProgress(100, `Saved ${finalName} · ${formatBytes(mp3Blob.size)}`);
+            ytSize.textContent = formatBytes(mp3Blob.size);
+            ytResult.hidden = false;
+            toast(`Downloaded ${finalName}`);
+            return;
+          } else {
+            // Video — keep as-is (MP4 / WebM)
+            const ext = (resolved.mime.includes('webm')) ? 'webm' : 'mp4';
+            const finalName = `${baseTitle}.${ext}`;
+            ytLastBlob = rawBlob;
+            ytLastFilename = finalName;
+            triggerDownload(rawBlob, finalName);
+            setProgress(100, `Saved ${finalName} · full CDN speed`);
+            ytSize.textContent = formatBytes(rawBlob.size);
+            ytResult.hidden = false;
+            toast(`Downloaded ${finalName}`);
+            return;
+          }
+        } catch (e) {
+          logErr('FastDirect', e);
+          setProgress(20, 'Fast path failed · trying proxy fallback…');
+          // Fall through to slow path
+        }
+      }
+
+      // ====================================================================
+      // SLOW PATH: fast path failed, or non-YT URL.
+      // Routes through Piped/Invidious proxyUrl (slower) or Cobalt.
+      // The slow Piped/Invidious path already re-encodes audio to MP3 internally.
+      // ====================================================================
+      if (isYT) {
+        // Piped (slow but reliable)
         try {
           const out = await fetchViaPiped(url, mode, audioBitrate, videoQuality);
           ytLastBlob = out.blob;
           ytLastFilename = out.filename;
-          setProgress(100, 'Done · via Piped');
+          // Auto-trigger download
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(out.blob);
+          a.download = out.filename;
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+          setProgress(100, `Saved ${out.filename} · via Piped`);
           ytSize.textContent = formatBytes(out.blob.size);
           ytResult.hidden = false;
-          toast('Ready — click Download');
+          toast(`Downloaded ${out.filename}`);
           return;
         } catch (e) {
           logErr('Piped', e);
-          setProgress(12, 'Piped failed · trying invidious…');
+          setProgress(20, 'Piped failed · trying Invidious…');
         }
 
-        // ----- 2) Invidious (YouTube only, fallback) -----
         try {
           const out = await fetchViaInvidious(url, mode, audioBitrate, videoQuality);
           ytLastBlob = out.blob;
           ytLastFilename = out.filename;
-          setProgress(100, 'Done · via Invidious');
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(out.blob);
+          a.download = out.filename;
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+          setProgress(100, `Saved ${out.filename} · via Invidious`);
           ytSize.textContent = formatBytes(out.blob.size);
           ytResult.hidden = false;
-          toast('Ready — click Download (via Invidious)');
+          toast(`Downloaded ${out.filename}`);
           return;
         } catch (e) {
           logErr('Invidious', e);
-          setProgress(15, 'Invidious failed · trying cobalt…');
+          setProgress(25, 'Invidious failed · trying cobalt…');
         }
       }
 
-      // ----- 3) Cobalt (final fallback / non-YT) -----
+      // Cobalt — final fallback / required for non-YT
       let cobaltResult;
       try {
         cobaltResult = await fetchViaCobalt(url, mode, audioBitrate, videoQuality);
@@ -10634,17 +10848,24 @@ m2mDownloadWav.addEventListener('click', () => {
       try {
         const blob = await fetchBlobWithProgress(cobaltResult.tunnelUrl, 'Downloading');
         ytLastBlob = blob;
-        setProgress(100, 'Done · via cobalt');
+        // Auto-trigger download
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = cobaltResult.filename;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+        setProgress(100, `Saved ${cobaltResult.filename} · via cobalt`);
         ytSize.textContent = formatBytes(blob.size);
         ytResult.hidden = false;
-        toast('Ready — click Download');
+        toast(`Downloaded ${cobaltResult.filename}`);
       } catch (corsErr) {
-        // CORS blocked direct fetch — the cobalt tunnel URL still works in a new tab
+        // CORS blocked direct fetch — open the cobalt tunnel URL in a new tab
         console.warn('CORS blocked tunnel fetch', corsErr);
-        ytSize.textContent = '— direct link';
+        window.open(cobaltResult.tunnelUrl, '_blank', 'noopener');
+        ytSize.textContent = '— in new tab';
         ytResult.hidden = false;
-        setProgress(100, 'Ready · use "Open in new tab" (CORS blocked)');
-        toast('Direct download blocked — try "Open in new tab"');
+        setProgress(100, 'Opened in new tab (CORS blocked) — file should download');
+        toast('Opened in new tab — file should download');
       }
     } catch (err) {
       const allMsg = errors.join('\n');
@@ -10652,12 +10873,11 @@ m2mDownloadWav.addEventListener('click', () => {
       if (/content\.video\.unavailable/i.test(allMsg)) userMsg = 'Video unavailable (private, age-gated, or region-locked)';
       else if (/content\.too_long/i.test(allMsg)) userMsg = 'Video too long for free instances';
       else if (/link\.invalid|link\.unsupported/i.test(allMsg)) userMsg = 'Link not supported';
-      else if (/Piped: only video-only/i.test(allMsg)) userMsg = 'Try a lower video quality (720p or 360p)';
+      else if (/Piped: only video-only|no combined video stream/i.test(allMsg)) userMsg = 'Try a lower video quality (720p or 360p)';
       else if (errors.length && errors.every(e => /captcha|turnstile|auth/i.test(e))) userMsg = 'All instances are captcha-walled — only self-hosted cobalt will work';
-      else if (errors.length && errors.every(e => /HTTP 5\d\d|fetch|network/i.test(e))) userMsg = 'All instances unreachable — check your network or try again later';
+      else if (errors.length && errors.every(e => /HTTP 5\d\d|fetch|network/i.test(e))) userMsg = 'All instances unreachable — try a fallback site below';
 
       ytText.textContent = userMsg;
-      // Show the actual breakdown in the UI (not just console)
       ytErrorLog.textContent = errors.length
         ? errors.map(e => '• ' + e).join('\n')
         : '(no provider attempted — likely an internal error)';
@@ -10695,82 +10915,6 @@ m2mDownloadWav.addEventListener('click', () => {
     if (ytLastTunnelUrl) { window.open(ytLastTunnelUrl, '_blank', 'noopener'); return; }
     toast('Fetch first');
   });
-
-  // ============================================================
-  // FAST DIRECT MODE — skip the proxy, open the direct googlevideo URL.
-  // This is much faster (full Google CDN speed) but the file plays in a new
-  // tab instead of downloading directly — user has to right-click → Save As.
-  // Only works for YouTube; falls back to running the normal flow otherwise.
-  // ============================================================
-  const ytFastFetch = document.getElementById('ytFastFetch');
-  if (ytFastFetch) {
-    ytFastFetch.addEventListener('click', async () => {
-      const url = getCleanUrl();
-      if (!url) return;
-      const id = extractYtId(url);
-      if (!id) { toast('Fast mode is YouTube-only — use the regular Fetch button or a fallback site'); return; }
-
-      const mode = document.querySelector('input[name="ytKind"]:checked').value;
-      const videoQuality = ytVq.value;
-
-      ytFastFetch.disabled = true;
-      ytErrorDetails.hidden = true;
-      ytErrorLog.textContent = '';
-      ytResult.hidden = true;
-      setProgress(10, 'Asking Piped for direct stream URLs…');
-
-      try {
-        // Try Piped first (returns direct googlevideo URLs in `url` field)
-        let directUrl = null, label = '';
-        try {
-          const streams = await piped_fetchStreams(id);
-          if (mode === 'audio') {
-            const a = piped_pickAudio(streams);
-            if (!a) throw new Error('no audio stream');
-            directUrl = a.url; // direct, NOT proxyUrl
-            label = `audio · ${a.bitrate ? Math.round(a.bitrate/1000)+' kbps' : a.quality || ''} · ${(a.mimeType || '').split('/')[1] || 'audio'}`;
-          } else {
-            const v = piped_pickVideo(streams, videoQuality);
-            if (!v) throw new Error('no video stream');
-            directUrl = v.url;
-            label = `video · ${v.quality}${v.videoOnly ? ' (video-only — no audio)' : ''}`;
-          }
-        } catch (e) {
-          // Fall back to Invidious for direct URLs
-          setProgress(20, 'Piped failed · trying Invidious…');
-          const data = await invidious_fetchVideo(id);
-          if (mode === 'audio') {
-            const audios = (data.adaptiveFormats || []).filter(f => (f.type || '').startsWith('audio/'));
-            audios.sort((a, b) => (parseInt(b.bitrate)||0) - (parseInt(a.bitrate)||0));
-            if (!audios.length) throw new Error('no audio stream from either provider');
-            directUrl = audios[0].url;
-            label = `audio · ${Math.round((parseInt(audios[0].bitrate)||0)/1000)} kbps`;
-          } else {
-            const targetH = parseInt(videoQuality, 10) || 1080;
-            const combined = (data.formatStreams || []).slice();
-            if (!combined.length) throw new Error('no combined video stream — try lower quality');
-            function heightOf(s) { const m = (s.resolution || s.qualityLabel || s.quality || '').match(/(\d+)/); return m ? +m[1] : 0; }
-            combined.sort((a, b) => Math.abs(heightOf(a) - targetH) - Math.abs(heightOf(b) - targetH));
-            directUrl = combined[0].url;
-            label = `video · ${combined[0].resolution || combined[0].qualityLabel || combined[0].quality}`;
-          }
-        }
-
-        if (!directUrl) throw new Error('couldn\'t resolve a direct URL');
-
-        setProgress(100, `Opened direct ${label} — right-click in the new tab → Save As`);
-        window.open(directUrl, '_blank', 'noopener');
-        toast('Opened — right-click → Save As (full Google CDN speed)');
-      } catch (err) {
-        console.error('[yt-dl fast]', err);
-        const msg = (err && err.message) ? err.message : String(err);
-        ytText.textContent = 'Fast mode failed: ' + msg;
-        toast('Fast mode failed — try regular Fetch or a fallback site below');
-      } finally {
-        ytFastFetch.disabled = false;
-      }
-    });
-  }
 
   // ============================================================
   // Always-works fallback: open the URL on a third-party converter site
