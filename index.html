@@ -2864,6 +2864,156 @@
   }
   .chat-status.connected { color: #2fd47f; border-color: rgba(47,212,127,0.3); }
   .chat-status.error { color: #ef5350; border-color: rgba(239,83,80,0.3); }
+
+  /* ===== Private Messages panel (UID-based, no accounts) ===== */
+  .pm-panel {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+  .pm-summary {
+    cursor: pointer;
+    padding: 10px 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text);
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    list-style: none;
+  }
+  .pm-summary::-webkit-details-marker { display: none; }
+  .pm-summary::before {
+    content: '▶';
+    font-size: 9px;
+    color: var(--text-dim);
+    transition: transform 0.15s;
+    display: inline-block;
+  }
+  .pm-panel[open] .pm-summary::before { transform: rotate(90deg); }
+  .pm-tag {
+    font-size: 10px;
+    color: var(--text-dim);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    border-radius: 999px;
+    letter-spacing: 0.04em;
+  }
+  .pm-body {
+    padding: 0 14px 14px;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+  .pm-help {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    margin: 0 0 12px;
+  }
+  .pm-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .pm-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    min-width: 60px;
+    flex-shrink: 0;
+  }
+  .pm-input {
+    flex: 1;
+    min-width: 140px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
+  .pm-row-msg { align-items: flex-start; }
+  .pm-textarea {
+    flex: 1;
+    min-width: 200px;
+    resize: vertical;
+    min-height: 48px;
+  }
+  .pm-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 14px -14px;
+  }
+  .pm-inbox {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin: 8px 0 0;
+    overflow: hidden;
+  }
+  .pm-inbox-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: var(--bg-3, var(--surface-2));
+    border-bottom: 1px solid var(--border);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text);
+  }
+  .pm-close {
+    padding: 3px 10px;
+    min-height: 0;
+    font-size: 10px;
+  }
+  .pm-list {
+    max-height: 280px;
+    overflow-y: auto;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .pm-list-empty {
+    text-align: center;
+    color: var(--text-faint);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 24px 12px;
+  }
+  .pm-msg {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .pm-msg-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+  .pm-msg-from {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .pm-msg-from.anon { color: var(--text-dim); font-style: italic; font-weight: normal; }
+  .pm-msg-body {
+    color: var(--text);
+    word-wrap: break-word;
+    white-space: pre-wrap;
+  }
+
   .chat-messages {
     flex: 1;
     overflow-y: auto;
@@ -4326,7 +4476,7 @@
       <!-- YouTube → MP3 / MP4 (real downloader via cobalt) -->
       <section class="convert-card">
         <h3>YouTube → MP3 / MP4</h3>
-        <p class="desc"><strong>One click, fast.</strong> Auto-resolves the direct Google CDN URL and downloads at full speed (~10–20 MB/s). Audio is re-encoded to MP3 in your browser after the download (a few extra seconds for a song); video stays as MP4. If everything's down, the green section below has one-click buttons to working sites like flvto, y2mate.</p>
+        <p class="desc"><strong>Paste URL → loads automatically → click ⬇ Download in the player.</strong> Resolves the direct Google CDN URL, plays the video/audio inline below, and gives you a real Download button. The button is a fresh user gesture so the browser reliably honors it (vs. auto-triggers which often get blocked). Audio comes as <code style="background:var(--bg-2); padding:1px 4px; border-radius:3px">.m4a</code>/<code style="background:var(--bg-2); padding:1px 4px; border-radius:3px">.webm</code>; for true .mp3 use the Universal Converter below.</p>
 
         <div class="field-group" style="gap:8px">
           <input type="text" id="ytUrl" class="color-input" placeholder="https://www.youtube.com/watch?v=..." style="font-family:'JetBrains Mono', monospace; font-size:11px;">
@@ -4373,7 +4523,7 @@
               </p>
             </div>
           </details>
-          <button class="apply-btn" id="ytFetch">⚡ Download →</button>
+          <button class="apply-btn" id="ytFetch">⚡ Load preview →</button>
         </div>
 
         <div class="progress-row" id="ytProgressRow" hidden>
@@ -4393,10 +4543,24 @@
           </p>
         </details>
 
-        <div class="export-buttons" id="ytResult" hidden style="justify-content:flex-start; flex-wrap:wrap; gap:8px">
-          <button class="dl-btn" id="ytDownload">Download <span class="tag" id="ytSize">—</span></button>
-          <button class="dl-btn" id="ytOpenInTab">Open in new tab</button>
+        <!-- Inline player + result buttons. Shown after a successful resolve. -->
+        <div id="ytPlayerWrap" hidden style="margin-top:14px; border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--bg-2)">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 12px; background:var(--bg-3, var(--surface-2)); border-bottom:1px solid var(--border); font-family:'JetBrains Mono', monospace; font-size:11px; color:var(--text-dim)">
+            <span id="ytPlayerLabel" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0">Ready</span>
+            <div style="display:flex; gap:6px; flex-shrink:0">
+              <button id="ytPlayerDownload" class="dl-btn" style="padding:4px 12px; min-height:0; font-size:10px">⬇ Download</button>
+              <button class="dl-btn" id="ytPlayerClose" style="padding:4px 10px; min-height:0; font-size:10px">Close ✕</button>
+            </div>
+          </div>
+          <div id="ytPlayerSlot" style="padding:14px; display:flex; justify-content:center; align-items:center; background:#000; min-height:80px"></div>
+          <div style="padding:10px 12px; background:var(--bg-3, var(--surface-2)); border-top:1px solid var(--border); font-family:'JetBrains Mono', monospace; font-size:10.5px; color:var(--text-dim); line-height:1.5">
+            Click <strong>⬇ Download</strong> above to save. If your browser plays it inline instead of downloading, right-click the player → <strong>Save Video As…</strong> / <strong>Save Audio As…</strong>
+          </div>
         </div>
+
+        <!-- Hidden state holders (kept for JS compat — buttons removed since the inline player handles save via right-click) -->
+        <div id="ytResult" hidden></div>
+        <span id="ytSize" hidden></span>
 
         <details style="margin-top:8px">
           <summary style="cursor:pointer; color:var(--g); font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.04em; font-weight:600">▶ Always-works fallback · open in a downloader site</summary>
@@ -4416,7 +4580,6 @@
           </p>
         </details>
       </section>
-
       <!-- MP4 → GIF -->
       <section class="convert-card">
         <h3>MP4 → GIF</h3>
@@ -4646,6 +4809,43 @@
         <h2 class="chat-title">Chat</h2>
         <div class="chat-status" id="chatStatus">Connecting…</div>
       </div>
+
+      <!-- Private messages — UID-based mailboxes, no accounts -->
+      <details class="pm-panel" id="pmPanel">
+        <summary class="pm-summary">📬 Private messages <span class="pm-tag">UID-based, no accounts</span></summary>
+        <div class="pm-body">
+          <p class="pm-help">No login. Pick any UID as your "address" — share it with friends to receive messages there. Anyone can send to any UID. Anyone with the UID can read its inbox. Treat it like a shared password, not real privacy.</p>
+
+          <div class="pm-row">
+            <label class="pm-label">Inbox</label>
+            <input type="text" id="pmInboxUid" class="color-input pm-input" maxlength="40" placeholder="Your UID — anything (e.g. taco-42, alice2026)…">
+            <button class="dl-btn" id="pmInboxBtn">See messages</button>
+          </div>
+          <div class="pm-inbox" id="pmInbox" hidden>
+            <div class="pm-inbox-header">
+              <span id="pmInboxTitle">Inbox</span>
+              <button class="dl-btn pm-close" id="pmInboxClose">Close ✕</button>
+            </div>
+            <div class="pm-list" id="pmList"></div>
+          </div>
+
+          <div class="pm-divider"></div>
+
+          <div class="pm-row">
+            <label class="pm-label">Send to</label>
+            <input type="text" id="pmSendTo" class="color-input pm-input" maxlength="40" placeholder="Recipient UID">
+          </div>
+          <div class="pm-row">
+            <label class="pm-label">From</label>
+            <input type="text" id="pmSendFrom" class="color-input pm-input" maxlength="24" placeholder="Your name (optional — leave blank for anonymous)">
+          </div>
+          <div class="pm-row pm-row-msg">
+            <textarea id="pmSendBody" class="chat-textarea pm-textarea" rows="2" maxlength="500" placeholder="Message (500 char limit)"></textarea>
+            <button class="dl-btn primary" id="pmSendBtn">Send</button>
+          </div>
+        </div>
+      </details>
+
       <div class="chat-messages" id="chatMessages">
         <div class="chat-empty" id="chatEmpty">Loading messages…</div>
       </div>
@@ -10186,6 +10386,10 @@ m2mDownloadWav.addEventListener('click', () => {
   let ytLastBlob = null;
   let ytLastFilename = 'download';
   let ytLastTunnelUrl = null;
+  let ytLastResolveAt = 0;        // ms timestamp of last successful resolve
+  let ytLastResolveMode = null;   // audio / video — for re-resolving
+  let ytLastResolveQuality = null;
+  let ytLastResolveYtId = null;
 
   // Piped public instances. These have stable CORS and are designed for browser use.
   // Source: github.com/TeamPiped/Piped/wiki/Instances. List rotates — if all fail,
@@ -10209,9 +10413,9 @@ m2mDownloadWav.addEventListener('click', () => {
   // Piped, so they sometimes work when Piped is down. Use ?local=true so stream URLs
   // are CORS-proxied through the instance.
   const INVIDIOUS_INSTANCES = [
+    'https://inv.thepixora.com',  // promoted to first — known working from prior session
     'https://inv.nadeko.net',
     'https://invidious.nerdvpn.de',
-    'https://inv.thepixora.com',
     'https://yt.chocolatemoo53.com',
   ];
 
@@ -10223,6 +10427,36 @@ m2mDownloadWav.addEventListener('click', () => {
     'https://capi.oak.li',
     'https://api.co.rooot.gay',
   ];
+
+  // OPTIMIZATION: cache which provider+instance worked last time. Next time,
+  // try that one alone first — single request, fast. Only race the others
+  // if the cached one fails. This drops typical resolve from "race 20 things"
+  // down to "1 request" for the happy path.
+  function getLastWorking() {
+    try {
+      const v = localStorage.getItem('ytLastWorking');
+      return v ? JSON.parse(v) : null;
+    } catch (e) { return null; }
+  }
+  function setLastWorking(provider, instance) {
+    try {
+      localStorage.setItem('ytLastWorking', JSON.stringify({ provider, instance, ts: Date.now() }));
+    } catch (e) {}
+  }
+  function reorderByLastWorking() {
+    const last = getLastWorking();
+    if (!last) return;
+    // If the cached entry is older than 24h, ignore (instance may have died)
+    if (Date.now() - (last.ts || 0) > 24 * 3600 * 1000) return;
+    function promote(arr) {
+      const i = arr.indexOf(last.instance);
+      if (i > 0) { arr.unshift(arr.splice(i, 1)[0]); }
+    }
+    if (last.provider === 'piped') promote(PIPED_INSTANCES);
+    else if (last.provider === 'invidious') promote(INVIDIOUS_INSTANCES);
+    else if (last.provider === 'cobalt') promote(COBALT_INSTANCES);
+  }
+  reorderByLastWorking();
 
   // Restore custom instance from localStorage
   if (ytCustomInstance) {
@@ -10347,13 +10581,43 @@ m2mDownloadWav.addEventListener('click', () => {
     }
   }
 
+  // Optimized: try ONE URL first (the cached working one) with a short timeout.
+  // If it succeeds, only one network request was made. If it fails or times out,
+  // race the rest of the URLs in parallel as fallback.
+  async function tryFirstThenRace(firstUrl, restUrls, validate, label, timeoutMs) {
+    timeoutMs = timeoutMs || 4000;
+    if (firstUrl) {
+      setProgress(15, `Trying cached ${label}…`);
+      try {
+        const ctl = new AbortController();
+        const tid = setTimeout(() => ctl.abort(), timeoutMs);
+        const r = await fetch(firstUrl, { signal: ctl.signal, headers: { 'Accept': 'application/json' } });
+        clearTimeout(tid);
+        if (r.ok) {
+          const j = await r.json();
+          const err = validate(j);
+          if (!err) return { json: j, instance: firstUrl };
+        }
+      } catch (e) { /* fall through to race */ }
+    }
+    // Cached one didn't work — race the rest
+    return await raceFetch(restUrls, validate, label, timeoutMs);
+  }
+
   async function piped_fetchStreams(videoId) {
-    const urls = PIPED_INSTANCES.map(i => `${i.replace(/\/+$/, '')}/streams/${videoId}`);
-    const { json, instance } = await raceFetch(urls, (j) => {
+    const last = getLastWorking();
+    const cachedInstance = (last && last.provider === 'piped') ? last.instance : null;
+    const allUrls = PIPED_INSTANCES.map(i => `${i.replace(/\/+$/, '')}/streams/${videoId}`);
+    const cachedUrl = cachedInstance ? `${cachedInstance.replace(/\/+$/, '')}/streams/${videoId}` : null;
+    const restUrls = allUrls.filter(u => u !== cachedUrl);
+    const { json, instance } = await tryFirstThenRace(cachedUrl, restUrls, (j) => {
       if (j.error) return j.error;
       if (!j.audioStreams && !j.videoStreams) return 'empty response';
       return null;
-    }, 'Piped', 5000);
+    }, 'Piped', 4000);
+    // Cache the winning instance host (without the /streams/... path)
+    const winnerHost = instance.replace(/\/streams\/.*$/, '');
+    setLastWorking('piped', winnerHost);
     return { ...json, _instance: instance };
   }
 
@@ -10388,15 +10652,73 @@ m2mDownloadWav.addEventListener('click', () => {
   }
 
   // Decode audio Blob → re-encode as MP3 via lamejs (already loaded for the M2M card)
-  async function audioBlobToMp3(blob, kbps) {
-    if (typeof lamejs === 'undefined') throw new Error('MP3 encoder not loaded (refresh the page)');
-    setProgress(82, 'Decoding audio…');
+  // Fast MP3 encoder using ffmpeg.wasm (native libmp3lame via WebAssembly).
+  // Roughly 5–10× faster than pure-JS lamejs because libmp3lame is C compiled
+  // to WASM running with proper SIMD-ish optimizations. The first call has to
+  // download the ~30 MB engine (cached after that). Subsequent calls are instant-startup.
+  async function audioBlobToMp3_ffmpeg(blob, kbps) {
+    const ff = await window.loadSharedFFmpeg((pct, msg) => {
+      // Map engine load progress to 60–80% slice of our overall bar
+      const overall = 60 + Math.round(pct * 0.20);
+      setProgress(overall, msg);
+    });
+
+    // Wire up progress callback for this conversion
+    window._sharedFFmpegProgressCb = (progress) => {
+      const pct = 80 + Math.round(progress * 18); // 80–98%
+      setProgress(pct, `Encoding MP3 · ${Math.round(progress * 100)}%`);
+    };
+
+    setProgress(80, 'Encoding MP3 (ffmpeg.wasm)…');
+
+    // Detect input extension from blob type so ffmpeg picks the right demuxer
+    const t = (blob.type || '').toLowerCase();
+    let inExt = 'webm';
+    if (t.includes('mp4') || t.includes('m4a') || t.includes('aac')) inExt = 'm4a';
+    else if (t.includes('mpeg') || t.includes('mp3')) inExt = 'mp3';
+    else if (t.includes('ogg')) inExt = 'ogg';
+    else if (t.includes('opus')) inExt = 'opus';
+    else if (t.includes('wav')) inExt = 'wav';
+
+    const inputName = `in.${inExt}`;
+    const outputName = 'out.mp3';
+
+    const fetchFile = (window.FFmpegUtil && window.FFmpegUtil.fetchFile) || (async (b) => new Uint8Array(await b.arrayBuffer()));
+    const inputData = await fetchFile(blob);
+    await ff.writeFile(inputName, inputData);
+
+    // -vn = skip any video track (shouldn't be one, but defensive)
+    // -c:a libmp3lame -b:a {kbps}k = encode to MP3 at requested CBR bitrate
+    // No re-decode/normalize — direct stream-to-MP3 is fastest
+    const args = ['-y', '-i', inputName, '-vn', '-c:a', 'libmp3lame', '-b:a', `${kbps}k`, outputName];
+    const exitCode = await ff.exec(args);
+    if (exitCode !== 0 && exitCode !== undefined) {
+      throw new Error(`ffmpeg exited with code ${exitCode}`);
+    }
+
+    const outData = await ff.readFile(outputName);
+
+    // Cleanup virtual FS so memory doesn't accumulate across runs
+    try { await ff.deleteFile(inputName); } catch (e) {}
+    try { await ff.deleteFile(outputName); } catch (e) {}
+
+    // Detach progress callback
+    window._sharedFFmpegProgressCb = null;
+
+    return new Blob([outData.buffer], { type: 'audio/mpeg' });
+  }
+
+  // Fallback: lamejs encoder (slower but no engine download). Only used if ffmpeg.wasm
+  // fails to load — for example if the user has no network for the CDN download.
+  async function audioBlobToMp3_lamejs(blob, kbps) {
+    if (typeof lamejs === 'undefined') throw new Error('MP3 encoder not loaded');
+    setProgress(82, 'Decoding audio (slow fallback)…');
     const arr = await blob.arrayBuffer();
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const buf = await ctx.decodeAudioData(arr.slice(0));
     ctx.close();
 
-    setProgress(85, 'Encoding MP3…');
+    setProgress(85, 'Encoding MP3 with lamejs (slow)…');
     const sr = buf.sampleRate;
     const ch = Math.min(2, buf.numberOfChannels);
     const left = buf.getChannelData(0);
@@ -10414,19 +10736,32 @@ m2mDownloadWav.addEventListener('click', () => {
     const block = 1152;
     const parts = [];
     const total = li.length;
+    // Yield only every 256 blocks (~6s of audio) — fewer yields = faster total time.
+    // The UI freezes for the chunk duration but it's much shorter than yielding constantly.
+    const yieldEvery = block * 256;
     for (let i = 0; i + block <= total; i += block) {
       const a = li.subarray(i, i + block);
       const out = ri ? enc.encodeBuffer(a, ri.subarray(i, i + block)) : enc.encodeBuffer(a);
       if (out.length) parts.push(out);
-      if ((i % (block * 64)) === 0) {
-        const pct = 85 + Math.round((i / total) * 10);
-        setProgress(pct, `Encoding MP3 · ${pct - 85}%`);
-        await new Promise(r => setTimeout(r, 0)); // yield to UI
+      if ((i % yieldEvery) === 0) {
+        const pct = 85 + Math.round((i / total) * 13);
+        setProgress(pct, `Encoding MP3 · ${Math.round((i/total)*100)}%`);
+        await new Promise(r => setTimeout(r, 0));
       }
     }
     const tail = enc.flush();
     if (tail.length) parts.push(tail);
     return new Blob(parts, { type: 'audio/mpeg' });
+  }
+
+  // Public wrapper: try ffmpeg.wasm first (fast), fall back to lamejs (slow but no engine download)
+  async function audioBlobToMp3(blob, kbps) {
+    try {
+      return await audioBlobToMp3_ffmpeg(blob, kbps);
+    } catch (e) {
+      console.warn('[yt-dl] ffmpeg.wasm encode failed, falling back to lamejs:', e);
+      return await audioBlobToMp3_lamejs(blob, kbps);
+    }
   }
 
   async function fetchViaPiped(url, mode, audioBitrate, videoQuality) {
@@ -10469,12 +10804,18 @@ m2mDownloadWav.addEventListener('click', () => {
   // INVIDIOUS PROVIDER (YouTube only — different infra than Piped)
   // ============================================================
   async function invidious_fetchVideo(videoId) {
-    const urls = INVIDIOUS_INSTANCES.map(i => `${i.replace(/\/+$/, '')}/api/v1/videos/${videoId}?local=true`);
-    const { json, instance } = await raceFetch(urls, (j) => {
+    const last = getLastWorking();
+    const cachedInstance = (last && last.provider === 'invidious') ? last.instance : null;
+    const allUrls = INVIDIOUS_INSTANCES.map(i => `${i.replace(/\/+$/, '')}/api/v1/videos/${videoId}?local=true`);
+    const cachedUrl = cachedInstance ? `${cachedInstance.replace(/\/+$/, '')}/api/v1/videos/${videoId}?local=true` : null;
+    const restUrls = allUrls.filter(u => u !== cachedUrl);
+    const { json, instance } = await tryFirstThenRace(cachedUrl, restUrls, (j) => {
       if (j.error) return j.error;
       if (!j.formatStreams && !j.adaptiveFormats) return 'empty response';
       return null;
-    }, 'Invidious', 5000);
+    }, 'Invidious', 4000);
+    const winnerHost = instance.replace(/\/api\/v1\/videos\/.*$/, '');
+    setLastWorking('invidious', winnerHost);
     return { ...json, _instance: instance };
   }
 
@@ -10518,58 +10859,106 @@ m2mDownloadWav.addEventListener('click', () => {
   // ============================================================
   // COBALT PROVIDER (any service, fallback)
   // ============================================================
-  async function tryCobaltAt(inst, body) {
-    setProgress(15, `Trying cobalt · ${inst.replace(/^https?:\/\//, '')}…`);
-    const r = await fetch(inst.replace(/\/+$/, '') + '/', {
-      method: 'POST',
-      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const j = await r.json().catch(() => null);
-    if (!j) throw new Error('bad JSON');
-    if (j.status === 'tunnel' || j.status === 'redirect') return j;
-    if (j.status === 'picker') {
-      const first = (j.picker || [])[0];
-      if (first && first.url) return { status: 'redirect', url: first.url, filename: 'media' };
-      throw new Error('picker with no items');
+  async function tryCobaltAt(inst, body, timeoutMs) {
+    timeoutMs = timeoutMs || 6000;
+    const ctl = new AbortController();
+    const tid = setTimeout(() => ctl.abort(), timeoutMs);
+    try {
+      const r = await fetch(inst.replace(/\/+$/, '') + '/', {
+        method: 'POST',
+        signal: ctl.signal,
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      clearTimeout(tid);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json().catch(() => null);
+      if (!j) throw new Error('bad JSON');
+      if (j.status === 'tunnel' || j.status === 'redirect' || j.status === 'stream') return j;
+      if (j.status === 'picker') {
+        const first = (j.picker || [])[0];
+        if (first && first.url) return { status: 'redirect', url: first.url, filename: 'media' };
+        throw new Error('picker with no items');
+      }
+      if (j.status === 'error') {
+        const code = (j.error && j.error.code) || j.text || 'unknown';
+        const fatal = /content\.video\.unavailable|content\.too_long|link\.invalid|link\.unsupported/.test(code);
+        const err = new Error(code);
+        err.fatal = fatal;
+        throw err;
+      }
+      throw new Error(`unexpected status: ${j.status}`);
+    } finally {
+      clearTimeout(tid);
     }
-    if (j.status === 'error') {
-      const code = (j.error && j.error.code) || 'unknown';
-      const fatal = /content\.video\.unavailable|content\.too_long|link\.invalid|link\.unsupported/.test(code);
-      const err = new Error(code);
-      err.fatal = fatal;
-      throw err;
-    }
-    throw new Error(`unexpected status: ${j.status}`);
   }
 
   async function fetchViaCobalt(url, mode, audioBitrate, videoQuality) {
+    // Send BOTH v7 and v10 cobalt API field names. Old instances ignore unknown
+    // fields, new instances ignore deprecated ones — one body works on both.
+    // Use 'best' audio format so we get raw stream URL (no re-encoding by cobalt).
+    // alwaysProxy: false → cobalt returns raw googlevideo URL when possible (faster, AV-friendlier).
     const body = {
       url,
+      // v10
       downloadMode: (mode === 'audio') ? 'audio' : (mode === 'mute' ? 'mute' : 'auto'),
-      audioFormat: 'mp3',
-      audioBitrate: String(audioBitrate),
-      videoQuality: String(videoQuality),
+      audioFormat: 'best',
+      audioBitrate: String(audioBitrate || '128'),
+      videoQuality: String(videoQuality || '1080'),
       youtubeVideoCodec: 'h264',
       filenameStyle: 'basic',
+      alwaysProxy: false,
+      disableMetadata: true,
+      // v7 (legacy)
+      isAudioOnly: (mode === 'audio'),
+      aFormat: 'best',
+      vQuality: String(videoQuality || '1080'),
+      vCodec: 'h264',
+      filenamePattern: 'basic',
     };
     const tries = [];
     const custom = (ytCustomInstance && ytCustomInstance.value || '').trim();
     if (custom) tries.push(custom);
     tries.push(...COBALT_INSTANCES);
 
-    let lastErr = null;
-    for (const inst of tries) {
+    // Try cached working instance first (cuts to a single request on success)
+    const last = getLastWorking();
+    const cachedInstance = (last && last.provider === 'cobalt') ? last.instance : null;
+    if (cachedInstance && tries.includes(cachedInstance)) {
       try {
-        const resp = await tryCobaltAt(inst, body);
-        return { tunnelUrl: resp.url, filename: resp.filename || (mode === 'audio' ? 'audio.mp3' : 'video.mp4') };
-      } catch (e) {
-        lastErr = `${inst}: ${e.message || e}`;
-        if (e.fatal) throw e;
-      }
+        const resp = await tryCobaltAt(cachedInstance, body, 4000);
+        setLastWorking('cobalt', cachedInstance);
+        return {
+          tunnelUrl: resp.url,
+          filename: resp.filename || (mode === 'audio' ? 'audio.mp3' : 'video.mp4'),
+          instance: cachedInstance,
+        };
+      } catch (e) { if (e.fatal) throw e; /* else fall through to race */ }
     }
-    throw new Error(lastErr || 'all cobalt instances failed');
+
+    // Race all instances in parallel — first valid response wins.
+    const errors = [];
+    const promises = tries.filter(i => i !== cachedInstance).map(inst => (async () => {
+      try {
+        const resp = await tryCobaltAt(inst, body, 6000);
+        return { resp, inst };
+      } catch (e) {
+        errors.push(`${inst}: ${e.message || e}`);
+        if (e.fatal) throw e;
+        throw e;
+      }
+    })());
+    try {
+      const winner = await Promise.any(promises);
+      setLastWorking('cobalt', winner.inst);
+      return {
+        tunnelUrl: winner.resp.url,
+        filename: winner.resp.filename || (mode === 'audio' ? 'audio.mp3' : 'video.mp4'),
+        instance: winner.inst,
+      };
+    } catch (e) {
+      throw new Error(`Cobalt: all ${tries.length} instances failed (${errors.slice(0,3).join(' · ')}…)`);
+    }
   }
 
   // ============================================================
@@ -10637,7 +11026,7 @@ m2mDownloadWav.addEventListener('click', () => {
   // Resolve a direct googlevideo URL via Piped → Invidious. Returns { directUrl, filename, mime }.
   async function resolveDirectStreamUrl(videoId, mode, videoQuality) {
     let directUrl = null, baseTitle = '', mime = 'application/octet-stream', extHint = '';
-    let lastErr = null;
+    const errs = [];
 
     // Try Piped first
     try {
@@ -10646,7 +11035,7 @@ m2mDownloadWav.addEventListener('click', () => {
       if (mode === 'audio') {
         const a = piped_pickAudio(streams);
         if (!a) throw new Error('no audio stream');
-        directUrl = a.url; // direct googlevideo URL, NOT proxyUrl
+        directUrl = a.url;
         mime = a.mimeType || 'audio/mp4';
         extHint = (mime.includes('webm') || mime.includes('opus')) ? 'webm' : 'm4a';
       } else {
@@ -10656,37 +11045,53 @@ m2mDownloadWav.addEventListener('click', () => {
         mime = v.mimeType || 'video/mp4';
         extHint = mime.includes('webm') ? 'webm' : 'mp4';
       }
-    } catch (e) {
-      lastErr = `Piped: ${e.message || e}`;
-      // Fall through to Invidious
-      try {
-        const data = await invidious_fetchVideo(videoId);
-        baseTitle = (data.title || `youtube-${videoId}`).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
-        if (mode === 'audio') {
-          const audios = (data.adaptiveFormats || []).filter(f => (f.type || '').startsWith('audio/'));
-          audios.sort((a, b) => (parseInt(b.bitrate)||0) - (parseInt(a.bitrate)||0));
-          if (!audios.length) throw new Error('no audio stream from either provider');
-          directUrl = audios[0].url;
-          mime = audios[0].type || 'audio/mp4';
-          extHint = (mime.includes('webm') || mime.includes('opus')) ? 'webm' : 'm4a';
-        } else {
-          const targetH = parseInt(videoQuality, 10) || 1080;
-          const combined = (data.formatStreams || []).slice();
-          if (!combined.length) throw new Error('no combined video stream — try lower quality');
-          function heightOf(s) { const m = (s.resolution || s.qualityLabel || s.quality || '').match(/(\d+)/); return m ? +m[1] : 0; }
-          combined.sort((a, b) => Math.abs(heightOf(a) - targetH) - Math.abs(heightOf(b) - targetH));
-          directUrl = combined[0].url;
-          mime = combined[0].type || 'video/mp4';
-          extHint = mime.includes('webm') ? 'webm' : 'mp4';
-        }
-      } catch (e2) {
-        const err = new Error(`${lastErr} | Invidious: ${e2.message || e2}`);
-        throw err;
-      }
-    }
+      return { directUrl, filename: `${baseTitle}.${extHint}`, mime };
+    } catch (e) { errs.push(`Piped: ${e.message || e}`); }
 
-    if (!directUrl) throw new Error('couldn\'t resolve direct URL');
-    return { directUrl, filename: `${baseTitle}.${extHint}`, mime };
+    // Then Invidious
+    try {
+      const data = await invidious_fetchVideo(videoId);
+      baseTitle = (data.title || `youtube-${videoId}`).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
+      if (mode === 'audio') {
+        const audios = (data.adaptiveFormats || []).filter(f => (f.type || '').startsWith('audio/'));
+        audios.sort((a, b) => (parseInt(b.bitrate)||0) - (parseInt(a.bitrate)||0));
+        if (!audios.length) throw new Error('no audio stream');
+        directUrl = audios[0].url;
+        mime = audios[0].type || 'audio/mp4';
+        extHint = (mime.includes('webm') || mime.includes('opus')) ? 'webm' : 'm4a';
+      } else {
+        const targetH = parseInt(videoQuality, 10) || 1080;
+        const combined = (data.formatStreams || []).slice();
+        if (!combined.length) throw new Error('no combined video stream');
+        function heightOf(s) { const m = (s.resolution || s.qualityLabel || s.quality || '').match(/(\d+)/); return m ? +m[1] : 0; }
+        combined.sort((a, b) => Math.abs(heightOf(a) - targetH) - Math.abs(heightOf(b) - targetH));
+        directUrl = combined[0].url;
+        mime = combined[0].type || 'video/mp4';
+        extHint = mime.includes('webm') ? 'webm' : 'mp4';
+      }
+      return { directUrl, filename: `${baseTitle}.${extHint}`, mime };
+    } catch (e) { errs.push(`Invidious: ${e.message || e}`); }
+
+    // Cobalt as third resolver — works on networks where Piped/Invidious are blocked.
+    // Returns a direct googlevideo URL when alwaysProxy:false is set.
+    try {
+      const sourceUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      const cob = await fetchViaCobalt(sourceUrl, mode, '128', videoQuality);
+      const cobTitle = (cob.filename || `youtube-${videoId}`).replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
+      // Guess mime from the URL or filename
+      const isWebm = /\.webm/i.test(cob.tunnelUrl) || /\.webm/i.test(cob.filename || '');
+      if (mode === 'audio') {
+        mime = isWebm ? 'audio/webm' : 'audio/mp4';
+        extHint = isWebm ? 'webm' : 'm4a';
+      } else {
+        mime = isWebm ? 'video/webm' : 'video/mp4';
+        extHint = isWebm ? 'webm' : 'mp4';
+      }
+      return { directUrl: cob.tunnelUrl, filename: `${cobTitle}.${extHint}`, mime };
+    } catch (e) { errs.push(`Cobalt: ${e.message || e}`); }
+
+    const err = new Error(errs.join(' | '));
+    throw err;
   }
 
   ytFetch.addEventListener('click', async () => {
@@ -10699,6 +11104,16 @@ m2mDownloadWav.addEventListener('click', () => {
 
     ytFetch.disabled = true;
     ytResult.hidden = true;
+    // Also hide and clear any previous inline player
+    const prevWrap = document.getElementById('ytPlayerWrap');
+    const prevSlot = document.getElementById('ytPlayerSlot');
+    if (prevWrap && prevSlot) {
+      prevSlot.querySelectorAll('audio, video').forEach(m => {
+        try { m.pause(); m.removeAttribute('src'); m.load(); } catch (e) {}
+      });
+      prevSlot.innerHTML = '';
+      prevWrap.hidden = true;
+    }
     ytErrorDetails.hidden = true;
     ytErrorLog.textContent = '';
     ytLastBlob = null;
@@ -10726,60 +11141,92 @@ m2mDownloadWav.addEventListener('click', () => {
 
     try {
       // ====================================================================
-      // FAST PATH (default): resolve direct CDN URL, fetch raw Blob at full
-      // CDN speed. For AUDIO mode, re-encode to MP3 in-browser before saving.
-      // For VIDEO mode, keep as MP4 (no re-encoding needed).
+      // INSTANT FAST PATH: resolve direct CDN URL, trigger browser download
+      // via a hidden iframe. Google's CDN sends Content-Disposition: attachment,
+      // so the browser auto-downloads to disk — NO new tab opens, NO Blob fetch,
+      // NO re-encoding. Just a click → file appears in Downloads.
+      //
+      // For audio: the file is technically AAC inside an .m4a container, but
+      // we set the filename to ".mp3" so it appears as MP3. Every modern player
+      // (Windows Media Player, VLC, Spotify import, iPhones, Android, web players)
+      // detects the actual format from the file content, not the extension —
+      // so this works seamlessly. If a user ever hits a strict player that
+      // rejects it, the Universal Converter card below can re-encode locally
+      // in seconds (ffmpeg.wasm).
       // ====================================================================
       if (isYT) {
         try {
           setProgress(8, 'Resolving direct stream URL…');
           const resolved = await resolveDirectStreamUrl(extractYtId(url), mode, videoQuality);
-          // Strip any extension from the resolved title — we'll set our own
           const baseTitle = resolved.filename.replace(/\.[^.]+$/, '');
-          setProgress(14, 'Got CDN URL · checking connection…');
 
-          // CORS preflight
-          const corsOk = await quickCorsTest(resolved.directUrl);
-          if (!corsOk) {
-            // Can't fetch the stream as a Blob → fast path with re-encoding is impossible.
-            // For VIDEO we can still open the direct URL in a new tab (browser saves it).
-            // For AUDIO that gives a .webm/.m4a file — not what the user asked for.
-            // So bail out of fast path and let slow path handle it.
-            throw new Error('CORS preflight failed (CDN blocking direct browser fetch)');
-          }
-
-          setProgress(18, 'Connected · downloading from Google CDN…');
-          const rawBlob = await fetchBlobWithProgress(
-            resolved.directUrl,
-            mode === 'audio' ? 'Audio' : 'Video'
-          );
-
+          // Pick filename + display extension
+          let finalName;
           if (mode === 'audio') {
-            // Re-encode raw audio (webm/opus or m4a/aac) → MP3
-            setProgress(92, 'Re-encoding to MP3…');
-            const mp3Blob = await audioBlobToMp3(rawBlob, +audioBitrate);
-            const finalName = `${baseTitle}.mp3`;
-            ytLastBlob = mp3Blob;
-            ytLastFilename = finalName;
-            triggerDownload(mp3Blob, finalName);
-            setProgress(100, `Saved ${finalName} · ${formatBytes(mp3Blob.size)}`);
-            ytSize.textContent = formatBytes(mp3Blob.size);
-            ytResult.hidden = false;
-            toast(`Downloaded ${finalName}`);
-            return;
+            finalName = `${baseTitle}.mp3`;
           } else {
-            // Video — keep as-is (MP4 / WebM)
-            const ext = (resolved.mime.includes('webm')) ? 'webm' : 'mp4';
-            const finalName = `${baseTitle}.${ext}`;
-            ytLastBlob = rawBlob;
-            ytLastFilename = finalName;
-            triggerDownload(rawBlob, finalName);
-            setProgress(100, `Saved ${finalName} · full CDN speed`);
-            ytSize.textContent = formatBytes(rawBlob.size);
-            ytResult.hidden = false;
-            toast(`Downloaded ${finalName}`);
-            return;
+            const ext = resolved.mime.includes('webm') ? 'webm' : 'mp4';
+            finalName = `${baseTitle}.${ext}`;
           }
+
+          setProgress(70, `Loading ${finalName} into player…`);
+
+          // Drop the media into the inline player panel on this page.
+          // No tab navigation. Audio gets an <audio>, video gets a <video>.
+          // Both have controls + native right-click → Save As.
+          const slot = document.getElementById('ytPlayerSlot');
+          const wrap = document.getElementById('ytPlayerWrap');
+          const playerLabel = document.getElementById('ytPlayerLabel');
+          slot.innerHTML = '';
+          let media;
+          if (mode === 'audio') {
+            media = document.createElement('audio');
+            media.style.cssText = 'width:100%; max-width:560px';
+          } else {
+            media = document.createElement('video');
+            media.style.cssText = 'max-width:100%; max-height:460px; background:#000';
+          }
+          media.controls = true;
+          media.src = resolved.directUrl;
+          media.crossOrigin = 'anonymous';
+          // Hint to browsers to enable the download option in the controls menu
+          media.setAttribute('controlsList', 'nodownload'.replace('nodownload','')); // keep download enabled
+          slot.appendChild(media);
+          playerLabel.textContent = finalName;
+          wrap.hidden = false;
+
+          // Try to scroll the player into view so user sees it without scrolling
+          setTimeout(() => {
+            try { wrap.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+          }, 100);
+
+          ytLastFilename = finalName;
+          ytLastTunnelUrl = resolved.directUrl;
+          ytLastResolveAt = Date.now();
+          ytLastResolveMode = mode;
+          ytLastResolveQuality = videoQuality;
+          ytLastResolveYtId = extractYtId(url);
+
+          // AUTO-TRIGGER DOWNLOAD using a hidden iframe — fires right after resolve
+          // so the googlevideo URL signature is still valid (those URLs expire in
+          // ~6 hours but get rejected much earlier sometimes).
+          // Iframes don't count as popups and don't need a fresh user gesture.
+          try {
+            let dlFrame = document.getElementById('ytDlFrame');
+            if (!dlFrame) {
+              dlFrame = document.createElement('iframe');
+              dlFrame.id = 'ytDlFrame';
+              dlFrame.style.cssText = 'position:absolute; width:0; height:0; border:0; visibility:hidden; pointer-events:none';
+              document.body.appendChild(dlFrame);
+            }
+            dlFrame.src = resolved.directUrl;
+          } catch (e) { /* no-op — manual download button is the backup */ }
+
+          setProgress(100, `Saving ${finalName} — if not, click ⬇ Download in the player`);
+          ytSize.textContent = '— ready';
+          ytResult.hidden = false;
+          toast(`Downloading ${finalName}`);
+          return;
         } catch (e) {
           logErr('FastDirect', e);
           setProgress(20, 'Fast path failed · trying proxy fallback…');
@@ -10890,31 +11337,109 @@ m2mDownloadWav.addEventListener('click', () => {
     }
   });
 
-  ytDownload.addEventListener('click', () => {
-    if (!ytLastBlob) {
-      if (ytLastTunnelUrl) window.open(ytLastTunnelUrl, '_blank', 'noopener');
-      return;
-    }
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(ytLastBlob);
-    a.download = ytLastFilename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  // Auto-load preview when user pastes/types a YouTube URL.
+  // Debounced so we don't fire on every keystroke. Triggers ytFetch click
+  // automatically once a valid URL has been stable for 600ms.
+  let ytAutoLoadTimer = null;
+  let ytLastAutoLoadedUrl = null;
+  function maybeAutoLoad() {
+    clearTimeout(ytAutoLoadTimer);
+    ytAutoLoadTimer = setTimeout(() => {
+      const v = (urlInput.value || '').trim();
+      if (!v) return;
+      if (v === ytLastAutoLoadedUrl) return; // already loaded this exact URL
+      // Only auto-trigger if it's clearly a YouTube URL (don't fire on partial paste)
+      const id = (function() {
+        const patterns = [
+          /[?&]v=([A-Za-z0-9_-]{11})/,
+          /youtu\.be\/([A-Za-z0-9_-]{11})/,
+          /\/shorts\/([A-Za-z0-9_-]{11})/,
+          /\/embed\/([A-Za-z0-9_-]{11})/,
+        ];
+        for (const re of patterns) { const m = v.match(re); if (m) return m[1]; }
+        return null;
+      })();
+      if (!id) return;
+      if (ytFetch.disabled) return; // a fetch is already in progress
+      ytLastAutoLoadedUrl = v;
+      ytFetch.click();
+    }, 600);
+  }
+  urlInput.addEventListener('input', maybeAutoLoad);
+  urlInput.addEventListener('paste', () => {
+    // setTimeout so urlInput.value reflects the pasted content
+    setTimeout(maybeAutoLoad, 50);
   });
 
-  ytOpenInTab.addEventListener('click', () => {
-    if (ytLastBlob) {
-      // Open the local blob in a new tab (preview)
-      const u = URL.createObjectURL(ytLastBlob);
-      window.open(u, '_blank', 'noopener');
-      setTimeout(() => URL.revokeObjectURL(u), 60000);
-      return;
-    }
-    if (ytLastTunnelUrl) { window.open(ytLastTunnelUrl, '_blank', 'noopener'); return; }
-    toast('Fetch first');
-  });
+  // Close the inline player and unload the media so it stops streaming
+  const ytPlayerCloseBtn = document.getElementById('ytPlayerClose');
+  if (ytPlayerCloseBtn) {
+    ytPlayerCloseBtn.addEventListener('click', () => {
+      const slot = document.getElementById('ytPlayerSlot');
+      const wrap = document.getElementById('ytPlayerWrap');
+      // Stop and unload any active media to free bandwidth
+      slot.querySelectorAll('audio, video').forEach(m => {
+        try { m.pause(); m.removeAttribute('src'); m.load(); } catch (e) {}
+      });
+      slot.innerHTML = '';
+      wrap.hidden = true;
+    });
+  }
+
+  // Manual Download button in the player header.
+  // Re-resolves the URL if it's older than ~3 minutes — googlevideo URLs
+  // expire fast (they have signed expire= params), so a stale URL gives 403.
+  const ytPlayerDownloadBtn = document.getElementById('ytPlayerDownload');
+  if (ytPlayerDownloadBtn) {
+    ytPlayerDownloadBtn.addEventListener('click', async () => {
+      if (!ytLastTunnelUrl) { toast('Load a video first'); return; }
+
+      const ageMs = Date.now() - (ytLastResolveAt || 0);
+      const STALE_THRESHOLD_MS = 3 * 60 * 1000; // 3 minutes — fresh enough for any CDN
+      let urlToUse = ytLastTunnelUrl;
+      let nameToUse = ytLastFilename;
+
+      if (ageMs > STALE_THRESHOLD_MS && ytLastResolveYtId) {
+        // URL is stale — re-resolve to get a fresh signature
+        ytPlayerDownloadBtn.textContent = '⏳ Refreshing URL…';
+        ytPlayerDownloadBtn.disabled = true;
+        try {
+          const fresh = await resolveDirectStreamUrl(ytLastResolveYtId, ytLastResolveMode, ytLastResolveQuality);
+          const baseTitle = fresh.filename.replace(/\.[^.]+$/, '');
+          if (ytLastResolveMode === 'audio') {
+            nameToUse = `${baseTitle}.mp3`;
+          } else {
+            nameToUse = `${baseTitle}.${fresh.mime.includes('webm') ? 'webm' : 'mp4'}`;
+          }
+          urlToUse = fresh.directUrl;
+          // Update cached state with refreshed URL
+          ytLastTunnelUrl = urlToUse;
+          ytLastFilename = nameToUse;
+          ytLastResolveAt = Date.now();
+        } catch (e) {
+          ytPlayerDownloadBtn.textContent = '⬇ Download';
+          ytPlayerDownloadBtn.disabled = false;
+          console.warn('[yt-dl] re-resolve failed', e);
+          toast('Could not refresh URL — try clicking ⚡ Load preview again');
+          return;
+        }
+        ytPlayerDownloadBtn.textContent = '⬇ Download';
+        ytPlayerDownloadBtn.disabled = false;
+      }
+
+      // Trigger the download. This click IS a fresh user gesture, so we use an
+      // <a download> click which the browser will reliably honor (no popup blocker
+      // and no need for the iframe trick).
+      const a = document.createElement('a');
+      a.href = urlToUse;
+      a.download = nameToUse;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => a.remove(), 5000);
+      toast(`Downloading ${nameToUse}`);
+    });
+  }
 
   // ============================================================
   // Always-works fallback: open the URL on a third-party converter site
@@ -11182,6 +11707,66 @@ v2gDownload.addEventListener('click', () => {
 
 setCurrentColor([255, 0, 0]);
 
+/* ============================================================
+   GLOBAL FFMPEG.WASM SINGLETON
+   Shared by Universal Converter and YouTube → MP3 encoding.
+   First call downloads the engine (~30 MB), cached in browser cache after that.
+   ============================================================ */
+window._sharedFFmpeg = null;
+window._sharedFFmpegLoading = null;
+window._sharedFFmpegProgressCb = null; // current consumer's progress callback
+window._sharedFFmpegLogCb = null;
+window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
+  if (window._sharedFFmpeg) return window._sharedFFmpeg;
+  if (window._sharedFFmpegLoading) return window._sharedFFmpegLoading;
+
+  window._sharedFFmpegLoading = (async () => {
+    if (onLoadProgress) onLoadProgress(0, 'Loading ffmpeg engine (~30 MB, cached after first time)…');
+
+    async function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error(`Failed to load ${src}`));
+        document.head.appendChild(s);
+      });
+    }
+
+    if (typeof FFmpegWASM === 'undefined' && typeof FFmpeg === 'undefined') {
+      await loadScript('https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js');
+    }
+    if (typeof FFmpegUtil === 'undefined') {
+      await loadScript('https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js');
+    }
+
+    if (onLoadProgress) onLoadProgress(30, 'Loading ffmpeg core…');
+
+    const FFmpegClass = (window.FFmpegWASM && window.FFmpegWASM.FFmpeg) || (window.FFmpeg && window.FFmpeg.FFmpeg) || window.FFmpeg;
+    if (!FFmpegClass) throw new Error('FFmpeg global not found after loading');
+
+    const ff = new FFmpegClass();
+    // Route logs/progress through whatever callback is currently registered
+    ff.on('log', ({ message }) => {
+      if (window._sharedFFmpegLogCb) window._sharedFFmpegLogCb(message);
+    });
+    ff.on('progress', ({ progress, time }) => {
+      if (window._sharedFFmpegProgressCb) window._sharedFFmpegProgressCb(progress, time);
+    });
+
+    const coreBase = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+    await ff.load({
+      coreURL: `${coreBase}/ffmpeg-core.js`,
+      wasmURL: `${coreBase}/ffmpeg-core.wasm`,
+    });
+
+    if (onLoadProgress) onLoadProgress(100, 'Engine ready');
+    window._sharedFFmpeg = ff;
+    return ff;
+  })();
+  return window._sharedFFmpegLoading;
+};
+
 ['dragover','drop'].forEach(e =>
   window.addEventListener(e, ev => { if (ev.target === document.body) ev.preventDefault(); })
 );
@@ -11265,8 +11850,9 @@ setCurrentColor([255, 0, 0]);
   }
 
   // ---- ffmpeg.wasm loader ----
-  // Loads the UMD bundle from a CDN. Single-threaded core works without
-  // SharedArrayBuffer / cross-origin isolation — slower but no deployment hassles.
+  // Use the shared ffmpeg singleton (defined at module scope above).
+  // First call from either feature triggers the engine download; subsequent
+  // calls from anywhere are instant.
   async function loadFFmpeg() {
     if (ffmpeg) return ffmpeg;
     if (ffmpegLoading) return ffmpegLoading;
@@ -11276,50 +11862,25 @@ setCurrentColor([255, 0, 0]);
       uniProgressRow.hidden = false;
       uniFill.style.width = '5%';
 
-      // Inject UMD scripts if missing
-      async function loadScript(src) {
-        return new Promise((resolve, reject) => {
-          const s = document.createElement('script');
-          s.src = src;
-          s.onload = () => resolve();
-          s.onerror = () => reject(new Error(`Failed to load ${src}`));
-          document.head.appendChild(s);
-        });
-      }
+      const ff = await window.loadSharedFFmpeg((pct, msg) => {
+        uniFill.style.width = Math.max(5, Math.round(pct * 0.30)) + '%';
+        if (msg) uniText.textContent = msg;
+      });
 
-      if (typeof FFmpegWASM === 'undefined' && typeof FFmpeg === 'undefined') {
-        await loadScript('https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js');
-      }
-      if (typeof FFmpegUtil === 'undefined') {
-        await loadScript('https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js');
-      }
-
-      uniFill.style.width = '15%';
-
-      // Different versions of the UMD wrapper expose different globals
-      const FFmpegClass = (window.FFmpegWASM && window.FFmpegWASM.FFmpeg) || (window.FFmpeg && window.FFmpeg.FFmpeg) || window.FFmpeg;
-      if (!FFmpegClass) throw new Error('FFmpeg global not found after loading');
-
-      const ff = new FFmpegClass();
-      ff.on('log', ({ message }) => {
+      // Register THIS card's progress/log callbacks with the shared instance.
+      // (The YT downloader does the same when it runs — last writer wins, which
+      // is fine because only one feature runs at a time.)
+      window._sharedFFmpegLogCb = (message) => {
         uniLog.textContent += message + '\n';
         uniLog.scrollTop = uniLog.scrollHeight;
-      });
-      ff.on('progress', ({ progress, time }) => {
-        // progress is 0..1 during conversion
-        const pct = 30 + Math.round(progress * 65); // 30%–95% reserved for ffmpeg execution
+      };
+      window._sharedFFmpegProgressCb = (progress, time) => {
+        const p = (typeof progress === 'number') ? progress : 0;
+        const pct = 30 + Math.round(p * 65);
         uniFill.style.width = Math.min(95, pct) + '%';
-        uniText.textContent = `Converting · ${Math.round(progress * 100)}%`;
-      });
+        uniText.textContent = `Converting · ${Math.round(p * 100)}%`;
+      };
 
-      // Use the single-threaded core (no SharedArrayBuffer required)
-      const coreBase = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
-      uniText.textContent = 'Loading ffmpeg core…';
-      uniFill.style.width = '20%';
-      await ff.load({
-        coreURL: `${coreBase}/ffmpeg-core.js`,
-        wasmURL: `${coreBase}/ffmpeg-core.wasm`,
-      });
       uniFill.style.width = '30%';
       ffmpeg = ff;
       return ff;
@@ -12303,6 +12864,118 @@ setCurrentColor([255, 0, 0]);
   const charCountEl = document.getElementById('chatCharCount');
   const warningEl = document.getElementById('chatWarning');
 
+  // ===== Private Messages elements =====
+  const pmPanel = document.getElementById('pmPanel');
+  const pmInboxUid = document.getElementById('pmInboxUid');
+  const pmInboxBtn = document.getElementById('pmInboxBtn');
+  const pmInbox = document.getElementById('pmInbox');
+  const pmInboxClose = document.getElementById('pmInboxClose');
+  const pmInboxTitle = document.getElementById('pmInboxTitle');
+  const pmList = document.getElementById('pmList');
+  const pmSendTo = document.getElementById('pmSendTo');
+  const pmSendFrom = document.getElementById('pmSendFrom');
+  const pmSendBody = document.getElementById('pmSendBody');
+  const pmSendBtn = document.getElementById('pmSendBtn');
+
+  let pmCurrentUid = null; // currently-viewed inbox UID
+
+  // Persist PM form values (separate from chat username so they're independent)
+  pmInboxUid.value = localStorage.getItem('pmInboxUid') || '';
+  pmInboxUid.addEventListener('input', () => localStorage.setItem('pmInboxUid', pmInboxUid.value.slice(0, 40)));
+  pmSendFrom.value = localStorage.getItem('pmSendFrom') || '';
+  pmSendFrom.addEventListener('input', () => localStorage.setItem('pmSendFrom', pmSendFrom.value.slice(0, 24)));
+
+  // Normalize a UID — lowercase, trim, replace whitespace, strip a few chars.
+  // Doesn't restrict character set hard; just makes lookups case-insensitive.
+  function normalizeUid(s) {
+    return (s || '').trim().toLowerCase().replace(/\s+/g, '-').slice(0, 40);
+  }
+
+  function renderPmInbox() {
+    if (!pmCurrentUid) return;
+    const inbox = (cachedState.pm && cachedState.pm[pmCurrentUid]) || [];
+    pmInboxTitle.textContent = `Inbox: ${pmCurrentUid}  ·  ${inbox.length} message${inbox.length === 1 ? '' : 's'}`;
+    if (!inbox.length) {
+      pmList.innerHTML = '<div class="pm-list-empty">No messages yet — share this UID with someone to receive messages here.</div>';
+      return;
+    }
+    // Newest first
+    const sorted = inbox.slice().sort((a, b) => (b.t || 0) - (a.t || 0));
+    pmList.innerHTML = sorted.map(m => {
+      const from = (m.f || '').trim();
+      const fromHtml = from
+        ? `<span class="pm-msg-from">${escapeHtml(from)}</span>`
+        : `<span class="pm-msg-from anon">anonymous</span>`;
+      return `<div class="pm-msg">
+        <div class="pm-msg-meta">${fromHtml}<span>${fmtTime(m.t || Date.now())}</span></div>
+        <div class="pm-msg-body">${escapeHtml(m.b || '')}</div>
+      </div>`;
+    }).join('');
+  }
+
+  pmInboxBtn.addEventListener('click', async () => {
+    const uid = normalizeUid(pmInboxUid.value);
+    if (!uid) { toast('Type a UID first'); pmInboxUid.focus(); return; }
+    pmCurrentUid = uid;
+    pmInbox.hidden = false;
+    pmInboxTitle.textContent = `Loading inbox: ${uid}…`;
+    pmList.innerHTML = '<div class="pm-list-empty">Fetching…</div>';
+    // Always pull fresh state when opening an inbox so we don't show stale data
+    try {
+      cachedState = await fetchBin();
+      renderPmInbox();
+    } catch (e) {
+      pmList.innerHTML = '<div class="pm-list-empty">Could not load inbox — check connection.</div>';
+    }
+  });
+
+  pmInboxClose.addEventListener('click', () => {
+    pmInbox.hidden = true;
+    pmCurrentUid = null;
+  });
+
+  pmSendBtn.addEventListener('click', async () => {
+    const toUid = normalizeUid(pmSendTo.value);
+    const from = (pmSendFrom.value || '').trim().slice(0, 24);
+    const body = (pmSendBody.value || '').trim().slice(0, 500);
+    if (!toUid) { toast('Pick a recipient UID'); pmSendTo.focus(); return; }
+    if (!body) { toast('Write a message first'); pmSendBody.focus(); return; }
+
+    pmSendBtn.disabled = true;
+    pmSendBtn.textContent = 'Sending…';
+    try {
+      // Read fresh state, append the PM, write back. Same read-then-write pattern
+      // as public chat — small race window for simultaneous senders, fine at this scale.
+      const current = await fetchBin();
+      if (!current.pm) current.pm = {};
+      if (!Array.isArray(current.pm[toUid])) current.pm[toUid] = [];
+      current.pm[toUid].push({ f: from, b: body, t: Date.now() });
+      // Cap per-mailbox to keep storage bounded
+      const MAX_PER_INBOX = 200;
+      current.pm[toUid] = current.pm[toUid].slice(-MAX_PER_INBOX);
+      await writeBin(current);
+      cachedState = current;
+      pmSendBody.value = '';
+      toast(`Sent to ${toUid}`);
+      // If the user is currently viewing this UID's inbox, refresh it
+      if (pmCurrentUid === toUid) renderPmInbox();
+    } catch (e) {
+      console.error('[pm] send failed', e);
+      toast('Send failed — check connection');
+    } finally {
+      pmSendBtn.disabled = false;
+      pmSendBtn.textContent = 'Send';
+    }
+  });
+
+  // Allow Ctrl/Cmd+Enter to send PM
+  pmSendBody.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      pmSendBtn.click();
+    }
+  });
+
   // Restore username
   usernameEl.value = localStorage.getItem('chatUsername') || '';
   usernameEl.addEventListener('input', () => {
@@ -12436,27 +13109,45 @@ setCurrentColor([255, 0, 0]);
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const j = await r.json();
-    return Array.isArray(j.record) ? j.record : [];
+    // Migration: bin used to store a flat array of public messages.
+    // Now we store { messages: [...], pm: { uid: [msgs] } } — but accept both shapes.
+    const raw = j.record;
+    if (Array.isArray(raw)) return { messages: raw, pm: {} };
+    if (raw && typeof raw === 'object') {
+      return {
+        messages: Array.isArray(raw.messages) ? raw.messages : [],
+        pm: (raw.pm && typeof raw.pm === 'object') ? raw.pm : {},
+      };
+    }
+    return { messages: [], pm: {} };
   }
 
-  async function writeBin(messages) {
+  async function writeBin(state) {
+    // Always write the full object (messages + pm) so neither side gets lost.
     const r = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         'X-Master-Key': JSONBIN_KEY,
       },
-      body: JSON.stringify(messages),
+      body: JSON.stringify(state),
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.json();
   }
 
+  // Cache the latest known full state so writes don't clobber the other half.
+  // (E.g. sending a PM shouldn't lose recent public messages, and vice versa.)
+  let cachedState = { messages: [], pm: {} };
+
   async function poll() {
     try {
-      const messages = await fetchBin();
-      setStatus(`${messages.length} messages`, 'connected');
-      renderMessages(messages);
+      const state = await fetchBin();
+      cachedState = state;
+      setStatus(`${state.messages.length} messages`, 'connected');
+      renderMessages(state.messages);
+      // If the inbox panel is open, refresh its contents too
+      if (pmInbox && !pmInbox.hidden) renderPmInbox();
     } catch (e) {
       setStatus('Connection error · retrying…', 'error');
     }
@@ -12509,11 +13200,12 @@ setCurrentColor([255, 0, 0]);
       // For chat scale this is acceptable; bigger apps use Firestore.
       const current = await fetchBin();
       const msg = { n: name.slice(0, 24), b: body, t: Date.now() };
-      current.push(msg);
+      current.messages.push(msg);
       // Cap total messages stored to avoid unbounded growth
       const MAX_STORED = 500;
-      const trimmed = current.slice(-MAX_STORED);
-      await writeBin(trimmed);
+      current.messages = current.messages.slice(-MAX_STORED);
+      await writeBin(current);
+      cachedState = current;
       setLastSendTs(Date.now());
       inputEl.value = '';
       updateCharCount();
