@@ -4289,6 +4289,642 @@
     accent-color: var(--text);
     cursor: pointer;
   }
+
+  /* =====================================================
+     Factory Calculator — Satisfactory production planner
+     ===================================================== */
+  .fc-layout {
+    display: grid;
+    grid-template-columns: 280px 1fr 320px;
+    gap: 18px;
+    margin-bottom: 40px;
+    min-height: 88vh;
+  }
+  @media (max-width: 1280px) { .fc-layout { grid-template-columns: 260px 1fr 280px; } }
+  @media (max-width: 1050px) { .fc-layout { grid-template-columns: 1fr; } }
+
+  .fc-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 18px;
+    display: flex; flex-direction: column;
+    gap: 14px;
+    overflow: hidden;
+  }
+  .fc-panel h3 {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic; font-weight: 400;
+    font-size: 22px;
+    margin: 0;
+  }
+  .fc-panel-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px; color: var(--text-faint);
+    letter-spacing: 0.04em; text-transform: uppercase;
+  }
+
+  /* Sidebar — left node palette */
+  .fc-palette {
+    overflow-y: auto;
+    min-height: 0;
+    flex: 1;
+  }
+  .fc-palette::-webkit-scrollbar { width: 6px; }
+  .fc-palette::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .fc-palette-section {
+    margin-bottom: 14px;
+  }
+  .fc-palette-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-faint);
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .fc-palette-btn {
+    width: 100%;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-bottom: 6px;
+    display: flex; align-items: center; gap: 10px;
+    text-align: left;
+  }
+  .fc-palette-btn:hover {
+    background: var(--surface-3);
+    border-color: var(--border-hover);
+    transform: translateX(2px);
+  }
+  .fc-palette-btn .fc-pb-glyph {
+    width: 24px; height: 24px; flex-shrink: 0;
+    display: grid; place-items: center;
+    color: var(--text-dim);
+  }
+  .fc-palette-btn .fc-pb-glyph svg { width: 16px; height: 16px; }
+  .fc-palette-btn .fc-pb-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-faint);
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  /* Canvas — middle (node graph) */
+  .fc-canvas-wrap {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    min-height: 88vh;
+  }
+  .fc-canvas {
+    position: absolute; inset: 0;
+    overflow: hidden;
+    cursor: grab;
+    background-color: #0c0d10;
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(255,255,255,0.05) 1px, transparent 0);
+    background-size: 24px 24px;
+    background-position: 0 0;
+    user-select: none;
+  }
+  .fc-canvas.dragging { cursor: grabbing; }
+  .fc-world {
+    position: absolute;
+    top: 0; left: 0;
+    transform-origin: 0 0;
+    will-change: transform;
+  }
+  .fc-svg-edges {
+    position: absolute;
+    top: 0; left: 0;
+    pointer-events: none;
+    overflow: visible;
+  }
+  .fc-edge {
+    fill: none;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    pointer-events: stroke;
+    cursor: pointer;
+    transition: stroke-width 0.1s;
+  }
+  .fc-edge:hover { stroke-width: 3.6; }
+  .fc-edge.invalid { stroke-dasharray: 6 4; }
+  .fc-edge-hit {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 14;
+    pointer-events: stroke;
+    cursor: pointer;
+  }
+  .fc-edge-pending {
+    fill: none;
+    stroke: var(--text-dim);
+    stroke-width: 2;
+    stroke-dasharray: 4 4;
+    pointer-events: none;
+    opacity: 0.7;
+  }
+
+  /* Toolbar — top of canvas */
+  .fc-toolbar {
+    position: absolute;
+    top: 12px; left: 12px;
+    display: flex; gap: 6px;
+    z-index: 10;
+    flex-wrap: wrap;
+  }
+  .fc-tb-btn {
+    background: rgba(20, 22, 28, 0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 7px 12px;
+    border-radius: 7px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .fc-tb-btn:hover {
+    background: rgba(30, 33, 40, 0.95);
+    color: var(--text);
+    border-color: var(--border-hover);
+  }
+  .fc-tb-btn.danger:hover {
+    color: #ff7676;
+    border-color: #ff7676;
+  }
+  .fc-zoom-display {
+    position: absolute;
+    bottom: 12px; left: 12px;
+    background: rgba(20, 22, 28, 0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  /* Node — Blueprint-style box */
+  .fc-node {
+    position: absolute;
+    min-width: 230px;
+    background: linear-gradient(180deg, #1a1d24, #131519);
+    border: 1px solid #2a2e38;
+    border-radius: 8px;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.02) inset;
+    overflow: visible;
+    transition: box-shadow 0.15s, border-color 0.15s;
+  }
+  .fc-node.selected {
+    border-color: #d4a843;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.4), 0 0 0 1px rgba(212, 168, 67, 0.4), 0 0 18px rgba(212, 168, 67, 0.18);
+  }
+  .fc-node.error { border-color: #ff5252; }
+  .fc-node-header {
+    padding: 9px 12px;
+    color: #fff;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    cursor: grab;
+    user-select: none;
+    background: linear-gradient(135deg, var(--fc-header-bg, #d4a843), color-mix(in srgb, var(--fc-header-bg, #d4a843) 65%, black));
+    display: flex; align-items: center; gap: 8px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    border-radius: 7px 7px 0 0;
+  }
+  .fc-node-header:active { cursor: grabbing; }
+  .fc-node-header.type-machine { --fc-header-bg: #d4a843; }
+  .fc-node-header.type-input   { --fc-header-bg: #4f9e6e; }
+  .fc-node-header.type-output  { --fc-header-bg: #c45e57; }
+  .fc-node-header.type-group   { --fc-header-bg: #6a6dcf; }
+  .fc-node-header .fc-nh-icon { font-size: 13px; opacity: 0.95; }
+  .fc-node-header .fc-nh-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fc-node-header .fc-nh-del {
+    width: 18px; height: 18px;
+    display: grid; place-items: center;
+    background: rgba(0,0,0,0.25);
+    border: none;
+    color: rgba(255,255,255,0.7);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+  }
+  .fc-node-header .fc-nh-del:hover { background: rgba(0,0,0,0.5); color: #fff; }
+  .fc-node-header .fc-nh-dup {
+    width: 18px; height: 18px;
+    display: grid; place-items: center;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    color: rgba(255,255,255,0.6);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    margin-right: 2px;
+  }
+  .fc-node-header .fc-nh-dup:hover { background: rgba(255,255,255,0.2); color: #fff; }
+  /* Miner badge — compact info strip below node header */
+  .fc-miner-badge {
+    background: rgba(79, 158, 110, 0.12);
+    border-bottom: 1px solid rgba(79, 158, 110, 0.25);
+    padding: 3px 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--g);
+    letter-spacing: 0.03em;
+  }
+  .fc-miner-badge b { color: #7fffc4; }
+  /* Drag-away-to-delete visual */
+  .fc-node.drag-trash {
+    outline: 2px solid var(--r);
+    box-shadow: 0 0 20px rgba(255, 59, 92, 0.5);
+    opacity: 0.7;
+  }
+  .fc-trash-overlay {
+    position: absolute;
+    bottom: 12px; left: 50%; transform: translateX(-50%);
+    background: rgba(255, 59, 92, 0.85);
+    color: #fff;
+    padding: 8px 18px;
+    border-radius: 999px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    pointer-events: none;
+    z-index: 200;
+    opacity: 0;
+    transition: opacity 0.15s;
+    white-space: nowrap;
+  }
+  .fc-trash-overlay.active { opacity: 1; }
+  .fc-node-body {
+    padding: 4px 0;
+    display: flex; flex-direction: column;
+  }
+  .fc-node-section {
+    padding: 6px 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    border-top: 1px solid rgba(255,255,255,0.04);
+    margin-top: 2px;
+  }
+  .fc-node-section:first-child { border-top: none; margin-top: 0; }
+
+  /* Pins — input on left, output on right */
+  .fc-pin {
+    position: relative;
+    padding: 6px 12px;
+    display: flex; align-items: center;
+    color: var(--text);
+    font-size: 12px;
+    cursor: default;
+  }
+  .fc-pin.out { justify-content: flex-end; text-align: right; }
+  .fc-pin-handle {
+    position: absolute;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: #5a626f;
+    border: 2px solid #1a1d24;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: crosshair;
+    z-index: 2;
+    transition: background 0.15s, transform 0.15s;
+  }
+  .fc-pin.in  .fc-pin-handle { left: -7px; }
+  .fc-pin.out .fc-pin-handle { right: -7px; }
+  .fc-pin-handle.connected { background: var(--fc-pin-color, #d4a843); }
+  .fc-pin-handle:hover, .fc-pin-handle.hover {
+    transform: translateY(-50%) scale(1.3);
+    background: var(--fc-pin-color, #d4a843);
+  }
+  .fc-pin-icon {
+    width: 22px; height: 22px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 4px;
+    flex-shrink: 0;
+    overflow: hidden;
+    display: grid; place-items: center;
+  }
+  .fc-pin-icon img { width: 100%; height: 100%; object-fit: contain; }
+  .fc-pin.in  .fc-pin-icon { margin-right: 8px; }
+  .fc-pin.out .fc-pin-icon { margin-left: 8px; order: 2; }
+  .fc-pin-content { flex: 1; display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+  .fc-pin-label {
+    font-size: 11.5px;
+    color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .fc-pin-rate {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-faint);
+    letter-spacing: 0.03em;
+  }
+  .fc-pin-rate.surplus { color: #4f9e6e; }
+  .fc-pin-rate.deficit { color: #ff7676; }
+
+  /* Stack count badge on machine node */
+  .fc-stack-row {
+    padding: 8px 12px;
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(255,255,255,0.02);
+    border-top: 1px solid rgba(255,255,255,0.04);
+  }
+  .fc-stack-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-faint);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    flex: 1;
+  }
+  .fc-stack-input {
+    width: 64px;
+    background: rgba(0,0,0,0.35);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: var(--text);
+    padding: 4px 8px;
+    border-radius: 5px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    text-align: right;
+    outline: none;
+  }
+  .fc-stack-input:focus { border-color: var(--fc-header-bg, #d4a843); }
+  .fc-stack-input::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+  /* Inspector — right panel */
+  .fc-inspector {
+    overflow-y: auto;
+    min-height: 0;
+    flex: 1;
+  }
+  .fc-inspector::-webkit-scrollbar { width: 6px; }
+  .fc-inspector::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .fc-empty-state {
+    text-align: center;
+    padding: 36px 12px;
+    color: var(--text-faint);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+  }
+  .fc-empty-state svg { opacity: 0.35; margin-bottom: 12px; }
+
+  .fc-field {
+    margin-bottom: 12px;
+  }
+  .fc-field-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    color: var(--text-faint);
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .fc-field-input {
+    width: 100%;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 12.5px;
+    outline: none;
+    box-sizing: border-box;
+  }
+  .fc-field-input:focus { border-color: var(--border-hover); }
+  .fc-field-input.mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+
+  /* IO row in inspector */
+  .fc-io-row {
+    display: grid;
+    grid-template-columns: 1fr 80px 28px;
+    gap: 6px;
+    margin-bottom: 6px;
+    align-items: center;
+  }
+  .fc-io-row .fc-field-input { padding: 6px 8px; font-size: 12px; }
+  .fc-io-delete {
+    width: 28px; height: 28px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    color: var(--text-faint);
+    border-radius: 6px;
+    cursor: pointer;
+    display: grid; place-items: center;
+    transition: all 0.15s;
+  }
+  .fc-io-delete:hover { color: #ff7676; border-color: #ff7676; }
+  .fc-add-row-btn {
+    width: 100%;
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--text-faint);
+    padding: 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-top: 4px;
+    transition: all 0.15s;
+  }
+  .fc-add-row-btn:hover {
+    border-color: var(--border-hover);
+    color: var(--text-dim);
+    border-style: solid;
+  }
+
+  /* Summary box — right side */
+  .fc-summary {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+  .fc-summary-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 5px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .fc-summary-row:last-child { border-bottom: none; }
+  .fc-summary-row strong { color: var(--text); font-weight: 600; }
+  .fc-summary-row.surplus strong { color: #4f9e6e; }
+  .fc-summary-row.deficit strong { color: #ff7676; }
+
+  /* Item picker modal */
+  .fc-modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.65);
+    backdrop-filter: blur(4px);
+    z-index: 9999;
+    display: none;
+    align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .fc-modal-overlay.active { display: flex; }
+  .fc-modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    width: min(720px, 100%);
+    max-height: 80vh;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  }
+  .fc-modal-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .fc-modal-header h3 {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic; font-weight: 400;
+    font-size: 22px;
+    flex: 1; margin: 0;
+  }
+  .fc-modal-close {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    width: 32px; height: 32px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: grid; place-items: center;
+  }
+  .fc-modal-close:hover { color: var(--text); border-color: var(--border-hover); }
+  .fc-modal-search {
+    margin: 14px 20px 0;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 13.5px;
+    outline: none;
+  }
+  .fc-modal-search:focus { border-color: var(--border-hover); }
+  .fc-modal-categories {
+    display: flex; gap: 4px;
+    padding: 12px 20px 0;
+    overflow-x: auto;
+  }
+  .fc-modal-categories button {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+  }
+  .fc-modal-categories button:hover { color: var(--text); }
+  .fc-modal-categories button.active {
+    background: var(--surface-3);
+    color: var(--text);
+    border-color: var(--text-dim);
+  }
+  .fc-modal-grid {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 20px 20px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 8px;
+    align-content: start;
+  }
+  .fc-modal-grid::-webkit-scrollbar { width: 6px; }
+  .fc-modal-grid::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .fc-item-card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 8px;
+    cursor: pointer;
+    display: flex; flex-direction: column;
+    align-items: center; gap: 6px;
+    transition: all 0.15s;
+    text-align: center;
+  }
+  .fc-item-card:hover {
+    background: var(--surface-3);
+    border-color: var(--text-dim);
+    transform: translateY(-1px);
+  }
+  .fc-item-card img {
+    width: 48px; height: 48px;
+    object-fit: contain;
+    image-rendering: -webkit-optimize-contrast;
+  }
+  .fc-item-card .fc-item-card-fallback {
+    width: 48px; height: 48px;
+    display: grid; place-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px;
+    color: var(--text-faint);
+    background: rgba(255,255,255,0.03);
+    border-radius: 4px;
+  }
+  .fc-item-card-label {
+    font-size: 10.5px;
+    line-height: 1.2;
+    color: var(--text-dim);
+  }
+  .fc-modal-empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 30px 10px;
+    color: var(--text-faint);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
 </style>
 </head>
 <body>
@@ -4327,6 +4963,10 @@
       <button class="sb-tab" data-tab="model3d" title="3D Model — height-displaced plane from image">
         <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></span>
         <span class="sb-label">3D Model</span>
+      </button>
+      <button class="sb-tab" data-tab="factory" title="Factory Calculator — Satisfactory production planner with nodes">
+        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20v-9l-5 3v-3l-5 3v-3l-5 3V8L2 11v9z"/><path d="M6 20v-3M10 20v-3M14 20v-3M18 20v-3"/></svg></span>
+        <span class="sb-label">Factory</span>
       </button>
       <button class="sb-tab" data-tab="brainrot" title="Feed — short-form video feed">
         <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 20 12 6 20 6 4"/></svg></span>
@@ -5779,6 +6419,121 @@
           <button class="ur-btn" id="m3dResetCam">Reset camera</button>
           <button class="ur-btn" id="m3dClear">Clear image</button>
         </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ================= FACTORY CALCULATOR (Satisfactory production planner) ================= -->
+  <main data-mode="factory" hidden>
+    <div class="fc-layout">
+
+      <!-- LEFT: Node palette -->
+      <aside class="fc-panel">
+        <div>
+          <h3>Factory Calculator</h3>
+          <div class="fc-panel-sub">Satisfactory production planner</div>
+        </div>
+        <div class="fc-palette">
+          <div class="fc-palette-section">
+            <div class="fc-palette-title">Add Node</div>
+            <button class="fc-palette-btn" data-add-node="machine">
+              <span class="fc-pb-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="12" rx="1"/><path d="M7 8V4h10v4"/><circle cx="12" cy="14" r="2"/></svg></span>
+              <span>Machine</span>
+              <span class="fc-pb-meta">M</span>
+            </button>
+            <button class="fc-palette-btn" data-add-node="input">
+              <span class="fc-pb-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 12 11 6"/><line x1="5" y1="12" x2="19" y2="12"/><polyline points="5 12 11 18"/></svg></span>
+              <span>Source</span>
+              <span class="fc-pb-meta">I</span>
+            </button>
+            <button class="fc-palette-btn" data-add-node="output">
+              <span class="fc-pb-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 6 19 12"/><line x1="5" y1="12" x2="19" y2="12"/><polyline points="13 18 19 12"/></svg></span>
+              <span>Goal</span>
+              <span class="fc-pb-meta">O</span>
+            </button>
+          </div>
+          <div class="fc-palette-section">
+            <div class="fc-palette-title">Templates</div>
+            <button class="fc-palette-btn" data-template="smelter-iron">
+              <span class="fc-pb-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 21V11l6-6 6 6v10"/><path d="M10 21v-6h4v6"/></svg></span>
+              <span>Smelter — Iron Ingot</span>
+            </button>
+            <button class="fc-palette-btn" data-template="constructor-iron-plate">
+              <span class="fc-pb-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6v6H9z"/></svg></span>
+              <span>Constructor — Iron Plate</span>
+            </button>
+            <button class="fc-palette-btn" data-template="assembler-reinforced">
+              <span class="fc-pb-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M7 12h10"/></svg></span>
+              <span>Assembler — RIP</span>
+            </button>
+          </div>
+          <div class="fc-palette-section">
+            <div class="fc-palette-title">Controls</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-faint);line-height:1.8;letter-spacing:0.02em;padding:6px 2px">
+              <div><strong style="color:var(--text-dim)">Drag canvas</strong> · pan</div>
+              <div><strong style="color:var(--text-dim)">Scroll</strong> · zoom</div>
+              <div><strong style="color:var(--text-dim)">Drag pin</strong> · connect</div>
+              <div><strong style="color:var(--text-dim)">Click node</strong> · select</div>
+              <div><strong style="color:var(--text-dim)">Del</strong> · delete</div>
+              <div><strong style="color:var(--text-dim)">Click edge</strong> · remove</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- CENTER: Canvas -->
+      <div class="fc-canvas-wrap">
+        <div class="fc-toolbar">
+          <button class="fc-tb-btn" id="fcZoomReset" title="Reset view (Home)">100%</button>
+          <button class="fc-tb-btn" id="fcZoomFit" title="Frame all nodes">Fit</button>
+          <button class="fc-tb-btn" id="fcSave" title="Save graph to your browser">Save</button>
+          <button class="fc-tb-btn" id="fcExport" title="Export graph as JSON">Export</button>
+          <button class="fc-tb-btn" id="fcImport" title="Import graph from JSON">Import</button>
+          <button class="fc-tb-btn danger" id="fcClear" title="Clear all nodes">Clear</button>
+          <input type="file" id="fcImportFile" accept="application/json,.json" style="display:none">
+        </div>
+        <div class="fc-canvas" id="fcCanvas">
+          <svg class="fc-svg-edges" id="fcEdgeLayer"></svg>
+          <div class="fc-world" id="fcWorld"></div>
+        </div>
+        <div class="fc-zoom-display" id="fcZoomDisplay">100%</div>
+      </div>
+
+      <!-- RIGHT: Inspector -->
+      <aside class="fc-panel">
+        <div>
+          <h3>Inspector</h3>
+          <div class="fc-panel-sub" id="fcInspectorSub">No node selected</div>
+        </div>
+        <div class="fc-inspector" id="fcInspector">
+          <!-- Summary at top -->
+          <div class="fc-summary" id="fcSummary">
+            <div class="fc-summary-row"><span>Nodes</span><strong id="fcStatNodes">0</strong></div>
+            <div class="fc-summary-row"><span>Connections</span><strong id="fcStatEdges">0</strong></div>
+            <div class="fc-summary-row"><span>Machines (total)</span><strong id="fcStatMachines">0</strong></div>
+            <div class="fc-summary-row" id="fcRowSurplus"><span>Surplus items</span><strong id="fcStatSurplus">0</strong></div>
+            <div class="fc-summary-row" id="fcRowDeficit"><span>Deficit items</span><strong id="fcStatDeficit">0</strong></div>
+          </div>
+          <div id="fcInspectorPanel">
+            <div class="fc-empty-state">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>
+              <div>Add or select a node<br>to edit its details</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Item picker modal — used by IO rows to assign a material -->
+    <div class="fc-modal-overlay" id="fcItemModal" aria-hidden="true">
+      <div class="fc-modal" role="dialog" aria-modal="true">
+        <div class="fc-modal-header">
+          <h3>Pick item</h3>
+          <button class="fc-modal-close" id="fcItemModalClose" aria-label="Close">✕</button>
+        </div>
+        <input type="text" class="fc-modal-search" id="fcItemSearch" placeholder="Search items… (e.g. iron, plate, wire)">
+        <div class="fc-modal-categories" id="fcItemCats"></div>
+        <div class="fc-modal-grid" id="fcItemGrid"></div>
       </div>
     </div>
   </main>
@@ -15850,6 +16605,1460 @@ Takes:  {
   dlGLB.addEventListener('click', exportGLB);
   dlOBJ.addEventListener('click', exportOBJ);
   dlFBX.addEventListener('click', exportFBX);
+
+})();
+</script>
+
+
+
+<!-- =====================================================
+     Factory Calculator — Satisfactory production planner
+     ===================================================== -->
+<script>
+(() => {
+  'use strict';
+
+  const $ = id => document.getElementById(id);
+  const main = document.querySelector('main[data-mode="factory"]');
+  if (!main) return;
+
+  /* ====================================================================
+     ITEM DATABASE — Satisfactory items, categorized.
+     Icons resolve via Special:FilePath, which 302-redirects to the CDN PNG.
+     This works in-browser as <img src> (image requests bypass CORS for
+     display). We also provide a few well-known aliases for items whose
+     wiki file name differs from the display name.
+     ==================================================================== */
+  const ITEMS = [
+    // === Ores & Raw ===
+    { id: 'iron-ore',         name: 'Iron Ore',          cat: 'Raw' },
+    { id: 'copper-ore',       name: 'Copper Ore',        cat: 'Raw' },
+    { id: 'limestone',        name: 'Limestone',         cat: 'Raw' },
+    { id: 'caterium-ore',     name: 'Caterium Ore',      cat: 'Raw' },
+    { id: 'coal',             name: 'Coal',              cat: 'Raw' },
+    { id: 'bauxite',          name: 'Bauxite',           cat: 'Raw' },
+    { id: 'sulfur',           name: 'Sulfur',            cat: 'Raw' },
+    { id: 'raw-quartz',       name: 'Raw Quartz',        cat: 'Raw' },
+    { id: 'uranium',          name: 'Uranium',           cat: 'Raw' },
+    { id: 'sam',              name: 'SAM',               cat: 'Raw' },
+    { id: 'wood',             name: 'Wood',              cat: 'Raw' },
+    { id: 'leaves',           name: 'Leaves',            cat: 'Raw' },
+    { id: 'mycelia',          name: 'Mycelia',           cat: 'Raw' },
+    { id: 'flower-petals',    name: 'Flower Petals',     cat: 'Raw' },
+
+    // === Fluids ===
+    { id: 'water',            name: 'Water',             cat: 'Fluid' },
+    { id: 'crude-oil',        name: 'Crude Oil',         cat: 'Fluid' },
+    { id: 'heavy-oil-residue',name: 'Heavy Oil Residue', cat: 'Fluid' },
+    { id: 'fuel',             name: 'Fuel',              cat: 'Fluid' },
+    { id: 'turbofuel',        name: 'Turbofuel',         cat: 'Fluid' },
+    { id: 'liquid-biofuel',   name: 'Liquid Biofuel',    cat: 'Fluid' },
+    { id: 'nitrogen-gas',     name: 'Nitrogen Gas',      cat: 'Fluid' },
+    { id: 'nitric-acid',      name: 'Nitric Acid',       cat: 'Fluid' },
+    { id: 'sulfuric-acid',    name: 'Sulfuric Acid',     cat: 'Fluid' },
+    { id: 'alumina-solution', name: 'Alumina Solution',  cat: 'Fluid' },
+    { id: 'rocket-fuel',      name: 'Rocket Fuel',       cat: 'Fluid' },
+    { id: 'ionized-fuel',     name: 'Ionized Fuel',      cat: 'Fluid' },
+    { id: 'dark-matter-residue', name: 'Dark Matter Residue', cat: 'Fluid' },
+    { id: 'excited-photonic-matter', name: 'Excited Photonic Matter', cat: 'Fluid' },
+
+    // === Ingots ===
+    { id: 'iron-ingot',       name: 'Iron Ingot',        cat: 'Ingot' },
+    { id: 'copper-ingot',     name: 'Copper Ingot',      cat: 'Ingot' },
+    { id: 'steel-ingot',      name: 'Steel Ingot',       cat: 'Ingot' },
+    { id: 'caterium-ingot',   name: 'Caterium Ingot',    cat: 'Ingot' },
+    { id: 'aluminum-ingot',   name: 'Aluminum Ingot',    cat: 'Ingot' },
+    { id: 'sam-ingot',        name: 'SAM Ingot',         cat: 'Ingot' },
+
+    // === Parts (basic) ===
+    { id: 'iron-plate',       name: 'Iron Plate',        cat: 'Parts' },
+    { id: 'iron-rod',         name: 'Iron Rod',          cat: 'Parts' },
+    { id: 'screw',            name: 'Screw',             cat: 'Parts' },
+    { id: 'reinforced-iron-plate', name: 'Reinforced Iron Plate', cat: 'Parts' },
+    { id: 'rotor',            name: 'Rotor',             cat: 'Parts' },
+    { id: 'modular-frame',    name: 'Modular Frame',     cat: 'Parts' },
+    { id: 'smart-plating',    name: 'Smart Plating',     cat: 'Parts' },
+    { id: 'concrete',         name: 'Concrete',          cat: 'Parts' },
+    { id: 'wire',             name: 'Wire',              cat: 'Parts' },
+    { id: 'cable',            name: 'Cable',             cat: 'Parts' },
+    { id: 'copper-sheet',     name: 'Copper Sheet',      cat: 'Parts' },
+    { id: 'plastic',          name: 'Plastic',           cat: 'Parts' },
+    { id: 'rubber',           name: 'Rubber',            cat: 'Parts' },
+    { id: 'steel-beam',       name: 'Steel Beam',        cat: 'Parts' },
+    { id: 'steel-pipe',       name: 'Steel Pipe',        cat: 'Parts' },
+    { id: 'encased-industrial-beam', name: 'Encased Industrial Beam', cat: 'Parts' },
+    { id: 'quartz-crystal',   name: 'Quartz Crystal',    cat: 'Parts' },
+    { id: 'silica',           name: 'Silica',            cat: 'Parts' },
+    { id: 'quickwire',        name: 'Quickwire',         cat: 'Parts' },
+    { id: 'ai-limiter',       name: 'AI Limiter',        cat: 'Parts' },
+    { id: 'circuit-board',    name: 'Circuit Board',     cat: 'Parts' },
+    { id: 'computer',         name: 'Computer',          cat: 'Parts' },
+    { id: 'supercomputer',    name: 'Supercomputer',     cat: 'Parts' },
+    { id: 'heavy-modular-frame', name: 'Heavy Modular Frame', cat: 'Parts' },
+    { id: 'motor',            name: 'Motor',             cat: 'Parts' },
+    { id: 'stator',           name: 'Stator',            cat: 'Parts' },
+    { id: 'aluminum-scrap',   name: 'Aluminum Scrap',    cat: 'Parts' },
+    { id: 'aluminum-casing',  name: 'Aluminum Casing',   cat: 'Parts' },
+    { id: 'alclad-aluminum-sheet', name: 'Alclad Aluminum Sheet', cat: 'Parts' },
+    { id: 'battery',          name: 'Battery',           cat: 'Parts' },
+    { id: 'crystal-oscillator', name: 'Crystal Oscillator', cat: 'Parts' },
+
+    // === Advanced ===
+    { id: 'heat-sink',        name: 'Heat Sink',         cat: 'Advanced' },
+    { id: 'cooling-system',   name: 'Cooling System',    cat: 'Advanced' },
+    { id: 'fused-modular-frame', name: 'Fused Modular Frame', cat: 'Advanced' },
+    { id: 'radio-control-unit', name: 'Radio Control Unit', cat: 'Advanced' },
+    { id: 'turbo-motor',      name: 'Turbo Motor',       cat: 'Advanced' },
+    { id: 'pressure-conversion-cube', name: 'Pressure Conversion Cube', cat: 'Advanced' },
+    { id: 'magnetic-field-generator', name: 'Magnetic Field Generator', cat: 'Advanced' },
+    { id: 'nuclear-pasta',    name: 'Nuclear Pasta',     cat: 'Advanced' },
+    { id: 'thermal-propulsion-rocket', name: 'Thermal Propulsion Rocket', cat: 'Advanced' },
+    { id: 'assembly-director-system', name: 'Assembly Director System', cat: 'Advanced' },
+    { id: 'versatile-framework', name: 'Versatile Framework', cat: 'Advanced' },
+    { id: 'automated-wiring', name: 'Automated Wiring',  cat: 'Advanced' },
+    { id: 'modular-engine',   name: 'Modular Engine',    cat: 'Advanced' },
+    { id: 'adaptive-control-unit', name: 'Adaptive Control Unit', cat: 'Advanced' },
+    { id: 'ai-expansion-server', name: 'AI Expansion Server', cat: 'Advanced' },
+
+    // === Quantum / endgame ===
+    { id: 'diamonds',         name: 'Diamonds',          cat: 'Quantum' },
+    { id: 'time-crystal',     name: 'Time Crystal',      cat: 'Quantum' },
+    { id: 'reanimated-sam',   name: 'Reanimated SAM',    cat: 'Quantum' },
+    { id: 'ficsite-ingot',    name: 'Ficsite Ingot',     cat: 'Quantum' },
+    { id: 'ficsite-trigon',   name: 'Ficsite Trigon',    cat: 'Quantum' },
+    { id: 'singularity-cell', name: 'Singularity Cell',  cat: 'Quantum' },
+    { id: 'ballistic-warp-drive', name: 'Ballistic Warp Drive', cat: 'Quantum' },
+    { id: 'ai-expansion-server', name: 'AI Expansion Server', cat: 'Quantum' },
+    { id: 'alien-power-matrix', name: 'Alien Power Matrix', cat: 'Quantum' },
+
+    // === Nuclear ===
+    { id: 'encased-uranium-cell', name: 'Encased Uranium Cell', cat: 'Nuclear' },
+    { id: 'uranium-fuel-rod', name: 'Uranium Fuel Rod',  cat: 'Nuclear' },
+    { id: 'plutonium-pellet', name: 'Plutonium Pellet',  cat: 'Nuclear' },
+    { id: 'encased-plutonium-cell', name: 'Encased Plutonium Cell', cat: 'Nuclear' },
+    { id: 'plutonium-fuel-rod', name: 'Plutonium Fuel Rod', cat: 'Nuclear' },
+    { id: 'ficsonium',        name: 'Ficsonium',         cat: 'Nuclear' },
+    { id: 'ficsonium-fuel-rod', name: 'Ficsonium Fuel Rod', cat: 'Nuclear' },
+    { id: 'uranium-waste',    name: 'Uranium Waste',     cat: 'Nuclear' },
+    { id: 'plutonium-waste',  name: 'Plutonium Waste',   cat: 'Nuclear' },
+    { id: 'non-fissile-uranium', name: 'Non-fissile Uranium', cat: 'Nuclear' },
+
+    // === Power ===
+    { id: 'biofuel',          name: 'Solid Biofuel',     cat: 'Power' },
+    { id: 'petroleum-coke',   name: 'Petroleum Coke',    cat: 'Power' },
+    { id: 'compacted-coal',   name: 'Compacted Coal',    cat: 'Power' },
+    { id: 'packaged-fuel',    name: 'Packaged Fuel',     cat: 'Power' },
+    { id: 'packaged-turbofuel', name: 'Packaged Turbofuel', cat: 'Power' },
+    { id: 'packaged-water',   name: 'Packaged Water',    cat: 'Power' },
+
+    // === Misc / Eq ===
+    { id: 'empty-canister',   name: 'Empty Canister',    cat: 'Misc' },
+    { id: 'empty-fluid-tank', name: 'Empty Fluid Tank',  cat: 'Misc' },
+    { id: 'gas-filter',       name: 'Gas Filter',        cat: 'Misc' },
+    { id: 'iodine-infused-filter', name: 'Iodine-Infused Filter', cat: 'Misc' },
+    { id: 'fabric',           name: 'Fabric',            cat: 'Misc' },
+    { id: 'alien-protein',    name: 'Alien Protein',     cat: 'Misc' },
+    { id: 'alien-dna-capsule',name: 'Alien DNA Capsule', cat: 'Misc' },
+    { id: 'power-shard',      name: 'Power Shard',       cat: 'Misc' },
+    { id: 'crystal-shard',    name: 'Crystal Shard',     cat: 'Misc' },
+  ];
+
+  /* De-dupe by id (some entries appear in multiple categories above) */
+  const _seen = new Set();
+  const ITEMS_UNIQUE = ITEMS.filter(it => {
+    if (_seen.has(it.id)) return false;
+    _seen.add(it.id);
+    return true;
+  });
+  const ITEM_BY_ID = new Map(ITEMS_UNIQUE.map(it => [it.id, it]));
+  const CATS = Array.from(new Set(ITEMS_UNIQUE.map(it => it.cat)));
+
+  /* Some wiki file names use different spellings than the display name.
+     This mapping handles the well-known divergences. Everything else falls
+     back to NameWithUnderscores.png. */
+  const ICON_ALIASES = {
+    'screw': 'Screws.png',
+    'biofuel': 'Solid_Biofuel.png',
+    'crystal-shard': 'Crystal_Oscillator.png', // best-effort visual stand-in
+    'flower-petals': 'Flower_Petals.png',
+    'crystal-oscillator': 'Crystal_Oscillator.png',
+  };
+  function iconUrl(itemId) {
+    const it = ITEM_BY_ID.get(itemId);
+    if (!it) return '';
+    if (ICON_ALIASES[itemId]) {
+      return 'https://satisfactory.wiki.gg/wiki/Special:FilePath/' + ICON_ALIASES[itemId];
+    }
+    const fname = it.name.replace(/ /g, '_').replace(/[^\w\-]/g, '') + '.png';
+    return 'https://satisfactory.wiki.gg/wiki/Special:FilePath/' + encodeURIComponent(fname);
+  }
+
+  /* ====================================================================
+     STATE
+     ==================================================================== */
+  const state = {
+    nodes: new Map(),   // id -> Node
+    edges: new Map(),   // id -> Edge
+    nextId: 1,
+    view: { x: 0, y: 0, zoom: 1 },
+    selectedNodeId: null,
+    pendingConnection: null, // { fromNodeId, fromPinId, fromSide, x, y } during drag
+    itemPicker: null,        // callback awaiting an item selection
+    clipboard: null,         // deep-copied node for Ctrl+C / Ctrl+V
+  };
+
+  function uid(prefix='id') { return prefix + '_' + (state.nextId++); }
+
+  function defaultNode(kind, x, y) {
+    if (kind === 'machine') {
+      return {
+        id: uid('n'),
+        kind: 'machine',
+        name: 'Machine',
+        building: 'Constructor',
+        x, y,
+        count: 1,
+        clockSpeed: 100,
+        inputs:  [{ id: uid('p'), itemId: 'iron-ingot', rate: 30 }],
+        outputs: [{ id: uid('p'), itemId: 'iron-plate', rate: 20 }],
+      };
+    }
+    if (kind === 'input') {
+      return {
+        id: uid('n'),
+        kind: 'input',
+        name: 'Iron Ore Mine',
+        x, y,
+        count: 1,
+        minerMark: 1,
+        purity: 'normal',
+        overclock: 100,
+        outputs: [{ id: uid('p'), itemId: 'iron-ore', rate: 60 }],
+      };
+    }
+    if (kind === 'output') {
+      return {
+        id: uid('n'),
+        kind: 'output',
+        name: 'Goal',
+        x, y,
+        count: 1,
+        inputs:  [{ id: uid('p'), itemId: 'iron-plate', rate: 60 }],
+      };
+    }
+  }
+
+  /* ====================================================================
+     DOM REFS
+     ==================================================================== */
+  const cvs = $('fcCanvas');
+  const world = $('fcWorld');
+  const edgeLayer = $('fcEdgeLayer');
+  const zoomDisp = $('fcZoomDisplay');
+  const inspector = $('fcInspectorPanel');
+  const inspectorSub = $('fcInspectorSub');
+  const itemModal = $('fcItemModal');
+  const itemModalClose = $('fcItemModalClose');
+  const itemSearch = $('fcItemSearch');
+  const itemCats = $('fcItemCats');
+  const itemGrid = $('fcItemGrid');
+  const statNodes = $('fcStatNodes');
+  const statEdges = $('fcStatEdges');
+  const statMachines = $('fcStatMachines');
+  const statSurplus = $('fcStatSurplus');
+  const statDeficit = $('fcStatDeficit');
+
+  // Trash overlay — shown when dragging a node outside canvas
+  const trashOverlay = document.createElement('div');
+  trashOverlay.className = 'fc-trash-overlay';
+  trashOverlay.innerHTML = '<span>🗑 Release to delete</span>';
+  cvs.parentElement.appendChild(trashOverlay);
+
+  /* ====================================================================
+     PERSISTENCE — survive reloads (per-browser)
+     ==================================================================== */
+  const STORAGE_KEY = 'factoryCalcGraph_v1';
+  function saveGraph() {
+    try {
+      const data = {
+        nextId: state.nextId,
+        view: state.view,
+        nodes: Array.from(state.nodes.values()),
+        edges: Array.from(state.edges.values()),
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      toastSafe('Graph saved');
+    } catch (e) {
+      console.error('save failed', e);
+      toastSafe('Save failed');
+    }
+  }
+  function loadGraph(data) {
+    state.nodes.clear();
+    state.edges.clear();
+    if (data.nodes) data.nodes.forEach(n => state.nodes.set(n.id, n));
+    if (data.edges) data.edges.forEach(e => state.edges.set(e.id, e));
+    if (data.nextId) state.nextId = data.nextId;
+    if (data.view)   state.view = data.view;
+    renderAll();
+    applyTransform();
+  }
+  function tryAutoLoad() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return false;
+      loadGraph(JSON.parse(raw));
+      return true;
+    } catch { return false; }
+  }
+
+  /* ====================================================================
+     RENDER — view transform
+     ==================================================================== */
+  function applyTransform() {
+    const { x, y, zoom } = state.view;
+    world.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
+    edgeLayer.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
+    zoomDisp.textContent = Math.round(zoom * 100) + '%';
+  }
+
+  /* Convert client coords → world coords */
+  function clientToWorld(cx, cy) {
+    const r = cvs.getBoundingClientRect();
+    const x = (cx - r.left - state.view.x) / state.view.zoom;
+    const y = (cy - r.top  - state.view.y) / state.view.zoom;
+    return { x, y };
+  }
+
+  /* ====================================================================
+     PIN POSITIONS — used to draw edges
+     ==================================================================== */
+  function getPinPosition(nodeId, pinId, side) {
+    const el = world.querySelector(`[data-node-id="${nodeId}"] [data-pin-id="${pinId}"] .fc-pin-handle`);
+    if (!el) return null;
+    const handleRect = el.getBoundingClientRect();
+    // We need world-space coords (no transform), which equals:
+    //   worldX = (handleCenterClientX - canvasOriginClientX - view.x) / zoom
+    const r = cvs.getBoundingClientRect();
+    const cx = handleRect.left + handleRect.width / 2;
+    const cy = handleRect.top  + handleRect.height / 2;
+    return {
+      x: (cx - r.left - state.view.x) / state.view.zoom,
+      y: (cy - r.top  - state.view.y) / state.view.zoom,
+    };
+  }
+
+  /* ====================================================================
+     RENDER — nodes
+     ==================================================================== */
+  function renderAll() {
+    world.innerHTML = '';
+    state.nodes.forEach(renderNode);
+    renderEdges();
+    updateSummary();
+    renderInspector();
+  }
+
+  function renderNode(n) {
+    let el = world.querySelector(`[data-node-id="${n.id}"]`);
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'fc-node';
+      el.dataset.nodeId = n.id;
+      world.appendChild(el);
+    }
+    el.style.left = n.x + 'px';
+    el.style.top  = n.y + 'px';
+    el.classList.toggle('selected', state.selectedNodeId === n.id);
+
+    const flows = computeFlows();
+    const nodeFlow = flows.get(n.id) || { in:new Map(), out:new Map() };
+
+    const typeClass = 'type-' + n.kind;
+    const headerIcon = n.kind === 'machine' ? '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><rect x="3" y="8" width="18" height="12" rx="1"/><path d="M7 8V4h10v4" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>'
+                    : n.kind === 'input'   ? '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>'
+                    :                        '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M11 6L5 12l6 6"/></svg>';
+
+    const inputs = (n.inputs || []).map(p => pinHTML(n, p, 'in', nodeFlow.in.get(p.id))).join('');
+    const outputs = (n.outputs || []).map(p => pinHTML(n, p, 'out', nodeFlow.out.get(p.id))).join('');
+
+    let body = '';
+    if (n.kind === 'machine') {
+      body = `
+        ${ inputs ? `<div class="fc-node-section">Inputs</div>${inputs}` : '' }
+        ${ outputs ? `<div class="fc-node-section">Outputs</div>${outputs}` : '' }
+        <div class="fc-stack-row">
+          <span class="fc-stack-label">× Machines</span>
+          <input class="fc-stack-input" type="number" min="0.01" step="0.1" value="${n.count}" data-bind="count">
+        </div>
+      `;
+    } else if (n.kind === 'input') {
+      body = `
+        ${ outputs ? `<div class="fc-node-section">Provides</div>${outputs}` : '' }
+        <div class="fc-stack-row">
+          <span class="fc-stack-label">× Stack</span>
+          <input class="fc-stack-input" type="number" min="0.01" step="0.1" value="${n.count}" data-bind="count">
+        </div>
+      `;
+    } else if (n.kind === 'output') {
+      body = `
+        ${ inputs ? `<div class="fc-node-section">Demands</div>${inputs}` : '' }
+        <div class="fc-stack-row">
+          <span class="fc-stack-label">× Stack</span>
+          <input class="fc-stack-input" type="number" min="0.01" step="0.1" value="${n.count}" data-bind="count">
+        </div>
+      `;
+    }
+
+    let minerBadge = '';
+    if (n.kind === 'input') {
+      const mr = getMinerRate(n);
+      const purityLabel = { impure: '½', normal: '1×', pure: '2×' }[n.purity] || '1×';
+      const markLabel = `Mk.${n.minerMark || 1}`;
+      const ocLabel = (n.overclock || 100) !== 100 ? ` · ${n.overclock}%` : '';
+      minerBadge = `<div class="fc-miner-badge">${markLabel} · ${purityLabel}${ocLabel} → <b>${formatRate(mr)}/min</b></div>`;
+    }
+
+    el.innerHTML = `
+      <div class="fc-node-header ${typeClass}" data-drag-handle="1">
+        <span class="fc-nh-icon">${headerIcon}</span>
+        <span class="fc-nh-name">${escapeHtml(n.name || '')}</span>
+        <button class="fc-nh-dup" title="Duplicate node (Ctrl+D)" data-action="duplicate-node">⧉</button>
+        <button class="fc-nh-del" title="Delete node (Del)" data-action="delete-node">✕</button>
+      </div>
+      ${minerBadge}
+      <div class="fc-node-body">
+        ${body}
+      </div>
+    `;
+
+    // Wire stack input
+    const stackInput = el.querySelector('.fc-stack-input');
+    if (stackInput) {
+      stackInput.addEventListener('input', () => {
+        const v = Math.max(0.01, parseFloat(stackInput.value) || 1);
+        n.count = v;
+        renderAll();
+      });
+      // Don't let typing drag the node
+      stackInput.addEventListener('pointerdown', e => e.stopPropagation());
+    }
+  }
+
+  function pinHTML(n, p, side, flowInfo) {
+    const item = ITEM_BY_ID.get(p.itemId);
+    const label = item ? item.name : 'Unset';
+    const url = item ? iconUrl(p.itemId) : '';
+    const totalRate = p.rate * (n.count || 1);
+
+    // Surplus/deficit label
+    let rateClass = '';
+    let rateText = formatRate(totalRate) + '/s';
+    if (side === 'out' && flowInfo) {
+      const surplus = flowInfo.surplus;
+      if (surplus > 0.0001) { rateClass = 'surplus'; rateText += ` · +${formatRate(surplus)}`; }
+    } else if (side === 'in' && flowInfo) {
+      const deficit = flowInfo.deficit;
+      if (deficit > 0.0001) { rateClass = 'deficit'; rateText += ` · −${formatRate(deficit)}`; }
+    }
+
+    const iconEl = url
+      ? `<img src="${url}" alt="" onerror="this.style.display='none'">`
+      : '';
+    return `
+      <div class="fc-pin ${side}" data-pin-id="${p.id}">
+        <span class="fc-pin-handle" data-pin-handle="1" data-side="${side}"></span>
+        <span class="fc-pin-icon">${iconEl}</span>
+        <span class="fc-pin-content">
+          <span class="fc-pin-label">${escapeHtml(label)}</span>
+          <span class="fc-pin-rate ${rateClass}">${rateText}</span>
+        </span>
+      </div>
+    `;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function formatRate(v) {
+    if (Math.abs(v) < 0.01) return '0';
+    if (Math.abs(v) >= 100) return v.toFixed(0);
+    if (Math.abs(v) >= 10)  return v.toFixed(1);
+    return v.toFixed(2);
+  }
+
+  /* Compute miner output rate/min from node fields */
+  function getMinerRate(n) {
+    const baseRates = { 1: 60, 2: 120, 3: 240 };
+    const purityMult = { impure: 0.5, normal: 1, pure: 2 };
+    const base = baseRates[n.minerMark || 1] || 60;
+    const pm   = purityMult[n.purity || 'normal'] || 1;
+    const oc   = Math.min(250, Math.max(1, n.overclock || 100)) / 100;
+    return base * pm * oc;
+  }
+
+  /* ====================================================================
+     FLOW SOLVER — computes surplus/deficit per pin
+     For each item type, sum supply (machine outputs * count) and demand
+     (machine inputs * count + output-node demand). Each pin's local
+     surplus/deficit is its share of the global imbalance.
+     ==================================================================== */
+  function computeFlows() {
+    const nodeFlows = new Map();
+    // Aggregate supply/demand per item across all CONNECTED edges
+    // The simpler, intuitive model: an output pin has surplus if its
+    // produced rate exceeds the total demand of pins it feeds; an input
+    // pin has deficit if its demand exceeds supply from connected outputs.
+
+    // Build: for each pin, total rate; for each edge: amount delivered
+    // = min(producer remaining, consumer remaining), iteratively.
+    // For visualization we use a simpler per-pin local accounting.
+
+    state.nodes.forEach(n => {
+      nodeFlows.set(n.id, { in: new Map(), out: new Map() });
+    });
+
+    // For each producer pin, the total amount this pin is supposed to
+    // produce minus what is consumed downstream is "surplus".
+    // For each consumer pin, demand minus incoming is "deficit".
+    state.nodes.forEach(producer => {
+      (producer.outputs || []).forEach(outPin => {
+        const produced = outPin.rate * (producer.count || 1);
+        // Find all edges leaving this pin
+        let consumed = 0;
+        state.edges.forEach(e => {
+          if (e.fromNodeId === producer.id && e.fromPinId === outPin.id) {
+            const consumer = state.nodes.get(e.toNodeId);
+            if (!consumer) return;
+            const inPin = (consumer.inputs || []).find(p => p.id === e.toPinId);
+            if (!inPin) return;
+            // Each edge carries the consumer's demand for its pin
+            // (split across multiple sources if applicable)
+            const demand = inPin.rate * (consumer.count || 1);
+            const sources = countEdgesIntoPin(consumer.id, inPin.id);
+            consumed += demand / sources;
+          }
+        });
+        const surplus = produced - consumed;
+        nodeFlows.get(producer.id).out.set(outPin.id, { produced, consumed, surplus });
+      });
+
+      (producer.inputs || []).forEach(inPin => {
+        const demand = inPin.rate * (producer.count || 1);
+        let supplied = 0;
+        state.edges.forEach(e => {
+          if (e.toNodeId === producer.id && e.toPinId === inPin.id) {
+            const src = state.nodes.get(e.fromNodeId);
+            if (!src) return;
+            const outPin = (src.outputs || []).find(p => p.id === e.fromPinId);
+            if (!outPin) return;
+            // Producer's pin is split across all consumers it feeds
+            const produced = outPin.rate * (src.count || 1);
+            const consumers = countEdgesFromPin(src.id, outPin.id);
+            supplied += produced / consumers;
+          }
+        });
+        const deficit = demand - supplied;
+        nodeFlows.get(producer.id).in.set(inPin.id, { demand, supplied, deficit });
+      });
+    });
+    return nodeFlows;
+  }
+  function countEdgesIntoPin(nodeId, pinId) {
+    let c = 0;
+    state.edges.forEach(e => { if (e.toNodeId === nodeId && e.toPinId === pinId) c++; });
+    return Math.max(1, c);
+  }
+  function countEdgesFromPin(nodeId, pinId) {
+    let c = 0;
+    state.edges.forEach(e => { if (e.fromNodeId === nodeId && e.fromPinId === pinId) c++; });
+    return Math.max(1, c);
+  }
+
+  /* ====================================================================
+     EDGES — SVG bezier connections
+     ==================================================================== */
+  function renderEdges() {
+    edgeLayer.innerHTML = '';
+
+    // Size SVG to fill canvas exactly — 1 user-unit = 1 CSS pixel
+    const r = cvs.getBoundingClientRect();
+    const w = r.width  || 1;
+    const h = r.height || 1;
+    edgeLayer.setAttribute('width',   w);
+    edgeLayer.setAttribute('height',  h);
+    edgeLayer.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    edgeLayer.style.width  = '100%';
+    edgeLayer.style.height = '100%';
+    // Apply the same world-transform as the world container so world-space
+    // path coords land on screen at exactly the same position as nodes.
+    edgeLayer.style.transformOrigin = '0 0';
+    edgeLayer.style.transform = `translate(${state.view.x}px, ${state.view.y}px) scale(${state.view.zoom})`;
+
+    state.edges.forEach(e => {
+      const p0 = getPinPosition(e.fromNodeId, e.fromPinId, 'out');
+      const p1 = getPinPosition(e.toNodeId, e.toPinId, 'in');
+      if (!p0 || !p1) return;
+
+      const from = state.nodes.get(e.fromNodeId);
+      const fromPin = (from?.outputs || []).find(p => p.id === e.fromPinId);
+      const to = state.nodes.get(e.toNodeId);
+      const toPin = (to?.inputs || []).find(p => p.id === e.toPinId);
+      const itemId = fromPin?.itemId;
+      const mismatch = fromPin && toPin && fromPin.itemId !== toPin.itemId;
+      const color = mismatch ? '#ff7676' : itemColor(itemId);
+
+      const path = bezierPath(p0, p1);
+
+      // Visible path
+      const visible = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      visible.setAttribute('d', path);
+      visible.setAttribute('class', 'fc-edge' + (mismatch ? ' invalid' : ''));
+      visible.setAttribute('stroke', color);
+      visible.dataset.edgeId = e.id;
+
+      // Wider invisible hit zone — easier clicking
+      const hit = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      hit.setAttribute('d', path);
+      hit.setAttribute('class', 'fc-edge-hit');
+      hit.dataset.edgeId = e.id;
+      hit.addEventListener('click', () => { deleteEdge(e.id); });
+
+      edgeLayer.appendChild(hit);
+      edgeLayer.appendChild(visible);
+    });
+
+    // Pending edge (during drag)
+    if (state.pendingConnection) {
+      const pc = state.pendingConnection;
+      const p0 = getPinPosition(pc.fromNodeId, pc.fromPinId, pc.fromSide);
+      if (p0) {
+        const p1 = { x: pc.x, y: pc.y };
+        const path = bezierPath(pc.fromSide === 'out' ? p0 : p1, pc.fromSide === 'out' ? p1 : p0);
+        const pending = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        pending.setAttribute('d', path);
+        pending.setAttribute('class', 'fc-edge-pending');
+        edgeLayer.appendChild(pending);
+      }
+    }
+  }
+  function bezierPath(a, b) {
+    const dx = Math.max(40, Math.abs(b.x - a.x) * 0.5);
+    return `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`;
+  }
+
+  /* Stable color from item id — colorful per-edge tinting */
+  function itemColor(itemId) {
+    if (!itemId) return '#5a626f';
+    // Hand-tuned base colors per category, plus hash mixing for variation
+    const it = ITEM_BY_ID.get(itemId);
+    const baseByCat = {
+      'Raw': '#a07b4c',
+      'Fluid': '#4f9ec4',
+      'Ingot': '#c4944f',
+      'Parts': '#6ab97a',
+      'Advanced': '#9a73c7',
+      'Quantum': '#d6c25b',
+      'Nuclear': '#7fc46a',
+      'Power': '#e09b3e',
+      'Misc': '#7a8092',
+    };
+    let h = 0;
+    for (let i = 0; i < itemId.length; i++) h = ((h << 5) - h + itemId.charCodeAt(i)) & 0xffffffff;
+    const hueShift = (h % 40) - 20;
+    const base = baseByCat[it?.cat || 'Misc'] || '#7a8092';
+    return shiftHue(base, hueShift);
+  }
+  function shiftHue(hex, deg) {
+    const r = parseInt(hex.slice(1,3),16)/255;
+    const g = parseInt(hex.slice(3,5),16)/255;
+    const b = parseInt(hex.slice(5,7),16)/255;
+    const max=Math.max(r,g,b), min=Math.min(r,g,b);
+    let h, s, l = (max+min)/2;
+    if (max === min) { h = 0; s = 0; }
+    else {
+      const d = max-min;
+      s = l > 0.5 ? d/(2-max-min) : d/(max+min);
+      switch(max){
+        case r: h=(g-b)/d + (g<b?6:0); break;
+        case g: h=(b-r)/d + 2; break;
+        case b: h=(r-g)/d + 4; break;
+      }
+      h /= 6;
+    }
+    h = (h*360 + deg + 360) % 360 / 360;
+    return hslToHex(h, s, l);
+  }
+  function hslToHex(h, s, l) {
+    let r, g, b;
+    if (s === 0) { r=g=b=l; } else {
+      const hue2rgb = (p, q, t) => {
+        if (t<0) t+=1; if (t>1) t-=1;
+        if (t<1/6) return p + (q-p)*6*t;
+        if (t<1/2) return q;
+        if (t<2/3) return p + (q-p)*(2/3-t)*6;
+        return p;
+      };
+      const q = l<0.5 ? l*(1+s) : l+s-l*s;
+      const p = 2*l-q;
+      r = hue2rgb(p,q,h+1/3); g = hue2rgb(p,q,h); b = hue2rgb(p,q,h-1/3);
+    }
+    return '#'+[r,g,b].map(c=>Math.round(c*255).toString(16).padStart(2,'0')).join('');
+  }
+
+  /* ====================================================================
+     INTERACTION — pan, zoom, drag, connect, select
+     ==================================================================== */
+  let panState = null;       // { startX, startY, vx, vy }
+  let dragState = null;      // { nodeId, offX, offY }
+  let connectState = null;   // for pending connection
+
+  cvs.addEventListener('pointerdown', (e) => {
+    if (e.button === 2) return; // ignore right click
+    const target = e.target;
+
+    // Clicked node header → start drag
+    const header = target.closest('.fc-node-header');
+    const node = target.closest('.fc-node');
+
+    // Delete button
+    if (target.closest('[data-action="delete-node"]')) {
+      e.stopPropagation();
+      const id = node?.dataset.nodeId;
+      if (id) deleteNode(id);
+      return;
+    }
+
+    // Duplicate button
+    if (target.closest('[data-action="duplicate-node"]')) {
+      e.stopPropagation();
+      const id = node?.dataset.nodeId;
+      if (id) duplicateNode(id);
+      return;
+    }
+
+    // Pin handle → start connection
+    if (target.classList.contains('fc-pin-handle')) {
+      const nodeId = node.dataset.nodeId;
+      const pinEl  = target.closest('[data-pin-id]');
+      const pinId  = pinEl.dataset.pinId;
+      const side   = target.dataset.side;
+      const wp = clientToWorld(e.clientX, e.clientY);
+      state.pendingConnection = { fromNodeId: nodeId, fromPinId: pinId, fromSide: side, x: wp.x, y: wp.y };
+      connectState = state.pendingConnection;
+      cvs.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      return;
+    }
+
+    // Node drag (only via header)
+    if (header && node) {
+      selectNode(node.dataset.nodeId);
+      const wp = clientToWorld(e.clientX, e.clientY);
+      const n = state.nodes.get(node.dataset.nodeId);
+      dragState = { nodeId: n.id, offX: wp.x - n.x, offY: wp.y - n.y };
+      cvs.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      return;
+    }
+
+    // Click on node body — select
+    if (node) {
+      selectNode(node.dataset.nodeId);
+      return;
+    }
+
+    // Empty canvas → pan
+    panState = { startX: e.clientX, startY: e.clientY, vx: state.view.x, vy: state.view.y };
+    cvs.classList.add('dragging');
+    cvs.setPointerCapture(e.pointerId);
+    // Clear selection
+    selectNode(null);
+  });
+
+  cvs.addEventListener('pointermove', (e) => {
+    if (panState) {
+      state.view.x = panState.vx + (e.clientX - panState.startX);
+      state.view.y = panState.vy + (e.clientY - panState.startY);
+      applyTransform();
+    } else if (dragState) {
+      const wp = clientToWorld(e.clientX, e.clientY);
+      const n = state.nodes.get(dragState.nodeId);
+      if (n) {
+        n.x = wp.x - dragState.offX;
+        n.y = wp.y - dragState.offY;
+        renderNode(n);
+        renderEdges();
+      }
+      // Drag-away-to-delete: highlight node red if dragged far outside canvas
+      const r = cvs.getBoundingClientRect();
+      const TRASH_MARGIN = 80;
+      const outside = e.clientX < r.left - TRASH_MARGIN || e.clientX > r.right + TRASH_MARGIN
+                   || e.clientY < r.top  - TRASH_MARGIN || e.clientY > r.bottom + TRASH_MARGIN;
+      dragState.trashZone = outside;
+      const el = world.querySelector(`[data-node-id="${dragState.nodeId}"]`);
+      if (el) el.classList.toggle('drag-trash', outside);
+      trashOverlay.classList.toggle('active', outside);
+    } else if (connectState) {
+      const wp = clientToWorld(e.clientX, e.clientY);
+      connectState.x = wp.x;
+      connectState.y = wp.y;
+      // Hover detect on candidate target
+      const cand = document.elementFromPoint(e.clientX, e.clientY);
+      const candHandle = cand?.classList.contains('fc-pin-handle') ? cand : null;
+      world.querySelectorAll('.fc-pin-handle.hover').forEach(el => el.classList.remove('hover'));
+      if (candHandle && candHandle.dataset.side !== connectState.fromSide) {
+        candHandle.classList.add('hover');
+      }
+      renderEdges();
+    }
+  });
+
+  cvs.addEventListener('pointerup', (e) => {
+    if (panState) {
+      panState = null;
+      cvs.classList.remove('dragging');
+    }
+    if (dragState) {
+      // Drag-away-to-delete: if dropped outside canvas, delete node
+      if (dragState.trashZone) {
+        const el = world.querySelector(`[data-node-id="${dragState.nodeId}"]`);
+        if (el) el.classList.remove('drag-trash');
+        trashOverlay.classList.remove('active');
+        deleteNode(dragState.nodeId);
+        dragState = null;
+        return;
+      }
+      const el = world.querySelector(`[data-node-id="${dragState.nodeId}"]`);
+      if (el) el.classList.remove('drag-trash');
+      trashOverlay.classList.remove('active');
+      dragState = null;
+    }
+    if (connectState) {
+      // Resolve connection
+      const cand = document.elementFromPoint(e.clientX, e.clientY);
+      if (cand?.classList.contains('fc-pin-handle')) {
+        const toNodeEl = cand.closest('.fc-node');
+        const toPinEl  = cand.closest('[data-pin-id]');
+        const toSide   = cand.dataset.side;
+        if (toNodeEl && toPinEl && toSide !== connectState.fromSide) {
+          // Order: out → in
+          let from, to;
+          if (connectState.fromSide === 'out') {
+            from = { nodeId: connectState.fromNodeId, pinId: connectState.fromPinId };
+            to   = { nodeId: toNodeEl.dataset.nodeId,   pinId: toPinEl.dataset.pinId };
+          } else {
+            from = { nodeId: toNodeEl.dataset.nodeId,   pinId: toPinEl.dataset.pinId };
+            to   = { nodeId: connectState.fromNodeId, pinId: connectState.fromPinId };
+          }
+          addEdge(from, to);
+        }
+      }
+      state.pendingConnection = null;
+      connectState = null;
+      world.querySelectorAll('.fc-pin-handle.hover').forEach(el => el.classList.remove('hover'));
+      renderAll();
+    }
+  });
+
+  // Zoom with scroll
+  cvs.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const r = cvs.getBoundingClientRect();
+    const px = e.clientX - r.left, py = e.clientY - r.top;
+    const factor = Math.exp(-e.deltaY * 0.001);
+    const newZoom = Math.max(0.2, Math.min(3, state.view.zoom * factor));
+    // Adjust so that the world point under the cursor stays fixed
+    const wx = (px - state.view.x) / state.view.zoom;
+    const wy = (py - state.view.y) / state.view.zoom;
+    state.view.zoom = newZoom;
+    state.view.x = px - wx * newZoom;
+    state.view.y = py - wy * newZoom;
+    applyTransform();
+    renderEdges();
+  }, { passive: false });
+
+  // Prevent right-click menu on canvas
+  cvs.addEventListener('contextmenu', e => e.preventDefault());
+
+  // Keyboard
+  document.addEventListener('keydown', (e) => {
+    if (main.hidden) return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedNodeId) {
+      e.preventDefault();
+      deleteNode(state.selectedNodeId);
+    } else if ((e.key === 'c' || e.key === 'C') && (e.ctrlKey || e.metaKey) && state.selectedNodeId) {
+      e.preventDefault();
+      copyNode(state.selectedNodeId);
+    } else if ((e.key === 'v' || e.key === 'V') && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      pasteNode();
+    } else if ((e.key === 'd' || e.key === 'D') && (e.ctrlKey || e.metaKey) && state.selectedNodeId) {
+      e.preventDefault();
+      duplicateNode(state.selectedNodeId);
+    } else if (e.key === 'm' || e.key === 'M') addNodeOfKind('machine');
+    else if (e.key === 'i' || e.key === 'I') addNodeOfKind('input');
+    else if (e.key === 'o' || e.key === 'O') addNodeOfKind('output');
+    else if (e.key === 'Home') resetView();
+  });
+
+  /* ====================================================================
+     GRAPH MUTATIONS
+     ==================================================================== */
+  function addNodeOfKind(kind) {
+    // Place at center of visible area
+    const r = cvs.getBoundingClientRect();
+    const wc = clientToWorld(r.left + r.width / 2, r.top + r.height / 2);
+    const n = defaultNode(kind, wc.x - 115, wc.y - 60);
+    state.nodes.set(n.id, n);
+    selectNode(n.id);
+    renderAll();
+  }
+
+  function deleteNode(id) {
+    const n = state.nodes.get(id);
+    if (!n) return;
+    state.nodes.delete(id);
+    // Remove edges touching this node
+    Array.from(state.edges.values()).forEach(e => {
+      if (e.fromNodeId === id || e.toNodeId === id) state.edges.delete(e.id);
+    });
+    if (state.selectedNodeId === id) state.selectedNodeId = null;
+    renderAll();
+  }
+
+  /* Deep-clone a node with fresh IDs, offset by dx/dy */
+  function cloneNode(orig, dx, dy) {
+    function clonePins(pins) {
+      return (pins || []).map(p => ({ ...p, id: uid('p') }));
+    }
+    return {
+      ...orig,
+      id: uid('n'),
+      x: orig.x + dx,
+      y: orig.y + dy,
+      inputs:  clonePins(orig.inputs),
+      outputs: clonePins(orig.outputs),
+    };
+  }
+
+  function copyNode(id) {
+    const orig = state.nodes.get(id);
+    if (!orig) return;
+    // Store a plain-object snapshot (no live references)
+    state.clipboard = JSON.parse(JSON.stringify(orig));
+    toastSafe('Copied — Ctrl+V to paste');
+  }
+
+  function pasteNode() {
+    if (!state.clipboard) { toastSafe('Nothing to paste — Ctrl+C to copy first'); return; }
+    // Paste near center of view, offset a bit from original
+    const r = cvs.getBoundingClientRect();
+    const center = clientToWorld(r.left + r.width / 2, r.top + r.height / 2);
+    const orig = state.clipboard;
+    const clone = cloneNode(orig, 0, 0);
+    // Place at view center with a small random offset so repeated pastes stack visibly
+    clone.x = center.x - 115 + (Math.random() * 20 - 10);
+    clone.y = center.y -  60 + (Math.random() * 20 - 10);
+    state.nodes.set(clone.id, clone);
+    selectNode(clone.id);
+    renderAll();
+  }
+
+  function duplicateNode(id) {
+    const orig = state.nodes.get(id);
+    if (!orig) return;
+    const clone = cloneNode(orig, 30, 30);
+    state.nodes.set(clone.id, clone);
+    selectNode(clone.id);
+    renderAll();
+  }
+
+  function addEdge(from, to) {
+    // Can't connect a node to itself
+    if (from.nodeId === to.nodeId) return;
+    // Duplicate check
+    for (const e of state.edges.values()) {
+      if (e.fromNodeId === from.nodeId && e.fromPinId === from.pinId
+       && e.toNodeId   === to.nodeId   && e.toPinId   === to.pinId) return;
+    }
+    state.edges.set('e_' + (state.nextId++), {
+      id: 'e_' + (state.nextId - 1),
+      fromNodeId: from.nodeId, fromPinId: from.pinId,
+      toNodeId:   to.nodeId,   toPinId:   to.pinId,
+    });
+  }
+  function deleteEdge(id) {
+    state.edges.delete(id);
+    renderAll();
+  }
+
+  function selectNode(id) {
+    state.selectedNodeId = id;
+    state.nodes.forEach(n => {
+      const el = world.querySelector(`[data-node-id="${n.id}"]`);
+      if (el) el.classList.toggle('selected', n.id === id);
+    });
+    renderInspector();
+  }
+
+  /* ====================================================================
+     INSPECTOR
+     ==================================================================== */
+  function renderInspector() {
+    if (!state.selectedNodeId || !state.nodes.has(state.selectedNodeId)) {
+      inspectorSub.textContent = 'No node selected';
+      inspector.innerHTML = `
+        <div class="fc-empty-state">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>
+          <div>Add or select a node<br>to edit its details</div>
+        </div>
+      `;
+      return;
+    }
+    const n = state.nodes.get(state.selectedNodeId);
+    inspectorSub.textContent = `${n.kind.toUpperCase()} · ${n.id}`;
+
+    const kindLabel = { machine: 'Machine', input: 'Source', output: 'Goal' }[n.kind];
+    let html = `
+      <div class="fc-field">
+        <div class="fc-field-label"><span>Type</span></div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="fc-field-input mono" style="background:transparent;border-color:transparent;padding:0;flex:1">${kindLabel}</div>
+          <button class="fc-add-row-btn" data-ins-action="copy-node" style="margin:0;padding:4px 10px;font-size:11px">⎘ Copy</button>
+          <button class="fc-add-row-btn" data-ins-action="duplicate-node" style="margin:0;padding:4px 10px;font-size:11px">⧉ Dupe</button>
+        </div>
+      </div>
+      <div class="fc-field">
+        <div class="fc-field-label"><span>Name</span></div>
+        <input class="fc-field-input" type="text" data-ins-bind="name" value="${escapeHtml(n.name || '')}">
+      </div>
+    `;
+    if (n.kind === 'machine') {
+      html += `
+        <div class="fc-field">
+          <div class="fc-field-label"><span>Building</span></div>
+          <input class="fc-field-input" type="text" data-ins-bind="building" value="${escapeHtml(n.building || '')}" placeholder="e.g. Constructor">
+        </div>
+      `;
+    }
+    if (n.kind === 'input') {
+      const mr = getMinerRate(n);
+      html += `
+        <div class="fc-field">
+          <div class="fc-field-label"><span>Miner Mark</span></div>
+          <select class="fc-field-input" data-ins-bind="minerMark" style="cursor:pointer">
+            <option value="1" ${(n.minerMark||1)==1?'selected':''}>Mk.1 — 60/min base</option>
+            <option value="2" ${(n.minerMark||1)==2?'selected':''}>Mk.2 — 120/min base</option>
+            <option value="3" ${(n.minerMark||1)==3?'selected':''}>Mk.3 — 240/min base</option>
+          </select>
+        </div>
+        <div class="fc-field">
+          <div class="fc-field-label"><span>Node Purity</span></div>
+          <select class="fc-field-input" data-ins-bind="purity" style="cursor:pointer">
+            <option value="impure" ${n.purity==='impure'?'selected':''}>Impure — ×0.5</option>
+            <option value="normal" ${(n.purity||'normal')==='normal'?'selected':''}>Normal — ×1</option>
+            <option value="pure"   ${n.purity==='pure'?'selected':''}>Pure — ×2</option>
+          </select>
+        </div>
+        <div class="fc-field">
+          <div class="fc-field-label"><span>Overclock %</span><span style="font-family:'JetBrains Mono',monospace;color:var(--text-faint)">${n.overclock||100}%</span></div>
+          <input class="fc-field-input mono" type="number" min="1" max="250" step="1" data-ins-bind="overclock" value="${n.overclock||100}" placeholder="100">
+        </div>
+        <div class="fc-field" style="background:var(--surface-2);border-radius:8px;padding:8px 10px">
+          <div class="fc-field-label" style="margin-bottom:0"><span>Computed rate</span><span class="fc-miner-rate-display" style="font-family:'JetBrains Mono',monospace;color:var(--g);font-size:13px">${formatRate(mr)}/min</span></div>
+          <div style="font-size:11px;color:var(--text-faint);margin-top:4px">Apply this rate to the output pin below ↓</div>
+          <button class="fc-add-row-btn" data-ins-action="apply-miner-rate" style="margin-top:6px">↓ Apply to pin rate</button>
+        </div>
+      `;
+    }
+    html += `
+      <div class="fc-field">
+        <div class="fc-field-label"><span>Stack count</span><span style="font-family:'JetBrains Mono',monospace;color:var(--text-faint)">×${n.count}</span></div>
+        <input class="fc-field-input mono" type="number" min="0.01" step="0.1" data-ins-bind="count" value="${n.count}">
+      </div>
+    `;
+    // Inputs
+    if (n.kind === 'machine' || n.kind === 'output') {
+      html += `<div class="fc-field"><div class="fc-field-label"><span>Inputs (per machine)</span></div>`;
+      (n.inputs || []).forEach((p, i) => {
+        html += ioRowHTML(p, i, 'inputs');
+      });
+      html += `<button class="fc-add-row-btn" data-ins-action="add-input">+ Add input</button></div>`;
+    }
+    // Outputs
+    if (n.kind === 'machine' || n.kind === 'input') {
+      html += `<div class="fc-field"><div class="fc-field-label"><span>Outputs (per machine)</span></div>`;
+      (n.outputs || []).forEach((p, i) => {
+        html += ioRowHTML(p, i, 'outputs');
+      });
+      html += `<button class="fc-add-row-btn" data-ins-action="add-output">+ Add output</button></div>`;
+    }
+
+    inspector.innerHTML = html;
+
+    // Wire events
+    inspector.querySelectorAll('[data-ins-bind]').forEach(el => {
+      el.addEventListener('input', () => {
+        const key = el.dataset.insBind;
+        if (key === 'count') n.count = Math.max(0.01, parseFloat(el.value) || 1);
+        else if (key === 'overclock') n.overclock = Math.min(250, Math.max(1, parseFloat(el.value) || 100));
+        else if (key === 'minerMark') n.minerMark = parseInt(el.value) || 1;
+        else n[key] = el.value;
+        // Live-update the computed rate display if present
+        const rateDisplay = inspector.querySelector('.fc-miner-rate-display');
+        if (rateDisplay && n.kind === 'input') {
+          rateDisplay.textContent = formatRate(getMinerRate(n)) + '/min';
+        }
+        renderAll();
+      });
+    });
+    // Apply miner rate to first output pin
+    inspector.querySelector('[data-ins-action="apply-miner-rate"]')?.addEventListener('click', () => {
+      if (n.outputs && n.outputs.length > 0) {
+        n.outputs[0].rate = getMinerRate(n);
+        renderAll();
+        toastSafe('Rate applied to output pin');
+      }
+    });
+    inspector.querySelectorAll('[data-io-row]').forEach(row => {
+      const pid = row.dataset.pinId;
+      const which = row.dataset.io;
+      const list = n[which];
+      const p = list.find(x => x.id === pid);
+      if (!p) return;
+      // Item picker
+      row.querySelector('[data-io-action="pick"]').addEventListener('click', () => {
+        openItemPicker(itemId => {
+          p.itemId = itemId;
+          renderAll();
+        });
+      });
+      // Rate
+      row.querySelector('[data-io-action="rate"]').addEventListener('input', (ev) => {
+        p.rate = Math.max(0, parseFloat(ev.target.value) || 0);
+        renderAll();
+      });
+      // Delete
+      row.querySelector('[data-io-action="del"]').addEventListener('click', () => {
+        const idx = list.findIndex(x => x.id === pid);
+        if (idx >= 0) list.splice(idx, 1);
+        // Remove edges touching this pin
+        Array.from(state.edges.values()).forEach(e => {
+          if ((e.fromNodeId === n.id && e.fromPinId === pid) ||
+              (e.toNodeId   === n.id && e.toPinId   === pid)) state.edges.delete(e.id);
+        });
+        renderAll();
+      });
+    });
+    inspector.querySelector('[data-ins-action="add-input"]')?.addEventListener('click', () => {
+      n.inputs = n.inputs || [];
+      n.inputs.push({ id: uid('p'), itemId: 'iron-ore', rate: 30 });
+      renderAll();
+    });
+    inspector.querySelector('[data-ins-action="add-output"]')?.addEventListener('click', () => {
+      n.outputs = n.outputs || [];
+      n.outputs.push({ id: uid('p'), itemId: 'iron-ingot', rate: 30 });
+      renderAll();
+    });
+    inspector.querySelector('[data-ins-action="duplicate-node"]')?.addEventListener('click', () => {
+      duplicateNode(n.id);
+    });
+    inspector.querySelector('[data-ins-action="copy-node"]')?.addEventListener('click', () => {
+      copyNode(n.id);
+    });
+  }
+
+  function ioRowHTML(p, idx, io) {
+    const item = ITEM_BY_ID.get(p.itemId);
+    const label = item ? item.name : 'Pick item…';
+    const iconHtml = item
+      ? `<img src="${iconUrl(p.itemId)}" alt="" style="width:18px;height:18px;object-fit:contain;margin-right:8px;vertical-align:-4px" onerror="this.style.display='none'">`
+      : '';
+    return `
+      <div class="fc-io-row" data-io-row="1" data-io="${io}" data-pin-id="${p.id}">
+        <button class="fc-field-input" data-io-action="pick" style="text-align:left;display:flex;align-items:center;cursor:pointer">
+          ${iconHtml}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(label)}</span>
+        </button>
+        <input class="fc-field-input mono" type="number" min="0" step="0.1" value="${p.rate}" data-io-action="rate" title="Items per second (per machine)">
+        <button class="fc-io-delete" data-io-action="del" title="Remove pin">✕</button>
+      </div>
+    `;
+  }
+
+  /* ====================================================================
+     ITEM PICKER MODAL
+     ==================================================================== */
+  let activeCategory = 'All';
+  let activeSearch = '';
+
+  function openItemPicker(cb) {
+    state.itemPicker = cb;
+    itemModal.classList.add('active');
+    itemModal.setAttribute('aria-hidden', 'false');
+    activeSearch = '';
+    itemSearch.value = '';
+    setTimeout(() => itemSearch.focus(), 50);
+    renderItemPicker();
+  }
+  function closeItemPicker() {
+    state.itemPicker = null;
+    itemModal.classList.remove('active');
+    itemModal.setAttribute('aria-hidden', 'true');
+  }
+  function renderItemPickerCategories() {
+    itemCats.innerHTML = '';
+    const all = ['All', ...CATS];
+    all.forEach(c => {
+      const b = document.createElement('button');
+      b.textContent = c;
+      b.classList.toggle('active', c === activeCategory);
+      b.addEventListener('click', () => {
+        activeCategory = c;
+        renderItemPicker();
+      });
+      itemCats.appendChild(b);
+    });
+  }
+  function renderItemPicker() {
+    renderItemPickerCategories();
+    const q = activeSearch.toLowerCase().trim();
+    let list = ITEMS_UNIQUE;
+    if (activeCategory !== 'All') list = list.filter(i => i.cat === activeCategory);
+    if (q) list = list.filter(i => i.name.toLowerCase().includes(q));
+    if (list.length === 0) {
+      itemGrid.innerHTML = '<div class="fc-modal-empty">No items match — try a different search.</div>';
+      return;
+    }
+    itemGrid.innerHTML = list.map(i => {
+      const u = iconUrl(i.id);
+      return `
+        <div class="fc-item-card" data-item-id="${i.id}" title="${escapeHtml(i.name)}">
+          <img src="${u}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'fc-item-card-fallback',textContent:'${escapeHtml(i.name[0])}'}))">
+          <span class="fc-item-card-label">${escapeHtml(i.name)}</span>
+        </div>
+      `;
+    }).join('');
+    itemGrid.querySelectorAll('.fc-item-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const id = card.dataset.itemId;
+        if (state.itemPicker) state.itemPicker(id);
+        closeItemPicker();
+      });
+    });
+  }
+  itemSearch.addEventListener('input', () => {
+    activeSearch = itemSearch.value;
+    renderItemPicker();
+  });
+  itemSearch.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeItemPicker();
+    if (e.key === 'Enter') {
+      const first = itemGrid.querySelector('.fc-item-card');
+      if (first) first.click();
+    }
+  });
+  itemModalClose.addEventListener('click', closeItemPicker);
+  itemModal.addEventListener('click', (e) => {
+    if (e.target === itemModal) closeItemPicker();
+  });
+
+  /* ====================================================================
+     SUMMARY
+     ==================================================================== */
+  function updateSummary() {
+    statNodes.textContent = state.nodes.size;
+    statEdges.textContent = state.edges.size;
+    let machines = 0, surplus = 0, deficit = 0;
+    state.nodes.forEach(n => {
+      if (n.kind === 'machine') machines += (n.count || 1);
+    });
+    const flows = computeFlows();
+    flows.forEach(nf => {
+      nf.out.forEach(v => { if (v.surplus > 0.0001) surplus += v.surplus; });
+      nf.in.forEach(v => { if (v.deficit > 0.0001) deficit += v.deficit; });
+    });
+    statMachines.textContent = formatRate(machines);
+    statSurplus.textContent = formatRate(surplus);
+    statDeficit.textContent = formatRate(deficit);
+    $('fcRowSurplus').classList.toggle('surplus', surplus > 0);
+    $('fcRowDeficit').classList.toggle('deficit', deficit > 0);
+  }
+
+  /* ====================================================================
+     TOOLBAR
+     ==================================================================== */
+  $('fcZoomReset').addEventListener('click', resetView);
+  $('fcZoomFit').addEventListener('click', fitToContent);
+  $('fcSave').addEventListener('click', saveGraph);
+  $('fcExport').addEventListener('click', () => {
+    const data = {
+      nextId: state.nextId,
+      view: state.view,
+      nodes: Array.from(state.nodes.values()),
+      edges: Array.from(state.edges.values()),
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'factory-graph.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 100);
+  });
+  $('fcImport').addEventListener('click', () => $('fcImportFile').click());
+  $('fcImportFile').addEventListener('change', (e) => {
+    const f = e.target.files?.[0]; if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        loadGraph(data);
+        toastSafe('Graph imported');
+      } catch (err) {
+        toastSafe('Invalid JSON');
+      }
+    };
+    reader.readAsText(f);
+    e.target.value = '';
+  });
+  $('fcClear').addEventListener('click', () => {
+    if (!confirm('Clear the entire graph? This cannot be undone.')) return;
+    state.nodes.clear();
+    state.edges.clear();
+    state.selectedNodeId = null;
+    renderAll();
+  });
+
+  function resetView() {
+    state.view = { x: 0, y: 0, zoom: 1 };
+    applyTransform();
+    renderEdges();
+  }
+  function fitToContent() {
+    if (state.nodes.size === 0) { resetView(); return; }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    state.nodes.forEach(n => {
+      const el = world.querySelector(`[data-node-id="${n.id}"]`);
+      const w = el ? el.offsetWidth : 230;
+      const h = el ? el.offsetHeight : 180;
+      if (n.x < minX) minX = n.x;
+      if (n.y < minY) minY = n.y;
+      if (n.x + w > maxX) maxX = n.x + w;
+      if (n.y + h > maxY) maxY = n.y + h;
+    });
+    const r = cvs.getBoundingClientRect();
+    const pad = 80;
+    const sx = (r.width  - pad * 2) / (maxX - minX);
+    const sy = (r.height - pad * 2) / (maxY - minY);
+    const zoom = Math.max(0.2, Math.min(1.5, Math.min(sx, sy)));
+    state.view.zoom = zoom;
+    state.view.x = r.width  / 2 - (minX + (maxX - minX) / 2) * zoom;
+    state.view.y = r.height / 2 - (minY + (maxY - minY) / 2) * zoom;
+    applyTransform();
+    renderEdges();
+  }
+
+  /* ====================================================================
+     PALETTE BUTTONS
+     ==================================================================== */
+  main.querySelectorAll('[data-add-node]').forEach(b => {
+    b.addEventListener('click', () => addNodeOfKind(b.dataset.addNode));
+  });
+  main.querySelectorAll('[data-template]').forEach(b => {
+    b.addEventListener('click', () => applyTemplate(b.dataset.template));
+  });
+
+  /* Some quick-start templates so users see something useful immediately */
+  function applyTemplate(kind) {
+    const r = cvs.getBoundingClientRect();
+    const center = clientToWorld(r.left + r.width / 2, r.top + r.height / 2);
+    if (kind === 'smelter-iron') {
+      const src = defaultNode('input',   center.x - 380, center.y - 60);
+      src.name = 'Iron Ore Mine'; src.minerMark = 1; src.purity = 'normal'; src.overclock = 100;
+      src.outputs[0] = { id: uid('p'), itemId: 'iron-ore', rate: 60 };
+      const mach = defaultNode('machine', center.x - 100, center.y - 80);
+      mach.name = 'Iron Smelters'; mach.building = 'Smelter'; mach.count = 2;
+      mach.inputs  = [{ id: uid('p'), itemId: 'iron-ore',   rate: 30 }];
+      mach.outputs = [{ id: uid('p'), itemId: 'iron-ingot', rate: 30 }];
+      const out = defaultNode('output', center.x + 200, center.y - 60);
+      out.name = 'Iron Ingot Storage'; out.inputs = [{ id: uid('p'), itemId: 'iron-ingot', rate: 60 }];
+      state.nodes.set(src.id, src);
+      state.nodes.set(mach.id, mach);
+      state.nodes.set(out.id, out);
+      addEdge({ nodeId: src.id, pinId: src.outputs[0].id }, { nodeId: mach.id, pinId: mach.inputs[0].id });
+      addEdge({ nodeId: mach.id, pinId: mach.outputs[0].id }, { nodeId: out.id, pinId: out.inputs[0].id });
+    } else if (kind === 'constructor-iron-plate') {
+      const m = defaultNode('machine', center.x - 110, center.y - 80);
+      m.name = 'Iron Plate'; m.building = 'Constructor';
+      m.inputs  = [{ id: uid('p'), itemId: 'iron-ingot', rate: 30 }];
+      m.outputs = [{ id: uid('p'), itemId: 'iron-plate', rate: 20 }];
+      state.nodes.set(m.id, m);
+    } else if (kind === 'assembler-reinforced') {
+      const m = defaultNode('machine', center.x - 110, center.y - 100);
+      m.name = 'Reinforced Iron Plate'; m.building = 'Assembler';
+      m.inputs = [
+        { id: uid('p'), itemId: 'iron-plate', rate: 30 },
+        { id: uid('p'), itemId: 'screw',      rate: 60 },
+      ];
+      m.outputs = [{ id: uid('p'), itemId: 'reinforced-iron-plate', rate: 5 }];
+      state.nodes.set(m.id, m);
+    }
+    renderAll();
+    fitToContent();
+  }
+
+  /* ====================================================================
+     UTIL — toast (reuses global if available)
+     ==================================================================== */
+  function toastSafe(msg) {
+    try { if (typeof toast === 'function') return toast(msg); } catch {}
+    console.log('[Factory]', msg);
+  }
+
+  /* ====================================================================
+     INIT
+     ==================================================================== */
+  const tabBtn = document.querySelector('[data-tab="factory"]');
+  let firstActivation = true;
+  if (tabBtn) {
+    tabBtn.addEventListener('click', () => {
+      setTimeout(() => {
+        // Re-render edges (because they depend on getBoundingClientRect)
+        if (firstActivation) {
+          firstActivation = false;
+          if (!tryAutoLoad()) {
+            // Seed with a simple starter graph
+            applyTemplate('smelter-iron');
+          }
+        }
+        renderEdges();
+      }, 50);
+    });
+  }
+
+  // Initial render so the empty state shows
+  renderAll();
+
+  // Auto-save on window unload
+  window.addEventListener('beforeunload', () => {
+    if (state.nodes.size > 0) {
+      try {
+        const data = {
+          nextId: state.nextId,
+          view: state.view,
+          nodes: Array.from(state.nodes.values()),
+          edges: Array.from(state.edges.values()),
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      } catch {}
+    }
+  });
+
+  // Resize observer for edges
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(() => renderEdges()).observe(cvs);
+  }
 
 })();
 </script>
