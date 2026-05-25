@@ -4518,10 +4518,12 @@
     border-radius: 7px 7px 0 0;
   }
   .fc-node-header:active { cursor: grabbing; }
-  .fc-node-header.type-machine { --fc-header-bg: #d4a843; }
-  .fc-node-header.type-input   { --fc-header-bg: #4f9e6e; }
-  .fc-node-header.type-output  { --fc-header-bg: #c45e57; }
-  .fc-node-header.type-group   { --fc-header-bg: #6a6dcf; }
+  .fc-node-header.type-machine  { --fc-header-bg: #d4a843; }
+  .fc-node-header.type-input    { --fc-header-bg: #4f9e6e; }
+  .fc-node-header.type-output   { --fc-header-bg: #c45e57; }
+  .fc-node-header.type-group    { --fc-header-bg: #6a6dcf; }
+  .fc-node-header.type-splitter { --fc-header-bg: #4a8ec4; }
+  .fc-node-header.type-merger   { --fc-header-bg: #b5639a; }
   .fc-node-header .fc-nh-icon { font-size: 13px; opacity: 0.95; }
   .fc-node-header .fc-nh-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .fc-node-header .fc-nh-del {
@@ -4619,7 +4621,15 @@
     transform: translateY(-50%);
     cursor: crosshair;
     z-index: 2;
-    transition: background 0.15s, transform 0.15s;
+    transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
+  }
+  /* Enlarged invisible hit area so pins are easy to grab (magnet-like feel) */
+  .fc-pin-handle::after {
+    content: '';
+    position: absolute;
+    inset: -10px;
+    border-radius: 50%;
+    background: transparent;
   }
   .fc-pin.in  .fc-pin-handle { left: -7px; }
   .fc-pin.out .fc-pin-handle { right: -7px; }
@@ -4627,6 +4637,12 @@
   .fc-pin-handle:hover, .fc-pin-handle.hover {
     transform: translateY(-50%) scale(1.3);
     background: var(--fc-pin-color, #d4a843);
+  }
+  /* Magnetic snap state — when a pending connection is within range */
+  .fc-pin-handle.magnet {
+    transform: translateY(-50%) scale(1.6);
+    background: #d4a843;
+    box-shadow: 0 0 0 4px rgba(212, 168, 67, 0.25), 0 0 16px rgba(212, 168, 67, 0.6);
   }
   .fc-pin-icon {
     width: 22px; height: 22px;
@@ -4925,6 +4941,173 @@
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
   }
+
+  /* ============================================================
+     Smart Build — auto-factory generator
+     ============================================================ */
+  .fc-palette-btn.fc-palette-smart {
+    background: linear-gradient(135deg, rgba(212,168,67,0.12), rgba(74,142,196,0.12));
+    border-color: rgba(212,168,67,0.35);
+  }
+  .fc-palette-btn.fc-palette-smart:hover {
+    border-color: rgba(212,168,67,0.6);
+    background: linear-gradient(135deg, rgba(212,168,67,0.18), rgba(74,142,196,0.18));
+  }
+  .fc-palette-btn.fc-palette-smart .fc-pb-glyph { color: #d4a843; }
+
+  .fc-smart-modal {
+    max-width: 760px;
+    width: 100%;
+  }
+  .fc-smart-intro {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    line-height: 1.55;
+    margin: 0 0 16px;
+    padding: 12px 14px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .fc-smart-intro b { color: var(--text); font-weight: 600; }
+  .fc-smart-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+  @media (max-width: 720px) { .fc-smart-cols { grid-template-columns: 1fr; } }
+  .fc-smart-col {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+  }
+  .fc-smart-col-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .fc-smart-hint { color: var(--text-faint); text-transform: none; letter-spacing: 0.02em; }
+  .fc-smart-rows {
+    display: flex; flex-direction: column; gap: 6px;
+    max-height: 240px; overflow-y: auto;
+    padding-right: 4px;
+    margin-bottom: 8px;
+  }
+  .fc-smart-rows::-webkit-scrollbar { width: 6px; }
+  .fc-smart-rows::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .fc-smart-row {
+    display: grid;
+    grid-template-columns: 1fr 80px 26px;
+    gap: 6px;
+    align-items: center;
+  }
+  .fc-smart-row select,
+  .fc-smart-row input[type="number"] {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 7px 9px;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 12px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .fc-smart-row select:focus,
+  .fc-smart-row input[type="number"]:focus {
+    border-color: var(--border-hover);
+    outline: none;
+  }
+  .fc-smart-row .fc-smart-rate-unit {
+    position: relative;
+  }
+  .fc-smart-row .fc-smart-del {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-faint);
+    width: 26px; height: 28px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    padding: 0;
+  }
+  .fc-smart-row .fc-smart-del:hover { color: #ff7676; border-color: #ff7676; }
+  .fc-smart-add {
+    width: 100%;
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--text-dim);
+    padding: 7px;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 11.5px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .fc-smart-add:hover {
+    background: var(--surface);
+    border-color: var(--border-hover);
+    color: var(--text);
+  }
+  .fc-smart-options {
+    margin-bottom: 14px;
+    padding: 10px 12px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .fc-smart-opt {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .fc-smart-opt input[type="checkbox"] {
+    width: 14px; height: 14px;
+    accent-color: #d4a843;
+  }
+  .fc-smart-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+  .fc-smart-go {
+    background: linear-gradient(135deg, #d4a843, #b48a35) !important;
+    color: #1a1d24 !important;
+    font-weight: 600;
+    border-color: transparent !important;
+  }
+  .fc-smart-go:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(212,168,67,0.3);
+  }
+  .fc-smart-report {
+    margin-top: 14px;
+    padding: 12px 14px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.6;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .fc-smart-report b { color: var(--text); }
+  .fc-smart-report .ok      { color: #4f9e6e; }
+  .fc-smart-report .warn    { color: #d4a843; }
+  .fc-smart-report .miss    { color: #ff7676; }
+  .fc-smart-report ul { margin: 6px 0 0 16px; padding: 0; }
+  .fc-smart-report li { margin: 2px 0; }
 </style>
 </head>
 <body>
@@ -6451,6 +6634,26 @@
               <span>Goal</span>
               <span class="fc-pb-meta">O</span>
             </button>
+            <button class="fc-palette-btn" data-add-node="splitter">
+              <span class="fc-pb-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h7"/><path d="M10 12l6-5"/><path d="M10 12h7"/><path d="M10 12l6 5"/><circle cx="17" cy="7" r="1.4"/><circle cx="17" cy="12" r="1.4"/><circle cx="17" cy="17" r="1.4"/></svg></span>
+              <span>Splitter</span>
+              <span class="fc-pb-meta">S</span>
+            </button>
+            <button class="fc-palette-btn" data-add-node="merger">
+              <span class="fc-pb-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="1.4"/><circle cx="7" cy="12" r="1.4"/><circle cx="7" cy="17" r="1.4"/><path d="M7 7l6 5"/><path d="M7 12h6"/><path d="M7 17l6-5"/><path d="M13 12h8"/></svg></span>
+              <span>Merger</span>
+              <span class="fc-pb-meta">G</span>
+            </button>
+          </div>
+          <div class="fc-palette-section">
+            <div class="fc-palette-title">Smart Build</div>
+            <button class="fc-palette-btn fc-palette-smart" id="fcSmartBuildBtn">
+              <span class="fc-pb-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/><circle cx="12" cy="12" r="4"/></svg></span>
+              <span>Auto-build factory…</span>
+            </button>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-faint);line-height:1.6;letter-spacing:0.02em;padding:6px 2px">
+              List what you have, set your goals, get an optimized graph.
+            </div>
           </div>
           <div class="fc-palette-section">
             <div class="fc-palette-title">Templates</div>
@@ -6470,12 +6673,14 @@
           <div class="fc-palette-section">
             <div class="fc-palette-title">Controls</div>
             <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-faint);line-height:1.8;letter-spacing:0.02em;padding:6px 2px">
-              <div><strong style="color:var(--text-dim)">Drag canvas</strong> · pan</div>
+              <div><strong style="color:var(--text-dim)">Right-drag</strong> · pan</div>
+              <div><strong style="color:var(--text-dim)">Middle-drag</strong> · pan</div>
+              <div><strong style="color:var(--text-dim)">Space + drag</strong> · pan</div>
               <div><strong style="color:var(--text-dim)">Scroll</strong> · zoom</div>
-              <div><strong style="color:var(--text-dim)">Drag pin</strong> · connect</div>
-              <div><strong style="color:var(--text-dim)">Click node</strong> · select</div>
-              <div><strong style="color:var(--text-dim)">Del</strong> · delete</div>
+              <div><strong style="color:var(--text-dim)">Drag pin</strong> · connect (magnetic)</div>
+              <div><strong style="color:var(--text-dim)">Drag node out</strong> · delete</div>
               <div><strong style="color:var(--text-dim)">Click edge</strong> · remove</div>
+              <div><strong style="color:var(--text-dim)">Del</strong> · delete selected</div>
             </div>
           </div>
         </div>
@@ -6534,6 +6739,46 @@
         <input type="text" class="fc-modal-search" id="fcItemSearch" placeholder="Search items… (e.g. iron, plate, wire)">
         <div class="fc-modal-categories" id="fcItemCats"></div>
         <div class="fc-modal-grid" id="fcItemGrid"></div>
+      </div>
+    </div>
+
+    <!-- Smart Build modal — auto-generate factory from goals + inputs -->
+    <div class="fc-modal-overlay" id="fcSmartModal" aria-hidden="true">
+      <div class="fc-modal fc-smart-modal" role="dialog" aria-modal="true">
+        <div class="fc-modal-header">
+          <h3>Smart Build · auto-factory</h3>
+          <button class="fc-modal-close" id="fcSmartModalClose" aria-label="Close">✕</button>
+        </div>
+        <div class="fc-smart-intro">
+          List your <b>goals</b> (what you want per minute) and your <b>available supply</b> (what raw resources you already have). The solver computes machine counts, picks recipes, lays out the graph, and wires everything.
+        </div>
+
+        <div class="fc-smart-cols">
+          <div class="fc-smart-col">
+            <div class="fc-smart-col-title">Goals · what to produce</div>
+            <div class="fc-smart-rows" id="fcSmartGoals"></div>
+            <button class="fc-smart-add" data-smart-add="goal">+ Add goal</button>
+          </div>
+          <div class="fc-smart-col">
+            <div class="fc-smart-col-title">Supply · what you have <span class="fc-smart-hint">(optional)</span></div>
+            <div class="fc-smart-rows" id="fcSmartSupply"></div>
+            <button class="fc-smart-add" data-smart-add="supply">+ Add supply</button>
+          </div>
+        </div>
+
+        <div class="fc-smart-options">
+          <label class="fc-smart-opt">
+            <input type="checkbox" id="fcSmartClear" checked>
+            <span>Clear current graph before building</span>
+          </label>
+        </div>
+
+        <div class="fc-smart-actions">
+          <button class="fc-tb-btn" id="fcSmartCancel">Cancel</button>
+          <button class="fc-tb-btn fc-smart-go" id="fcSmartGo">Generate factory →</button>
+        </div>
+
+        <div class="fc-smart-report" id="fcSmartReport" hidden></div>
       </div>
     </div>
   </main>
@@ -16846,6 +17091,41 @@ Takes:  {
         inputs:  [{ id: uid('p'), itemId: 'iron-plate', rate: 60 }],
       };
     }
+    if (kind === 'splitter') {
+      // 1 input → 3 outputs. Item is "any"; the splitter passes through
+      // whatever item arrives, evenly divided among connected outputs.
+      // We store itemId = '' (wildcard) and rate=0; the flow solver fills
+      // these dynamically from the upstream producer.
+      return {
+        id: uid('n'),
+        kind: 'splitter',
+        name: 'Splitter',
+        x, y,
+        count: 1,
+        inputs:  [{ id: uid('p'), itemId: '', rate: 0 }],
+        outputs: [
+          { id: uid('p'), itemId: '', rate: 0 },
+          { id: uid('p'), itemId: '', rate: 0 },
+          { id: uid('p'), itemId: '', rate: 0 },
+        ],
+      };
+    }
+    if (kind === 'merger') {
+      // 3 inputs → 1 output. Sums incoming rates of the SAME item.
+      return {
+        id: uid('n'),
+        kind: 'merger',
+        name: 'Merger',
+        x, y,
+        count: 1,
+        inputs: [
+          { id: uid('p'), itemId: '', rate: 0 },
+          { id: uid('p'), itemId: '', rate: 0 },
+          { id: uid('p'), itemId: '', rate: 0 },
+        ],
+        outputs: [{ id: uid('p'), itemId: '', rate: 0 }],
+      };
+    }
   }
 
   /* ====================================================================
@@ -16977,6 +17257,8 @@ Takes:  {
     const typeClass = 'type-' + n.kind;
     const headerIcon = n.kind === 'machine' ? '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><rect x="3" y="8" width="18" height="12" rx="1"/><path d="M7 8V4h10v4" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>'
                     : n.kind === 'input'   ? '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>'
+                    : n.kind === 'splitter'? '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h7l5-5M10 12l5 5M21 7h-6M21 12h-6M21 17h-6"/></svg>'
+                    : n.kind === 'merger'  ? '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h6M3 12h6M3 17h6M9 7l5 5M9 17l5-5M14 12h7"/></svg>'
                     :                        '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M11 6L5 12l6 6"/></svg>';
 
     const inputs = (n.inputs || []).map(p => pinHTML(n, p, 'in', nodeFlow.in.get(p.id))).join('');
@@ -17007,6 +17289,20 @@ Takes:  {
           <span class="fc-stack-label">× Stack</span>
           <input class="fc-stack-input" type="number" min="0.01" step="0.1" value="${n.count}" data-bind="count">
         </div>
+      `;
+    } else if (n.kind === 'splitter') {
+      body = `
+        <div class="fc-node-section">In (auto)</div>
+        ${inputs}
+        <div class="fc-node-section">Out · evenly divided</div>
+        ${outputs}
+      `;
+    } else if (n.kind === 'merger') {
+      body = `
+        <div class="fc-node-section">In · summed</div>
+        ${inputs}
+        <div class="fc-node-section">Out (auto)</div>
+        ${outputs}
       `;
     }
 
@@ -17047,13 +17343,16 @@ Takes:  {
 
   function pinHTML(n, p, side, flowInfo) {
     const item = ITEM_BY_ID.get(p.itemId);
-    const label = item ? item.name : 'Unset';
+    // Splitter/merger wildcard pins: show "Pass-through" when not yet
+    // resolved to an item by the upstream producer.
+    const isPassthrough = (n.kind === 'splitter' || n.kind === 'merger') && !p.itemId;
+    const label = item ? item.name : (isPassthrough ? 'Pass-through' : 'Unset');
     const url = item ? iconUrl(p.itemId) : '';
     const totalRate = p.rate * (n.count || 1);
 
     // Surplus/deficit label
     let rateClass = '';
-    let rateText = formatRate(totalRate) + '/s';
+    let rateText = formatRate(totalRate) + '/min';
     if (side === 'out' && flowInfo) {
       const surplus = flowInfo.surplus;
       if (surplus > 0.0001) { rateClass = 'surplus'; rateText += ` · +${formatRate(surplus)}`; }
@@ -17103,7 +17402,85 @@ Takes:  {
      (machine inputs * count + output-node demand). Each pin's local
      surplus/deficit is its share of the global imbalance.
      ==================================================================== */
+  /* Propagate item/rate through splitter & merger nodes so they reflect
+     what their connected upstream producers actually send. Splitters
+     divide evenly across their CONNECTED outputs (ignoring unconnected
+     ones). Mergers sum all connected input rates. Runs iteratively to
+     handle chained splitters/mergers. */
+  function propagateSplitterMergerFlow() {
+    const MAX_PASSES = 16;
+    for (let pass = 0; pass < MAX_PASSES; pass++) {
+      let changed = false;
+      state.nodes.forEach(n => {
+        if (n.kind === 'splitter') {
+          const inPin = n.inputs[0];
+          let incomingItem = '', incomingRate = 0;
+          state.edges.forEach(e => {
+            if (e.toNodeId === n.id && e.toPinId === inPin.id) {
+              const src = state.nodes.get(e.fromNodeId);
+              const srcOut = src?.outputs?.find(p => p.id === e.fromPinId);
+              if (!srcOut) return;
+              incomingItem = srcOut.itemId;
+              const share = (srcOut.rate * (src.count || 1)) / countEdgesFromPin(src.id, srcOut.id);
+              incomingRate += share;
+            }
+          });
+          if (inPin.itemId !== incomingItem || Math.abs(inPin.rate - incomingRate) > 1e-6) {
+            inPin.itemId = incomingItem;
+            inPin.rate = incomingRate;
+            changed = true;
+          }
+          const connectedOuts = n.outputs.filter(p => {
+            for (const e of state.edges.values()) if (e.fromNodeId === n.id && e.fromPinId === p.id) return true;
+            return false;
+          });
+          const splitCount = Math.max(1, connectedOuts.length);
+          n.outputs.forEach(p => {
+            const isConn = connectedOuts.includes(p);
+            const newRate = isConn ? incomingRate / splitCount : 0;
+            if (p.itemId !== incomingItem || Math.abs(p.rate - newRate) > 1e-6) {
+              p.itemId = incomingItem;
+              p.rate = newRate;
+              changed = true;
+            }
+          });
+        } else if (n.kind === 'merger') {
+          let outItem = '', totalRate = 0;
+          n.inputs.forEach(inPin => {
+            let inItem = '', inRate = 0;
+            state.edges.forEach(e => {
+              if (e.toNodeId === n.id && e.toPinId === inPin.id) {
+                const src = state.nodes.get(e.fromNodeId);
+                const srcOut = src?.outputs?.find(p => p.id === e.fromPinId);
+                if (!srcOut) return;
+                inItem = srcOut.itemId;
+                inRate += (srcOut.rate * (src.count || 1)) / countEdgesFromPin(src.id, srcOut.id);
+              }
+            });
+            if (inPin.itemId !== inItem || Math.abs(inPin.rate - inRate) > 1e-6) {
+              inPin.itemId = inItem;
+              inPin.rate = inRate;
+              changed = true;
+            }
+            if (inItem) {
+              if (!outItem) outItem = inItem;
+              totalRate += inRate;
+            }
+          });
+          const outPin = n.outputs[0];
+          if (outPin.itemId !== outItem || Math.abs(outPin.rate - totalRate) > 1e-6) {
+            outPin.itemId = outItem;
+            outPin.rate = totalRate;
+            changed = true;
+          }
+        }
+      });
+      if (!changed) break;
+    }
+  }
+
   function computeFlows() {
+    propagateSplitterMergerFlow();
     const nodeFlows = new Map();
     // Aggregate supply/demand per item across all CONNECTED edges
     // The simpler, intuitive model: an output pin has surplus if its
@@ -17204,8 +17581,10 @@ Takes:  {
       const fromPin = (from?.outputs || []).find(p => p.id === e.fromPinId);
       const to = state.nodes.get(e.toNodeId);
       const toPin = (to?.inputs || []).find(p => p.id === e.toPinId);
-      const itemId = fromPin?.itemId;
-      const mismatch = fromPin && toPin && fromPin.itemId !== toPin.itemId;
+      const itemId = fromPin?.itemId || toPin?.itemId;
+      // Splitter & merger pins use '' as a wildcard — only flag mismatch
+      // when BOTH sides have a real item and they differ.
+      const mismatch = fromPin && toPin && fromPin.itemId && toPin.itemId && fromPin.itemId !== toPin.itemId;
       const color = mismatch ? '#ff7676' : itemColor(itemId);
 
       const path = bezierPath(p0, p1);
@@ -17314,7 +17693,15 @@ Takes:  {
   let connectState = null;   // for pending connection
 
   cvs.addEventListener('pointerdown', (e) => {
-    if (e.button === 2) return; // ignore right click
+    // RIGHT-click (button 2) or MIDDLE-click (button 1) → pan canvas immediately.
+    // Holding Space + left-click also pans (pro-tool convention).
+    if (e.button === 2 || e.button === 1 || spaceHeld) {
+      panState = { startX: e.clientX, startY: e.clientY, vx: state.view.x, vy: state.view.y };
+      cvs.classList.add('dragging');
+      cvs.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      return;
+    }
     const target = e.target;
 
     // Clicked node header → start drag
@@ -17368,12 +17755,26 @@ Takes:  {
       return;
     }
 
-    // Empty canvas → pan
-    panState = { startX: e.clientX, startY: e.clientY, vx: state.view.x, vy: state.view.y };
-    cvs.classList.add('dragging');
-    cvs.setPointerCapture(e.pointerId);
-    // Clear selection
+    // Empty canvas → clear selection (left-click no longer pans; use right-click / middle-click / Space+drag)
     selectNode(null);
+  });
+
+  // Space key as pan modifier (pro-tool convention)
+  let spaceHeld = false;
+  document.addEventListener('keydown', e => {
+    if (main.hidden) return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.code === 'Space' && !spaceHeld) {
+      spaceHeld = true;
+      cvs.style.cursor = 'grab';
+      e.preventDefault();
+    }
+  });
+  document.addEventListener('keyup', e => {
+    if (e.code === 'Space') {
+      spaceHeld = false;
+      cvs.style.cursor = '';
+    }
   });
 
   cvs.addEventListener('pointermove', (e) => {
@@ -17403,12 +17804,58 @@ Takes:  {
       const wp = clientToWorld(e.clientX, e.clientY);
       connectState.x = wp.x;
       connectState.y = wp.y;
-      // Hover detect on candidate target
-      const cand = document.elementFromPoint(e.clientX, e.clientY);
-      const candHandle = cand?.classList.contains('fc-pin-handle') ? cand : null;
-      world.querySelectorAll('.fc-pin-handle.hover').forEach(el => el.classList.remove('hover'));
-      if (candHandle && candHandle.dataset.side !== connectState.fromSide) {
-        candHandle.classList.add('hover');
+
+      // MAGNETIC PORT SNAP — find nearest compatible pin within radius.
+      // Radius is in screen pixels (so it feels the same regardless of zoom).
+      const SNAP_RADIUS_PX = 60;
+      const targetSide = connectState.fromSide === 'out' ? 'in' : 'out';
+      const allHandles = world.querySelectorAll(`.fc-pin-handle[data-side="${targetSide}"]`);
+      let best = null, bestDist = Infinity;
+      for (const h of allHandles) {
+        // Skip pins on the same node (can't self-connect)
+        const hNode = h.closest('.fc-node');
+        if (!hNode || hNode.dataset.nodeId === connectState.fromNodeId) continue;
+        const r = h.getBoundingClientRect();
+        const cx = r.left + r.width / 2;
+        const cy = r.top  + r.height / 2;
+        const dx = cx - e.clientX;
+        const dy = cy - e.clientY;
+        const d  = Math.hypot(dx, dy);
+        if (d < bestDist && d <= SNAP_RADIUS_PX) {
+          bestDist = d;
+          best = h;
+        }
+      }
+
+      // Visually clear old magnet highlights
+      world.querySelectorAll('.fc-pin-handle.hover, .fc-pin-handle.magnet').forEach(el => {
+        el.classList.remove('hover'); el.classList.remove('magnet');
+      });
+
+      // If a magnet target was found, snap the pending edge endpoint to its center
+      // (and remember it so pointerup uses it instead of elementFromPoint)
+      if (best) {
+        const bnodeEl = best.closest('.fc-node');
+        const bpinEl  = best.closest('[data-pin-id]');
+        const r = best.getBoundingClientRect();
+        const cvsR = cvs.getBoundingClientRect();
+        const snapX = (r.left + r.width/2  - cvsR.left - state.view.x) / state.view.zoom;
+        const snapY = (r.top  + r.height/2 - cvsR.top  - state.view.y) / state.view.zoom;
+        connectState.x = snapX;
+        connectState.y = snapY;
+        connectState.snapTarget = {
+          nodeId: bnodeEl.dataset.nodeId,
+          pinId:  bpinEl.dataset.pinId,
+          side:   best.dataset.side,
+        };
+        best.classList.add('magnet');
+      } else {
+        connectState.snapTarget = null;
+        // Still highlight exact hover for direct-on-pin connecting
+        const cand = document.elementFromPoint(e.clientX, e.clientY);
+        if (cand?.classList.contains('fc-pin-handle') && cand.dataset.side !== connectState.fromSide) {
+          cand.classList.add('hover');
+        }
       }
       renderEdges();
     }
@@ -17435,28 +17882,42 @@ Takes:  {
       dragState = null;
     }
     if (connectState) {
-      // Resolve connection
-      const cand = document.elementFromPoint(e.clientX, e.clientY);
-      if (cand?.classList.contains('fc-pin-handle')) {
-        const toNodeEl = cand.closest('.fc-node');
-        const toPinEl  = cand.closest('[data-pin-id]');
-        const toSide   = cand.dataset.side;
-        if (toNodeEl && toPinEl && toSide !== connectState.fromSide) {
-          // Order: out → in
-          let from, to;
-          if (connectState.fromSide === 'out') {
-            from = { nodeId: connectState.fromNodeId, pinId: connectState.fromPinId };
-            to   = { nodeId: toNodeEl.dataset.nodeId,   pinId: toPinEl.dataset.pinId };
-          } else {
-            from = { nodeId: toNodeEl.dataset.nodeId,   pinId: toPinEl.dataset.pinId };
-            to   = { nodeId: connectState.fromNodeId, pinId: connectState.fromPinId };
+      // Prefer the magnetic snap target (within radius); fall back to exact pin under cursor.
+      let to = null, from = null;
+      if (connectState.snapTarget) {
+        const t = connectState.snapTarget;
+        if (connectState.fromSide === 'out') {
+          from = { nodeId: connectState.fromNodeId, pinId: connectState.fromPinId };
+          to   = { nodeId: t.nodeId,                pinId: t.pinId };
+        } else {
+          from = { nodeId: t.nodeId,                pinId: t.pinId };
+          to   = { nodeId: connectState.fromNodeId, pinId: connectState.fromPinId };
+        }
+        addEdge(from, to);
+      } else {
+        // Exact-pin fallback (legacy)
+        const cand = document.elementFromPoint(e.clientX, e.clientY);
+        if (cand?.classList.contains('fc-pin-handle')) {
+          const toNodeEl = cand.closest('.fc-node');
+          const toPinEl  = cand.closest('[data-pin-id]');
+          const toSide   = cand.dataset.side;
+          if (toNodeEl && toPinEl && toSide !== connectState.fromSide) {
+            if (connectState.fromSide === 'out') {
+              from = { nodeId: connectState.fromNodeId, pinId: connectState.fromPinId };
+              to   = { nodeId: toNodeEl.dataset.nodeId, pinId: toPinEl.dataset.pinId };
+            } else {
+              from = { nodeId: toNodeEl.dataset.nodeId, pinId: toPinEl.dataset.pinId };
+              to   = { nodeId: connectState.fromNodeId, pinId: connectState.fromPinId };
+            }
+            addEdge(from, to);
           }
-          addEdge(from, to);
         }
       }
       state.pendingConnection = null;
       connectState = null;
-      world.querySelectorAll('.fc-pin-handle.hover').forEach(el => el.classList.remove('hover'));
+      world.querySelectorAll('.fc-pin-handle.hover, .fc-pin-handle.magnet').forEach(el => {
+        el.classList.remove('hover'); el.classList.remove('magnet');
+      });
       renderAll();
     }
   });
@@ -17500,6 +17961,8 @@ Takes:  {
     } else if (e.key === 'm' || e.key === 'M') addNodeOfKind('machine');
     else if (e.key === 'i' || e.key === 'I') addNodeOfKind('input');
     else if (e.key === 'o' || e.key === 'O') addNodeOfKind('output');
+    else if (e.key === 's' || e.key === 'S') { if (!(e.ctrlKey || e.metaKey)) addNodeOfKind('splitter'); }
+    else if (e.key === 'g' || e.key === 'G') addNodeOfKind('merger');
     else if (e.key === 'Home') resetView();
   });
 
@@ -17620,7 +18083,7 @@ Takes:  {
     const n = state.nodes.get(state.selectedNodeId);
     inspectorSub.textContent = `${n.kind.toUpperCase()} · ${n.id}`;
 
-    const kindLabel = { machine: 'Machine', input: 'Source', output: 'Goal' }[n.kind];
+    const kindLabel = { machine: 'Machine', input: 'Source', output: 'Goal', splitter: 'Splitter', merger: 'Merger' }[n.kind];
     let html = `
       <div class="fc-field">
         <div class="fc-field-label"><span>Type</span></div>
@@ -17679,7 +18142,25 @@ Takes:  {
         <input class="fc-field-input mono" type="number" min="0.01" step="0.1" data-ins-bind="count" value="${n.count}">
       </div>
     `;
-    // Inputs
+    if (n.kind === 'splitter') {
+      html += `
+        <div class="fc-field" style="background:var(--surface-2);border-radius:8px;padding:10px 12px">
+          <div style="font-size:11.5px;color:var(--text-dim);line-height:1.5">
+            Splitter takes <b>1 input</b> and divides it evenly among its <b>connected outputs</b>. The item type and rate are auto-resolved from whatever's wired to the input — no manual setup needed.
+          </div>
+        </div>
+      `;
+    }
+    if (n.kind === 'merger') {
+      html += `
+        <div class="fc-field" style="background:var(--surface-2);border-radius:8px;padding:10px 12px">
+          <div style="font-size:11.5px;color:var(--text-dim);line-height:1.5">
+            Merger sums the rates of all <b>connected inputs</b> into a <b>single output</b>. Inputs should be the same item type (the output adopts the first connected input's item).
+          </div>
+        </div>
+      `;
+    }
+    // Inputs (skip for splitter/merger — auto-resolved from connections)
     if (n.kind === 'machine' || n.kind === 'output') {
       html += `<div class="fc-field"><div class="fc-field-label"><span>Inputs (per machine)</span></div>`;
       (n.inputs || []).forEach((p, i) => {
@@ -17687,7 +18168,7 @@ Takes:  {
       });
       html += `<button class="fc-add-row-btn" data-ins-action="add-input">+ Add input</button></div>`;
     }
-    // Outputs
+    // Outputs (skip for splitter/merger — auto-resolved)
     if (n.kind === 'machine' || n.kind === 'input') {
       html += `<div class="fc-field"><div class="fc-field-label"><span>Outputs (per machine)</span></div>`;
       (n.outputs || []).forEach((p, i) => {
@@ -18015,6 +18496,397 @@ Takes:  {
     try { if (typeof toast === 'function') return toast(msg); } catch {}
     console.log('[Factory]', msg);
   }
+
+  /* ====================================================================
+     SMART BUILD — recipe database + factory solver
+
+     Rates are derived as: (output_qty / cycle_time_seconds) * 60 = per minute.
+
+     Sources verified against the official Satisfactory wiki:
+       Smelter: 30 iron-ore/min → 30 iron-ingot/min (2s cycle)
+       Constructor iron-plate: 3 ingot → 2 plate (6s) = 20 plate/min
+       Constructor iron-rod: 1 ingot → 1 rod (4s) = 15 rod/min
+       Constructor screw: 1 rod → 4 screw (6s) = 40 screw/min
+       Assembler reinforced-iron-plate: 6 plate + 12 screw → 1 RIP (12s) = 5 RIP/min
+       Foundry steel-ingot: 3 iron-ore + 3 coal → 3 steel-ingot (4s) = 45/min
+     ==================================================================== */
+  const RECIPES = {
+    // === Smelter ===
+    'iron-ingot':     { building: 'Smelter',     time: 2,  ins: [['iron-ore', 1]],     outs: [['iron-ingot', 1]] },
+    'copper-ingot':   { building: 'Smelter',     time: 2,  ins: [['copper-ore', 1]],   outs: [['copper-ingot', 1]] },
+    'caterium-ingot': { building: 'Smelter',     time: 4,  ins: [['caterium-ore', 3]], outs: [['caterium-ingot', 1]] },
+    // === Foundry ===
+    'steel-ingot':    { building: 'Foundry',     time: 4,  ins: [['iron-ore', 3], ['coal', 3]], outs: [['steel-ingot', 3]] },
+    // === Constructor ===
+    'iron-plate':     { building: 'Constructor', time: 6,  ins: [['iron-ingot', 3]],   outs: [['iron-plate', 2]] },
+    'iron-rod':       { building: 'Constructor', time: 4,  ins: [['iron-ingot', 1]],   outs: [['iron-rod', 1]] },
+    'screw':          { building: 'Constructor', time: 6,  ins: [['iron-rod', 1]],     outs: [['screw', 4]] },
+    'wire':           { building: 'Constructor', time: 4,  ins: [['copper-ingot', 1]], outs: [['wire', 2]] },
+    'cable':          { building: 'Constructor', time: 2,  ins: [['wire', 2]],         outs: [['cable', 1]] },
+    'copper-sheet':   { building: 'Constructor', time: 6,  ins: [['copper-ingot', 2]], outs: [['copper-sheet', 1]] },
+    'concrete':       { building: 'Constructor', time: 4,  ins: [['limestone', 3]],    outs: [['concrete', 1]] },
+    'quickwire':      { building: 'Constructor', time: 5,  ins: [['caterium-ingot', 1]], outs: [['quickwire', 5]] },
+    'steel-beam':     { building: 'Constructor', time: 4,  ins: [['steel-ingot', 4]],  outs: [['steel-beam', 1]] },
+    'steel-pipe':     { building: 'Constructor', time: 6,  ins: [['steel-ingot', 3]],  outs: [['steel-pipe', 2]] },
+    'silica':         { building: 'Constructor', time: 8,  ins: [['raw-quartz', 3]],   outs: [['silica', 5]] },
+    'quartz-crystal': { building: 'Constructor', time: 8,  ins: [['raw-quartz', 5]],   outs: [['quartz-crystal', 3]] },
+    // === Assembler ===
+    'reinforced-iron-plate': { building: 'Assembler', time: 12, ins: [['iron-plate', 6], ['screw', 12]],  outs: [['reinforced-iron-plate', 1]] },
+    'rotor':          { building: 'Assembler',   time: 15, ins: [['iron-rod', 5], ['screw', 25]], outs: [['rotor', 1]] },
+    'stator':         { building: 'Assembler',   time: 12, ins: [['steel-pipe', 3], ['wire', 8]], outs: [['stator', 1]] },
+    'modular-frame':  { building: 'Assembler',   time: 60, ins: [['reinforced-iron-plate', 3], ['iron-rod', 12]], outs: [['modular-frame', 2]] },
+    'motor':          { building: 'Assembler',   time: 12, ins: [['rotor', 2], ['stator', 2]], outs: [['motor', 1]] },
+    'smart-plating':  { building: 'Assembler',   time: 30, ins: [['reinforced-iron-plate', 1], ['rotor', 1]], outs: [['smart-plating', 1]] },
+    'versatile-framework': { building: 'Assembler', time: 24, ins: [['modular-frame', 1], ['steel-beam', 12]], outs: [['versatile-framework', 2]] },
+    'automated-wiring':    { building: 'Assembler', time: 24, ins: [['stator', 1], ['cable', 20]], outs: [['automated-wiring', 1]] },
+    'encased-industrial-beam': { building: 'Assembler', time: 10, ins: [['steel-beam', 4], ['concrete', 5]], outs: [['encased-industrial-beam', 1]] },
+    'ai-limiter':     { building: 'Assembler',   time: 12, ins: [['copper-sheet', 5], ['quickwire', 20]], outs: [['ai-limiter', 1]] },
+    'circuit-board':  { building: 'Assembler',   time: 8,  ins: [['copper-sheet', 2], ['plastic', 4]], outs: [['circuit-board', 1]] },
+  };
+
+  /* All raw materials referenced by recipes that have no recipe themselves. */
+  const RAW_ITEMS = (function() {
+    const used = new Set();
+    Object.values(RECIPES).forEach(r => r.ins.forEach(([id]) => used.add(id)));
+    return Array.from(used).filter(id => !RECIPES[id]);
+  })();
+
+  /* Get rate-per-minute of an output qty given recipe cycle time. */
+  function ratePerMin(qty, timeSec) { return (qty / timeSec) * 60; }
+
+  /* The complete solver — returns nodes+edges to insert, plus a report. */
+  function smartBuildSolve(goals, supply) {
+    // goals: [{itemId, ratePerMin}], supply: [{itemId, ratePerMin}]
+    const demand = new Map();          // itemId -> rate needed
+    const machineGroups = new Map();   // itemId -> { recipe, count, ratePerMin, perMachine }
+    const supplyMap = new Map();
+    supply.forEach(s => supplyMap.set(s.itemId, (supplyMap.get(s.itemId) || 0) + s.ratePerMin));
+
+    function require(itemId, rate) {
+      demand.set(itemId, (demand.get(itemId) || 0) + rate);
+      const recipe = RECIPES[itemId];
+      // If user has supply of this exact item, consume from supply first
+      const availableSupply = supplyMap.get(itemId) || 0;
+      const fromSupply = Math.min(rate, availableSupply);
+      supplyMap.set(itemId, availableSupply - fromSupply);
+      const remaining = rate - fromSupply;
+      if (remaining <= 1e-6) return;
+      if (!recipe) {
+        // Raw / unsolvable — record it as a needed source
+        // (we'll later create an input node for any item with rawDemand > 0)
+        return;
+      }
+      // Per-machine output rate (per minute)
+      const perMachineOut = ratePerMin(recipe.outs[0][1], recipe.time);
+      const machinesNeeded = remaining / perMachineOut;
+      const existing = machineGroups.get(itemId);
+      if (existing) {
+        existing.count += machinesNeeded;
+        existing.ratePerMin += remaining;
+      } else {
+        machineGroups.set(itemId, {
+          itemId, recipe,
+          building: recipe.building,
+          count: machinesNeeded,
+          ratePerMin: remaining,
+          perMachineOut,
+        });
+      }
+      // Recurse for inputs
+      const cyclesPerMin = 60 / recipe.time;
+      const machineCycles = machinesNeeded * cyclesPerMin;
+      recipe.ins.forEach(([inId, inQty]) => {
+        require(inId, inQty * machineCycles);
+      });
+    }
+
+    goals.forEach(g => require(g.itemId, g.ratePerMin));
+
+    // What raw items does the FACTORY need (sourced as input nodes)?
+    // We emit ONE input node per raw item, sized at the TOTAL demand so
+    // downstream wiring is balanced. The report tells the user how much
+    // of that is covered by their declared supply vs. needs miners.
+    const rawDemand = new Map();           // raw item id → total /min consumed by the factory
+    demand.forEach((rate, itemId) => {
+      if (RECIPES[itemId]) return; // not raw
+      if (rate > 1e-6) rawDemand.set(itemId, rate);
+    });
+    // ALSO: any non-raw item the user supplied that got consumed → needs a
+    // source node too (e.g. user supplies pre-made iron-ingot).
+    const nonRawSupplied = new Map();      // non-raw supplied item → rate consumed from supply
+    supply.forEach(s => {
+      if (!RECIPES[s.itemId]) return;      // it's raw, handled above
+      const leftover = supplyMap.get(s.itemId) || 0;
+      const consumed = s.ratePerMin - leftover;
+      if (consumed > 1e-6) nonRawSupplied.set(s.itemId, consumed);
+    });
+
+    // Raw shortfall (for the report): how much each raw item is NOT covered by user supply
+    const rawNeeds = new Map();
+    rawDemand.forEach((rate, itemId) => {
+      const supplied = supply.find(s => s.itemId === itemId)?.ratePerMin || 0;
+      const shortfall = rate - supplied;
+      if (shortfall > 1e-6) rawNeeds.set(itemId, shortfall);
+    });
+
+    // Surplus supply: user supplied more than the factory uses
+    const surplusSupply = new Map();
+    supplyMap.forEach((leftover, itemId) => {
+      if (leftover > 1e-6) surplusSupply.set(itemId, leftover);
+    });
+
+    // Compute depth for layout: 0 = raw, raw+1 for items only sourced from raw, etc.
+    const depthCache = new Map();
+    function depthOf(itemId) {
+      if (depthCache.has(itemId)) return depthCache.get(itemId);
+      const r = RECIPES[itemId];
+      if (!r) { depthCache.set(itemId, 0); return 0; }
+      let d = 0;
+      r.ins.forEach(([inId]) => { d = Math.max(d, depthOf(inId) + 1); });
+      depthCache.set(itemId, d);
+      return d;
+    }
+    rawDemand.forEach((_, id) => depthOf(id));
+    machineGroups.forEach((_, id) => depthOf(id));
+
+    // Group nodes by depth for left-to-right column layout
+    const byDepth = new Map();
+    function pushDepth(d, item) {
+      if (!byDepth.has(d)) byDepth.set(d, []);
+      byDepth.get(d).push(item);
+    }
+    // ONE input node per raw item, sized at total factory demand
+    rawDemand.forEach((rate, id) => pushDepth(0, { kind: 'input', itemId: id, rate }));
+    // ONE input node per pre-supplied intermediate (e.g. user has 30 iron-ingot)
+    nonRawSupplied.forEach((rate, id) => {
+      // Put it at the depth where it's needed, but one column left, so it
+      // lines up alongside the machine that would have produced it.
+      const d = Math.max(0, depthOf(id) - 1);
+      pushDepth(d, { kind: 'input', itemId: id, rate });
+    });
+    machineGroups.forEach(mg => pushDepth(depthOf(mg.itemId), { kind: 'machine', ...mg }));
+    const sinkDepth = Math.max(0, ...Array.from(depthCache.values())) + 1;
+    goals.forEach(g => pushDepth(sinkDepth, { kind: 'output', itemId: g.itemId, rate: g.ratePerMin }));
+
+    // Spawn nodes at grid positions (left-to-right by depth, top-to-bottom by index)
+    const COL_WIDTH = 320;
+    const ROW_HEIGHT = 220;
+    const newNodes = [];
+    const nodeByItem = new Map();     // key: "kind:itemId" → node (so wiring can find producers)
+
+    const depths = Array.from(byDepth.keys()).sort((a,b) => a - b);
+    depths.forEach(d => {
+      const col = byDepth.get(d);
+      col.forEach((item, rowIdx) => {
+        const x = 100 + d * COL_WIDTH;
+        const y = 100 + rowIdx * ROW_HEIGHT;
+        let n;
+        const itemName = ITEM_BY_ID.get(item.itemId)?.name || item.itemId;
+        if (item.kind === 'input') {
+          n = defaultNode('input', x, y);
+          n.name = itemName + ' Supply';
+          n.outputs = [{ id: uid('p'), itemId: item.itemId, rate: item.rate }];
+          n.count = 1;
+          n.minerMark = 1; n.purity = 'normal'; n.overclock = 100;
+        } else if (item.kind === 'machine') {
+          n = defaultNode('machine', x, y);
+          n.name = itemName;
+          n.building = item.building;
+          n.count = item.count;
+          const cyclesPerMin = 60 / item.recipe.time;
+          n.inputs = item.recipe.ins.map(([id, qty]) => ({
+            id: uid('p'), itemId: id, rate: qty * cyclesPerMin
+          }));
+          n.outputs = item.recipe.outs.map(([id, qty]) => ({
+            id: uid('p'), itemId: id, rate: qty * cyclesPerMin
+          }));
+        } else {
+          n = defaultNode('output', x, y);
+          n.name = itemName + ' (goal)';
+          n.inputs = [{ id: uid('p'), itemId: item.itemId, rate: item.rate }];
+          n.count = 1;
+        }
+        newNodes.push(n);
+        // For producer lookup: the producer of an item is either a machine
+        // whose primary output is that item, or an input node providing it.
+        nodeByItem.set(item.itemId, n);
+      });
+    });
+
+    // Wire edges: every consumer input pin gets matched to its producer's output pin.
+    const newEdges = [];
+    newNodes.forEach(consumer => {
+      (consumer.inputs || []).forEach(inPin => {
+        const producer = nodeByItem.get(inPin.itemId);
+        if (!producer) return;
+        const outPin = (producer.outputs || []).find(p => p.itemId === inPin.itemId);
+        if (!outPin) return;
+        newEdges.push({
+          from: { nodeId: producer.id, pinId: outPin.id },
+          to:   { nodeId: consumer.id, pinId: inPin.id },
+        });
+      });
+    });
+
+    return {
+      nodes: newNodes,
+      edges: newEdges,
+      report: {
+        demand,
+        machineGroups,
+        rawNeeds,
+        surplusSupply,
+        goals,
+        supplyOriginal: supply,
+      },
+    };
+  }
+
+  /* ----- Smart Build modal UI ----- */
+  const smartModal = $('fcSmartModal');
+  const smartGoalsEl = $('fcSmartGoals');
+  const smartSupplyEl = $('fcSmartSupply');
+  const smartReport = $('fcSmartReport');
+  let smartGoalRows = [];
+  let smartSupplyRows = [];
+
+  function openSmartModal() {
+    if (smartGoalRows.length === 0) addSmartRow('goal');
+    if (smartSupplyRows.length === 0) addSmartRow('supply');
+    renderSmartRows();
+    smartReport.hidden = true;
+    smartReport.innerHTML = '';
+    smartModal.classList.add('active');
+  }
+  function closeSmartModal() { smartModal.classList.remove('active'); }
+
+  function buildItemOptions(selectedId) {
+    // Goals: any recipe output OR raw item (so users can include raw "goals" too)
+    // Supply: raw items only (sources)
+    const items = [...ITEMS].sort((a,b) => a.name.localeCompare(b.name));
+    return items.map(it => `<option value="${it.id}" ${it.id === selectedId ? 'selected' : ''}>${escapeHtml(it.name)}</option>`).join('');
+  }
+  function buildSupplyOptions(selectedId) {
+    const ids = new Set(RAW_ITEMS);
+    // also include water/fluids and basic ingots, which user might already have
+    ITEMS.forEach(it => { if (it.cat === 'Raw' || it.cat === 'Fluid' || it.cat === 'Ingot') ids.add(it.id); });
+    const items = ITEMS.filter(it => ids.has(it.id)).sort((a,b) => a.name.localeCompare(b.name));
+    return items.map(it => `<option value="${it.id}" ${it.id === selectedId ? 'selected' : ''}>${escapeHtml(it.name)}</option>`).join('');
+  }
+
+  function renderSmartRows() {
+    smartGoalsEl.innerHTML = '';
+    smartGoalRows.forEach(row => {
+      const div = document.createElement('div');
+      div.className = 'fc-smart-row';
+      div.innerHTML = `
+        <select data-smart-item>${buildItemOptions(row.itemId)}</select>
+        <input type="number" min="0" step="1" data-smart-rate value="${row.rate}" placeholder="/min" title="Items per minute">
+        <button class="fc-smart-del" data-smart-remove title="Remove">✕</button>
+      `;
+      div.querySelector('[data-smart-item]').addEventListener('change', e => { row.itemId = e.target.value; });
+      div.querySelector('[data-smart-rate]').addEventListener('input', e => { row.rate = parseFloat(e.target.value) || 0; });
+      div.querySelector('[data-smart-remove]').addEventListener('click', () => {
+        smartGoalRows = smartGoalRows.filter(r => r !== row);
+        renderSmartRows();
+      });
+      smartGoalsEl.appendChild(div);
+    });
+
+    smartSupplyEl.innerHTML = '';
+    smartSupplyRows.forEach(row => {
+      const div = document.createElement('div');
+      div.className = 'fc-smart-row';
+      div.innerHTML = `
+        <select data-smart-item>${buildSupplyOptions(row.itemId)}</select>
+        <input type="number" min="0" step="1" data-smart-rate value="${row.rate}" placeholder="/min" title="Items per minute available">
+        <button class="fc-smart-del" data-smart-remove title="Remove">✕</button>
+      `;
+      div.querySelector('[data-smart-item]').addEventListener('change', e => { row.itemId = e.target.value; });
+      div.querySelector('[data-smart-rate]').addEventListener('input', e => { row.rate = parseFloat(e.target.value) || 0; });
+      div.querySelector('[data-smart-remove]').addEventListener('click', () => {
+        smartSupplyRows = smartSupplyRows.filter(r => r !== row);
+        renderSmartRows();
+      });
+      smartSupplyEl.appendChild(div);
+    });
+  }
+
+  function addSmartRow(kind) {
+    if (kind === 'goal') {
+      smartGoalRows.push({ itemId: 'reinforced-iron-plate', rate: 15 });
+    } else {
+      smartSupplyRows.push({ itemId: 'iron-ore', rate: 120 });
+    }
+    renderSmartRows();
+  }
+
+  function runSmartBuild() {
+    const goals  = smartGoalRows.filter(r => r.itemId && r.rate > 0).map(r => ({ itemId: r.itemId, ratePerMin: r.rate }));
+    const supply = smartSupplyRows.filter(r => r.itemId && r.rate > 0).map(r => ({ itemId: r.itemId, ratePerMin: r.rate }));
+    if (goals.length === 0) {
+      smartReport.hidden = false;
+      smartReport.innerHTML = '<span class="warn">⚠ Add at least one goal first.</span>';
+      return;
+    }
+    const result = smartBuildSolve(goals, supply);
+
+    // Optionally clear the current graph
+    if ($('fcSmartClear').checked) {
+      state.nodes.clear();
+      state.edges.clear();
+      state.selectedNodeId = null;
+    }
+
+    // Insert generated nodes & edges
+    result.nodes.forEach(n => state.nodes.set(n.id, n));
+    result.edges.forEach(e => addEdge(e.from, e.to));
+    renderAll();
+    setTimeout(fitToContent, 30);
+
+    // Build report
+    let html = '<b>Solver report</b><br>';
+    html += `Goals: ${result.report.goals.length}, machines spawned: ${Array.from(result.report.machineGroups.values()).reduce((a,b)=>a+b.count,0).toFixed(2)}<br>`;
+    if (result.report.machineGroups.size > 0) {
+      html += '<ul>';
+      Array.from(result.report.machineGroups.values()).forEach(mg => {
+        const name = ITEM_BY_ID.get(mg.itemId)?.name || mg.itemId;
+        html += `<li><b>${escapeHtml(name)}</b>: ${mg.count.toFixed(2)} × ${mg.building} → ${mg.ratePerMin.toFixed(1)}/min</li>`;
+      });
+      html += '</ul>';
+    }
+    if (result.report.rawNeeds.size > 0) {
+      html += '<br><span class="miss">Still need to source from miners:</span><ul>';
+      result.report.rawNeeds.forEach((rate, id) => {
+        const name = ITEM_BY_ID.get(id)?.name || id;
+        html += `<li><b>${escapeHtml(name)}</b>: ${rate.toFixed(1)}/min</li>`;
+      });
+      html += '</ul>';
+    } else if (supply.length > 0) {
+      html += '<br><span class="ok">✓ Your declared supply covers all raw needs.</span>';
+    }
+    if (result.report.surplusSupply.size > 0) {
+      html += '<br><span class="ok">Unused supply (leftover):</span><ul>';
+      result.report.surplusSupply.forEach((rate, id) => {
+        const name = ITEM_BY_ID.get(id)?.name || id;
+        html += `<li>${escapeHtml(name)}: ${rate.toFixed(1)}/min</li>`;
+      });
+      html += '</ul>';
+    }
+    smartReport.hidden = false;
+    smartReport.innerHTML = html;
+    toastSafe(`Generated ${result.nodes.length} nodes, ${result.edges.length} connections`);
+  }
+
+  // Wire up smart-build modal
+  $('fcSmartBuildBtn')?.addEventListener('click', openSmartModal);
+  $('fcSmartModalClose')?.addEventListener('click', closeSmartModal);
+  $('fcSmartCancel')?.addEventListener('click', closeSmartModal);
+  $('fcSmartGo')?.addEventListener('click', runSmartBuild);
+  smartModal?.addEventListener('click', e => { if (e.target === smartModal) closeSmartModal(); });
+  document.querySelectorAll('[data-smart-add]').forEach(b => {
+    b.addEventListener('click', () => addSmartRow(b.dataset.smartAdd));
+  });
 
   /* ====================================================================
      INIT
