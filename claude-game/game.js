@@ -60,7 +60,7 @@
   };
 
   /* ---------------- DOM / CONFIG ---------------- */
-  let ASSET_BASE = 'Assets/', SFX_BASE = 'BalatroSfx/';
+  let ASSET_BASE = 'claude-game/Assets/', SFX_BASE = 'BalatroSfx/';
   let canvas, ctx, gate, nameInput, joinBtn, dotEl, netEl, countEl, toastEl, cardLayer;
   const dom = {};
   let started = false, inited = false;
