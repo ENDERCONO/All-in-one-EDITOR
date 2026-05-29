@@ -1,5 +1,5 @@
 /* =====================================================================
-   CLAUDE ARENA — Enhanced Engine (Production-Ready Smooth Version)
+   CLAUDE ARENA — Production WebSocket Engine (Node.js/Socket.io)
    ===================================================================== */
 (function () {
   'use strict';
@@ -9,11 +9,6 @@
   /* ---------------- TUNING ---------------- */
   const VIEW_W = 900, VIEW_H = 600;
   const WORLD_W = VIEW_W * 8, WORLD_H = VIEW_H * 8;
-  
-  // Polling Rates — conservative to avoid JSONBin 429 rate-limit errors
-  // JSONBin free tier: ~120 requests/min total. With 2 players: push 1/s + pull 1/s = 4 req/s = 240/min → too fast.
-  // At these rates: push 1/1.2s + pull 1/1.5s ≈ 1.5 req/s per player → safe even with 4 players
-  const PUSH_MS = 1200, PULL_MS = 1500, STALE_MS = 12000;
   
   const SPEED = 240, SPRINT_MULT = 1.65, DASH_DIST = 190, DASH_CD = 5000;
   const BULLET_SPEED = 580, BULLET_DMG = 33, FIRE_CD = 250;
@@ -65,15 +60,14 @@
   };
 
   /* ---------------- DOM / CONFIG ---------------- */
-  let BIN = null, KEY = null, ASSET_BASE = 'Assets/', SFX_BASE = 'BalatroSfx/';
+  let ASSET_BASE = 'Assets/', SFX_BASE = 'BalatroSfx/';
   let canvas, ctx, gate, nameInput, joinBtn, dotEl, netEl, countEl, toastEl, cardLayer;
   const dom = {};
-  let configured = false, started = false, inited = false;
+  let started = false, inited = false;
+  let socket = null;
+  let lastNetUpdate = 0;
 
   /* ---------------- IDENTITY ---------------- */
-  function uid() { 
-    return 'p_' + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3); 
-  }
   let myId = null;
   const COLORS = ['#ff3b5c', '#2fd47f', '#4d8bff', '#c77dff', '#ffb13b', '#3bd6ff', '#ff7ad6', '#9dff3b'];
   let myColor = COLORS[(Math.random() * COLORS.length) | 0];
@@ -95,41 +89,19 @@
   let others = {};
   const bullets = [];
   const particles = [];  
-  const seenShots = new Set(), seenDmg = new Set();
   const camera = { x: 0, y: 0 };
   let obstacles = [];
-  const history = [];
 
   /* ---------------- INPUT ---------------- */
   const keys = {};
   const mouse = { x: VIEW_W / 2, y: VIEW_H / 2, down: false, wx: 0, wy: 0 };
   let lastFire = 0, lastDash = 0;
 
-  /* ---------------- NET QUEUES ---------------- */
-  let outShots = [], outDmg = [], outElims = [];
-  let netState = {}, pushing = false;
-  let netBackoff = PUSH_MS;        // grows on 429/errors, resets on success
-  let lastPushHash = '';           // skip push if nothing changed
-  let consecutiveErrors = 0;
-
-  function stateHash() {
-    // cheap dirty check — position + hp + queues
-    return me.x + '|' + me.y + '|' + me.hp + '|' + outShots.length + '|' + outDmg.length + '|' + outElims.length;
-  }
-
-  async function initNetState() {
-    try { 
-      const s = await apiGet(); 
-      if (s && typeof s === 'object' && !Array.isArray(s)) netState = s; 
-    } catch (e) {}
-  }
-
   /* ---------------- ASSETS ---------------- */
   const assets = {};
   function tryLoad(k, path) {
     const i = new Image();
     i.onload = () => assets[k] = i;
-    i.onerror = () => {};
     i.src = path;
   }
   
@@ -137,10 +109,8 @@
   function trySound(k, file) {
     const a = new Audio(); a.preload = 'auto'; a.src = SFX_BASE + file;
     a.addEventListener('canplaythrough', () => sfx[k] = a, { once: true });
-    a.addEventListener('error', () => {});
   }
   
-  // Audio Playback Function with Pitch Randomization (0.95 - 1.05)
   function play(k, vol) {
     const s = sfx[k]; if (!s) return;
     try { 
@@ -151,20 +121,27 @@
     } catch (e) {}
   }
 
+  // FIXED: Multi-layered image loading configuration to ensure textures never fail
   function loadCharAssets() {
     for (const cid in CHARACTERS) {
       const ch = CHARACTERS[cid];
       for (const animKey in ch.sprites) {
         const filename = ch.sprites[animKey];
         const key = cid + '_' + animKey;
-        // Try primary path
+        
         const img = new Image();
         img.onload = () => { assets[key] = img; };
         img.onerror = () => {
-          // Try lowercase path fallback (for case-sensitive servers)
+          // Fallback A: Try absolute lowercased path lookup
           const img2 = new Image();
           img2.onload = () => { assets[key] = img2; };
-          img2.onerror = () => { console.warn('[Arena] Sprite not found:', ASSET_BASE + filename, '— check Assets/ folder path'); };
+          img2.onerror = () => {
+            // Fallback B: Try forcing lowercased filenames completely
+            const img3 = new Image();
+            img3.onload = () => { assets[key] = img3; };
+            img3.onerror = () => { console.warn('[Arena] Missing texture:', filename); };
+            img3.src = ASSET_BASE + filename.toLowerCase();
+          };
           img2.src = ASSET_BASE.toLowerCase() + filename;
         };
         img.src = ASSET_BASE + filename;
@@ -239,21 +216,6 @@
     if (me.alive && d2(x, y, me.x, me.y) < (radius + PLAYER_R) ** 2) {
       hurtMe(Math.round(dmg * 0.7), 'explosion');
     }
-    
-    for (const id in others) {
-      const o = others[id]; if (!o.alive) continue;
-      if (d2(x, y, o.x, o.y) < (radius + PLAYER_R) ** 2) {
-        const dmgAmount = Math.round(dmg * 0.7);
-        
-        // Direct Server-Authoritative Health Modification
-        o.hp = Math.max(0, o.hp - dmgAmount);
-        if (netState[id]) netState[id].hp = o.hp;
-
-        outDmg.push({ id: uid(), target: id, amount: dmgAmount });
-        gainUlt(1); gainXp(dmgAmount * XP_PER_DMG);
-        if (me.mods.lifesteal > 0) me.hp = Math.min(MAX_HP, me.hp + me.mods.lifesteal * 0.5);
-      }
-    }
   }
 
   /* ---------------- TOAST ---------------- */
@@ -264,136 +226,83 @@
   }
   function setNet(t, c) { if (netEl) { netEl.textContent = t; } if (dotEl) { dotEl.className = 'ca-status-dot' + (c ? ' ' + c : ''); } }
 
-  /* ---------------- NET ---------------- */
-  async function apiGet() { 
-    const r = await fetch('https://api.jsonbin.io/v3/b/' + BIN + '/latest', { 
-      headers: { 'X-Master-Key': KEY, 'X-Bin-Meta': 'false' } 
-    }); 
-    if (r.status === 429) { netBackoff = Math.min(netBackoff * 2, 30000); throw new Error('RATE_LIMIT'); }
-    if (!r.ok) throw new Error('GET ' + r.status); 
-    return await r.json(); 
-  }
-  async function apiPut(o) { 
-    const r = await fetch('https://api.jsonbin.io/v3/b/' + BIN, { 
-      method: 'PUT', 
-      headers: { 'X-Master-Key': KEY, 'Content-Type': 'application/json' }, 
-      body: JSON.stringify(o) 
+  /* ---------------- NETWORK CONTROLLER ---------------- */
+  function setupSockets() {
+    socket = io();
+
+    socket.on('connect', () => {
+      setNet('live', 'ok');
     });
-    if (r.status === 429) { netBackoff = Math.min(netBackoff * 2, 30000); throw new Error('RATE_LIMIT'); }
-    if (!r.ok) throw new Error('PUT ' + r.status); 
-    return await r.json(); 
-  }
 
-  function mySlice() { 
-    return { 
-      id: myId, name: me.name, color: me.color, char: me.char,
-      x: Math.round(me.x), y: Math.round(me.y), aim: +me.aim.toFixed(2),
-      hp: me.hp, ult: me.ult, shields: me.shields, elims: me.elims, alive: me.alive,
-      level: me.level, anim: me.anim, frame: me.frame, facing: me.facing,
-      points: me.points, t: Date.now(),
-      moving: !!(keys['w'] || keys['s'] || keys['a'] || keys['d']), // Flag to let other players render walkShoot animation
-      shots: outShots, dmg: outDmg, kills: outElims 
-    }; 
-  }
+    socket.on('disconnect', () => {
+      setNet('disconnected', 'err');
+    });
 
-  async function pushLoop() {
-    if (!started || !configured || pushing) return; 
-    
-    // Skip push if nothing has changed and no queued events
-    const hash = stateHash();
-    if (hash === lastPushHash && outShots.length === 0 && outDmg.length === 0 && outElims.length === 0) return;
-    
-    pushing = true;
-    try {
-      const s = Object.assign({}, netState);
-      if (!s || typeof s !== 'object' || Array.isArray(s)) { pushing = false; return; }
-      s[myId] = mySlice();
-      const t = Date.now();
-      for (const id in s) { if (id !== myId) { const p = s[id]; if (!p || (t - (p.t || 0)) > STALE_MS) delete s[id]; } }
-      await apiPut(s); 
-      netState = s; 
-      outShots = []; outDmg = []; outElims = []; 
-      lastPushHash = stateHash();
-      consecutiveErrors = 0;
-      netBackoff = PUSH_MS; // reset backoff on success
-      setNet('live', 'ok');
-    } catch (e) { 
-      consecutiveErrors++;
-      const isRateLimit = e.message === 'RATE_LIMIT';
-      setNet(isRateLimit ? 'rate limited…' : 'reconnecting…', 'err'); 
-      // Prevent data buildup
-      if (outShots.length > 30) outShots = outShots.slice(-30);
-      if (outDmg.length > 20) outDmg = outDmg.slice(-20);
-    } finally { pushing = false; }
-  }
+    socket.on('init_id', (id) => {
+      myId = id;
+      me.id = id;
+    });
 
-  async function pullLoop() {
-    if (!started || !configured) return;
-    try {
-      const s = await apiGet();
-      if (!s || typeof s !== 'object' || Array.isArray(s)) return;
-      const merged = Object.assign({}, s);
-      if (netState[myId]) merged[myId] = netState[myId];
-      netState = merged; ingest(netState); 
-      consecutiveErrors = 0;
-      netBackoff = PUSH_MS;
-      setNet('live', 'ok');
-    } catch (e) { 
-      consecutiveErrors++;
-      const isRateLimit = e.message === 'RATE_LIMIT';
-      setNet(isRateLimit ? 'rate limited…' : 'reconnecting…', 'err'); 
-    }
-  }
-
-  function ingest(s) {
-    const t = Date.now(); const next = {};
-    
-    // Server-Authoritative Sync: if server says we took damage, apply it
-    if (s[myId] && s[myId].hp < me.hp) {
-      const diff = me.hp - s[myId].hp;
-      hurtMe(diff, 'server_force');
-    }
-
-    for (const id in s) { 
-      if (id === myId) continue; const p = s[id];
-      if (!p || (t - (p.t || 0)) > STALE_MS) continue; 
-      
-      const oldPlayer = others[id];
-      next[id] = p;
-      if (oldPlayer) {
-        next[id].rx = oldPlayer.rx;
-        next[id].ry = oldPlayer.ry;
-        // Preserve local HP if it's lower than server (our damage registered locally already)
-        // But if server HP is lower, the player healed/died/respawned — trust server
-        if (oldPlayer._localHp !== undefined && oldPlayer._localHp < (p.hp || 0)) {
-          next[id]._localHp = oldPlayer._localHp;
+    socket.on('stateUpdate', (serverPlayers) => {
+      for (const id in serverPlayers) {
+        if (id === myId) continue;
+        const sp = serverPlayers[id];
+        if (!others[id]) {
+          others[id] = sp;
         } else {
-          // Server has authoritative (lower or reset) HP — sync local
-          next[id]._localHp = p.hp || 0;
-          if (p.hp > 0) next[id]._localKillCredited = false; // respawned
+          Object.assign(others[id], sp);
         }
-        next[id]._localKillCredited = oldPlayer._localKillCredited;
-      } else {
-        next[id]._localHp = p.hp || 0;
-        next[id]._localKillCredited = false;
       }
+    });
 
-      (p.shots || []).forEach(sh => { 
-        if (seenShots.has(sh.id)) return; seenShots.add(sh.id);
-        bullets.push({ 
-          id: sh.id, owner: id, x: sh.x, y: sh.y,
-          vx: Math.cos(sh.a) * (sh.spd || BULLET_SPEED), vy: Math.sin(sh.a) * (sh.spd || BULLET_SPEED),
-          dmg: sh.dmg || BULLET_DMG, reflected: !!sh.ref, pierce: sh.pierce || 0,
-          explosive: sh.explosive || 0, ricochet: sh.ricochet || 0, radius: sh.radius || BULLET_R, born: t 
-        }); 
-      });
-      
-      (p.dmg || []).forEach(d => { if (d.target === myId && !seenDmg.has(d.id)) { seenDmg.add(d.id); hurtMe(d.amount, id); } });
-      (p.kills || []).forEach(k => { const tag = 'k' + k.id; if (!seenDmg.has(tag)) { seenDmg.add(tag); if (k.killer !== myId && k.victim !== myId) toast((k.killerName || 'someone') + ' eliminated ' + (k.victimName || 'someone')); } });
-    }
-    others = next;
-    if (seenShots.size > 3000) seenShots.clear();
-    if (seenDmg.size > 3000) seenDmg.clear();
+    socket.on('playerMoved', (data) => {
+      if (data.id === myId) return;
+      if (!others[data.id]) others[data.id] = data;
+      else Object.assign(others[data.id], data);
+    });
+
+    socket.on('enemyShoot', (sh) => {
+      bullets.push({ 
+        id: sh.id, owner: sh.owner, x: sh.x, y: sh.y,
+        vx: Math.cos(sh.a) * (sh.spd || BULLET_SPEED), vy: Math.sin(sh.a) * (sh.spd || BULLET_SPEED),
+        dmg: sh.dmg || BULLET_DMG, reflected: !!sh.ref, pierce: sh.pierce || 0,
+        explosive: sh.explosive || 0, ricochet: sh.ricochet || 0, radius: sh.radius || BULLET_R, born: Date.now() 
+      }); 
+    });
+
+    socket.on('healthUpdate', (data) => {
+      if (data.id === myId) {
+        if (data.hp < me.hp) {
+          hurtMe(me.hp - data.hp, data.fromId);
+        }
+      } else if (others[data.id]) {
+        others[data.id].hp = data.hp;
+      }
+    });
+
+    socket.on('playerKilled', (data) => {
+      if (data.killerId === myId) {
+        me.elims += 1; me.points += 100; me.hp = Math.min(MAX_HP, me.hp + 50);
+        gainXp(XP_PER_KILL);
+        play('coin5', 0.6); 
+        toast('Eliminated ' + data.victimName + '! +50 HP +100pts');
+      } else {
+        toast(data.killerName + ' eliminated ' + data.victimName);
+      }
+      if (data.victimId === myId) {
+        me.alive = false;
+        me.shields = 0;
+        me.deadUntil = Date.now() + RESPAWN_MS;
+        play('death', 0.6);
+        spawnParticles(me.x, me.y, '#ff3b5c', 20, 250, 0.8);
+      } else if (others[data.victimId]) {
+        others[data.victimId].alive = false;
+      }
+    });
+
+    socket.on('playerLeft', (id) => {
+      delete others[id];
+    });
   }
 
   /* ---------------- COMBAT ---------------- */
@@ -402,13 +311,6 @@
     me.hp -= amount; me.lastCombat = Date.now();
     play('hit', 0.5);
     spawnParticles(me.x, me.y, '#ff3b5c', 6, 150, 0.3);
-    if (me.hp <= 0) {
-      me.hp = 0; me.alive = false; me.shields = 0; me.deadUntil = Date.now() + RESPAWN_MS;
-      play('death', 0.6);
-      spawnParticles(me.x, me.y, '#ff3b5c', 20, 250, 0.8);
-      outElims.push({ id: uid(), killer: fromId, victim: myId, killerName: (others[fromId] && others[fromId].name) || '???', victimName: me.name });
-      toast('You were eliminated — abilities reset');
-    }
   }
 
   function effFireCd() { return FIRE_CD * (1 - Math.min(0.75, me.mods.fireRate)); }
@@ -421,10 +323,14 @@
   function spawnBullet(angle, spd, dmg, ref, pierce, opts) {
     opts = opts || {};
     const sx = me.x + Math.cos(angle) * (PLAYER_R + 8), sy = me.y + Math.sin(angle) * (PLAYER_R + 8);
-    const id = uid();
+    const id = 'b_' + Math.random().toString(36).slice(2, 7);
     const radius = effBulletRadius();
+    
     const shot = { id, x: Math.round(sx), y: Math.round(sy), a: +angle.toFixed(3), spd, dmg, ref: !!ref, pierce: pierce || 0, explosive: opts.explosive || 0, ricochet: opts.ricochet || 0, radius };
-    outShots.push(shot); seenShots.add(id);
+    
+    // Broadcast directly down the WebSocket loop
+    if (socket) socket.emit('shoot', shot);
+
     bullets.push({ id, owner: myId, x: sx, y: sy, vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd, dmg, reflected: !!ref, pierce: pierce || 0, explosive: opts.explosive || 0, ricochet: opts.ricochet || 0, radius, born: Date.now() });
   }
 
@@ -611,6 +517,7 @@
       me.alive = true; me.hp = MAX_HP; me.ult = 0; me.shields = 0; me.level = 1; me.xp = 0; me.abilities = [];
       me.mods = { dmg: 0, fireRate: 0, speed: 0, multishot: 0, pierce: 0, lifesteal: 0, thorns: 0, bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0 };
       me.x = WORLD_W / 2 + (Math.random() * 400 - 200); me.y = WORLD_H / 2 + (Math.random() * 400 - 200); me.lastCombat = Date.now();
+      if (socket) socket.emit('respawn', { x: me.x, y: me.y });
     }
     
     if (me.alive) {
@@ -631,26 +538,31 @@
       me.frameT += dt; if (me.frameT > animFrameTime) { me.frameT = 0; me.frame = me.frame ? 0 : 1; }
       if (mouse.down && !draftOpen) fire();
       if (t - me.lastCombat > REGEN_DELAY && me.hp < MAX_HP) { me.hp = Math.min(MAX_HP, me.hp + REGEN_RATE * dt); }
+
+      // Throttle and transmit socket movement updates to server at ~40 FPS
+      if (socket && t - lastNetUpdate > 25) {
+        lastNetUpdate = t;
+        socket.emit('move', {
+          x: Math.round(me.x), y: Math.round(me.y), aim: +me.aim.toFixed(2),
+          anim: me.anim, frame: me.frame, facing: me.facing, moving: !!moving,
+          level: me.level, points: me.points
+        });
+      }
     }
     
     camera.x = clamp(me.x - VIEW_W / 2, 0, WORLD_W - VIEW_W);
     camera.y = clamp(me.y - VIEW_H / 2, 0, WORLD_H - VIEW_H);
 
-    if (!history.length || t - history[history.length - 1].t > 100) {
-      history.push({ t, x: me.x, y: me.y, hp: me.hp, ult: me.ult, shields: me.shields, level: me.level, xp: me.xp });
-      while (history.length && t - history[0].t > 11000) history.shift();
-    }
-
-    // 60FPS Client-Side Interpolation Loop for Remote Players
+    // 60FPS Client-Side Interpolation Loop for Smooth Remote Rendering
     for (const id in others) {
       const o = others[id];
       if (o.rx === undefined) o.rx = o.x;
       if (o.ry === undefined) o.ry = o.y;
-      o.rx = lerp(o.rx, o.x, 12 * dt);
-      o.ry = lerp(o.ry, o.y, 12 * dt);
+      o.rx = lerp(o.rx, o.x, 15 * dt);
+      o.ry = lerp(o.ry, o.y, 15 * dt);
     }
 
-    // Bullets Sim
+    // Bullets Simulation
     for (let i = bullets.length - 1; i >= 0; i--) {
       const b = bullets[i]; b.x += b.vx * dt; b.y += b.vy * dt;
       if (t - b.born > 4500 || b.x < -40 || b.x > WORLD_W + 40 || b.y < -40 || b.y > WORLD_H + 40) { bullets.splice(i, 1); continue; }
@@ -673,48 +585,35 @@
       }
 
       const brad = b.radius || BULLET_R;
+      
+      // Local client logic: if hit by an enemy projectile, notify server
       if (me.alive && b.owner !== myId && d2(b.x, b.y, me.x, me.y) < (PLAYER_R + brad) ** 2) {
         if (me.shields > 0 && !b.reflected) {
           me.shields--; play('foil2', 0.5);
           spawnBullet(Math.atan2(b.vy, b.vx) + Math.PI, BULLET_SPEED * 2, b.dmg * 2, true, 0, {});
           toast('Shield reflected! (' + me.shields + ' left)'); bullets.splice(i, 1); continue;
         } else {
-          if (me.mods.thorns > 0 && b.owner) outDmg.push({ id: uid(), target: b.owner, amount: Math.round(b.dmg * me.mods.thorns) });
-          hurtMe(b.dmg, b.owner); bullets.splice(i, 1); continue;
+          if (me.mods.thorns > 0 && b.owner) {
+            if (socket) socket.emit('damage', { targetId: b.owner, amount: Math.round(b.dmg * me.mods.thorns) });
+          }
+          bullets.splice(i, 1); continue;
         }
       }
       
+      // If our projectile registers a hit locally, signal to server immediately
       if (b.owner === myId) {
         let hit = false;
         for (const id in others) {
-          const o = others[id]; 
-          // Allow hitting players even if server says not alive — use local HP tracking
-          // A player is hittable if they were seen recently (within 2x stale time) and local HP > 0
-          const localHp = o._localHp !== undefined ? o._localHp : (o.hp || 0);
-          if (localHp <= 0) continue;
+          const o = others[id]; if (!o.alive) continue;
           if (d2(b.x, b.y, o.x, o.y) < (PLAYER_R + brad) ** 2) {
             const dmgAmount = Math.round(b.dmg);
             
-            // Apply damage locally immediately — works even if target is "disconnected"
-            o._localHp = Math.max(0, localHp - dmgAmount);
-            o.hp = o._localHp;
-            if (netState[id]) netState[id].hp = o._localHp;
+            // Client-sided damage trigger: report to WebSocket server
+            if (socket) socket.emit('damage', { targetId: id, amount: dmgAmount });
 
-            outDmg.push({ id: uid(), target: id, amount: dmgAmount });
             gainUlt(1); gainXp(dmgAmount * XP_PER_DMG);
             if (me.mods.lifesteal > 0) me.hp = Math.min(MAX_HP, me.hp + me.mods.lifesteal);
             spawnParticles(b.x, b.y, '#ffb13b', 5, 120, 0.3); play('hitEnemy', 0.4);
-            
-            // Local kill credit — don't wait for server confirmation
-            if (o._localHp <= 0 && !o._localKillCredited) {
-              o._localKillCredited = true;
-              const killId = uid();
-              outElims.push({ id: killId, killer: myId, victim: id, killerName: me.name, victimName: o.name || '???' });
-              me.elims += 1; me.points += 100; me.hp = Math.min(MAX_HP, me.hp + 50);
-              gainXp(XP_PER_KILL);
-              play('coin5', 0.6); 
-              toast('Eliminated ' + (o.name || 'a player') + '! +50 HP +100pts');
-            }
             
             if ((b.explosive || 0) > 0) spawnExplosion(b.x, b.y, b.explosive, b.dmg);
             hit = true; break;
@@ -729,27 +628,8 @@
       if (p.life <= 0) { particles.splice(i, 1); }
     }
 
-    drainElims();
     if (countEl) countEl.textContent = 1 + Object.keys(others).length;
     updateHud(); updateLeaderboard();
-  }
-
-  function drainElims() {
-    for (const id in netState) {
-      if (id === myId) continue; const p = netState[id];
-      (p.kills || []).forEach(k => {
-        const tag = 'mine' + k.id;
-        if (k.killer === myId && !seenDmg.has(tag)) {
-          seenDmg.add(tag); 
-          // Only give rewards if not already credited locally (via _localKillCredited)
-          const victim = others[k.victim];
-          if (!victim || !victim._localKillCredited) {
-            me.elims += 1; me.points += 100; me.hp = Math.min(MAX_HP, me.hp + 50); gainXp(XP_PER_KILL);
-            play('coin5', 0.6); toast('Eliminated ' + (k.victimName || 'a player') + '! +50 HP +100pts');
-          }
-        }
-      });
-    }
   }
 
   /* ---------------- HUD ---------------- */
@@ -822,32 +702,23 @@
     ctx.restore();
   }
 
-  // Sprite Look-up Handler with full support for walkShoot combinations
   function getSprite(p) {
     const ch = p.char || 'pumpkin';
     let anim = (p.anim || 'idle').toLowerCase();
-    const fr = (p.frame ? 1 : 0) + 1; // 1 or 2
-    
-    // prefer walkshoot when moving+shooting
+    const fr = (p.frame ? 1 : 0) + 1;
     if (anim === 'shoot' && p.moving) anim = 'walkshoot';
     
-    // primary key e.g. pumpkin_walkshoot1
     const key1 = ch + '_' + anim + fr;
     if (assets[key1]) return assets[key1];
     
-    // try frame 1 of same anim
     const key1f = ch + '_' + anim + '1';
     if (assets[key1f]) return assets[key1f];
     
-    // fallback to base anim (shoot -> idle, walkshoot -> walk)
     const baseAnim = anim === 'walkshoot' ? 'walk' : anim === 'shoot' ? 'idle' : anim;
     const key2 = ch + '_' + baseAnim + fr;
     if (assets[key2]) return assets[key2];
     
-    // last resort: idle1
-    const fb = ch + '_idle1';
-    if (assets[fb]) return assets[fb];
-    return null;
+    return assets[ch + '_idle1'] || null;
   }
 
   function drawPlayer(p, isMe) {
@@ -872,7 +743,7 @@
     
     ctx.save(); ctx.translate(sx, sy); ctx.globalAlpha = p.alive ? 1 : 0.4; ctx.font = '600 12px Manrope, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = isMe ? '#fff' : 'rgba(236,236,239,0.85)';
     ctx.fillText((p.name || '???') + (p.level ? '  Lv' + p.level : ''), 0, -PLAYER_R - 18);
-    const displayHp = isMe ? p.hp : (p._localHp !== undefined ? p._localHp : (p.hp || 0));
+    const displayHp = p.hp !== undefined ? p.hp : MAX_HP;
     ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(-22, -PLAYER_R - 13, 44, 5);
     ctx.fillStyle = (displayHp / MAX_HP) > 0.5 ? '#2fd47f' : (displayHp / MAX_HP) > 0.25 ? '#ffb13b' : '#ff3b5c'; ctx.fillRect(-22, -PLAYER_R - 13, 44 * Math.max(0, displayHp / MAX_HP), 5);
     ctx.restore(); ctx.globalAlpha = 1;
@@ -882,30 +753,14 @@
   let selectedChar = 'pumpkin';
   function doStart() {
     const n = (nameInput.value || '').trim().slice(0, 14) || 'anon' + ((Math.random() * 99) | 0);
-    me.id = myId; me.name = n; me.color = CHARACTERS[selectedChar].color; me.char = selectedChar;
+    me.name = n; me.color = CHARACTERS[selectedChar].color; me.char = selectedChar;
     try { localStorage.setItem('caName', n); localStorage.setItem('caChar', selectedChar); } catch (e) {}
     started = true; if (gate) gate.style.display = 'none';
     me.x = WORLD_W / 2 + (Math.random() * 400 - 200); me.y = WORLD_H / 2 + (Math.random() * 400 - 200); me.lastCombat = Date.now();
-    if (!configured) { setNet('OFFLINE — bin not set', 'err'); toast('Multiplayer off — solo practice'); }
-    else { 
-      setNet('connecting…'); 
-      initNetState().then(() => { 
-        // Use dynamic scheduling instead of fixed intervals to respect backoff
-        function schedulePush() {
-          setTimeout(async () => {
-            await pushLoop();
-            schedulePush();
-          }, netBackoff);
-        }
-        function schedulePull() {
-          setTimeout(async () => {
-            await pullLoop();
-            schedulePull();
-          }, Math.max(PULL_MS, netBackoff * 0.8));
-        }
-        schedulePush();
-        schedulePull();
-      }); 
+    
+    // Fire real-time handshake event to Node.js server
+    if (socket) {
+      socket.emit('join', { name: me.name, color: me.color, char: me.char, x: me.x, y: me.y });
     }
   }
 
@@ -934,10 +789,10 @@
   }
 
   ClaudeArena.init = function (opts) {
-    opts = opts || {}; BIN = opts.binId || null; KEY = opts.key || null;
+    opts = opts || {};
     if (opts.assetBase) ASSET_BASE = opts.assetBase; if (opts.sfxBase) SFX_BASE = opts.sfxBase;
-    configured = BIN && BIN !== 'REPLACE_WITH_GAME_BIN_ID' && KEY; if (inited) return; inited = true;
-    myId = (function () { try { let v = sessionStorage.getItem('caId'); if (!v) { v = uid(); sessionStorage.setItem('caId', v); } return v; } catch (e) { return uid(); } })();
+    if (inited) return; inited = true;
+    
     const root = opts.mount ? document.querySelector(opts.mount) : document; cacheDom(root);
     obstacles = buildObstacles(); loadCharAssets();
     try { const sc = localStorage.getItem('caChar'); if (sc && CHARACTERS[sc]) selectedChar = sc; } catch (e) {}
@@ -947,6 +802,8 @@
     setTimeout(() => { for (const k in sfxMap) { if (sfx[sfxMap[k]]) sfx[k] = sfx[sfxMap[k]]; } }, 2000);
 
     bindInput();
+    setupSockets(); // Run local socket initiation 
+
     if (joinBtn) joinBtn.addEventListener('click', doStart);
     if (nameInput) { nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') doStart(); }); try { nameInput.value = localStorage.getItem('caName') || ''; } catch (e) {} }
     buildLeaderboard(root); requestAnimationFrame(tick);
@@ -954,4 +811,4 @@
   
   ClaudeArena.show = function () { const ni = document.querySelector('#caName'); if (ni) setTimeout(() => ni.focus(), 80); };
   ClaudeArena.isStarted = function () { return started; };
-})(); 
+})();
