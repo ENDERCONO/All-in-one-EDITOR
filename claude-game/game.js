@@ -106,7 +106,8 @@
     char: 'pumpkin',
     mods: {
       dmg: 0, fireRate: 0, speed: 0, multishot: 0, pierce: 0, lifesteal: 0, thorns: 0,
-      bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0
+      bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0,
+      maxHp: 0, regenRate: 0, regenDelay: 0
     },
     abilities: [],
     points: 0
@@ -135,6 +136,8 @@
   const keys = {};
   const mouse = { x: VIEW_W / 2, y: VIEW_H / 2, down: false, wx: 0, wy: 0 };
   let lastFire = 0, lastDash = 0;
+  const DEFAULT_BINDINGS = { up: 'w', down: 's', left: 'a', right: 'd', dash: 'e', shield: ' ' };
+  let bindings = { ...DEFAULT_BINDINGS };
 
   /* ---------------- ASSETS ---------------- */
   const assets = {};
@@ -161,10 +164,10 @@
   }
 
   function playWalkSfx() {
-    const arr = isSprinting() ? runAudios : walkAudios;
-    if (!arr.length) return;
+    const arr = isSprinting() ? RUN_SFX : WALK_SFX;
     try {
-      const c = arr[(Math.random() * arr.length) | 0].cloneNode();
+      const src = arr[(Math.random() * arr.length) | 0];
+      const c = new Audio(src);
       c.volume = Math.min(1, 0.38 * musicState.soundVol);
       c.playbackRate = 0.92 + Math.random() * 0.18;
       c.play().catch(() => {});
@@ -386,7 +389,7 @@
 
     socket.on('playerKilled', (data) => {
       if (data.killerId === myId) {
-        me.elims += 1; me.points += 100; me.hp = Math.min(MAX_HP, me.hp + 50);
+        me.elims += 1; me.points += 100; me.hp = Math.min(effMaxHp(), me.hp + 50);
         gainXp(XP_PER_KILL);
         play('coin5', 0.6); 
         toast('Eliminated ' + data.victimName + '! +50 HP +100pts');
@@ -431,6 +434,7 @@
   function effSpeed() { return SPEED * (1 + me.mods.speed + (me.char === 'zaid' ? 0.1 : 0)) * (isSprinting() ? SPRINT_MULT : 1.0); }
   function effBulletSpeed() { return BULLET_SPEED * (1 + me.mods.bulletSpeed); }
   function effBulletRadius() { return BULLET_R * (1 + (me.mods.bigBullet || 0) * 0.5); }
+  function effMaxHp() { return MAX_HP + (me.mods.maxHp || 0); }
 
   function spawnBullet(angle, spd, dmg, ref, pierce, opts) {
     opts = opts || {};
@@ -522,7 +526,13 @@
     { id: 'burst1', name: 'Burst Mode',          rarity: 'rare',      desc: 'Each shot fires 2 extra burst bullets', apply: m => m.mods.rapidBurst += 2 },
     { id: 'pierce1',name: 'Piercing Rounds',     rarity: 'epic',      desc: 'Bullets pierce +1 target',       apply: m => m.mods.pierce += 1 },
     { id: 'life1',  name: 'Vampiric',            rarity: 'rare',      desc: 'Heal 4 HP per hit landed',       apply: m => m.mods.lifesteal += 4 },
-    { id: 'thorn1', name: 'Thorns',              rarity: 'rare',      desc: 'Reflect 25% damage taken',       apply: m => m.mods.thorns += 0.25 }
+    { id: 'thorn1', name: 'Thorns',              rarity: 'rare',      desc: 'Reflect 25% damage taken',       apply: m => m.mods.thorns += 0.25 },
+    { id: 'hp1',    name: 'Vitality',            rarity: 'common',    desc: '+20 max HP (restores immediately)', apply: m => { m.mods.maxHp += 20; m.hp = Math.min(m.hp + 20, MAX_HP + m.mods.maxHp); } },
+    { id: 'hp2',    name: 'Iron Body',           rarity: 'rare',      desc: '+40 max HP (restores immediately)', apply: m => { m.mods.maxHp += 40; m.hp = Math.min(m.hp + 40, MAX_HP + m.mods.maxHp); } },
+    { id: 'hp3',    name: 'Titan Body',          rarity: 'epic',      desc: '+70 max HP (restores immediately)', apply: m => { m.mods.maxHp += 70; m.hp = Math.min(m.hp + 70, MAX_HP + m.mods.maxHp); } },
+    { id: 'regen1', name: 'Regeneration',        rarity: 'common',    desc: '+1 HP/s out-of-combat regen',     apply: m => m.mods.regenRate += 1 },
+    { id: 'regen2', name: 'Fast Recovery',       rarity: 'rare',      desc: '+2 HP/s out-of-combat regen',     apply: m => m.mods.regenRate += 2 },
+    { id: 'regen3', name: 'Quick Heal',          rarity: 'rare',      desc: 'Regen starts 2s sooner',          apply: m => m.mods.regenDelay = Math.min((m.mods.regenDelay || 0) + 2000, 4000) }
   ];
 
   function rollCards(n) {
@@ -611,7 +621,10 @@
     window.addEventListener('keydown', e => {
       if (!started || !gameVisible()) return; const k = e.key.toLowerCase(); keys[k] = true;
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys['shift'] = true;
-      if (k === 'e') dash(); if (k === ' ') { e.preventDefault(); raiseShield(); }
+      if (k === bindings.dash) dash();
+      if (k === bindings.shield) { e.preventDefault(); raiseShield(); }
+      if (k === 'k') toggleKeybindPanel();
+      if (['arrowup','arrowdown','arrowleft','arrowright'].includes(k)) e.preventDefault();
     });
     window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys['shift'] = false; });
   }
@@ -627,7 +640,7 @@
     const t = Date.now();
     if (!me.alive && t >= me.deadUntil) {
       me.alive = true; me.hp = MAX_HP; me.ult = 0; me.shields = 0; me.level = 1; me.xp = 0; me.abilities = [];
-      me.mods = { dmg: 0, fireRate: 0, speed: 0, multishot: 0, pierce: 0, lifesteal: 0, thorns: 0, bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0 };
+      me.mods = { dmg: 0, fireRate: 0, speed: 0, multishot: 0, pierce: 0, lifesteal: 0, thorns: 0, bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0, maxHp: 0, regenRate: 0, regenDelay: 0 };
       me.x = WORLD_W / 2 + (Math.random() * 400 - 200); me.y = WORLD_H / 2 + (Math.random() * 400 - 200); me.lastCombat = Date.now();
       if (socket) socket.emit('respawn', { x: me.x, y: me.y });
     }
@@ -636,7 +649,10 @@
       me.aim = Math.atan2((mouse.y + camera.y) - me.y, (mouse.x + camera.x) - me.x);
       me.facing = Math.cos(me.aim) < 0 ? -1 : 1;
       let dx = 0, dy = 0;
-      if (keys['w']) dy -= 1; if (keys['s']) dy += 1; if (keys['a']) dx -= 1; if (keys['d']) dx += 1;
+      if (keys[bindings.up]    || keys['arrowup'])    dy -= 1;
+      if (keys[bindings.down]  || keys['arrowdown'])  dy += 1;
+      if (keys[bindings.left]  || keys['arrowleft'])  dx -= 1;
+      if (keys[bindings.right] || keys['arrowright']) dx += 1;
       const moving = (dx || dy);
       if (moving) { 
         const l = Math.hypot(dx, dy); const sp = effSpeed();
@@ -649,7 +665,8 @@
       else { me.anim = moving ? 'walk' : 'idle'; }
       me.frameT += dt; if (me.frameT > animFrameTime) { me.frameT = 0; me.frame = me.frame ? 0 : 1; }
       if (mouse.down && !draftOpen) fire();
-      if (t - me.lastCombat > REGEN_DELAY && me.hp < MAX_HP) { me.hp = Math.min(MAX_HP, me.hp + REGEN_RATE * dt); }
+      const regenDelayCur = Math.max(500, REGEN_DELAY - (me.mods.regenDelay || 0));
+      if (t - me.lastCombat > regenDelayCur && me.hp < effMaxHp()) { me.hp = Math.min(effMaxHp(), me.hp + (REGEN_RATE + (me.mods.regenRate || 0)) * dt); }
 
       // Walk / run step SFX
       if (moving) {
@@ -667,7 +684,7 @@
         const mk = medkits[mi];
         if (d2(me.x, me.y, mk.x, mk.y) < MEDKIT_PICKUP_R * MEDKIT_PICKUP_R) {
           if (socket) socket.emit('pickupMedkit', mk.id);
-          me.hp = Math.min(MAX_HP, me.hp + MEDKIT_HEAL_AMT);
+          me.hp = Math.min(effMaxHp(), me.hp + MEDKIT_HEAL_AMT);
           spawnParticles(mk.x, mk.y, '#2fd47f', 10, 110, 0.5);
           play('coin1', 0.6);
           toast('+50 HP medkit!');
@@ -821,7 +838,7 @@
             if (socket) socket.emit('damage', { targetId: id, amount: dmgAmount });
 
             gainUlt(1); gainXp(dmgAmount * XP_PER_DMG);
-            if (me.mods.lifesteal > 0) me.hp = Math.min(MAX_HP, me.hp + me.mods.lifesteal);
+            if (me.mods.lifesteal > 0) me.hp = Math.min(effMaxHp(), me.hp + me.mods.lifesteal);
             spawnParticles(b.x, b.y, '#ffb13b', 5, 120, 0.3); play('hitEnemy', 0.4);
             
             if ((b.explosive || 0) > 0) spawnExplosion(b.x, b.y, b.explosive, b.dmg);
@@ -844,9 +861,9 @@
   /* ---------------- HUD ---------------- */
   function updateHud() {
     const d = dom;
-    if (d.hp) { 
-      const f = Math.max(0, me.hp / MAX_HP); d.hpFill.style.width = (f * 100) + '%';
-      d.hpFill.style.background = f > 0.5 ? '#2fd47f' : f > 0.25 ? '#ffb13b' : '#ff3b5c'; d.hpText.textContent = Math.ceil(me.hp) + ' / ' + MAX_HP; 
+    if (d.hp) {
+      const emx = effMaxHp(); const f = Math.max(0, me.hp / emx); d.hpFill.style.width = (f * 100) + '%';
+      d.hpFill.style.background = f > 0.5 ? '#2fd47f' : f > 0.25 ? '#ffb13b' : '#ff3b5c'; d.hpText.textContent = Math.ceil(me.hp) + ' / ' + emx;
     }
     if (d.lvl) { d.lvl.textContent = 'LV ' + me.level; d.xpFill.style.width = Math.min(100, (me.xp / xpForLevel(me.level)) * 100) + '%'; }
     if (d.dashFill) { const cd = Math.max(0, DASH_CD - (Date.now() - lastDash)); d.dashFill.style.width = ((1 - cd / DASH_CD) * 100) + '%'; d.dashTxt.textContent = cd > 0 ? (cd / 1000).toFixed(1) + 's' : 'READY'; }
@@ -1066,6 +1083,88 @@
 
   ctx.restore();
 }
+  /* ---------------- KEYBIND PANEL ---------------- */
+  function keyLabel(k) {
+    const M = { ' ': 'Space', 'arrowup': '↑', 'arrowdown': '↓', 'arrowleft': '←', 'arrowright': '→', 'shift': 'Shift', 'control': 'Ctrl', 'alt': 'Alt', 'escape': 'Esc', 'enter': 'Enter', 'backspace': '⌫', 'tab': 'Tab' };
+    return M[k] || (k.length === 1 ? k.toUpperCase() : k);
+  }
+
+  let keybindPanelEl = null, listeningFor = null;
+  const BIND_ACTIONS = [
+    { key: 'up', label: 'Move Up' }, { key: 'down', label: 'Move Down' },
+    { key: 'left', label: 'Move Left' }, { key: 'right', label: 'Move Right' },
+    { key: 'dash', label: 'Dash' }, { key: 'shield', label: 'Shield / Ult' }
+  ];
+
+  function buildKeybindPanel(root) {
+    const el = document.createElement('div'); el.id = 'caKbPanel';
+    el.style.cssText = 'display:none;position:absolute;inset:0;z-index:50;align-items:center;justify-content:center;background:rgba(9,9,11,.82);backdrop-filter:blur(4px);border-radius:10px;';
+    el.innerHTML =
+      '<div style="background:#141418;border:1px solid #2a2a32;border-radius:14px;padding:22px 24px;width:290px;font-family:JetBrains Mono,monospace;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
+      '<span style="font-size:13px;font-weight:700;color:#ececef;letter-spacing:.08em;">KEYBINDS</span>' +
+      '<button id="caKbClose" style="background:none;border:none;color:#8a8a94;cursor:pointer;font-size:22px;line-height:1;padding:0;">×</button></div>' +
+      '<div id="caKbRows"></div>' +
+      '<button id="caKbReset" style="margin-top:13px;width:100%;background:#1b1b20;border:1px solid #2a2a32;color:#8a8a94;cursor:pointer;padding:8px;border-radius:7px;font-family:inherit;font-size:11px;letter-spacing:.06em;">RESET DEFAULTS</button>' +
+      '<div style="margin-top:8px;font-size:9px;color:#55555e;text-align:center;">Press K in-game to open/close · Arrow keys always move</div>' +
+      '</div>';
+    root.querySelector('#caRoot').appendChild(el);
+    keybindPanelEl = el;
+
+    function refreshRows() {
+      const rows = el.querySelector('#caKbRows'); rows.innerHTML = '';
+      BIND_ACTIONS.forEach(({ key, label }) => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);';
+        const nameEl = document.createElement('span');
+        nameEl.style.cssText = 'font-size:11px;color:#d0d0d8;';
+        nameEl.textContent = label;
+        const btn = document.createElement('button');
+        btn.style.cssText = 'background:#1b1b20;border:1px solid #2a2a32;color:#ececef;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;font-size:11px;min-width:64px;text-align:center;transition:border-color .12s;';
+        btn.textContent = keyLabel(bindings[key]);
+        btn.addEventListener('click', () => {
+          if (listeningFor) {
+            const prev = el.querySelector('[data-listening]');
+            if (prev) { prev.textContent = keyLabel(bindings[listeningFor]); prev.style.borderColor = '#2a2a32'; prev.removeAttribute('data-listening'); }
+          }
+          listeningFor = key; btn.textContent = '…'; btn.style.borderColor = '#c77dff'; btn.setAttribute('data-listening', '1');
+        });
+        row.appendChild(nameEl); row.appendChild(btn); rows.appendChild(row);
+      });
+    }
+    refreshRows();
+
+    el.querySelector('#caKbClose').addEventListener('click', toggleKeybindPanel);
+    el.querySelector('#caKbReset').addEventListener('click', () => {
+      Object.assign(bindings, DEFAULT_BINDINGS);
+      listeningFor = null;
+      try { localStorage.removeItem('caBindings'); } catch (ex) {}
+      refreshRows();
+    });
+
+    window.addEventListener('keydown', e => {
+      if (!listeningFor || !keybindPanelEl || keybindPanelEl.style.display === 'none') return;
+      e.preventDefault(); e.stopPropagation();
+      const k = e.key.toLowerCase();
+      if (k === 'escape') {
+        const btn = keybindPanelEl.querySelector('[data-listening]');
+        if (btn) { btn.textContent = keyLabel(bindings[listeningFor]); btn.style.borderColor = '#2a2a32'; btn.removeAttribute('data-listening'); }
+        listeningFor = null; return;
+      }
+      bindings[listeningFor] = k;
+      listeningFor = null;
+      try { localStorage.setItem('caBindings', JSON.stringify(bindings)); } catch (ex) {}
+      refreshRows();
+    }, true);
+  }
+
+  function toggleKeybindPanel() {
+    if (!keybindPanelEl) return;
+    const visible = keybindPanelEl.style.display !== 'none';
+    keybindPanelEl.style.display = visible ? 'none' : 'flex';
+    if (visible) listeningFor = null;
+  }
+
   /* ---------------- LIFECYCLE ---------------- */
   let selectedChar = 'pumpkin';
   async function doStart() {
@@ -1144,7 +1243,8 @@
 
     if (joinBtn) joinBtn.addEventListener('click', doStart);
     if (nameInput) { nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') doStart(); }); try { nameInput.value = localStorage.getItem('caName') || ''; } catch (e) {} }
-    buildLeaderboard(root); requestAnimationFrame(tick);
+    try { const sb = JSON.parse(localStorage.getItem('caBindings')); if (sb) Object.assign(bindings, sb); } catch (ex) {}
+    buildLeaderboard(root); buildKeybindPanel(root); requestAnimationFrame(tick);
   };
   
   ClaudeArena.show = function () { const ni = document.querySelector('#caName'); if (ni) setTimeout(() => ni.focus(), 80); };
