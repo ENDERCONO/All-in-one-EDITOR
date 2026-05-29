@@ -22,7 +22,7 @@
   const BOX_COLORS = ['#ff3b5c','#2fd47f','#4d8bff','#c77dff','#ffb13b','#3bd6ff','#ff7ad6'];
   const DEATH_FADE_MS = 1500, IMMUNE_MS = 1000;
   const WALL_CD = 20000, WALL_LEN = 240, WALL_HP = 700, WALL_THICK = 10, WALL_MAX_AGE = 15000;
-  const TETO_R = 160, TETO_MAX_HP = 999999, TETO_XP_HIT = 5, TETO_XP_KILL = 1200, TETO_SPRITE = 512;
+  const TETO_R = 160, TETO_MAX_HP = 2067, TETO_XP_HIT = 5, TETO_XP_KILL = 1200, TETO_SPRITE = 512;
 
   function xpForLevel(l) {
     return Math.round(LEVEL_BASE * Math.pow(LEVEL_GROW, l - 1));
@@ -98,7 +98,7 @@
   };
 
   /* ---------------- DOM / CONFIG ---------------- */
-  let ASSET_BASE = 'claude-game/Assets/', SFX_BASE = 'BalatroSfx/', PATH_BASE = '';
+  let ASSET_BASE = 'claude-game/Assets/', SFX_BASE = 'claude-game/BalatroSfx/', PATH_BASE = '';
   let canvas, ctx, gate, nameInput, joinBtn, dotEl, netEl, countEl, toastEl, cardLayer;
   const dom = {};
   let started = false, inited = false;
