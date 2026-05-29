@@ -2671,10 +2671,13 @@
   .br-cmt-panel-compose textarea.br-msg-input {
     min-height: 50px;
     max-height: 100px;
+  /* You were missing the class name and the opening { */
   }
-
+  .br-comments-drawer { 
     position: absolute;
-    bottom: 0; left: 0; right: 0;
+    bottom: 0; 
+    left: 0; 
+    right: 0;
     height: 72%;
     background: rgba(10,10,14,0.97);
     backdrop-filter: blur(16px);
@@ -2686,7 +2689,7 @@
     z-index: 20;
     transform: translateY(100%);
     transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
-  }
+} /* This closing bracket is what you were missing */
   .br-comments-drawer.open { transform: translateY(0); }
   .br-drawer-handle {
     width: 36px; height: 4px;
