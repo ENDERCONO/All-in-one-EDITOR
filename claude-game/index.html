@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
 <title>Claude Arena</title>
 <link rel="icon" type="image/png" href="../assets/images/logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -86,20 +86,6 @@
   .ca-btn:hover{ filter:brightness(1.08); }
   .ca-gate-help{ margin-top:14px; font-size:11px; color:#55555e; line-height:1.6; }
 
-  /* ===== volume panel ===== */
-  /* ===== volume panel ===== */
-  .ca-vol{ position:absolute; right:18px; bottom:54px; z-index:25;
-    pointer-events:auto; display:flex; flex-direction:column; align-items:center; gap:6px;
-    font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:.1em; color:var(--text-dim);
-    text-transform:uppercase; background:rgba(18,18,22,.88); border:1px solid var(--border);
-    border-radius:10px; padding:10px 10px 8px; width:62px; }
-  .ca-vol-row{ display:flex; flex-direction:column; align-items:center; gap:4px; width:100%; }
-  .ca-vol input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:4px;
-    border-radius:2px; background:#2a2a3a; outline:none; cursor:pointer; }
-  .ca-vol input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:12px; height:12px;
-    border-radius:50%; background:var(--ult); cursor:pointer; box-shadow:0 0 4px var(--ult); }
-  .ca-vol input[type=range]::-moz-range-thumb{ width:12px; height:12px; border-radius:50%;
-    background:var(--ult); border:none; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -136,12 +122,7 @@
   </div>
 
   <div class="ca-help-bar">
-    <kbd>WASD</kbd>/<kbd>↑↓←→</kbd> move &nbsp; <kbd>SHIFT</kbd> sprint &nbsp; <kbd>L-CLICK</kbd> shoot &nbsp; <kbd>E</kbd> dash &nbsp; <kbd>SPACE</kbd> shield &nbsp; <kbd>K</kbd> keybinds
-  </div>
-
-  <div class="ca-vol">
-    <div class="ca-vol-row"><span>Music</span><input type="range" id="caMusicVol" min="0" max="100" value="70"></div>
-    <div class="ca-vol-row"><span>Sound</span><input type="range" id="caSoundVol" min="0" max="100" value="70"></div>
+    <kbd>WASD</kbd>/<kbd>↑↓←→</kbd> move &nbsp; <kbd>SHIFT</kbd> sprint &nbsp; <kbd>Click</kbd> shoot &nbsp; <kbd>E</kbd> dash &nbsp; <kbd>Space</kbd> shield &nbsp; <kbd>K</kbd> settings
   </div>
 
   <div class="ca-cards" id="caCards"></div>

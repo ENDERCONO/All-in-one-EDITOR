@@ -138,6 +138,10 @@
   let lastFire = 0, lastDash = 0;
   const DEFAULT_BINDINGS = { up: 'w', down: 's', left: 'a', right: 'd', dash: 'e', shield: ' ' };
   let bindings = { ...DEFAULT_BINDINGS };
+  const IS_MOBILE = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  const MOB = { joyX: 90, joyY: VIEW_H - 90, joyBaseR: 55, joyStickR: 25, dashX: VIEW_W - 75, dashY: VIEW_H - 75, shieldX: VIEW_W - 75, shieldY: VIEW_H - 165, btnR: 38 };
+  const joy = { active: false, id: -1, bx: 0, by: 0, dx: 0, dy: 0 };
+  const aimT = { active: false, id: -1 };
 
   /* ---------------- ASSETS ---------------- */
   const assets = {};
@@ -400,6 +404,7 @@
         me.alive = false; me.shields = 0;
         me.deadUntil = Date.now() + RESPAWN_MS;
         me.deathTime = Date.now();
+        if (draftOpen) { draftOpen = false; if (cardLayer) { cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; } }
         play('death', 0.6);
         spawnParticles(me.x, me.y, '#ff3b5c', 20, 250, 0.8);
       } else if (others[data.victimId]) {
@@ -623,10 +628,17 @@
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys['shift'] = true;
       if (k === bindings.dash) dash();
       if (k === bindings.shield) { e.preventDefault(); raiseShield(); }
-      if (k === 'k') toggleKeybindPanel();
+      if (k === 'k') toggleSettingsPanel();
+      if (k === 'escape' && settingsPanelEl && settingsPanelEl.style.display !== 'none') toggleSettingsPanel();
       if (['arrowup','arrowdown','arrowleft','arrowright'].includes(k)) e.preventDefault();
     });
     window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys['shift'] = false; });
+    if (IS_MOBILE) {
+      canvas.addEventListener('touchstart',  onTouchStart,  { passive: false });
+      canvas.addEventListener('touchmove',   onTouchMove,   { passive: false });
+      canvas.addEventListener('touchend',    onTouchEnd,    { passive: false });
+      canvas.addEventListener('touchcancel', onTouchEnd,    { passive: false });
+    }
   }
 
   /* ---------------- SIMULATION ENGINE ---------------- */
@@ -640,6 +652,7 @@
     const t = Date.now();
     if (!me.alive && t >= me.deadUntil) {
       me.alive = true; me.hp = MAX_HP; me.ult = 0; me.shields = 0; me.level = 1; me.xp = 0; me.abilities = [];
+      if (draftOpen) { draftOpen = false; if (cardLayer) { cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; } }
       me.mods = { dmg: 0, fireRate: 0, speed: 0, multishot: 0, pierce: 0, lifesteal: 0, thorns: 0, bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0, maxHp: 0, regenRate: 0, regenDelay: 0 };
       me.x = WORLD_W / 2 + (Math.random() * 400 - 200); me.y = WORLD_H / 2 + (Math.random() * 400 - 200); me.lastCombat = Date.now();
       if (socket) socket.emit('respawn', { x: me.x, y: me.y });
@@ -649,10 +662,13 @@
       me.aim = Math.atan2((mouse.y + camera.y) - me.y, (mouse.x + camera.x) - me.x);
       me.facing = Math.cos(me.aim) < 0 ? -1 : 1;
       let dx = 0, dy = 0;
-      if (keys[bindings.up]    || keys['arrowup'])    dy -= 1;
-      if (keys[bindings.down]  || keys['arrowdown'])  dy += 1;
-      if (keys[bindings.left]  || keys['arrowleft'])  dx -= 1;
-      if (keys[bindings.right] || keys['arrowright']) dx += 1;
+      if (IS_MOBILE && joy.active) { dx = joy.dx; dy = joy.dy; }
+      else {
+        if (keys[bindings.up]    || keys['arrowup'])    dy -= 1;
+        if (keys[bindings.down]  || keys['arrowdown'])  dy += 1;
+        if (keys[bindings.left]  || keys['arrowleft'])  dx -= 1;
+        if (keys[bindings.right] || keys['arrowright']) dx += 1;
+      }
       const moving = (dx || dy);
       if (moving) { 
         const l = Math.hypot(dx, dy); const sp = effSpeed();
@@ -944,6 +960,7 @@
     
     for (const id in others) drawPlayer(others[id], false);
     drawPlayer(me, true); drawOffscreenMarkers();
+    if (IS_MOBILE) drawMobileOverlay();
   }
 
   /* ---------------- OFF-SCREEN MARKERS ---------------- */
@@ -1083,86 +1100,198 @@
 
   ctx.restore();
 }
-  /* ---------------- KEYBIND PANEL ---------------- */
+  /* ---------------- SETTINGS PANEL ---------------- */
   function keyLabel(k) {
     const M = { ' ': 'Space', 'arrowup': '↑', 'arrowdown': '↓', 'arrowleft': '←', 'arrowright': '→', 'shift': 'Shift', 'control': 'Ctrl', 'alt': 'Alt', 'escape': 'Esc', 'enter': 'Enter', 'backspace': '⌫', 'tab': 'Tab' };
     return M[k] || (k.length === 1 ? k.toUpperCase() : k);
   }
 
-  let keybindPanelEl = null, listeningFor = null;
   const BIND_ACTIONS = [
     { key: 'up', label: 'Move Up' }, { key: 'down', label: 'Move Down' },
     { key: 'left', label: 'Move Left' }, { key: 'right', label: 'Move Right' },
     { key: 'dash', label: 'Dash' }, { key: 'shield', label: 'Shield / Ult' }
   ];
 
-  function buildKeybindPanel(root) {
-    const el = document.createElement('div'); el.id = 'caKbPanel';
-    el.style.cssText = 'display:none;position:absolute;inset:0;z-index:50;align-items:center;justify-content:center;background:rgba(9,9,11,.82);backdrop-filter:blur(4px);border-radius:10px;';
+  let settingsPanelEl = null, settingsListeningFor = null;
+
+  function buildSettingsPanel(root) {
+    const el = document.createElement('div');
+    el.id = 'caSettings';
+    el.style.cssText = 'display:none;position:absolute;inset:0;z-index:55;align-items:center;justify-content:center;background:rgba(9,9,11,.92);backdrop-filter:blur(6px);border-radius:10px;';
     el.innerHTML =
-      '<div style="background:#141418;border:1px solid #2a2a32;border-radius:14px;padding:22px 24px;width:290px;font-family:JetBrains Mono,monospace;">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
-      '<span style="font-size:13px;font-weight:700;color:#ececef;letter-spacing:.08em;">KEYBINDS</span>' +
-      '<button id="caKbClose" style="background:none;border:none;color:#8a8a94;cursor:pointer;font-size:22px;line-height:1;padding:0;">×</button></div>' +
-      '<div id="caKbRows"></div>' +
-      '<button id="caKbReset" style="margin-top:13px;width:100%;background:#1b1b20;border:1px solid #2a2a32;color:#8a8a94;cursor:pointer;padding:8px;border-radius:7px;font-family:inherit;font-size:11px;letter-spacing:.06em;">RESET DEFAULTS</button>' +
-      '<div style="margin-top:8px;font-size:9px;color:#55555e;text-align:center;">Press K in-game to open/close · Arrow keys always move</div>' +
+      '<div style="background:#141418;border:1px solid #2a2a32;border-radius:14px;width:min(340px,92vw);overflow:hidden;font-family:\'JetBrains Mono\',monospace;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;padding:15px 20px;border-bottom:1px solid #2a2a32;">' +
+          '<span style="font-size:13px;font-weight:700;color:#ececef;letter-spacing:.08em;">SETTINGS</span>' +
+          '<button id="caSetClose" style="background:none;border:none;color:#8a8a94;cursor:pointer;font-size:22px;line-height:1;padding:0;">×</button>' +
+        '</div>' +
+        '<div style="display:flex;border-bottom:1px solid #2a2a32;">' +
+          '<button class="ca-set-tab" data-tab="audio" style="flex:1;background:#1b1b20;border:none;border-bottom:2px solid #c77dff;color:#c77dff;cursor:pointer;padding:11px 0;font-family:inherit;font-size:11px;letter-spacing:.08em;">AUDIO</button>' +
+          '<button class="ca-set-tab" data-tab="controls" style="flex:1;background:transparent;border:none;border-bottom:2px solid transparent;color:#8a8a94;cursor:pointer;padding:11px 0;font-family:inherit;font-size:11px;letter-spacing:.08em;">CONTROLS</button>' +
+        '</div>' +
+        '<div id="caSetContent" style="padding:18px 20px;min-height:195px;"></div>' +
       '</div>';
     root.querySelector('#caRoot').appendChild(el);
-    keybindPanelEl = el;
+    settingsPanelEl = el;
+    const content = el.querySelector('#caSetContent');
 
-    function refreshRows() {
-      const rows = el.querySelector('#caKbRows'); rows.innerHTML = '';
-      BIND_ACTIONS.forEach(({ key, label }) => {
-        const row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);';
-        const nameEl = document.createElement('span');
-        nameEl.style.cssText = 'font-size:11px;color:#d0d0d8;';
-        nameEl.textContent = label;
-        const btn = document.createElement('button');
-        btn.style.cssText = 'background:#1b1b20;border:1px solid #2a2a32;color:#ececef;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;font-size:11px;min-width:64px;text-align:center;transition:border-color .12s;';
-        btn.textContent = keyLabel(bindings[key]);
+    function renderAudio() {
+      content.innerHTML =
+        '<div style="margin-bottom:22px;">' +
+          '<div style="display:flex;justify-content:space-between;margin-bottom:9px;font-size:11px;color:#d0d0d8;"><span>Music Volume</span><span id="caSetMVol" style="color:#c77dff;">' + Math.round(musicState.musicVol * 100) + '%</span></div>' +
+          '<input type="range" id="caSetMSlider" min="0" max="100" value="' + Math.round(musicState.musicVol * 100) + '" style="-webkit-appearance:none;appearance:none;width:100%;height:5px;border-radius:3px;background:#2a2a3a;outline:none;cursor:pointer;">' +
+        '</div>' +
+        '<div>' +
+          '<div style="display:flex;justify-content:space-between;margin-bottom:9px;font-size:11px;color:#d0d0d8;"><span>Sound Effects</span><span id="caSetSVol" style="color:#c77dff;">' + Math.round(musicState.soundVol * 100) + '%</span></div>' +
+          '<input type="range" id="caSetSSlider" min="0" max="100" value="' + Math.round(musicState.soundVol * 100) + '" style="-webkit-appearance:none;appearance:none;width:100%;height:5px;border-radius:3px;background:#2a2a3a;outline:none;cursor:pointer;">' +
+        '</div>';
+      el.querySelector('#caSetMSlider').oninput = function () { musicState.musicVol = +this.value / 100; el.querySelector('#caSetMVol').textContent = this.value + '%'; };
+      el.querySelector('#caSetSSlider').oninput = function () { musicState.soundVol = +this.value / 100; el.querySelector('#caSetSVol').textContent = this.value + '%'; };
+    }
+
+    function renderControls() {
+      settingsListeningFor = null;
+      let html = BIND_ACTIONS.map(({ key, label }) =>
+        '<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.04);">' +
+          '<span style="font-size:11px;color:#d0d0d8;">' + label + '</span>' +
+          '<button class="ca-kb-btn" data-action="' + key + '" style="background:#1b1b20;border:1px solid #2a2a32;color:#ececef;cursor:pointer;padding:5px 12px;border-radius:6px;font-family:inherit;font-size:11px;min-width:66px;text-align:center;">' + keyLabel(bindings[key]) + '</button>' +
+        '</div>'
+      ).join('');
+      html += '<button id="caKbReset2" style="margin-top:13px;width:100%;background:#1b1b20;border:1px solid #2a2a32;color:#8a8a94;cursor:pointer;padding:8px;border-radius:7px;font-family:inherit;font-size:11px;letter-spacing:.06em;">RESET DEFAULTS</button>';
+      html += '<div style="margin-top:8px;font-size:9px;color:#55555e;text-align:center;">Click a key to rebind · Esc cancels · Arrow keys always move</div>';
+      content.innerHTML = html;
+      content.querySelectorAll('.ca-kb-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-          if (listeningFor) {
-            const prev = el.querySelector('[data-listening]');
-            if (prev) { prev.textContent = keyLabel(bindings[listeningFor]); prev.style.borderColor = '#2a2a32'; prev.removeAttribute('data-listening'); }
+          if (settingsListeningFor) {
+            const p = content.querySelector('[data-listening]');
+            if (p) { p.textContent = keyLabel(bindings[settingsListeningFor]); p.style.borderColor = '#2a2a32'; p.removeAttribute('data-listening'); }
           }
-          listeningFor = key; btn.textContent = '…'; btn.style.borderColor = '#c77dff'; btn.setAttribute('data-listening', '1');
+          settingsListeningFor = btn.dataset.action;
+          btn.textContent = '…'; btn.style.borderColor = '#c77dff'; btn.setAttribute('data-listening', '1');
         });
-        row.appendChild(nameEl); row.appendChild(btn); rows.appendChild(row);
+      });
+      content.querySelector('#caKbReset2').addEventListener('click', () => {
+        Object.assign(bindings, DEFAULT_BINDINGS);
+        settingsListeningFor = null;
+        try { localStorage.removeItem('caBindings'); } catch (ex) {}
+        renderControls();
       });
     }
-    refreshRows();
 
-    el.querySelector('#caKbClose').addEventListener('click', toggleKeybindPanel);
-    el.querySelector('#caKbReset').addEventListener('click', () => {
-      Object.assign(bindings, DEFAULT_BINDINGS);
-      listeningFor = null;
-      try { localStorage.removeItem('caBindings'); } catch (ex) {}
-      refreshRows();
-    });
+    function switchTab(tab) {
+      settingsListeningFor = null;
+      el.querySelectorAll('.ca-set-tab').forEach(t => {
+        const on = t.dataset.tab === tab;
+        t.style.color = on ? '#c77dff' : '#8a8a94';
+        t.style.background = on ? '#1b1b20' : 'transparent';
+        t.style.borderBottom = on ? '2px solid #c77dff' : '2px solid transparent';
+      });
+      if (tab === 'audio') renderAudio(); else renderControls();
+    }
+    switchTab('audio');
+    el.querySelectorAll('.ca-set-tab').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+    el.querySelector('#caSetClose').addEventListener('click', toggleSettingsPanel);
 
     window.addEventListener('keydown', e => {
-      if (!listeningFor || !keybindPanelEl || keybindPanelEl.style.display === 'none') return;
+      if (!settingsListeningFor || !settingsPanelEl || settingsPanelEl.style.display === 'none') return;
       e.preventDefault(); e.stopPropagation();
       const k = e.key.toLowerCase();
       if (k === 'escape') {
-        const btn = keybindPanelEl.querySelector('[data-listening]');
-        if (btn) { btn.textContent = keyLabel(bindings[listeningFor]); btn.style.borderColor = '#2a2a32'; btn.removeAttribute('data-listening'); }
-        listeningFor = null; return;
+        const btn = content.querySelector('[data-listening]');
+        if (btn) { btn.textContent = keyLabel(bindings[settingsListeningFor]); btn.style.borderColor = '#2a2a32'; btn.removeAttribute('data-listening'); }
+        settingsListeningFor = null; return;
       }
-      bindings[listeningFor] = k;
-      listeningFor = null;
+      bindings[settingsListeningFor] = k;
+      settingsListeningFor = null;
       try { localStorage.setItem('caBindings', JSON.stringify(bindings)); } catch (ex) {}
-      refreshRows();
+      renderControls();
     }, true);
+
+    // Gear button in HUD
+    const hudEl = root.querySelector('.ca-hud');
+    if (hudEl) {
+      const gear = document.createElement('button');
+      gear.title = 'Settings (K / Esc)'; gear.textContent = '⚙';
+      gear.style.cssText = 'background:none;border:none;color:#8a8a94;cursor:pointer;font-size:15px;padding:0 2px;line-height:1;pointer-events:auto;';
+      gear.addEventListener('click', toggleSettingsPanel);
+      hudEl.appendChild(gear);
+    }
   }
 
-  function toggleKeybindPanel() {
-    if (!keybindPanelEl) return;
-    const visible = keybindPanelEl.style.display !== 'none';
-    keybindPanelEl.style.display = visible ? 'none' : 'flex';
-    if (visible) listeningFor = null;
+  function toggleSettingsPanel() {
+    if (!settingsPanelEl) return;
+    const visible = settingsPanelEl.style.display !== 'none';
+    settingsPanelEl.style.display = visible ? 'none' : 'flex';
+    if (visible) settingsListeningFor = null;
+  }
+
+  /* ---------------- MOBILE CONTROLS ---------------- */
+  function onTouchStart(e) {
+    e.preventDefault();
+    const s = rectScale();
+    for (const t of e.changedTouches) {
+      const tx = (t.clientX - s.left) * s.sx, ty = (t.clientY - s.top) * s.sy;
+      if (Math.hypot(tx - MOB.dashX, ty - MOB.dashY) < MOB.btnR + 10) { dash(); continue; }
+      if (Math.hypot(tx - MOB.shieldX, ty - MOB.shieldY) < MOB.btnR + 10) { raiseShield(); continue; }
+      if (tx < VIEW_W * 0.45 && !joy.active) {
+        joy.active = true; joy.id = t.identifier; joy.bx = tx; joy.by = ty; joy.dx = 0; joy.dy = 0;
+      } else if (!aimT.active) {
+        aimT.active = true; aimT.id = t.identifier;
+        mouse.x = tx; mouse.y = ty; if (!draftOpen) { mouse.down = true; fire(); }
+      }
+    }
+  }
+
+  function onTouchMove(e) {
+    e.preventDefault();
+    const s = rectScale();
+    for (const t of e.changedTouches) {
+      const tx = (t.clientX - s.left) * s.sx, ty = (t.clientY - s.top) * s.sy;
+      if (joy.active && t.identifier === joy.id) {
+        const rx = tx - joy.bx, ry = ty - joy.by, dist = Math.hypot(rx, ry);
+        if (dist > 8) { joy.dx = rx / dist; joy.dy = ry / dist; } else { joy.dx = 0; joy.dy = 0; }
+      }
+      if (aimT.active && t.identifier === aimT.id) { mouse.x = tx; mouse.y = ty; }
+    }
+  }
+
+  function onTouchEnd(e) {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (joy.active && t.identifier === joy.id) { joy.active = false; joy.dx = 0; joy.dy = 0; }
+      if (aimT.active && t.identifier === aimT.id) { aimT.active = false; mouse.down = false; }
+    }
+  }
+
+  function drawMobileOverlay() {
+    if (!started) return;
+    ctx.save();
+    ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+    // Joystick base
+    ctx.beginPath(); ctx.arc(MOB.joyX, MOB.joyY, MOB.joyBaseR, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 2; ctx.stroke();
+    // Joystick stick
+    const offX = joy.active ? joy.dx * (MOB.joyBaseR - MOB.joyStickR) : 0;
+    const offY = joy.active ? joy.dy * (MOB.joyBaseR - MOB.joyStickR) : 0;
+    ctx.beginPath(); ctx.arc(MOB.joyX + offX, MOB.joyY + offY, MOB.joyStickR, 0, Math.PI * 2);
+    ctx.fillStyle = joy.active ? 'rgba(199,125,255,0.55)' : 'rgba(255,255,255,0.18)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 2; ctx.stroke();
+    // Dash button
+    const dashCD = Math.max(0, DASH_CD - (Date.now() - lastDash));
+    ctx.beginPath(); ctx.arc(MOB.dashX, MOB.dashY, MOB.btnR, 0, Math.PI * 2);
+    ctx.fillStyle = dashCD > 0 ? 'rgba(28,28,40,0.85)' : 'rgba(77,139,255,0.28)'; ctx.fill();
+    ctx.strokeStyle = dashCD > 0 ? 'rgba(77,139,255,0.35)' : 'rgba(77,139,255,0.9)'; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.font = 'bold 11px JetBrains Mono,monospace';
+    ctx.fillStyle = dashCD > 0 ? 'rgba(77,139,255,0.55)' : '#4d8bff';
+    ctx.fillText(dashCD > 0 ? (dashCD / 1000).toFixed(1) : 'DASH', MOB.dashX, MOB.dashY);
+    // Shield/Ult button
+    const ultReady = me.ult >= ULT_MAX;
+    ctx.beginPath(); ctx.arc(MOB.shieldX, MOB.shieldY, MOB.btnR, 0, Math.PI * 2);
+    ctx.fillStyle = ultReady ? 'rgba(199,125,255,0.28)' : 'rgba(28,28,40,0.85)'; ctx.fill();
+    ctx.strokeStyle = ultReady ? 'rgba(199,125,255,0.9)' : 'rgba(199,125,255,0.35)'; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.fillStyle = ultReady ? '#c77dff' : 'rgba(199,125,255,0.55)';
+    ctx.fillText(ultReady ? 'ULT' : me.ult + '/' + ULT_MAX, MOB.shieldX, MOB.shieldY);
+    ctx.textBaseline = 'alphabetic'; ctx.restore();
   }
 
   /* ---------------- LIFECYCLE ---------------- */
@@ -1232,19 +1361,13 @@
     WALK_SFX.forEach(src => { const a = new Audio(src); a.preload = 'auto'; walkAudios.push(a); });
     RUN_SFX.forEach(src  => { const a = new Audio(src); a.preload = 'auto'; runAudios.push(a); });
 
-    // Wire volume sliders
-    const musSlider = document.getElementById('caMusicVol');
-    const sndSlider = document.getElementById('caSoundVol');
-    if (musSlider) { musSlider.value = Math.round(musicState.musicVol * 100); musSlider.addEventListener('input', () => { musicState.musicVol = musSlider.value / 100; }); }
-    if (sndSlider) { sndSlider.value = Math.round(musicState.soundVol * 100); sndSlider.addEventListener('input', () => { musicState.soundVol = sndSlider.value / 100; }); }
-
     bindInput();
-    setupSockets(); // Run local socket initiation 
+    setupSockets();
 
     if (joinBtn) joinBtn.addEventListener('click', doStart);
     if (nameInput) { nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') doStart(); }); try { nameInput.value = localStorage.getItem('caName') || ''; } catch (e) {} }
     try { const sb = JSON.parse(localStorage.getItem('caBindings')); if (sb) Object.assign(bindings, sb); } catch (ex) {}
-    buildLeaderboard(root); buildKeybindPanel(root); requestAnimationFrame(tick);
+    buildLeaderboard(root); buildSettingsPanel(root); requestAnimationFrame(tick);
   };
   
   ClaudeArena.show = function () { const ni = document.querySelector('#caName'); if (ni) setTimeout(() => ni.focus(), 80); };
