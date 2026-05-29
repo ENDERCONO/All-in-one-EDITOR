@@ -44,6 +44,19 @@ Chase music starts silently on "Enter the arena" click (needs user gesture for b
 - **Track ended**: loops if in chase/exiting, else picks random different track
 - Normal music not implemented yet (no files in `NormalMusic/`)
 
+## World Pickups
+- **Medkits** (max 10): `assets/game/PumpkinMedkit.png`. Spawn 5 at startup then 1 every 20s. Player walks within 28px to pick up (+50 HP). Server-authoritative via `pickupMedkit`/`medkitRemoved` events.
+- **XP Boxes** (50 total): Seeded rng32(7777), base 32px, scale 0.9–1.2. Bullet breaks box → fires `breakBox` to server → `boxBroken` to all clients. Breaker gains `xpForLevel(level) * scale` XP and takes `hp * 10%` damage. Boxes not regenerated.
+
+## Shield Immunity
+After a shield ring breaks, player gets 1s immunity (`IMMUNE_MS = 1000`). Shown as a flashing gold ring. `me.immuneUntil` timestamp, checked before bullet hit.
+
+## Death Fade
+Dead players fade from 1 → 0 alpha over 1500ms (`DEATH_FADE_MS`). Tracked by `p.deathTime` (set in `playerKilled` handler). Player is culled from draw when `fadeAlpha <= 0`.
+
+## Asset Paths
+`ASSET_BASE = 'assets/game/'` (set in index.html `assetBase` param). Floor and medkit loaded directly into `assets.floor` / `assets.medkit` keys. Sprites loaded via `attemptLoad` into `cid_animKey` keys.
+
 ## Running
 ```
 cd <repo-root>

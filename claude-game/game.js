@@ -17,6 +17,10 @@
   const REGEN_DELAY = 5000, REGEN_RATE = 2;
   const XP_PER_DMG = 1, XP_PER_KILL = 60;
   const LEVEL_BASE = 120, LEVEL_GROW = 1.35;
+  const MEDKIT_PICKUP_R = 28, MEDKIT_HEAL_AMT = 50;
+  const BOX_BASE_SIZE = 32, BOX_XP_BASE = 30;
+  const BOX_COLORS = ['#ff3b5c','#2fd47f','#4d8bff','#c77dff','#ffb13b','#3bd6ff','#ff7ad6'];
+  const DEATH_FADE_MS = 1500, IMMUNE_MS = 1000;
 
   function xpForLevel(l) {
     return Math.round(LEVEL_BASE * Math.pow(LEVEL_GROW, l - 1));
@@ -97,7 +101,7 @@
   const me = {
     id: '', name: '', color: myColor, x: WORLD_W / 2, y: WORLD_H / 2, aim: 0,
     hp: MAX_HP, ult: 0, shields: 0, elims: 0, alive: true, deadUntil: 0,
-    level: 1, xp: 0, lastCombat: 0, lastHurtTime: 0, stepTimer: 0,
+    level: 1, xp: 0, lastCombat: 0, lastHurtTime: 0, stepTimer: 0, immuneUntil: 0, deathTime: 0,
     anim: 'idle', frame: 0, frameT: 0, facing: 1,
     char: 'pumpkin',
     mods: {
@@ -117,7 +121,7 @@
   /* ---------------- MUSIC STATE ---------------- */
   const musicState = {
     chaseAudio: null,
-    chaseVol: 0,
+    chaseVol: 0.056, // start near background level (8% of default musicVol 0.7)
     chaseTrackIdx: -1,
     state: 'idle',   // idle | chase | exiting | fading_out
     exitTimer: 0,
@@ -125,6 +129,7 @@
     soundVol: 0.7,
   };
   const walkAudios = [], runAudios = [];
+  let medkits = [], xpBoxes = [];
 
   /* ---------------- INPUT ---------------- */
   const keys = {};
@@ -156,21 +161,25 @@
   }
 
   function playWalkSfx() {
-    const arr = isSprinting() ? runAudios : walkAudios;
-    if (!arr.length) return;
+    const arr = isSprinting() ? RUN_SFX : WALK_SFX;
+    const src = arr[(Math.random() * arr.length) | 0];
     try {
-      const c = arr[(Math.random() * arr.length) | 0].cloneNode();
-      c.volume = Math.min(1, 0.38 * musicState.soundVol);
-      c.playbackRate = 0.92 + Math.random() * 0.18;
-      c.play().catch(() => {});
+      const a = new Audio(src);
+      a.volume = Math.min(1, 0.38 * musicState.soundVol);
+      a.playbackRate = 0.92 + Math.random() * 0.18;
+      a.play().catch(() => {});
     } catch (e) {}
+  }
+
+  function encPath(p) {
+    return p.split('/').map(s => encodeURIComponent(s)).join('/');
   }
 
   function startChaseTrack(idx) {
     if (musicState.chaseAudio) { musicState.chaseAudio.pause(); musicState.chaseAudio.onended = null; }
     musicState.chaseTrackIdx = idx;
-    const a = new Audio(CHASE_TRACKS[idx]);
-    a.volume = 0;
+    const a = new Audio(encPath(CHASE_TRACKS[idx]));
+    a.volume = musicState.musicVol * 0.08; // soft background until chase
     a.onended = function () {
       if (musicState.state === 'chase' || musicState.state === 'exiting') {
         a.currentTime = 0; a.play().catch(() => {});
@@ -225,8 +234,20 @@
       }
     }
 
-    // Load floor
-    loadPromises.push(attemptLoad('env', 'floor', 'floor.png'));
+    // Load floor (key must be 'floor' for draw() to pick it up)
+    loadPromises.push(new Promise(res => {
+      const img = new Image();
+      img.onload = () => { assets.floor = img; res(); };
+      img.onerror = () => res();
+      img.src = ASSET_BASE + 'floor.png';
+    }));
+    // Load medkit sprite
+    loadPromises.push(new Promise(res => {
+      const img = new Image();
+      img.onload = () => { assets.medkit = img; res(); };
+      img.onerror = () => res();
+      img.src = ASSET_BASE + 'PumpkinMedkit.png';
+    }));
 
     // Wait for all to finish so the "Enter" button doesn't hang
     await Promise.all(loadPromises);
@@ -377,18 +398,26 @@
         toast(data.killerName + ' eliminated ' + data.victimName);
       }
       if (data.victimId === myId) {
-        me.alive = false;
-        me.shields = 0;
+        me.alive = false; me.shields = 0;
         me.deadUntil = Date.now() + RESPAWN_MS;
+        me.deathTime = Date.now();
         play('death', 0.6);
         spawnParticles(me.x, me.y, '#ff3b5c', 20, 250, 0.8);
       } else if (others[data.victimId]) {
         others[data.victimId].alive = false;
+        others[data.victimId].deathTime = Date.now();
       }
     });
 
-    socket.on('playerLeft', (id) => {
-      delete others[id];
+    socket.on('playerLeft', (id) => { delete others[id]; });
+
+    socket.on('boxesInit', (list) => { xpBoxes = list; });
+    socket.on('medkitsInit', (list) => { medkits = list; });
+    socket.on('medkitSpawned', (mk) => { medkits.push(mk); });
+    socket.on('medkitRemoved', (id) => { medkits = medkits.filter(m => m.id !== id); });
+    socket.on('boxBroken', (id) => {
+      const idx = xpBoxes.findIndex(b => b.id === id);
+      if (idx !== -1) { spawnParticles(xpBoxes[idx].x, xpBoxes[idx].y, xpBoxes[idx].color, 10, 130, 0.5); xpBoxes.splice(idx, 1); }
     });
   }
 
@@ -637,13 +666,27 @@
         me.stepTimer = 0;
       }
 
+      // Medkit proximity pickup
+      for (let mi = medkits.length - 1; mi >= 0; mi--) {
+        const mk = medkits[mi];
+        if (d2(me.x, me.y, mk.x, mk.y) < MEDKIT_PICKUP_R * MEDKIT_PICKUP_R) {
+          if (socket) socket.emit('pickupMedkit', mk.id);
+          me.hp = Math.min(MAX_HP, me.hp + MEDKIT_HEAL_AMT);
+          spawnParticles(mk.x, mk.y, '#2fd47f', 10, 110, 0.5);
+          play('coin3', 0.6);
+          toast('+50 HP medkit!');
+          medkits.splice(mi, 1);
+          break;
+        }
+      }
+
       // Throttle and transmit socket movement updates to server at ~40 FPS
       if (socket && t - lastNetUpdate > 25) {
         lastNetUpdate = t;
         socket.emit('move', {
           x: Math.round(me.x), y: Math.round(me.y), aim: +me.aim.toFixed(2),
           anim: me.anim, frame: me.frame, facing: me.facing, moving: !!moving,
-          level: me.level, points: me.points
+          level: me.level, points: me.points, shields: me.shields
         });
       }
     }
@@ -667,8 +710,12 @@
     }
     const recentlyShot = t - me.lastHurtTime < 3000;
     const fadeMult = recentlyShot ? SHOT_FADE_MULT : 1;
+    const bgVol = musicState.musicVol * 0.08; // always-on background level
     switch (musicState.state) {
       case 'idle':
+        // Drift softly up to background volume
+        musicState.chaseVol = Math.min(bgVol,
+          musicState.chaseVol + (bgVol / 2) * dt);
         if (shouldChase) { musicState.state = 'chase'; }
         break;
       case 'chase':
@@ -684,14 +731,14 @@
         if (musicState.exitTimer <= 0) musicState.state = 'fading_out';
         break;
       case 'fading_out':
-        musicState.chaseVol = Math.max(0,
+        musicState.chaseVol = Math.max(bgVol,
           musicState.chaseVol - (musicState.musicVol / CHASE_FADE_OUT_T) * fadeMult * dt);
         if (shouldChase) { musicState.state = 'chase'; break; }
-        if (musicState.chaseVol <= 0) musicState.state = 'idle';
+        if (musicState.chaseVol <= bgVol) musicState.state = 'idle';
         break;
     }
     if (musicState.chaseAudio) {
-      if (musicState.chaseAudio.paused && musicState.state !== 'idle') {
+      if (musicState.chaseAudio.paused) {
         musicState.chaseAudio.play().catch(() => {});
       }
       musicState.chaseAudio.volume = Math.max(0, Math.min(1, musicState.chaseVol));
@@ -732,10 +779,13 @@
       
       // Local client logic: if hit by an enemy projectile, notify server
       if (me.alive && b.owner !== myId && d2(b.x, b.y, me.x, me.y) < (PLAYER_R + brad) ** 2) {
+        if (Date.now() < me.immuneUntil) { bullets.splice(i, 1); continue; } // shield break immunity
         if (me.shields > 0 && !b.reflected) {
-          me.shields--; play('foil2', 0.5);
+          me.shields--;
+          me.immuneUntil = Date.now() + IMMUNE_MS;
+          play('foil2', 0.5);
           spawnBullet(Math.atan2(b.vy, b.vx) + Math.PI, BULLET_SPEED * 2, b.dmg * 2, true, 0, {});
-          toast('Shield reflected! (' + me.shields + ' left)'); bullets.splice(i, 1); continue;
+          toast('Shield reflected! (' + me.shields + ' left)  [1s immune]'); bullets.splice(i, 1); continue;
         } else {
           if (me.mods.thorns > 0 && b.owner) {
             if (socket) socket.emit('damage', { targetId: b.owner, amount: Math.round(b.dmg * me.mods.thorns) });
@@ -744,6 +794,29 @@
         }
       }
       
+      // Check XP box hits (owner bullets only, before player check)
+      if (b.owner === myId) {
+        let boxHit = false;
+        for (let bi = xpBoxes.length - 1; bi >= 0; bi--) {
+          const box = xpBoxes[bi];
+          const hw = box.w / 2, hh = box.h / 2;
+          if (b.x > box.x - hw && b.x < box.x + hw && b.y > box.y - hh && b.y < box.y + hh) {
+            if (socket) socket.emit('breakBox', box.id);
+            const xpGain = Math.round(xpForLevel(me.level) * box.scale);
+            const dmgPenalty = Math.max(1, Math.round(me.hp * 0.10));
+            gainXp(xpGain);
+            hurtMe(dmgPenalty, 'box');
+            spawnParticles(box.x, box.y, box.color, 14, 160, 0.55);
+            play('glass1', 0.5);
+            toast('+XP box! -' + dmgPenalty + ' HP');
+            xpBoxes.splice(bi, 1);
+            bullets.splice(i, 1);
+            boxHit = true; break;
+          }
+        }
+        if (boxHit) continue;
+      }
+
       // If our projectile registers a hit locally, signal to server immediately
       if (b.owner === myId) {
         let hit = false;
@@ -815,7 +888,44 @@
     }
     for (const p of particles) { const sx = p.x - camera.x, sy = p.y - camera.y; if (sx < -20 || sx > VIEW_W + 20 || sy < -20 || sy > VIEW_H + 20) continue; ctx.globalAlpha = p.life / p.maxLife; ctx.beginPath(); ctx.arc(sx, sy, p.r * (p.life / p.maxLife), 0, Math.PI * 2); ctx.fillStyle = p.color; ctx.fill(); }
     ctx.globalAlpha = 1;
-    
+
+    // XP Boxes
+    const now = Date.now();
+    for (const box of xpBoxes) {
+      const sx = box.x - camera.x, sy = box.y - camera.y;
+      if (sx < -50 || sx > VIEW_W + 50 || sy < -50 || sy > VIEW_H + 50) continue;
+      const hw = box.w / 2, hh = box.h / 2;
+      ctx.save();
+      ctx.shadowColor = box.color; ctx.shadowBlur = 8;
+      ctx.globalAlpha = 0.92;
+      ctx.fillStyle = box.color;
+      ctx.fillRect(sx - hw, sy - hh, box.w, box.h);
+      ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1.5;
+      ctx.strokeRect(sx - hw, sy - hh, box.w, box.h);
+      ctx.font = 'bold 9px JetBrains Mono, monospace';
+      ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.textAlign = 'center';
+      ctx.fillText('XP', sx, sy + 4);
+      ctx.restore();
+    }
+
+    // Medkits
+    for (const mk of medkits) {
+      const sx = mk.x - camera.x, sy = mk.y - camera.y;
+      if (sx < -40 || sx > VIEW_W + 40 || sy < -40 || sy > VIEW_H + 40) continue;
+      const pulse = 0.55 + 0.45 * Math.sin(now / 420);
+      ctx.save();
+      if (assets.medkit && assets.medkit.complete && assets.medkit.naturalWidth > 0) {
+        ctx.drawImage(assets.medkit, sx - 16, sy - 16, 32, 32);
+      } else {
+        ctx.fillStyle = '#2fd47f';
+        ctx.fillRect(sx - 10, sy - 3, 20, 6); ctx.fillRect(sx - 3, sy - 10, 6, 20);
+      }
+      ctx.strokeStyle = `rgba(47,212,127,${pulse})`; ctx.lineWidth = 2;
+      ctx.strokeRect(sx - 17, sy - 17, 34, 34);
+      ctx.restore();
+    }
+
     for (const b of bullets) {
       const sx = b.x - camera.x, sy = b.y - camera.y; if (sx < -20 || sx > VIEW_W + 20 || sy < -20 || sy > VIEW_H + 20) continue;
       const brad = b.radius || BULLET_R; ctx.beginPath(); ctx.arc(sx, sy, b.reflected ? brad + 2 : brad, 0, Math.PI * 2);
@@ -887,69 +997,82 @@
   ctx.save(); 
   ctx.translate(sx, sy);
 
+  // Compute fade alpha for death
+  let fadeAlpha = 1;
+  if (!p.alive) {
+    const elapsed = p.deathTime ? Math.min(DEATH_FADE_MS, Date.now() - p.deathTime) : DEATH_FADE_MS;
+    fadeAlpha = Math.max(0, 1 - elapsed / DEATH_FADE_MS);
+  }
+  if (fadeAlpha <= 0) { ctx.restore(); return; }
+
   // 0. Shadow
   ctx.save();
-  ctx.globalAlpha = p.alive ? 0.32 : 0.10;
+  ctx.globalAlpha = fadeAlpha * (p.alive ? 0.32 : 0.18);
   ctx.fillStyle = 'rgba(0,0,0,0.9)';
   ctx.beginPath();
   ctx.ellipse(0, PLAYER_R * 0.82, PLAYER_R * 0.72, PLAYER_R * 0.22, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
-  // 1. Draw Shields (Visual Feedback)
-  for (let i = 0; i < (p.shields || 0); i++) {
-    ctx.beginPath(); 
-    ctx.arc(0, 0, PLAYER_R + 8 + i * 5, 0, Math.PI * 2); 
-    ctx.strokeStyle = '#c77dff'; 
-    ctx.lineWidth = 2.5; 
-    ctx.globalAlpha = (p.alive ? 1 : 0.3) * (1 - i * 0.22); 
-    ctx.shadowColor = '#c77dff'; 
-    ctx.shadowBlur = 12; 
-    ctx.stroke(); 
+  // Immunity flash ring (local player only)
+  if (isMe && Date.now() < (p.immuneUntil || 0)) {
+    const flashOn = Math.floor(Date.now() / 80) % 2;
+    if (flashOn) {
+      ctx.save();
+      ctx.strokeStyle = '#ffb13b'; ctx.lineWidth = 3;
+      ctx.shadowColor = '#ffb13b'; ctx.shadowBlur = 14;
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath(); ctx.arc(0, 0, PLAYER_R + 12, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
   }
-  
+
+  // 1. Draw Shields (visible for all players)
+  for (let i = 0; i < (p.shields || 0); i++) {
+    ctx.beginPath();
+    ctx.arc(0, 0, PLAYER_R + 8 + i * 5, 0, Math.PI * 2);
+    ctx.strokeStyle = '#c77dff';
+    ctx.lineWidth = 2.5;
+    ctx.globalAlpha = fadeAlpha * (1 - i * 0.22);
+    ctx.shadowColor = '#c77dff'; ctx.shadowBlur = 12;
+    ctx.stroke();
+  }
+
   // 2. Sprite vs Arrow Fallback
-  // Ensure alpha is strictly based on p.alive to fix "invisible" issues
-  ctx.globalAlpha = p.alive ? 1 : 0.3;
+  ctx.globalAlpha = fadeAlpha;
   const img = getSprite(p);
-  
+
   if (img && img.complete && img.naturalWidth > 0) {
-    const s = 64; // Force 64x64 size for consistency
-    ctx.save(); 
-    if ((p.facing || 1) < 0) { ctx.scale(-1, 1); } 
-    ctx.drawImage(img, -s / 2, -s / 2, s, s); 
+    const s = 64;
+    ctx.save();
+    if ((p.facing || 1) < 0) { ctx.scale(-1, 1); }
+    ctx.drawImage(img, -s / 2, -s / 2, s, s);
     ctx.restore();
   } else {
-    // Arrow fallback if texture failed to load or key is missing
-    ctx.save(); 
-    ctx.rotate((p.aim || 0) + Math.PI / 2); 
-    ctx.beginPath(); 
-    ctx.moveTo(0, -PLAYER_R - 3); 
-    ctx.lineTo(PLAYER_R, PLAYER_R); 
-    ctx.lineTo(0, PLAYER_R * 0.5); 
-    ctx.lineTo(-PLAYER_R, PLAYER_R); 
+    ctx.save();
+    ctx.rotate((p.aim || 0) + Math.PI / 2);
+    ctx.beginPath();
+    ctx.moveTo(0, -PLAYER_R - 3); ctx.lineTo(PLAYER_R, PLAYER_R);
+    ctx.lineTo(0, PLAYER_R * 0.5); ctx.lineTo(-PLAYER_R, PLAYER_R);
     ctx.closePath();
-    const pcolor = (p.color) || '#fff';
-    ctx.fillStyle = pcolor; 
-    ctx.fill(); 
+    ctx.fillStyle = (p.color) || '#fff'; ctx.fill();
     ctx.restore();
   }
-  
-  // 3. UI Layer (Name and HP Bar)
-  ctx.globalAlpha = p.alive ? 1 : 0.4; 
-  ctx.font = '600 12px Manrope, sans-serif'; 
-  ctx.textAlign = 'center'; 
+
+  // 3. UI Layer (Name and HP Bar) — hide when fully faded
+  ctx.globalAlpha = fadeAlpha;
+  ctx.font = '600 12px Manrope, sans-serif'; ctx.textAlign = 'center';
   ctx.fillStyle = isMe ? '#fff' : 'rgba(236,236,239,0.85)';
   ctx.fillText((p.name || '???') + (p.level ? '  Lv' + p.level : ''), 0, -PLAYER_R - 18);
-  
+
   const displayHp = p.hp !== undefined ? p.hp : MAX_HP;
-  ctx.fillStyle = 'rgba(0,0,0,0.55)'; 
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
   ctx.fillRect(-22, -PLAYER_R - 13, 44, 5);
-  const hpColor = (displayHp / MAX_HP) > 0.5 ? '#2fd47f' : (displayHp / MAX_HP) > 0.25 ? '#ffb13b' : '#ff3b5c'; 
-  ctx.fillStyle = hpColor; 
+  const hpColor = (displayHp / MAX_HP) > 0.5 ? '#2fd47f' : (displayHp / MAX_HP) > 0.25 ? '#ffb13b' : '#ff3b5c';
+  ctx.fillStyle = hpColor;
   ctx.fillRect(-22, -PLAYER_R - 13, 44 * Math.max(0, displayHp / MAX_HP), 5);
-  
-  ctx.restore(); 
+
+  ctx.restore();
 }
   /* ---------------- LIFECYCLE ---------------- */
   let selectedChar = 'pumpkin';
@@ -1014,9 +1137,8 @@
     ['button', 'whoosh', 'foil1', 'foil2', 'glass1', 'explosion1', 'coin3', 'coin5', 'cardFan2', 'cardSlide1', 'cardSlide2', 'highlight1', 'highlight2', 'paper1'].forEach(s => trySound(s, s + '.ogg'));
     setTimeout(() => { for (const k in sfxMap) { if (sfx[sfxMap[k]]) sfx[k] = sfx[sfxMap[k]]; } }, 2000);
 
-    // Load walk / run step sounds
-    WALK_SFX.forEach(src => { const a = new Audio(src); a.preload = 'auto'; walkAudios.push(a); });
-    RUN_SFX.forEach(src  => { const a = new Audio(src); a.preload = 'auto'; runAudios.push(a); });
+    // Preload walk / run step sounds so they're cached for first play
+    [...WALK_SFX, ...RUN_SFX].forEach(src => { const a = new Audio(src); a.preload = 'auto'; });
 
     // Wire volume sliders
     const musSlider = document.getElementById('caMusicVol');
