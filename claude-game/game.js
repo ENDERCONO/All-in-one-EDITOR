@@ -709,20 +709,25 @@
   const PAD = 40;
   const cx = VIEW_W / 2, cy = VIEW_H / 2;
   
+  if (!others) return; // Guard against others being null/undefined
+
   for (const id in others) {
     const o = others[id]; 
     
-    // DEFENSIVE CHECK: If the player object is missing coordinates, skip them.
-    if (!o || typeof o.x === 'undefined' || typeof o.y === 'undefined') {
-        continue; 
+    // THE "CATCH-ALL" SAFETY CHECK:
+    // 1. Is 'o' null or undefined?
+    // 2. Does it lack 'x' or 'y' (not initialized)?
+    // 3. Is 'alive' flag missing or false?
+    if (!o || typeof o.x === 'undefined' || typeof o.y === 'undefined' || !o.alive) {
+        continue; // Skip this player, wait for the next server update
     }
     
-    // Only process if they exist and are alive
-    if (!o.alive) continue;
-    
     const sx = o.x - camera.x, sy = o.y - camera.y;
+    
+    // Don't draw radar if they are already on screen
     if (sx > 0 && sx < VIEW_W && sy > 0 && sy < VIEW_H) continue;
     
+    // Draw the indicator
     const ang = Math.atan2(sy - cy, sx - cx);
     const ex = cx + Math.cos(ang) * (VIEW_W / 2 - PAD);
     const ey = cy + Math.sin(ang) * (VIEW_H / 2 - PAD);
@@ -731,9 +736,14 @@
     ctx.translate(ex, ey); 
     ctx.rotate(ang + Math.PI / 2);
     ctx.fillStyle = o.color || '#ff3b5c';
-    ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(5, 5); ctx.lineTo(-5, 5); ctx.fill();
+    ctx.beginPath(); 
+    ctx.moveTo(0, -10); 
+    ctx.lineTo(5, 5); 
+    ctx.lineTo(-5, 5); 
+    ctx.fill();
     ctx.restore();
   }
+
 }
 
   function getSprite(p) {
