@@ -810,7 +810,7 @@
     ctx.restore();
   }
 
-  
+  function spriteKey(p){
     const ch=p.char||'pumpkin';
     const anim=p.anim||'idle';
     const fr=(p.frame?1:0)+1;
