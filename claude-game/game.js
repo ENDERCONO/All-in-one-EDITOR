@@ -121,7 +121,7 @@
   /* ---------------- MUSIC STATE ---------------- */
   const musicState = {
     chaseAudio: null,
-    chaseVol: 0.056, // start near background level (8% of default musicVol 0.7)
+    chaseVol: 0,
     chaseTrackIdx: -1,
     state: 'idle',   // idle | chase | exiting | fading_out
     exitTimer: 0,
@@ -161,25 +161,21 @@
   }
 
   function playWalkSfx() {
-    const arr = isSprinting() ? RUN_SFX : WALK_SFX;
-    const src = arr[(Math.random() * arr.length) | 0];
+    const arr = isSprinting() ? runAudios : walkAudios;
+    if (!arr.length) return;
     try {
-      const a = new Audio(src);
-      a.volume = Math.min(1, 0.38 * musicState.soundVol);
-      a.playbackRate = 0.92 + Math.random() * 0.18;
-      a.play().catch(() => {});
+      const c = arr[(Math.random() * arr.length) | 0].cloneNode();
+      c.volume = Math.min(1, 0.38 * musicState.soundVol);
+      c.playbackRate = 0.92 + Math.random() * 0.18;
+      c.play().catch(() => {});
     } catch (e) {}
-  }
-
-  function encPath(p) {
-    return p.split('/').map(s => encodeURIComponent(s)).join('/');
   }
 
   function startChaseTrack(idx) {
     if (musicState.chaseAudio) { musicState.chaseAudio.pause(); musicState.chaseAudio.onended = null; }
     musicState.chaseTrackIdx = idx;
-    const a = new Audio(encPath(CHASE_TRACKS[idx]));
-    a.volume = musicState.musicVol * 0.08; // soft background until chase
+    const a = new Audio(CHASE_TRACKS[idx]);
+    a.volume = 0;
     a.onended = function () {
       if (musicState.state === 'chase' || musicState.state === 'exiting') {
         a.currentTime = 0; a.play().catch(() => {});
@@ -673,7 +669,7 @@
           if (socket) socket.emit('pickupMedkit', mk.id);
           me.hp = Math.min(MAX_HP, me.hp + MEDKIT_HEAL_AMT);
           spawnParticles(mk.x, mk.y, '#2fd47f', 10, 110, 0.5);
-          play('coin3', 0.6);
+          play('coin1', 0.6);
           toast('+50 HP medkit!');
           medkits.splice(mi, 1);
           break;
@@ -710,12 +706,8 @@
     }
     const recentlyShot = t - me.lastHurtTime < 3000;
     const fadeMult = recentlyShot ? SHOT_FADE_MULT : 1;
-    const bgVol = musicState.musicVol * 0.08; // always-on background level
     switch (musicState.state) {
       case 'idle':
-        // Drift softly up to background volume
-        musicState.chaseVol = Math.min(bgVol,
-          musicState.chaseVol + (bgVol / 2) * dt);
         if (shouldChase) { musicState.state = 'chase'; }
         break;
       case 'chase':
@@ -731,14 +723,14 @@
         if (musicState.exitTimer <= 0) musicState.state = 'fading_out';
         break;
       case 'fading_out':
-        musicState.chaseVol = Math.max(bgVol,
+        musicState.chaseVol = Math.max(0,
           musicState.chaseVol - (musicState.musicVol / CHASE_FADE_OUT_T) * fadeMult * dt);
         if (shouldChase) { musicState.state = 'chase'; break; }
-        if (musicState.chaseVol <= bgVol) musicState.state = 'idle';
+        if (musicState.chaseVol <= 0) musicState.state = 'idle';
         break;
     }
     if (musicState.chaseAudio) {
-      if (musicState.chaseAudio.paused) {
+      if (musicState.chaseAudio.paused && musicState.state !== 'idle') {
         musicState.chaseAudio.play().catch(() => {});
       }
       musicState.chaseAudio.volume = Math.max(0, Math.min(1, musicState.chaseVol));
@@ -1137,8 +1129,9 @@
     ['button', 'whoosh', 'foil1', 'foil2', 'glass1', 'explosion1', 'coin3', 'coin5', 'cardFan2', 'cardSlide1', 'cardSlide2', 'highlight1', 'highlight2', 'paper1'].forEach(s => trySound(s, s + '.ogg'));
     setTimeout(() => { for (const k in sfxMap) { if (sfx[sfxMap[k]]) sfx[k] = sfx[sfxMap[k]]; } }, 2000);
 
-    // Preload walk / run step sounds so they're cached for first play
-    [...WALK_SFX, ...RUN_SFX].forEach(src => { const a = new Audio(src); a.preload = 'auto'; });
+    // Load walk / run step sounds
+    WALK_SFX.forEach(src => { const a = new Audio(src); a.preload = 'auto'; walkAudios.push(a); });
+    RUN_SFX.forEach(src  => { const a = new Audio(src); a.preload = 'auto'; runAudios.push(a); });
 
     // Wire volume sliders
     const musSlider = document.getElementById('caMusicVol');
