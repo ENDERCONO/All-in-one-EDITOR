@@ -122,32 +122,52 @@
   }
 
   // FIXED: Multi-layered image loading configuration to ensure textures never fail
-  function loadCharAssets() {
-    for (const cid in CHARACTERS) {
-      const ch = CHARACTERS[cid];
-      for (const animKey in ch.sprites) {
-        const filename = ch.sprites[animKey];
-        const key = cid + '_' + animKey;
-        
+  // FIXED: Promise-based asset loader that prevents hanging and handles 404s gracefully
+  async function loadCharAssets() {
+    const loadSingleImage = (src) => {
+      return new Promise((resolve, reject) => {
         const img = new Image();
-        img.onload = () => { assets[key] = img; };
-        img.onerror = () => {
-          // Fallback A: Try absolute lowercased path lookup
-          const img2 = new Image();
-          img2.onload = () => { assets[key] = img2; };
-          img2.onerror = () => {
-            // Fallback B: Try forcing lowercased filenames completely
-            const img3 = new Image();
-            img3.onload = () => { assets[key] = img3; };
-            img3.onerror = () => { console.warn('[Arena] Missing texture:', filename); };
-            img3.src = ASSET_BASE + filename.toLowerCase();
-          };
-          img2.src = ASSET_BASE.toLowerCase() + filename;
-        };
-        img.src = ASSET_BASE + filename;
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = src;
+      });
+    };
+
+    const attemptLoad = async (cid, animKey, filename) => {
+      const key = cid + '_' + animKey;
+      const paths = [
+        ASSET_BASE + filename,                    // Primary
+        ASSET_BASE + filename.toLowerCase(),      // Fallback A (Lowercase filename)
+        ASSET_BASE.toLowerCase() + filename       // Fallback B (Lowercase folder)
+      ];
+
+      for (const path of paths) {
+        try {
+          const img = await loadSingleImage(path);
+          assets[key] = img;
+          return; // Success!
+        } catch (e) {
+          continue; // Try next path
+        }
+      }
+      console.warn(`[Arena] Failed to load all variations for: ${filename}`);
+      assets[key] = null; // Mark as null so drawing logic uses the arrow fallback
+    };
+
+    // Load all characters
+    const loadPromises = [];
+    for (const cid in CHARACTERS) {
+      for (const animKey in CHARACTERS[cid].sprites) {
+        loadPromises.push(attemptLoad(cid, animKey, CHARACTERS[cid].sprites[animKey]));
       }
     }
-    tryLoad('floor', ASSET_BASE + 'floor.png');
+
+    // Load floor
+    loadPromises.push(attemptLoad('env', 'floor', 'floor.png'));
+
+    // Wait for all to finish so the "Enter" button doesn't hang
+    await Promise.all(loadPromises);
+    console.log("[Arena] All assets processed.");
   }
 
   /* ---------------- HELPERS ---------------- */
@@ -686,13 +706,18 @@
   /* ---------------- OFF-SCREEN MARKERS ---------------- */
   // REPLACE THIS ENTIRE FUNCTION
   function drawOffscreenMarkers(ctx, camera) {
-    const PAD = 40;
-    const cx = VIEW_W / 2, cy = VIEW_H / 2;
-    for (const id in others) {
-      const o = others[id]; 
-      if (!o.alive) continue;
-      const sx = o.x - camera.x, sy = o.y - camera.y;
-      if (sx > 0 && sx < VIEW_W && sy > 0 && sy < VIEW_H) continue;
+  const PAD = 40;
+  const cx = VIEW_W / 2, cy = VIEW_H / 2;
+  
+  for (const id in others) {
+    const o = others[id]; 
+    // ADD THIS SAFETY CHECK:
+    if (!o || typeof o.x === 'undefined' || typeof o.y === 'undefined' || !o.alive) {
+        continue;
+    }
+    
+    const sx = o.x - camera.x, sy = o.y - camera.y;
+    if (sx > 0 && sx < VIEW_W && sy > 0 && sy < VIEW_H) continue;
       
       const ang = Math.atan2(sy - cy, sx - cx);
       const ex = cx + Math.cos(ang) * (VIEW_W / 2 - PAD);
