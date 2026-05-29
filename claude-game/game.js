@@ -711,26 +711,30 @@
   
   for (const id in others) {
     const o = others[id]; 
-    // ADD THIS SAFETY CHECK:
-    if (!o || typeof o.x === 'undefined' || typeof o.y === 'undefined' || !o.alive) {
-        continue;
+    
+    // DEFENSIVE CHECK: If the player object is missing coordinates, skip them.
+    if (!o || typeof o.x === 'undefined' || typeof o.y === 'undefined') {
+        continue; 
     }
+    
+    // Only process if they exist and are alive
+    if (!o.alive) continue;
     
     const sx = o.x - camera.x, sy = o.y - camera.y;
     if (sx > 0 && sx < VIEW_W && sy > 0 && sy < VIEW_H) continue;
-      
-      const ang = Math.atan2(sy - cy, sx - cx);
-      const ex = cx + Math.cos(ang) * (VIEW_W / 2 - PAD);
-      const ey = cy + Math.sin(ang) * (VIEW_H / 2 - PAD);
-      
-      ctx.save();
-      ctx.translate(ex, ey); 
-      ctx.rotate(ang + Math.PI / 2); // Corrects the arrow direction
-      ctx.fillStyle = o.color || '#ff3b5c';
-      ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(5, 5); ctx.lineTo(-5, 5); ctx.fill();
-      ctx.restore();
-    }
+    
+    const ang = Math.atan2(sy - cy, sx - cx);
+    const ex = cx + Math.cos(ang) * (VIEW_W / 2 - PAD);
+    const ey = cy + Math.sin(ang) * (VIEW_H / 2 - PAD);
+    
+    ctx.save();
+    ctx.translate(ex, ey); 
+    ctx.rotate(ang + Math.PI / 2);
+    ctx.fillStyle = o.color || '#ff3b5c';
+    ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(5, 5); ctx.lineTo(-5, 5); ctx.fill();
+    ctx.restore();
   }
+}
 
   function getSprite(p) {
     const ch = p.char || 'pumpkin';
