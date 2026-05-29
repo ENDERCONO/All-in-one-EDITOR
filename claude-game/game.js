@@ -22,6 +22,7 @@
   const BOX_COLORS = ['#ff3b5c','#2fd47f','#4d8bff','#c77dff','#ffb13b','#3bd6ff','#ff7ad6'];
   const DEATH_FADE_MS = 1500, IMMUNE_MS = 1000;
   const WALL_CD = 20000, WALL_LEN = 240, WALL_HP = 700, WALL_THICK = 10, WALL_MAX_AGE = 15000;
+  const TETO_R = 160, TETO_MAX_HP = 999999, TETO_XP_HIT = 5, TETO_XP_KILL = 1200, TETO_SPRITE = 512;
 
   function xpForLevel(l) {
     return Math.round(LEVEL_BASE * Math.pow(LEVEL_GROW, l - 1));
@@ -126,6 +127,7 @@
   };
   
   let others = {};
+  const tetoState = { x: 0, y: 0, rx: 0, ry: 0, hp: TETO_MAX_HP, alive: false, state: 'roam', jumpAlpha: 1, jumpTimer: 0 };
   const bullets = [];
   const particles = [];
   const walls = [];
@@ -195,10 +197,24 @@
   // Returns 0–1 volume multiplier based on world-space distance from local player.
   // Full volume within ~500 units (roughly on-screen), silent beyond ~2.5 view-widths.
   function spatialVol(wx, wy) {
-    if (!me || !me.alive) return 0;
+    if (!me) return 0;
+    if (!me.alive) return 0.4; // hear boss/world sounds while spectating
     const dist = Math.hypot(wx - me.x, wy - me.y);
     const FULL = 500, MAX_D = VIEW_W * 2.5;
     return dist < FULL ? 1 : Math.max(0, 1 - (dist - FULL) / (MAX_D - FULL));
+  }
+
+  function playTetoSound(vol) {
+    const sv = spatialVol(tetoState.rx, tetoState.ry);
+    const v = Math.min(1, (vol || 0.75) * sv * musicState.soundVol);
+    if (v < 0.02) return;
+    try { const a = new Audio(PATH_BASE + 'teto/tetosound.ogg'); a.volume = v; a.play().catch(() => {}); } catch (e) {}
+  }
+  function playTetoHurt() {
+    const sv = spatialVol(tetoState.rx, tetoState.ry);
+    const v = Math.min(1, 0.55 * sv * musicState.soundVol);
+    if (v < 0.02) return;
+    try { const a = new Audio(PATH_BASE + 'teto/tetohurt.ogg'); a.volume = v; a.play().catch(() => {}); } catch (e) {}
   }
 
   function distPtSeg(px, py, ax, ay, bx, by) {
@@ -318,6 +334,13 @@
       img.onload = () => { assets.medkit = img; res(); };
       img.onerror = () => res();
       img.src = ASSET_BASE + 'PumpkinMedkit.png';
+    }));
+    // Load Teto boss sprite (not in ASSET_BASE — lives in claude-game/teto/)
+    loadPromises.push(new Promise(res => {
+      const img = new Image();
+      img.onload = () => { assets.teto = img; res(); };
+      img.onerror = () => res();
+      img.src = PATH_BASE + 'teto/teto.png';
     }));
 
     // Wait for all to finish so the "Enter" button doesn't hang
@@ -493,6 +516,53 @@
       const idx = xpBoxes.findIndex(b => b.id === id);
       if (idx !== -1) { spawnParticles(xpBoxes[idx].x, xpBoxes[idx].y, xpBoxes[idx].color, 10, 130, 0.5); xpBoxes.splice(idx, 1); }
     });
+
+    socket.on('tetoUpdate', (data) => {
+      tetoState.x = data.x; tetoState.y = data.y;
+      tetoState.hp = data.hp; tetoState.state = data.state;
+      if (data.alive !== undefined) tetoState.alive = data.alive;
+      if (!tetoState.alive) { tetoState.rx = data.x; tetoState.ry = data.y; }
+    });
+    socket.on('tetoHurt', () => {
+      playTetoHurt();
+      spawnParticles(tetoState.rx, tetoState.ry, '#ff3b5c', 18, 220, 0.55);
+    });
+    socket.on('tetoKilled', (data) => {
+      tetoState.alive = false; tetoState.hp = 0;
+      gainXp(TETO_XP_KILL);
+      spawnParticles(tetoState.rx, tetoState.ry, '#ff8c42', 60, 600, 1.5);
+      spawnParticles(tetoState.rx, tetoState.ry, '#c77dff', 40, 450, 1.2);
+      playTetoSound(1.0);
+      toast('TETO DEFEATED by ' + (data.killerName || 'Someone') + '! +' + TETO_XP_KILL + ' XP!');
+    });
+    socket.on('tetoRespawn', (data) => {
+      tetoState.x = data.x; tetoState.y = data.y;
+      tetoState.rx = data.x; tetoState.ry = data.y;
+      tetoState.hp = TETO_MAX_HP; tetoState.alive = true; tetoState.state = 'roam';
+      tetoState.jumpAlpha = 1; tetoState.jumpTimer = 0;
+      toast('Teto has returned! Find it on the map…');
+    });
+    socket.on('tetoStomp', (data) => {
+      spawnParticles(data.x, data.y, '#ff8c42', 50, data.r * 1.2, 0.8);
+      spawnParticles(data.x, data.y, '#ffb13b', 30, data.r * 0.6, 0.5);
+      playTetoSound(0.9);
+      const dist = Math.hypot(me.x - data.x, me.y - data.y);
+      if (me.alive && dist < data.r) { hurtMe(25, 'teto'); toast('Teto stomped! -25 HP'); }
+    });
+    socket.on('tetoJump', (data) => {
+      tetoState.jumpAlpha = 0; tetoState.jumpTimer = 950;
+      playTetoSound(0.8);
+      spawnParticles(data.fromX, data.fromY, '#888', 20, 200, 0.5);
+      setTimeout(() => {
+        tetoState.rx = data.toX; tetoState.ry = data.toY;
+        tetoState.jumpAlpha = 1; tetoState.jumpTimer = 0;
+        spawnParticles(data.toX, data.toY, '#ff8c42', 50, 400, 1.0);
+        const dist = Math.hypot(me.x - data.toX, me.y - data.toY);
+        if (me.alive && dist < TETO_R + 120) { hurtMe(40, 'teto'); toast('Teto landed on you! -40 HP'); }
+      }, 950);
+    });
+    socket.on('tetoCharge', () => { playTetoSound(0.7); });
+    socket.on('tetoRoar',   () => { playTetoSound(1.0); spawnParticles(tetoState.rx, tetoState.ry, '#c77dff', 25, 300, 0.7); });
 
     socket.on('wallPlaced', (data) => {
       if (data.ownerId === myId) return; // already placed locally
@@ -873,6 +943,15 @@
       o.ry = lerp(o.ry, o.y, 15 * dt);
     }
 
+    // Teto boss interpolation
+    if (tetoState.alive) {
+      if (tetoState.rx === 0 && tetoState.ry === 0) { tetoState.rx = tetoState.x; tetoState.ry = tetoState.y; }
+      const speed = tetoState.state === 'charge' ? 20 : 8;
+      tetoState.rx = lerp(tetoState.rx, tetoState.x, speed * dt);
+      tetoState.ry = lerp(tetoState.ry, tetoState.y, speed * dt);
+      if (tetoState.jumpTimer > 0) { tetoState.jumpTimer -= dt * 1000; if (tetoState.jumpTimer <= 0) { tetoState.jumpTimer = 0; tetoState.jumpAlpha = 1; } }
+    }
+
     // Bullets Simulation
     for (let i = bullets.length - 1; i >= 0; i--) {
       const b = bullets[i]; b.x += b.vx * dt; b.y += b.vy * dt;
@@ -939,7 +1018,7 @@
           const hw = box.w / 2, hh = box.h / 2;
           if (b.x > box.x - hw && b.x < box.x + hw && b.y > box.y - hh && b.y < box.y + hh) {
             if (socket) socket.emit('breakBox', box.id);
-            const xpGain = Math.round(xpForLevel(me.level) * box.scale);
+            const xpGain = Math.round(xpForLevel(me.level) * box.scale * 0.2);
             const dmgPenalty = Math.max(1, Math.round(me.hp * 0.10));
             gainXp(xpGain);
             hurtMe(dmgPenalty, 'box');
@@ -952,6 +1031,19 @@
           }
         }
         if (boxHit) continue;
+      }
+
+      // Teto hit check (my bullets only)
+      if (b.owner === myId && tetoState.alive) {
+        const tx = tetoState.rx !== undefined ? tetoState.rx : tetoState.x;
+        const ty = tetoState.ry !== undefined ? tetoState.ry : tetoState.y;
+        if (d2(b.x, b.y, tx, ty) < (TETO_R + brad) ** 2) {
+          if (socket) socket.emit('hitTeto', { amount: b.dmg });
+          gainXp(TETO_XP_HIT);
+          spawnParticles(b.x, b.y, '#ff8c42', 6, 140, 0.35);
+          playTetoHurt();
+          if ((b.pierce || 0) > 0) { b.pierce--; } else { bullets.splice(i, 1); continue; }
+        }
       }
 
       // If our projectile registers a hit locally, signal to server immediately
@@ -1076,6 +1168,39 @@
       ctx.shadowColor = b.explosive > 0 ? '#ff8c42' : b.reflected ? '#c77dff' : '#ff3b5c'; ctx.shadowBlur = b.explosive > 0 ? 18 : 10; ctx.fill(); ctx.shadowBlur = 0;
     }
     
+    // Draw Teto boss
+    if (tetoState.alive && tetoState.rx !== undefined) {
+      const stx = tetoState.rx - camera.x, sty = tetoState.ry - camera.y;
+      if (stx > -TETO_SPRITE && stx < VIEW_W + TETO_SPRITE && sty > -TETO_SPRITE && sty < VIEW_H + TETO_SPRITE) {
+        const hs = TETO_SPRITE / 2;
+        const hpFrac = Math.max(0, tetoState.hp / TETO_MAX_HP);
+        ctx.save();
+        ctx.globalAlpha = tetoState.jumpAlpha !== undefined ? tetoState.jumpAlpha : 1;
+        // Ground shadow (at feet)
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.beginPath(); ctx.ellipse(stx, sty + hs - 18, hs * 0.55, hs * 0.08, 0, 0, Math.PI * 2); ctx.fill();
+        // Sprite or fallback circle
+        if (assets.teto && assets.teto.complete && assets.teto.naturalWidth > 0) {
+          ctx.drawImage(assets.teto, stx - hs, sty - hs, TETO_SPRITE, TETO_SPRITE);
+        } else {
+          ctx.fillStyle = '#ff8c42'; ctx.shadowColor = '#ff8c42'; ctx.shadowBlur = 40;
+          ctx.beginPath(); ctx.arc(stx, sty, TETO_R, 0, Math.PI * 2); ctx.fill();
+          ctx.shadowBlur = 0;
+          ctx.font = 'bold 28px Manrope, sans-serif'; ctx.textAlign = 'center';
+          ctx.fillStyle = '#fff'; ctx.fillText('TETO', stx, sty + 10);
+        }
+        // HP bar
+        const barW = 180, barH = 10, barY = sty - hs - 24;
+        ctx.globalAlpha = 0.95;
+        ctx.fillStyle = '#1a1a22'; ctx.fillRect(stx - barW / 2, barY, barW, barH);
+        const barColor = hpFrac > 0.5 ? '#2fd47f' : hpFrac > 0.25 ? '#ffb13b' : '#ff3b5c';
+        ctx.fillStyle = barColor; ctx.fillRect(stx - barW / 2, barY, barW * hpFrac, barH);
+        ctx.font = 'bold 11px JetBrains Mono, monospace'; ctx.textAlign = 'center';
+        ctx.fillStyle = '#ececef'; ctx.fillText('TETO  ' + Math.ceil(tetoState.hp).toLocaleString() + ' HP', stx, barY - 6);
+        ctx.restore();
+      }
+    }
+
     // Draw walls
     const wallNow = Date.now();
     for (const w of walls) {
@@ -1112,6 +1237,24 @@
     if (!others) return;
     const cx = VIEW_W / 2, cy = VIEW_H / 2, PAD = 40;
     try {
+      // Teto offscreen indicator
+      if (tetoState.alive) {
+        const tsx = tetoState.rx - camera.x, tsy = tetoState.ry - camera.y;
+        if (tsx < 0 || tsx > VIEW_W || tsy < 0 || tsy > VIEW_H) {
+          const ang = Math.atan2(tsy - cy, tsx - cx);
+          const ex = cx + Math.cos(ang) * (VIEW_W / 2 - PAD + 8);
+          const ey = cy + Math.sin(ang) * (VIEW_H / 2 - PAD + 8);
+          ctx.save();
+          ctx.translate(ex, ey);
+          ctx.rotate(ang + Math.PI / 2);
+          ctx.fillStyle = '#ff8c42'; ctx.shadowColor = '#ff8c42'; ctx.shadowBlur = 10;
+          ctx.beginPath(); ctx.moveTo(0, -14); ctx.lineTo(8, 8); ctx.lineTo(-8, 8); ctx.fill();
+          ctx.shadowBlur = 0;
+          ctx.font = 'bold 9px JetBrains Mono, monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
+          ctx.fillText('TETO', 0, 20);
+          ctx.restore();
+        }
+      }
       for (const id in others) {
         const o = others[id];
         if (!o || o.x === undefined || o.y === undefined) continue;
@@ -1180,7 +1323,7 @@
   ctx.globalAlpha = fadeAlpha * (p.alive ? 0.32 : 0.18);
   ctx.fillStyle = 'rgba(0,0,0,0.9)';
   ctx.beginPath();
-  ctx.ellipse(0, PLAYER_R * 0.82, PLAYER_R * 0.72, PLAYER_R * 0.22, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, PLAYER_R * 1.65, PLAYER_R * 0.72, PLAYER_R * 0.22, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
