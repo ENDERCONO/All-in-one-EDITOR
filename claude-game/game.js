@@ -141,7 +141,7 @@
     normalAudio: null, normalVol: 0, normalTrackIdx: -1,
     state: 'idle',   // idle | chase | exiting | fading_out
     exitTimer: 0,
-    musicVol: 0.7,
+    musicVol: 0.35,
     soundVol: 0.7,
   };
   const NORMAL_FULL = 0.42; // fraction of musicVol at which normal music plays in idle
@@ -208,13 +208,13 @@
     const sv = spatialVol(tetoState.rx, tetoState.ry);
     const v = Math.min(1, (vol || 0.75) * sv * musicState.soundVol);
     if (v < 0.02) return;
-    try { const a = new Audio(PATH_BASE + 'teto/tetosound.ogg'); a.volume = v; a.play().catch(() => {}); } catch (e) {}
+    try { const a = new Audio(PATH_BASE + 'claude-game/teto/tetosound.ogg'); a.volume = v; a.play().catch(() => {}); } catch (e) {}
   }
   function playTetoHurt() {
     const sv = spatialVol(tetoState.rx, tetoState.ry);
     const v = Math.min(1, 0.55 * sv * musicState.soundVol);
     if (v < 0.02) return;
-    try { const a = new Audio(PATH_BASE + 'teto/tetohurt.ogg'); a.volume = v; a.play().catch(() => {}); } catch (e) {}
+    try { const a = new Audio(PATH_BASE + 'claude-game/teto/tetohurt.ogg'); a.volume = v; a.play().catch(() => {}); } catch (e) {}
   }
 
   function distPtSeg(px, py, ax, ay, bx, by) {
@@ -340,7 +340,7 @@
       const img = new Image();
       img.onload = () => { assets.teto = img; res(); };
       img.onerror = () => res();
-      img.src = PATH_BASE + 'teto/teto.png';
+      img.src = PATH_BASE + 'claude-game/teto/teto.png';
     }));
 
     // Wait for all to finish so the "Enter" button doesn't hang
