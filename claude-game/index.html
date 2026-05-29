@@ -5,108 +5,153 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Claude Arena</title>
 <link rel="icon" type="image/png" href="../assets/images/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root{
-    --bg:#09090b; --bg-2:#0f0f12; --surface:#141418; --surface-2:#1b1b20;
-    --border:#2a2a32; --text:#ececef; --text-dim:#8a8a94;
-    --r:#ff3b5c; --g:#2fd47f; --b:#4d8bff; --accent:#e4e4ea;
-    --ult:#c77dff;
-  }
+  :root{ --bg:#09090b; --surface:#141418; --surface-2:#1b1b20; --border:#2a2a32;
+    --text:#ececef; --text-dim:#8a8a94; --g:#2fd47f; --r:#ff3b5c; --b:#4d8bff; --ult:#c77dff; }
   *{box-sizing:border-box;margin:0;padding:0;}
   html,body{height:100%;}
-  body{
-    background:var(--bg); color:var(--text);
-    font-family:'Manrope',-apple-system,system-ui,sans-serif;
-    -webkit-font-smoothing:antialiased; overflow:hidden;
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
-    min-height:100vh; user-select:none;
-  }
-  .ca-shell{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;}
-  #caCanvas{
-    background:#0c0c10; display:block; image-rendering:pixelated;
-    border:1px solid var(--border); border-radius:10px;
-    box-shadow:0 20px 60px rgba(0,0,0,.5);
-    touch-action:none;
-  }
+  body{ background:var(--bg); color:var(--text); font-family:'Manrope',sans-serif;
+    -webkit-font-smoothing:antialiased; overflow:hidden; user-select:none;
+    display:flex; align-items:center; justify-content:center; min-height:100vh; }
+  #caRoot{ position:relative; }
+  #caCanvas{ background:#0c0c10; display:block; max-width:100vw; max-height:100vh;
+    border:1px solid var(--border); border-radius:10px; box-shadow:0 20px 60px rgba(0,0,0,.5); touch-action:none; }
 
-  /* Join / name gate */
-  .ca-gate{
-    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-    background:rgba(9,9,11,.82); backdrop-filter:blur(6px); z-index:30;
-  }
-  .ca-gate-card{
-    background:var(--surface); border:1px solid var(--border); border-radius:14px;
-    padding:28px 30px; width:min(380px,90vw); text-align:center;
-  }
-  .ca-gate-card h1{font-family:'Instrument Serif',Georgia,serif;font-size:30px;font-weight:600;margin-bottom:4px;letter-spacing:.5px;}
-  .ca-gate-card h1 em{color:var(--ult);font-style:italic;}
-  .ca-gate-card p{color:var(--text-dim);font-size:13px;margin-bottom:18px;line-height:1.5;}
-  .ca-gate-card input{
-    width:100%; background:var(--bg-2); border:1px solid var(--border); color:var(--text);
-    padding:11px 13px; border-radius:9px; font-size:14px; font-family:inherit; margin-bottom:12px;
-    outline:none;
-  }
-  .ca-gate-card input:focus{border-color:var(--ult);}
-  .ca-btn{
-    width:100%; background:var(--ult); color:#15011f; border:none; cursor:pointer;
-    padding:12px; border-radius:9px; font-size:14px; font-weight:700; font-family:inherit;
-    letter-spacing:.03em; transition:filter .15s;
-  }
-  .ca-btn:hover{filter:brightness(1.08);}
-  .ca-gate-help{margin-top:14px;font-size:11px;color:#55555e;line-height:1.6;}
-  .ca-gate-help kbd{background:var(--surface-2);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-size:10px;}
+  /* ===== left rail HUD ===== */
+  .ca-rail{ position:absolute; top:16px; left:16px; z-index:20; display:flex; flex-direction:column; gap:10px;
+    width:188px; pointer-events:none; font-family:'JetBrains Mono',monospace; }
+  .ca-block{ background:rgba(18,18,22,.78); border:1px solid var(--border); border-radius:10px; padding:9px 11px; }
+  .ca-block .lab{ font-size:9px; letter-spacing:.12em; color:var(--text-dim); text-transform:uppercase; margin-bottom:5px; display:flex; justify-content:space-between; }
+  .ca-bar{ height:9px; background:#23232a; border-radius:6px; overflow:hidden; }
+  .ca-bar > span{ display:block; height:100%; width:0%; border-radius:6px; transition:width .12s linear; }
+  #caHpFill{ background:var(--g); }
+  #caXpFill{ background:var(--ult); }
+  #caDashFill{ background:var(--b); }
+  .ca-row{ display:flex; align-items:center; gap:8px; font-size:11px; color:var(--text); }
+  .ca-mini{ font-size:9px; color:var(--text-dim); }
 
-  /* HUD */
-  .ca-hud{position:absolute;top:14px;left:50%;transform:translateX(-50%);z-index:20;pointer-events:none;
-          font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-dim);
-          background:rgba(20,20,24,.7);border:1px solid var(--border);border-radius:999px;padding:6px 14px;
-          display:flex;gap:16px;align-items:center;letter-spacing:.04em;}
-  .ca-hud b{color:var(--text);}
-  .ca-status-dot{width:7px;height:7px;border-radius:50%;background:var(--text-dim);display:inline-block;margin-right:5px;}
-  .ca-status-dot.ok{background:var(--g);box-shadow:0 0 8px var(--g);}
-  .ca-status-dot.err{background:var(--r);}
+  /* ===== right ult bar ===== */
+  .ca-ult{ position:absolute; top:50%; right:18px; transform:translateY(-50%); z-index:20; pointer-events:none;
+    display:flex; flex-direction:column; align-items:center; gap:8px; font-family:'JetBrains Mono',monospace; }
+  .ca-ult-track{ width:16px; height:200px; background:#23232a; border:1px solid var(--border); border-radius:10px; overflow:hidden; position:relative; display:flex; align-items:flex-end; }
+  #caUltFill{ width:100%; height:0%; background:linear-gradient(0deg,var(--ult),#e9c6ff); transition:height .15s linear; }
+  .ca-ult-lab{ font-size:9px; letter-spacing:.1em; color:var(--text-dim); text-transform:uppercase; }
+  #caUltTxt{ font-size:10px; color:var(--ult); text-align:center; width:80px; }
 
-  .ca-toast{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:25;
-            background:rgba(20,20,24,.92);border:1px solid var(--border);border-radius:999px;
-            padding:8px 18px;font-size:12px;color:var(--text);opacity:0;transition:opacity .3s;pointer-events:none;}
-  .ca-toast.show{opacity:1;}
+  /* ===== HUD top status ===== */
+  .ca-hud{ position:absolute; top:16px; left:50%; transform:translateX(-50%); z-index:20; pointer-events:none;
+    font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-dim);
+    background:rgba(20,20,24,.7); border:1px solid var(--border); border-radius:999px; padding:6px 14px;
+    display:flex; gap:16px; align-items:center; letter-spacing:.04em; }
+  .ca-hud b{ color:var(--text); }
+  .ca-status-dot{ width:7px; height:7px; border-radius:50%; background:var(--text-dim); display:inline-block; margin-right:5px; }
+  .ca-status-dot.ok{ background:var(--g); box-shadow:0 0 8px var(--g); }
+  .ca-status-dot.err{ background:var(--r); }
 
-  .ca-help-bar{position:absolute;bottom:14px;left:14px;z-index:20;font-family:'JetBrains Mono',monospace;
-               font-size:10px;color:#55555e;line-height:1.7;pointer-events:none;}
-  .ca-help-bar kbd{background:var(--surface-2);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:var(--text-dim);}
+  .ca-help-bar{ position:absolute; bottom:14px; left:14px; z-index:20; font-family:'JetBrains Mono',monospace;
+    font-size:10px; color:#55555e; line-height:1.7; pointer-events:none; }
+  .ca-help-bar kbd, .ca-gate-help kbd{ background:var(--surface-2); border:1px solid var(--border); border-radius:4px; padding:1px 5px; font-size:10px; color:var(--text-dim); }
+
+  .ca-toast{ position:absolute; bottom:20px; left:50%; transform:translateX(-50%); z-index:25;
+    background:rgba(20,20,24,.92); border:1px solid var(--border); border-radius:999px; padding:8px 18px;
+    font-size:12px; color:var(--text); opacity:0; transition:opacity .3s; pointer-events:none; }
+  .ca-toast.show{ opacity:1; }
+
+  /* ===== card draft ===== */
+  .ca-cards{ position:absolute; top:24px; left:50%; transform:translateX(-50%); z-index:40;
+    display:none; gap:22px; pointer-events:auto; }
+  .ca-card{ width:160px; height:200px; background:var(--surface); border:2px solid var(--rar,#888);
+    border-radius:14px; padding:14px 12px; cursor:pointer; transform-origin:center center;
+    box-shadow:0 0 26px color-mix(in srgb, var(--rar,#888) 40%, transparent); display:flex; flex-direction:column; }
+  .ca-card-rar{ font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:.14em; color:var(--rar,#888); }
+  .ca-card-art{ flex:1; margin:8px 0; border-radius:8px; background:
+    repeating-linear-gradient(45deg, rgba(255,255,255,.03) 0 8px, transparent 8px 16px), var(--surface-2); }
+  .ca-card-name{ font-family:'Instrument Serif',serif; font-size:20px; line-height:1.05; }
+  .ca-card-desc{ font-size:11px; color:var(--text-dim); margin-top:4px; line-height:1.35; }
+
+  /* ===== join gate ===== */
+  .ca-gate{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    background:rgba(9,9,11,.82); backdrop-filter:blur(6px); z-index:30; border-radius:10px; }
+  .ca-gate-card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:28px 30px; width:min(380px,90vw); text-align:center; }
+  .ca-gate-card h1{ font-family:'Instrument Serif',serif; font-size:30px; font-weight:600; }
+  .ca-gate-card h1 em{ color:var(--ult); font-style:italic; }
+  .ca-gate-card p{ color:var(--text-dim); font-size:13px; margin:4px 0 18px; line-height:1.5; }
+  .ca-gate-card input{ width:100%; background:#0f0f12; border:1px solid var(--border); color:var(--text);
+    padding:11px 13px; border-radius:9px; font-size:14px; font-family:inherit; margin-bottom:12px; outline:none; }
+  .ca-gate-card input:focus{ border-color:var(--ult); }
+  .ca-btn{ width:100%; background:var(--ult); color:#15011f; border:none; cursor:pointer; padding:12px;
+    border-radius:9px; font-size:14px; font-weight:700; font-family:inherit; }
+  .ca-btn:hover{ filter:brightness(1.08); }
+  .ca-gate-help{ margin-top:14px; font-size:11px; color:#55555e; line-height:1.6; }
 </style>
 </head>
 <body>
-<div class="ca-shell">
+<div id="caRoot">
   <canvas id="caCanvas" width="900" height="600"></canvas>
 
-  <div class="ca-hud" id="caHud">
+  <div class="ca-hud">
     <span><span class="ca-status-dot" id="caDot"></span><span id="caNet">connecting…</span></span>
     <span>players <b id="caCount">0</b></span>
-    <span>elims <b id="caElims">0</b></span>
+  </div>
+
+  <!-- left rail: health + level + dash + shields -->
+  <div class="ca-rail">
+    <div class="ca-block" id="caHpBar">
+      <div class="lab"><span>Health</span><span id="caHpText">100 / 100</span></div>
+      <div class="ca-bar"><span id="caHpFill"></span></div>
+    </div>
+    <div class="ca-block">
+      <div class="lab"><span id="caLvl">LV 1</span><span class="ca-mini">XP</span></div>
+      <div class="ca-bar"><span id="caXpFill"></span></div>
+    </div>
+    <div class="ca-block">
+      <div class="lab"><span>Dash (E)</span><span id="caDashTxt">READY</span></div>
+      <div class="ca-bar"><span id="caDashFill"></span></div>
+    </div>
+    <div class="ca-block">
+      <div class="ca-row"><span>Shields</span><b id="caShieldTxt" style="margin-left:auto;color:var(--ult)">0 / 3</b></div>
+    </div>
+  </div>
+
+  <!-- right: ult to-go -->
+  <div class="ca-ult">
+    <div class="ca-ult-lab">ULT</div>
+    <div class="ca-ult-track"><div id="caUltFill"></div></div>
+    <div id="caUltTxt">10 hits to go</div>
   </div>
 
   <div class="ca-help-bar">
-    <kbd>WASD</kbd> move &nbsp; <kbd>L-CLICK</kbd> shoot &nbsp; <kbd>E</kbd> dash &nbsp; <kbd>SPACE</kbd> shield (ult)
+    <kbd>WASD</kbd> move &nbsp; <kbd>L-CLICK</kbd> shoot &nbsp; <kbd>E</kbd> dash &nbsp; <kbd>SPACE</kbd> shield
   </div>
 
+  <div class="ca-cards" id="caCards"></div>
   <div class="ca-toast" id="caToast"></div>
 
   <div class="ca-gate" id="caGate">
     <div class="ca-gate-card">
       <h1>Claude <em>Arena</em></h1>
-      <p>Top-down arena shooter. Everyone who joins shares the same lobby. Last one standing has bragging rights.</p>
+      <p>Huge arena. Camera follows you. Kill &amp; damage to level up and draft abilities.</p>
       <input type="text" id="caName" maxlength="14" placeholder="Pick a name…" autocomplete="off">
       <button class="ca-btn" id="caJoin">Enter the arena</button>
       <div class="ca-gate-help">
-        <kbd>WASD</kbd> move · <kbd>Click</kbd> shoot (33 dmg) · <kbd>E</kbd> dash<br>
-        <kbd>Space</kbd> shield at full ult — reflects bullets 2× damage &amp; speed<br>
-        100 HP · +50 HP per elim · ult charges +1 per hit (max 10)
+        <kbd>WASD</kbd> move · <kbd>Click</kbd> shoot · <kbd>E</kbd> dash (5s) · <kbd>Space</kbd> shield (stacks 3)<br>
+        Level up → choose 1 of 2 ability cards · death resets everything
       </div>
     </div>
   </div>
 </div>
 
 <script src="game.js"></script>
+<script>
+  // CONFIG: paste your game bin id below (create a NEW jsonbin with content {} ).
+  ClaudeArena.init({
+    binId: 'REPLACE_WITH_GAME_BIN_ID',
+    key:   '$2a$10$MesbOMhiwNyZ2SE1vR8kHOUpnKXj0iauXG1lAtwD7W0aIu6zHMS4u',
+    assetBase: 'assets/',
+    sfxBase:   'BalatroSfx/'
+  });
+</script>
 </body>
 </html>

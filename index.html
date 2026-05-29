@@ -5190,6 +5190,33 @@
     position: absolute; bottom: 14px; left: 14px; z-index: 20; font-family:'JetBrains Mono',monospace;
     font-size: 10px; color: #55555e; line-height: 1.7; pointer-events: none;
   }
+
+  /* ---- left rail HUD ---- */
+  .ca-rail { position:absolute; top:16px; left:16px; z-index:20; display:flex; flex-direction:column; gap:10px; width:188px; pointer-events:none; font-family:'JetBrains Mono',monospace; }
+  .ca-block { background:rgba(18,18,22,.78); border:1px solid var(--border); border-radius:10px; padding:9px 11px; }
+  .ca-block .lab { font-size:9px; letter-spacing:.12em; color:var(--text-dim); text-transform:uppercase; margin-bottom:5px; display:flex; justify-content:space-between; }
+  .ca-bar { height:9px; background:#23232a; border-radius:6px; overflow:hidden; }
+  .ca-bar > span { display:block; height:100%; width:0%; border-radius:6px; transition:width .12s linear; }
+  #caHpFill { background:var(--g); }
+  #caXpFill { background:#c77dff; }
+  #caDashFill { background:var(--b); }
+  .ca-row { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--text); }
+  .ca-mini { font-size:9px; color:var(--text-dim); }
+
+  /* ---- right ult bar ---- */
+  .ca-ult { position:absolute; top:50%; right:18px; transform:translateY(-50%); z-index:20; pointer-events:none; display:flex; flex-direction:column; align-items:center; gap:8px; font-family:'JetBrains Mono',monospace; }
+  .ca-ult-track { width:16px; height:200px; background:#23232a; border:1px solid var(--border); border-radius:10px; overflow:hidden; display:flex; align-items:flex-end; }
+  #caUltFill { width:100%; height:0%; background:linear-gradient(0deg,#c77dff,#e9c6ff); transition:height .15s linear; }
+  .ca-ult-lab { font-size:9px; letter-spacing:.1em; color:var(--text-dim); text-transform:uppercase; }
+  #caUltTxt { font-size:10px; color:#c77dff; text-align:center; width:84px; }
+
+  /* ---- card draft ---- */
+  .ca-cards { position:absolute; top:24px; left:50%; transform:translateX(-50%); z-index:40; display:none; gap:22px; pointer-events:auto; }
+  .ca-card { width:160px; height:200px; background:var(--surface); border:2px solid var(--rar,#888); border-radius:14px; padding:14px 12px; cursor:pointer; transform-origin:center center; box-shadow:0 0 26px color-mix(in srgb, var(--rar,#888) 40%, transparent); display:flex; flex-direction:column; }
+  .ca-card-rar { font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:.14em; color:var(--rar,#888); }
+  .ca-card-art { flex:1; margin:8px 0; border-radius:8px; background: repeating-linear-gradient(45deg, rgba(255,255,255,.03) 0 8px, transparent 8px 16px), var(--surface-2); }
+  .ca-card-name { font-family:'Instrument Serif',serif; font-size:20px; line-height:1.05; }
+  .ca-card-desc { font-size:11px; color:var(--text-dim); margin-top:4px; line-height:1.35; }
 </style>
 </head>
 <body>
@@ -7147,31 +7174,56 @@
 
   <!-- ================= CLAUDE ARENA (embedded game) ================= -->
   <main data-mode="claudegame" hidden>
-    <div class="ca-embed-shell">
+    <div class="ca-embed-shell" id="caRoot">
       <canvas id="caCanvas" width="900" height="600"></canvas>
 
       <div class="ca-hud" id="caHud">
         <span><span class="ca-status-dot" id="caDot"></span><span id="caNet">connecting…</span></span>
         <span>players <b id="caCount">0</b></span>
-        <span>elims <b id="caElims">0</b></span>
+      </div>
+
+      <!-- left rail: health + level + dash + shields -->
+      <div class="ca-rail">
+        <div class="ca-block" id="caHpBar">
+          <div class="lab"><span>Health</span><span id="caHpText">100 / 100</span></div>
+          <div class="ca-bar"><span id="caHpFill"></span></div>
+        </div>
+        <div class="ca-block">
+          <div class="lab"><span id="caLvl">LV 1</span><span class="ca-mini">XP</span></div>
+          <div class="ca-bar"><span id="caXpFill"></span></div>
+        </div>
+        <div class="ca-block">
+          <div class="lab"><span>Dash (E)</span><span id="caDashTxt">READY</span></div>
+          <div class="ca-bar"><span id="caDashFill"></span></div>
+        </div>
+        <div class="ca-block">
+          <div class="ca-row"><span>Shields</span><b id="caShieldTxt" style="margin-left:auto;color:var(--ult,#c77dff)">0 / 3</b></div>
+        </div>
+      </div>
+
+      <!-- right: ult to-go -->
+      <div class="ca-ult">
+        <div class="ca-ult-lab">ULT</div>
+        <div class="ca-ult-track"><div id="caUltFill"></div></div>
+        <div id="caUltTxt">10 hits to go</div>
       </div>
 
       <div class="ca-help-bar">
         <kbd>WASD</kbd> move &nbsp; <kbd>L-CLICK</kbd> shoot &nbsp; <kbd>E</kbd> dash &nbsp; <kbd>SPACE</kbd> shield
       </div>
 
+      <div class="ca-cards" id="caCards"></div>
       <div class="ca-toast" id="caToast"></div>
 
       <div class="ca-gate" id="caGate">
         <div class="ca-gate-card">
           <h1>Claude <em>Arena</em></h1>
-          <p>Top-down arena shooter. Everyone who joins shares the same lobby.</p>
+          <p>Huge arena. Camera follows you. Damage &amp; kills level you up to draft abilities.</p>
           <input type="text" id="caName" maxlength="14" placeholder="Pick a name…" autocomplete="off">
           <button class="ca-btn" id="caJoin">Enter the arena</button>
           <div class="ca-gate-help">
-            <kbd>WASD</kbd> move · <kbd>Click</kbd> shoot (33 dmg) · <kbd>E</kbd> dash<br>
-            <kbd>Space</kbd> shield at full ult — reflects bullets 2× dmg &amp; speed<br>
-            100 HP · +50 HP per elim · ult +1 per hit (max 10)
+            <kbd>WASD</kbd> move · <kbd>Click</kbd> shoot (33 dmg) · <kbd>E</kbd> dash (5s) · <kbd>Space</kbd> shield (stacks 3)<br>
+            Level up → choose 1 of 2 ability cards · death resets everything
           </div>
         </div>
       </div>
@@ -19569,64 +19621,64 @@ Takes:  {
 </script>
 
 <!-- ============================================================
-     CODES + CLAUDE ARENA GAME
+     CODES + CLAUDE ARENA GAME (engine loaded from claude-game/game.js)
      ============================================================ -->
+<script src="claude-game/game.js"></script>
 <script>
 (function codesAndGame() {
   'use strict';
 
   /* ---------- CONFIG ---------- */
-  // The "sublink" we try to send people to when they enter the Claude code.
-  // If that page exists on your GitHub Pages repo it loads the standalone game;
-  // otherwise we gracefully fall back to the embedded game tab below.
   const CLAUDE_SUBLINK = 'https://endercono.github.io/All-in-one-EDITOR/claude-game/';
-
   // Game lobby bin — CREATE A NEW jsonbin with content {} and paste its id here.
   // Do NOT reuse the chat bin. Key can be the same site key.
   const GAME_BIN_ID = 'REPLACE_WITH_GAME_BIN_ID';
   const GAME_KEY    = '$2a$10$MesbOMhiwNyZ2SE1vR8kHOUpnKXj0iauXG1lAtwD7W0aIu6zHMS4u';
 
-  /* ---------- helpers to switch tabs (reuse site machinery) ---------- */
+  /* ---------- tab switching (reuse site machinery) ---------- */
   function switchToTab(tabName) {
     const btn = document.querySelector('.sb-tab[data-tab="' + tabName + '"]');
     if (btn) { btn.click(); return true; }
-    // No sidebar button (code-gated tab): switch manually the same way the site does.
     document.querySelectorAll('.sb-tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('main[data-mode]').forEach(m => {
-      m.hidden = m.dataset.mode !== tabName;
-    });
+    document.querySelectorAll('main[data-mode]').forEach(m => { m.hidden = m.dataset.mode !== tabName; });
     const sb = document.getElementById('sidebar');
     if (sb) sb.classList.remove('expanded');
     return true;
+  }
+
+  /* ---------- launch the embedded game ---------- */
+  let launched = false;
+  function launchGame() {
+    switchToTab('claudegame');
+    if (window.ClaudeArena) {
+      if (!launched) {
+        launched = true;
+        // assets + sfx live under claude-game/ on the deployed site
+        ClaudeArena.init({
+          binId: GAME_BIN_ID, key: GAME_KEY,
+          assetBase: 'claude-game/assets/game/',
+          sfxBase: 'claude-game/BalatroSfx/'
+        });
+      }
+      ClaudeArena.show();
+    }
   }
 
   /* ---------- CODE REDEMPTION ---------- */
   const codeInput = document.getElementById('codeInput');
   const codeGo = document.getElementById('codeGo');
   const codeFb = document.getElementById('codeFeedback');
+  function feedback(msg, cls) { codeFb.textContent = msg; codeFb.className = 'codes-feedback' + (cls ? ' ' + cls : ''); }
 
-  function feedback(msg, cls) {
-    codeFb.textContent = msg;
-    codeFb.className = 'codes-feedback' + (cls ? ' ' + cls : '');
-  }
-
-  // Check whether the standalone sublink actually exists. We can't reliably
-  // do a cross-origin HEAD with a readable status on GitHub Pages, so we just
-  // attempt navigation; if it 404s the user sees GitHub's 404 (and the embedded
-  // tab is always available as the reliable path). To keep it bulletproof for
-  // the talent show, we DEFAULT to the embedded game and offer the link too.
   const codes = {
     'claude': () => {
-      // Primary: launch the embedded game (always works on this page).
-      // Also surface the standalone sublink for the full-screen hosted version.
-      setTimeout(() => { switchToTab('claudegame'); startGame(); }, 450);
+      setTimeout(launchGame, 450);
       codeFb.innerHTML = 'Code accepted — launching Claude Arena… '
         + '<a href="' + CLAUDE_SUBLINK + '" target="_blank" rel="noopener" '
-        + 'style="color:var(--b);text-decoration:underline;">open full-screen \u2197</a>';
+        + 'style="color:var(--b);text-decoration:underline;">open full-screen ↗</a>';
       codeFb.className = 'codes-feedback ok';
     },
   };
-
   function redeem() {
     const raw = (codeInput.value || '').trim();
     const key = raw.toLowerCase();
@@ -19636,275 +19688,6 @@ Takes:  {
   }
   codeGo && codeGo.addEventListener('click', redeem);
   codeInput && codeInput.addEventListener('keydown', e => { if (e.key === 'Enter') redeem(); });
-
-  /* ====================================================================
-     CLAUDE ARENA — embedded engine (lazy init on first game tab open)
-     ==================================================================== */
-  let gameInited = false;
-  let startGame = function () {};   // replaced once inited
-
-  function initGame() {
-    if (gameInited) return;
-    gameInited = true;
-
-    const W = 900, H = 600;
-    const PUSH_MS = 120, PULL_MS = 150, STALE_MS = 6000;
-    const SPEED = 230, DASH_DIST = 170, DASH_CD = 1100;
-    const BULLET_SPEED = 560, BULLET_DMG = 33, FIRE_CD = 260;
-    const MAX_HP = 100, ULT_MAX = 10, PLAYER_R = 16, BULLET_R = 5, RESPAWN_MS = 2500;
-
-    const canvas = document.getElementById('caCanvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const gate = document.getElementById('caGate');
-    const nameInput = document.getElementById('caName');
-    const joinBtn = document.getElementById('caJoin');
-    const dotEl = document.getElementById('caDot');
-    const netEl = document.getElementById('caNet');
-    const countEl = document.getElementById('caCount');
-    const elimsEl = document.getElementById('caElims');
-    const toastEl = document.getElementById('caToast');
-
-    /* assets (optional) */
-    const assets = {};
-    function tryLoad(k, src){ const i=new Image(); i.onload=()=>assets[k]=i; i.onerror=()=>{}; i.src=src; }
-    tryLoad('player','assets/game/player.png');
-    tryLoad('floor','assets/game/floor.png');
-    tryLoad('bullet','assets/game/bullet.png');
-    const sfx={};
-    function trySound(k,src){ const a=new Audio(); a.preload='auto'; a.src=src;
-      a.addEventListener('canplaythrough',()=>sfx[k]=a,{once:true}); a.addEventListener('error',()=>{}); }
-    trySound('shoot','assets/game/shoot.wav'); trySound('dash','assets/game/dash.wav');
-    trySound('hit','assets/game/hit.wav'); trySound('shield','assets/game/shield.wav');
-    trySound('elim','assets/game/elim.wav');
-    function play(k){ const s=sfx[k]; if(s){ try{ s.currentTime=0; s.play(); }catch(e){} } }
-
-    function uid(){ return 'p_'+Math.random().toString(36).slice(2,8)+Date.now().toString(36).slice(-3); }
-    let myId = sessionStorage.getItem('caId');
-    if(!myId){ myId=uid(); sessionStorage.setItem('caId',myId); }
-    const COLORS=['#ff3b5c','#2fd47f','#4d8bff','#c77dff','#ffb13b','#3bd6ff','#ff7ad6','#9dff3b'];
-    let myColor=COLORS[Math.floor(Math.random()*COLORS.length)];
-
-    const me={ id:myId, name:'', color:myColor, x:W/2, y:H/2, aim:0,
-      hp:MAX_HP, ult:0, shield:false, elims:0, alive:true, deadUntil:0 };
-    let others={};
-    const bullets=[]; const seenShots=new Set(); const seenDmg=new Set();
-    const keys={}; const mouse={x:W/2,y:H/2,down:false};
-    let lastFire=0, lastDash=0, started=false;
-    let configured = GAME_BIN_ID && GAME_BIN_ID!=='REPLACE_WITH_GAME_BIN_ID' && GAME_KEY;
-    let outShots=[], outDmg=[], outElims=[];
-    let netState={}, pushing=false;
-
-    let toastTimer=null;
-    function toast(m){ toastEl.textContent=m; toastEl.classList.add('show');
-      clearTimeout(toastTimer); toastTimer=setTimeout(()=>toastEl.classList.remove('show'),1800); }
-    function setNet(t,c){ netEl.textContent=t; dotEl.className='ca-status-dot'+(c?' '+c:''); }
-
-    async function apiGet(){ const r=await fetch('https://api.jsonbin.io/v3/b/'+GAME_BIN_ID+'/latest',
-      {headers:{'X-Master-Key':GAME_KEY,'X-Bin-Meta':'false'}}); if(!r.ok) throw new Error('GET '+r.status); return await r.json(); }
-    async function apiPut(o){ const r=await fetch('https://api.jsonbin.io/v3/b/'+GAME_BIN_ID,
-      {method:'PUT',headers:{'X-Master-Key':GAME_KEY,'Content-Type':'application/json'},body:JSON.stringify(o)});
-      if(!r.ok) throw new Error('PUT '+r.status); return await r.json(); }
-
-    function mySlice(){ return { id:myId, name:me.name, color:me.color,
-      x:Math.round(me.x), y:Math.round(me.y), aim:+me.aim.toFixed(2),
-      hp:me.hp, ult:me.ult, shield:me.shield, elims:me.elims, alive:me.alive, t:Date.now(),
-      shots:outShots, dmg:outDmg, kills:outElims }; }
-
-    async function pushLoop(){
-      if(!started||!configured||pushing) return; pushing=true;
-      try{
-        let s={}; try{ s=await apiGet(); }catch(e){ s=netState; }
-        if(!s||typeof s!=='object'||Array.isArray(s)) s={};
-        s[myId]=mySlice();
-        const now=Date.now();
-        for(const id in s){ if(id===myId) continue; const p=s[id]; if(!p||(now-(p.t||0))>STALE_MS) delete s[id]; }
-        await apiPut(s); netState=s; outShots=[]; outDmg=[]; outElims=[]; setNet('live','ok');
-      }catch(e){ setNet('reconnecting…','err'); } finally{ pushing=false; }
-    }
-    async function pullLoop(){
-      if(!started||!configured) return;
-      try{ const s=await apiGet(); if(!s||typeof s!=='object'||Array.isArray(s)) return;
-        netState=s; ingest(s); setNet('live','ok'); }
-      catch(e){ setNet('reconnecting…','err'); }
-    }
-
-    function ingest(s){
-      const now=Date.now(); const next={};
-      for(const id in s){ if(id===myId) continue; const p=s[id];
-        if(!p||(now-(p.t||0))>STALE_MS) continue; next[id]=p;
-        (p.shots||[]).forEach(sh=>{ if(seenShots.has(sh.id)) return; seenShots.add(sh.id);
-          bullets.push({ id:sh.id, owner:id, x:sh.x, y:sh.y,
-            vx:Math.cos(sh.a)*(sh.spd||BULLET_SPEED), vy:Math.sin(sh.a)*(sh.spd||BULLET_SPEED),
-            dmg:sh.dmg||BULLET_DMG, reflected:!!sh.ref, born:now }); });
-        (p.dmg||[]).forEach(d=>{ if(d.target!==myId||seenDmg.has(d.id)) return; seenDmg.add(d.id);
-          applyDamageToMe(d.amount,id,d.bid); });
-        (p.kills||[]).forEach(k=>{ const tag='k'+k.id; if(seenDmg.has(tag)) return; seenDmg.add(tag);
-          if(k.killer!==myId && k.victim!==myId) toast((k.killerName||'someone')+' eliminated '+(k.victimName||'someone')); });
-      }
-      others=next;
-      if(seenShots.size>4000) seenShots.clear();
-      if(seenDmg.size>4000) seenDmg.clear();
-    }
-
-    function applyDamageToMe(amount,fromId){
-      if(!me.alive) return;
-      me.hp-=amount; play('hit');
-      if(me.hp<=0){ me.hp=0; me.alive=false; me.shield=false; me.deadUntil=Date.now()+RESPAWN_MS; play('elim');
-        outElims.push({ id:uid(), killer:fromId, victim:myId,
-          killerName:(others[fromId]&&others[fromId].name)||'???', victimName:me.name });
-        toast('You were eliminated — respawning…'); }
-    }
-
-    function fire(){
-      const now=Date.now(); if(!me.alive||now-lastFire<FIRE_CD) return; lastFire=now;
-      const a=me.aim; const sx=me.x+Math.cos(a)*(PLAYER_R+6), sy=me.y+Math.sin(a)*(PLAYER_R+6);
-      const shot={ id:uid(), x:Math.round(sx), y:Math.round(sy), a:+a.toFixed(3), spd:BULLET_SPEED, dmg:BULLET_DMG, ref:false };
-      outShots.push(shot); seenShots.add(shot.id);
-      bullets.push({ id:shot.id, owner:myId, x:sx, y:sy, vx:Math.cos(a)*BULLET_SPEED, vy:Math.sin(a)*BULLET_SPEED, dmg:BULLET_DMG, reflected:false, born:now });
-      play('shoot');
-    }
-    function dash(){
-      const now=Date.now(); if(!me.alive||now-lastDash<DASH_CD) return; lastDash=now;
-      me.x=clamp(me.x+Math.cos(me.aim)*DASH_DIST,PLAYER_R,W-PLAYER_R);
-      me.y=clamp(me.y+Math.sin(me.aim)*DASH_DIST,PLAYER_R,H-PLAYER_R); play('dash');
-    }
-    function toggleShield(){
-      if(!me.alive||me.shield) return;
-      if(me.ult<ULT_MAX){ toast('Ult not charged'); return; }
-      me.ult=0; me.shield=true; play('shield'); toast('Shield up — reflects 1 bullet');
-    }
-    function gainUlt(n){ me.ult=Math.min(ULT_MAX,me.ult+n); }
-
-    function rectScale(){ const r=canvas.getBoundingClientRect();
-      return { sx:W/r.width, sy:H/r.height, left:r.left, top:r.top }; }
-    canvas.addEventListener('mousemove',e=>{ const s=rectScale();
-      mouse.x=(e.clientX-s.left)*s.sx; mouse.y=(e.clientY-s.top)*s.sy; });
-    canvas.addEventListener('mousedown',e=>{ if(e.button===0){ mouse.down=true; fire(); } });
-    window.addEventListener('mouseup',e=>{ if(e.button===0) mouse.down=false; });
-    canvas.addEventListener('contextmenu',e=>e.preventDefault());
-    window.addEventListener('keydown',e=>{ if(!started) return;
-      // only capture game keys when game tab is visible
-      const gameMain=document.querySelector('main[data-mode="claudegame"]');
-      if(gameMain && gameMain.hidden) return;
-      const k=e.key.toLowerCase(); keys[k]=true;
-      if(k==='e') dash();
-      if(k===' '){ e.preventDefault(); toggleShield(); } });
-    window.addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=false; });
-
-    function clamp(v,lo,hi){ return v<lo?lo:v>hi?hi:v; }
-    function d2(ax,ay,bx,by){ const dx=ax-bx,dy=ay-by; return dx*dx+dy*dy; }
-
-    let lastTick=performance.now();
-    function tick(now){ const dt=Math.min(0.05,(now-lastTick)/1000); lastTick=now;
-      if(started){ update(dt); draw(); } requestAnimationFrame(tick); }
-
-    function update(dt){
-      if(!me.alive && Date.now()>=me.deadUntil){
-        me.alive=true; me.hp=MAX_HP; me.ult=0; me.shield=false;
-        me.x=60+Math.random()*(W-120); me.y=60+Math.random()*(H-120); }
-      if(me.alive){
-        me.aim=Math.atan2(mouse.y-me.y,mouse.x-me.x);
-        let dx=0,dy=0;
-        if(keys['w']) dy-=1; if(keys['s']) dy+=1; if(keys['a']) dx-=1; if(keys['d']) dx+=1;
-        if(dx||dy){ const l=Math.hypot(dx,dy);
-          me.x=clamp(me.x+(dx/l)*SPEED*dt,PLAYER_R,W-PLAYER_R);
-          me.y=clamp(me.y+(dy/l)*SPEED*dt,PLAYER_R,H-PLAYER_R); }
-        if(mouse.down) fire();
-      }
-      for(let i=bullets.length-1;i>=0;i--){
-        const b=bullets[i]; b.x+=b.vx*dt; b.y+=b.vy*dt;
-        if(b.x<-20||b.x>W+20||b.y<-20||b.y>H+20||Date.now()-b.born>4000){ bullets.splice(i,1); continue; }
-        if(me.alive && b.owner!==myId && d2(b.x,b.y,me.x,me.y)<(PLAYER_R+BULLET_R)**2){
-          if(me.shield && !b.reflected){
-            me.shield=false; play('shield');
-            const ang=Math.atan2(b.vy,b.vx)+Math.PI; const rid=uid();
-            const shot={ id:rid, x:Math.round(me.x), y:Math.round(me.y), a:+ang.toFixed(3), spd:BULLET_SPEED*2, dmg:BULLET_DMG*2, ref:true };
-            outShots.push(shot); seenShots.add(rid);
-            bullets.push({ id:rid, owner:myId, x:me.x, y:me.y, vx:Math.cos(ang)*BULLET_SPEED*2, vy:Math.sin(ang)*BULLET_SPEED*2, dmg:BULLET_DMG*2, reflected:true, born:Date.now() });
-            toast('Shield reflected!'); bullets.splice(i,1); continue;
-          } else { applyDamageToMe(b.dmg,b.owner); bullets.splice(i,1); continue; }
-        }
-        if(b.owner===myId){
-          for(const id in others){ const o=others[id]; if(!o.alive) continue;
-            if(d2(b.x,b.y,o.x,o.y)<(PLAYER_R+BULLET_R)**2){
-              outDmg.push({ id:uid(), target:id, amount:b.dmg, bid:b.id }); gainUlt(1);
-              bullets.splice(i,1); break; } }
-        }
-      }
-      drainElimCredits();
-      countEl.textContent=1+Object.keys(others).length;
-      elimsEl.textContent=me.elims;
-    }
-    function drainElimCredits(){
-      for(const id in netState){ if(id===myId) continue; const p=netState[id];
-        (p.kills||[]).forEach(k=>{ const tag='mine'+k.id;
-          if(k.killer===myId && !seenDmg.has(tag)){ seenDmg.add(tag);
-            me.elims+=1; me.hp=Math.min(MAX_HP,me.hp+50);
-            toast('Eliminated '+(k.victimName||'a player')+'! +50 HP'); } }); }
-    }
-
-    function draw(){
-      if(assets.floor){ const pat=ctx.createPattern(assets.floor,'repeat'); ctx.fillStyle=pat; ctx.fillRect(0,0,W,H); }
-      else{ ctx.fillStyle='#0c0c10'; ctx.fillRect(0,0,W,H);
-        ctx.strokeStyle='rgba(255,255,255,0.035)'; ctx.lineWidth=1;
-        for(let x=0;x<=W;x+=45){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
-        for(let y=0;y<=H;y+=45){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); } }
-      ctx.strokeStyle='rgba(199,125,255,0.25)'; ctx.lineWidth=2; ctx.strokeRect(1,1,W-2,H-2);
-      for(const b of bullets){
-        if(assets.bullet){ ctx.drawImage(assets.bullet,b.x-8,b.y-8,16,16); }
-        else{ ctx.beginPath(); ctx.arc(b.x,b.y,b.reflected?BULLET_R+2:BULLET_R,0,Math.PI*2);
-          ctx.fillStyle=b.reflected?'#fff':(b.owner===myId?'#fff':'#ff8b8b');
-          ctx.shadowColor=b.reflected?'#c77dff':'#ff3b5c'; ctx.shadowBlur=10; ctx.fill(); ctx.shadowBlur=0; } }
-      for(const id in others) drawPlayer(others[id],false);
-      drawPlayer(me,true);
-    }
-    function drawPlayer(p,isMe){
-      if(!p.alive) ctx.globalAlpha=0.25;
-      ctx.save(); ctx.translate(p.x,p.y);
-      if(p.shield){ ctx.beginPath(); ctx.arc(0,0,PLAYER_R+8,0,Math.PI*2);
-        ctx.strokeStyle='#c77dff'; ctx.lineWidth=3; ctx.shadowColor='#c77dff'; ctx.shadowBlur=16; ctx.stroke(); ctx.shadowBlur=0; }
-      ctx.rotate((p.aim||0)+Math.PI/2);
-      if(assets.player){ ctx.drawImage(assets.player,-PLAYER_R-6,-PLAYER_R-6,(PLAYER_R+6)*2,(PLAYER_R+6)*2); }
-      else{ ctx.beginPath(); ctx.moveTo(0,-PLAYER_R-3); ctx.lineTo(PLAYER_R,PLAYER_R);
-        ctx.lineTo(0,PLAYER_R*0.5); ctx.lineTo(-PLAYER_R,PLAYER_R); ctx.closePath();
-        ctx.fillStyle=p.color||'#fff'; ctx.shadowColor=p.color||'#fff'; ctx.shadowBlur=isMe?14:6; ctx.fill(); ctx.shadowBlur=0;
-        ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.lineWidth=1.5; ctx.stroke(); }
-      ctx.restore();
-      ctx.save(); ctx.translate(p.x,p.y); ctx.globalAlpha=p.alive?1:0.4;
-      ctx.font='600 12px Manrope, sans-serif'; ctx.textAlign='center';
-      ctx.fillStyle=isMe?'#fff':'rgba(236,236,239,0.85)';
-      ctx.fillText(p.name||'???',0,-PLAYER_R-16);
-      const bw=40,bh=5,by=-PLAYER_R-12;
-      ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(-bw/2,by,bw,bh);
-      const hf=Math.max(0,(p.hp||0)/MAX_HP);
-      ctx.fillStyle=hf>0.5?'#2fd47f':hf>0.25?'#ffb13b':'#ff3b5c'; ctx.fillRect(-bw/2,by,bw*hf,bh);
-      if(isMe){ const uy=by+bh+2; ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(-bw/2,uy,bw,3);
-        ctx.fillStyle='#c77dff'; ctx.fillRect(-bw/2,uy,bw*(me.ult/ULT_MAX),3); }
-      ctx.restore(); ctx.globalAlpha=1;
-    }
-
-    function doStart(){
-      const n=(nameInput.value||'').trim().slice(0,14)||'anon'+Math.floor(Math.random()*99);
-      me.name=n; localStorage.setItem('caName',n);
-      started=true; gate.style.display='none';
-      me.x=60+Math.random()*(W-120); me.y=60+Math.random()*(H-120);
-      if(!configured){ setNet('OFFLINE — bin not set','err'); toast('Multiplayer not configured — solo practice'); }
-      else{ setNet('connecting…'); pushLoop(); setInterval(pushLoop,PUSH_MS); setInterval(pullLoop,PULL_MS); }
-    }
-    joinBtn.addEventListener('click',doStart);
-    nameInput.addEventListener('keydown',e=>{ if(e.key==='Enter') doStart(); });
-    nameInput.value=localStorage.getItem('caName')||'';
-
-    requestAnimationFrame(tick);
-  }
-
-  // Initialise the game on demand (when a code launches it). Then focus the name box.
-  startGame = function () {
-    initGame();
-    const ni = document.getElementById('caName');
-    if (ni) setTimeout(() => ni.focus(), 80);
-  };
 })();
 </script>
 
