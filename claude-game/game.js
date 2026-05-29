@@ -11,16 +11,37 @@
   const WORLD_W = VIEW_W * 8, WORLD_H = VIEW_H * 8;
   
   const SPEED = 240, SPRINT_MULT = 1.65, DASH_DIST = 190, DASH_CD = 5000;
-  const BULLET_SPEED = 580, BULLET_DMG = 33, FIRE_CD = 250;
+  const BULLET_SPEED = 580, BULLET_DMG = 10, FIRE_CD = 250;
   const MAX_HP = 100, ULT_MAX = 10, SHIELD_MAX = 3;
   const PLAYER_R = 18, BULLET_R = 5, RESPAWN_MS = 2500;
   const REGEN_DELAY = 5000, REGEN_RATE = 2;
   const XP_PER_DMG = 1, XP_PER_KILL = 60;
   const LEVEL_BASE = 120, LEVEL_GROW = 1.35;
 
-  function xpForLevel(l) { 
-    return Math.round(LEVEL_BASE * Math.pow(LEVEL_GROW, l - 1)); 
+  function xpForLevel(l) {
+    return Math.round(LEVEL_BASE * Math.pow(LEVEL_GROW, l - 1));
   }
+
+  /* ---------------- MUSIC / AUDIO CONSTANTS ---------------- */
+  const CHASE_DIST        = 550;
+  const CHASE_EXIT_DELAY  = 3;
+  const CHASE_FADE_IN_T   = 4;
+  const CHASE_FADE_OUT_T  = 6;
+  const SHOT_FADE_MULT    = 4;
+  const STEP_WALK_INT     = 0.38;
+  const STEP_RUN_INT      = 0.20;
+
+  const CHASE_TRACKS = [
+    'music/ChaseMusic/Stellar Blade OST - Raven [jl2NfpkBHsg].mp3',
+    'music/ChaseMusic/Stellar Blade OST - Maelstrom.mp3',
+    'music/ChaseMusic/Stellar Blade OST - Juggernaut (1).mp3',
+    'music/ChaseMusic/Stellar Blade OST - Corrupter (1).mp3',
+    'music/ChaseMusic/Stellar Blade OST - Buzzsaw Slide (1).mp3',
+    'music/ChaseMusic/Stellar Blade OST - Maelstrom (1).mp3',
+    'music/ChaseMusic/Abaddon Boss Theme (Dynamic Mix) - Stellar Blade OST.mp3'
+  ];
+  const WALK_SFX = ['grass/grass_walk1.ogg','grass/grass_walk2.ogg','grass/grass_walk3.ogg','grass/grass_walk4.ogg','grass/grass_walk5.ogg','grass/grass_walk6.ogg','grass/grass_walk7.ogg','grass/grass_walk8.ogg','grass/grass_walk9.ogg','grass/grass_walk10.ogg'];
+  const RUN_SFX  = ['grass/grass_run1.ogg','grass/grass_run2.ogg','grass/grass_run3.ogg','grass/grass_run4.ogg'];
 
   /* ---------------- CHARACTER DEFINITIONS ---------------- */
   const CHARACTERS = {
@@ -76,7 +97,8 @@
   const me = {
     id: '', name: '', color: myColor, x: WORLD_W / 2, y: WORLD_H / 2, aim: 0,
     hp: MAX_HP, ult: 0, shields: 0, elims: 0, alive: true, deadUntil: 0,
-    level: 1, xp: 0, lastCombat: 0, anim: 'idle', frame: 0, frameT: 0, facing: 1,
+    level: 1, xp: 0, lastCombat: 0, lastHurtTime: 0, stepTimer: 0,
+    anim: 'idle', frame: 0, frameT: 0, facing: 1,
     char: 'pumpkin',
     mods: {
       dmg: 0, fireRate: 0, speed: 0, multishot: 0, pierce: 0, lifesteal: 0, thorns: 0,
@@ -91,6 +113,18 @@
   const particles = [];  
   const camera = { x: 0, y: 0 };
   let obstacles = [];
+
+  /* ---------------- MUSIC STATE ---------------- */
+  const musicState = {
+    chaseAudio: null,
+    chaseVol: 0,
+    chaseTrackIdx: -1,
+    state: 'idle',   // idle | chase | exiting | fading_out
+    exitTimer: 0,
+    musicVol: 0.7,
+    soundVol: 0.7,
+  };
+  const walkAudios = [], runAudios = [];
 
   /* ---------------- INPUT ---------------- */
   const keys = {};
@@ -113,12 +147,41 @@
   
   function play(k, vol) {
     const s = sfx[k]; if (!s) return;
-    try { 
-      const c = s.cloneNode(); 
-      c.volume = (vol == null ? 0.55 : vol); 
-      c.playbackRate = 0.95 + Math.random() * 0.10; 
-      c.play(); 
+    try {
+      const c = s.cloneNode();
+      c.volume = Math.min(1, (vol == null ? 0.55 : vol) * musicState.soundVol);
+      c.playbackRate = 0.95 + Math.random() * 0.10;
+      c.play();
     } catch (e) {}
+  }
+
+  function playWalkSfx() {
+    const arr = isSprinting() ? runAudios : walkAudios;
+    if (!arr.length) return;
+    try {
+      const c = arr[(Math.random() * arr.length) | 0].cloneNode();
+      c.volume = Math.min(1, 0.38 * musicState.soundVol);
+      c.playbackRate = 0.92 + Math.random() * 0.18;
+      c.play().catch(() => {});
+    } catch (e) {}
+  }
+
+  function startChaseTrack(idx) {
+    if (musicState.chaseAudio) { musicState.chaseAudio.pause(); musicState.chaseAudio.onended = null; }
+    musicState.chaseTrackIdx = idx;
+    const a = new Audio(CHASE_TRACKS[idx]);
+    a.volume = 0;
+    a.onended = function () {
+      if (musicState.state === 'chase' || musicState.state === 'exiting') {
+        a.currentTime = 0; a.play().catch(() => {});
+      } else {
+        let next = idx;
+        while (next === idx && CHASE_TRACKS.length > 1) next = (Math.random() * CHASE_TRACKS.length) | 0;
+        startChaseTrack(next);
+      }
+    };
+    a.play().catch(() => {});
+    musicState.chaseAudio = a;
   }
 
   // FIXED: Multi-layered image loading configuration to ensure textures never fail
@@ -332,7 +395,7 @@
   /* ---------------- COMBAT ---------------- */
   function hurtMe(amount, fromId) {
     if (!me.alive) return;
-    me.hp -= amount; me.lastCombat = Date.now();
+    me.hp -= amount; me.lastCombat = Date.now(); me.lastHurtTime = Date.now();
     play('hit', 0.5);
     spawnParticles(me.x, me.y, '#ff3b5c', 6, 150, 0.3);
   }
@@ -563,6 +626,17 @@
       if (mouse.down && !draftOpen) fire();
       if (t - me.lastCombat > REGEN_DELAY && me.hp < MAX_HP) { me.hp = Math.min(MAX_HP, me.hp + REGEN_RATE * dt); }
 
+      // Walk / run step SFX
+      if (moving) {
+        me.stepTimer -= dt;
+        if (me.stepTimer <= 0) {
+          playWalkSfx();
+          me.stepTimer = isSprinting() ? STEP_RUN_INT : STEP_WALK_INT;
+        }
+      } else {
+        me.stepTimer = 0;
+      }
+
       // Throttle and transmit socket movement updates to server at ~40 FPS
       if (socket && t - lastNetUpdate > 25) {
         lastNetUpdate = t;
@@ -576,6 +650,52 @@
     
     camera.x = clamp(me.x - VIEW_W / 2, 0, WORLD_W - VIEW_W);
     camera.y = clamp(me.y - VIEW_H / 2, 0, WORLD_H - VIEW_H);
+
+    // --- Chase music state machine ---
+    let shouldChase = false;
+    if (me.alive) {
+      for (const id in others) {
+        const o = others[id];
+        if (!o || !o.alive) continue;
+        const ox = o.rx !== undefined ? o.rx : o.x;
+        const oy = o.ry !== undefined ? o.ry : o.y;
+        if (d2(me.x, me.y, ox, oy) < CHASE_DIST * CHASE_DIST) {
+          const sx = ox - camera.x, sy = oy - camera.y;
+          if (sx > -30 && sx < VIEW_W + 30 && sy > -30 && sy < VIEW_H + 30) { shouldChase = true; break; }
+        }
+      }
+    }
+    const recentlyShot = t - me.lastHurtTime < 3000;
+    const fadeMult = recentlyShot ? SHOT_FADE_MULT : 1;
+    switch (musicState.state) {
+      case 'idle':
+        if (shouldChase) { musicState.state = 'chase'; }
+        break;
+      case 'chase':
+        musicState.chaseVol = Math.min(musicState.musicVol,
+          musicState.chaseVol + (musicState.musicVol / CHASE_FADE_IN_T) * fadeMult * dt);
+        if (!shouldChase) { musicState.state = 'exiting'; musicState.exitTimer = CHASE_EXIT_DELAY; }
+        break;
+      case 'exiting':
+        musicState.chaseVol = Math.min(musicState.musicVol,
+          musicState.chaseVol + (musicState.musicVol / CHASE_FADE_IN_T) * fadeMult * dt);
+        if (shouldChase) { musicState.state = 'chase'; break; }
+        musicState.exitTimer -= dt * fadeMult;
+        if (musicState.exitTimer <= 0) musicState.state = 'fading_out';
+        break;
+      case 'fading_out':
+        musicState.chaseVol = Math.max(0,
+          musicState.chaseVol - (musicState.musicVol / CHASE_FADE_OUT_T) * fadeMult * dt);
+        if (shouldChase) { musicState.state = 'chase'; break; }
+        if (musicState.chaseVol <= 0) musicState.state = 'idle';
+        break;
+    }
+    if (musicState.chaseAudio) {
+      if (musicState.chaseAudio.paused && musicState.state !== 'idle') {
+        musicState.chaseAudio.play().catch(() => {});
+      }
+      musicState.chaseAudio.volume = Math.max(0, Math.min(1, musicState.chaseVol));
+    }
 
     // 60FPS Client-Side Interpolation Loop for Smooth Remote Rendering
     for (const id in others) {
@@ -708,43 +828,33 @@
   }
 
   /* ---------------- OFF-SCREEN MARKERS ---------------- */
-  // REPLACE THIS ENTIRE FUNCTION
-  function drawOffscreenMarkers(ctx, camera) {
+  function drawOffscreenMarkers() {
     if (!others) return;
-
+    const cx = VIEW_W / 2, cy = VIEW_H / 2, PAD = 40;
     try {
-        for (const id in others) {
-            const o = others[id];
-            // If the object is somehow broken, skip this specific iteration
-            if (!o || o.x === undefined || o.y === undefined) continue;
-
-            const sx = o.x - camera.x;
-            const sy = o.y - camera.y;
-            
-            if (sx > 0 && sx < VIEW_W && sy > 0 && sy < VIEW_H) continue;
-
-            // Draw the indicator
-            const ang = Math.atan2(sy - cy, sx - cx);
-            const ex = cx + Math.cos(ang) * (VIEW_W / 2 - PAD);
-            const ey = cy + Math.sin(ang) * (VIEW_H / 2 - PAD);
-    
-            ctx.save();
-            ctx.translate(ex, ey); 
-            ctx.rotate(ang + Math.PI / 2);
-            ctx.fillStyle = o.color || '#ff3b5c';
-            ctx.beginPath(); 
-            ctx.moveTo(0, -10); 
-            ctx.lineTo(5, 5); 
-            ctx.lineTo(-5, 5); 
-            ctx.fill();
-            ctx.restore();
-        }
-    
-  } catch (e) {
-        console.warn("Radar drawing skipped due to sync error:", e);
+      for (const id in others) {
+        const o = others[id];
+        if (!o || o.x === undefined || o.y === undefined) continue;
+        const sx = o.x - camera.x, sy = o.y - camera.y;
+        if (sx > 0 && sx < VIEW_W && sy > 0 && sy < VIEW_H) continue;
+        const ang = Math.atan2(sy - cy, sx - cx);
+        const ex = cx + Math.cos(ang) * (VIEW_W / 2 - PAD);
+        const ey = cy + Math.sin(ang) * (VIEW_H / 2 - PAD);
+        ctx.save();
+        ctx.translate(ex, ey);
+        ctx.rotate(ang + Math.PI / 2);
+        ctx.fillStyle = o.color || '#ff3b5c';
+        ctx.beginPath();
+        ctx.moveTo(0, -10);
+        ctx.lineTo(5, 5);
+        ctx.lineTo(-5, 5);
+        ctx.fill();
+        ctx.restore();
+      }
+    } catch (e) {
+      console.warn("Radar drawing skipped:", e);
+    }
   }
-
-}
 
   function getSprite(p) {
     const ch = p.char || 'pumpkin';
@@ -777,8 +887,17 @@
   ctx.save(); 
   ctx.translate(sx, sy);
 
+  // 0. Shadow
+  ctx.save();
+  ctx.globalAlpha = p.alive ? 0.32 : 0.10;
+  ctx.fillStyle = 'rgba(0,0,0,0.9)';
+  ctx.beginPath();
+  ctx.ellipse(0, PLAYER_R * 0.82, PLAYER_R * 0.72, PLAYER_R * 0.22, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
   // 1. Draw Shields (Visual Feedback)
-  for (let i = 0; i < (p.shields || 0); i++) { 
+  for (let i = 0; i < (p.shields || 0); i++) {
     ctx.beginPath(); 
     ctx.arc(0, 0, PLAYER_R + 8 + i * 5, 0, Math.PI * 2); 
     ctx.strokeStyle = '#c77dff'; 
@@ -846,6 +965,12 @@
     started = true; if (gate) gate.style.display = 'none';
     me.x = WORLD_W / 2 + (Math.random() * 400 - 200); me.y = WORLD_H / 2 + (Math.random() * 400 - 200); me.lastCombat = Date.now();
     
+    // Start chase music track at silence (browser allows audio after user gesture)
+    if (!musicState.chaseAudio) {
+      const idx = (Math.random() * CHASE_TRACKS.length) | 0;
+      startChaseTrack(idx);
+    }
+
     // Fire real-time handshake event to Node.js server
     if (socket) {
       socket.emit('join', { name: me.name, color: me.color, char: me.char, x: me.x, y: me.y });
@@ -888,6 +1013,16 @@
     const sfxMap = { shoot: 'button', dash: 'whoosh', hit: 'glass1', hitEnemy: 'foil2', death: 'explosion1', levelup: 'coin5', shield: 'foil1' };
     ['button', 'whoosh', 'foil1', 'foil2', 'glass1', 'explosion1', 'coin3', 'coin5', 'cardFan2', 'cardSlide1', 'cardSlide2', 'highlight1', 'highlight2', 'paper1'].forEach(s => trySound(s, s + '.ogg'));
     setTimeout(() => { for (const k in sfxMap) { if (sfx[sfxMap[k]]) sfx[k] = sfx[sfxMap[k]]; } }, 2000);
+
+    // Load walk / run step sounds
+    WALK_SFX.forEach(src => { const a = new Audio(src); a.preload = 'auto'; walkAudios.push(a); });
+    RUN_SFX.forEach(src  => { const a = new Audio(src); a.preload = 'auto'; runAudios.push(a); });
+
+    // Wire volume sliders
+    const musSlider = document.getElementById('caMusicVol');
+    const sndSlider = document.getElementById('caSoundVol');
+    if (musSlider) { musSlider.value = Math.round(musicState.musicVol * 100); musSlider.addEventListener('input', () => { musicState.musicVol = musSlider.value / 100; }); }
+    if (sndSlider) { sndSlider.value = Math.round(musicState.soundVol * 100); sndSlider.addEventListener('input', () => { musicState.soundVol = sndSlider.value / 100; }); }
 
     bindInput();
     setupSockets(); // Run local socket initiation 
