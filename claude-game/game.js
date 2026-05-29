@@ -263,17 +263,21 @@
       me.id = id;
     });
 
-    socket.on('stateUpdate', (serverPlayers) => {
-      for (const id in serverPlayers) {
-        if (id === myId) continue;
-        const sp = serverPlayers[id];
-        if (!others[id]) {
-          others[id] = sp;
+    socket.on('stateUpdate', (data) => {
+    for (const id in data) {
+        if (id === socket.id) continue; // Always ignore ourselves
+
+        const p = data[id];
+        
+        // ONLY update the 'others' object if the player has essential game data
+        // If x or y is undefined, this player is still 'joining' or 'lagging'
+        if (p && typeof p.x === 'number' && typeof p.y === 'number') {
+            others[id] = p;
         } else {
-          Object.assign(others[id], sp);
+            console.warn(`[Arena] Skipping incomplete player data for: ${id}`);
         }
-      }
-    });
+    }
+});
 
     socket.on('playerMoved', (data) => {
       if (data.id === myId) return;
@@ -706,42 +710,38 @@
   /* ---------------- OFF-SCREEN MARKERS ---------------- */
   // REPLACE THIS ENTIRE FUNCTION
   function drawOffscreenMarkers(ctx, camera) {
-  const PAD = 40;
-  const cx = VIEW_W / 2, cy = VIEW_H / 2;
-  
-  if (!others) return; // Guard against others being null/undefined
+    if (!others) return;
 
-  for (const id in others) {
-    const o = others[id]; 
+    try {
+        for (const id in others) {
+            const o = others[id];
+            // If the object is somehow broken, skip this specific iteration
+            if (!o || o.x === undefined || o.y === undefined) continue;
+
+            const sx = o.x - camera.x;
+            const sy = o.y - camera.y;
+            
+            if (sx > 0 && sx < VIEW_W && sy > 0 && sy < VIEW_H) continue;
+
+            // Draw the indicator
+            const ang = Math.atan2(sy - cy, sx - cx);
+            const ex = cx + Math.cos(ang) * (VIEW_W / 2 - PAD);
+            const ey = cy + Math.sin(ang) * (VIEW_H / 2 - PAD);
     
-    // THE "CATCH-ALL" SAFETY CHECK:
-    // 1. Is 'o' null or undefined?
-    // 2. Does it lack 'x' or 'y' (not initialized)?
-    // 3. Is 'alive' flag missing or false?
-    if (!o || typeof o.x === 'undefined' || typeof o.y === 'undefined' || !o.alive) {
-        continue; // Skip this player, wait for the next server update
-    }
+            ctx.save();
+            ctx.translate(ex, ey); 
+            ctx.rotate(ang + Math.PI / 2);
+            ctx.fillStyle = o.color || '#ff3b5c';
+            ctx.beginPath(); 
+            ctx.moveTo(0, -10); 
+            ctx.lineTo(5, 5); 
+            ctx.lineTo(-5, 5); 
+            ctx.fill();
+            ctx.restore();
+        }
     
-    const sx = o.x - camera.x, sy = o.y - camera.y;
-    
-    // Don't draw radar if they are already on screen
-    if (sx > 0 && sx < VIEW_W && sy > 0 && sy < VIEW_H) continue;
-    
-    // Draw the indicator
-    const ang = Math.atan2(sy - cy, sx - cx);
-    const ex = cx + Math.cos(ang) * (VIEW_W / 2 - PAD);
-    const ey = cy + Math.sin(ang) * (VIEW_H / 2 - PAD);
-    
-    ctx.save();
-    ctx.translate(ex, ey); 
-    ctx.rotate(ang + Math.PI / 2);
-    ctx.fillStyle = o.color || '#ff3b5c';
-    ctx.beginPath(); 
-    ctx.moveTo(0, -10); 
-    ctx.lineTo(5, 5); 
-    ctx.lineTo(-5, 5); 
-    ctx.fill();
-    ctx.restore();
+  } catch (e) {
+        console.warn("Radar drawing skipped due to sync error:", e);
   }
 
 }
