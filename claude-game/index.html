@@ -96,7 +96,6 @@
     <span>players <b id="caCount">0</b></span>
   </div>
 
-  <!-- left rail: health + level + dash + shields -->
   <div class="ca-rail">
     <div class="ca-block" id="caHpBar">
       <div class="lab"><span>Health</span><span id="caHpText">100 / 100</span></div>
@@ -115,7 +114,6 @@
     </div>
   </div>
 
-  <!-- right: ult to-go -->
   <div class="ca-ult">
     <div class="ca-ult-lab">ULT</div>
     <div class="ca-ult-track"><div id="caUltFill"></div></div>
@@ -134,7 +132,7 @@
       <h1>Claude <em>Arena</em></h1>
       <p>Huge arena. Camera follows you. Kill &amp; damage to level up and draft abilities.</p>
       <input type="text" id="caName" maxlength="14" placeholder="Pick a name…" autocomplete="off">
-      <button class="ca-btn" id="caJoin">Enter the arena</button>
+      <button type="button" class="ca-btn" id="caJoin">Enter the arena</button>
       <div class="ca-gate-help">
         <kbd>WASD</kbd> move · <kbd>Shift</kbd> sprint · <kbd>Click</kbd> shoot · <kbd>E</kbd> dash (5s) · <kbd>Space</kbd> shield (stacks 3)<br>
         Level up → choose 1 of 3 ability cards · death resets everything
@@ -145,7 +143,6 @@
 
 <script src="game.js"></script>
 <script>
-  // CONFIG: paste your game bin id below (create a NEW jsonbin with content {} ).
   ClaudeArena.init({
     binId: '6a19a5f1ddf5aa59f774c1af',
     key:   '$2a$10$MesbOMhiwNyZ2SE1vR8kHOUpnKXj0iauXG1lAtwD7W0aIu6zHMS4u',
