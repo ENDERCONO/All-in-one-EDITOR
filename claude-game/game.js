@@ -684,22 +684,27 @@
   }
 
   /* ---------------- OFF-SCREEN MARKERS ---------------- */
-  function drawOffscreenMarkers() {
-    const PAD = 28, ARROW = 10; ctx.save();
+  // REPLACE THIS ENTIRE FUNCTION
+  function drawOffscreenMarkers(ctx, camera) {
+    const PAD = 40;
+    const cx = VIEW_W / 2, cy = VIEW_H / 2;
     for (const id in others) {
-      const o = others[id]; if (!o.alive) continue;
-      const sx = (o.rx !== undefined ? o.rx : o.x) - camera.x, sy = (o.ry !== undefined ? o.ry : o.y) - camera.y;
-      if (sx >= 0 && sx <= VIEW_W && sy >= 0 && sy <= VIEW_H) continue;
-      const cx = VIEW_W / 2, cy = VIEW_H / 2, ang = Math.atan2(sy - cy, sx - cx);
-      const tx = Math.cos(ang), ty = Math.sin(ang);
-      const scale = Math.min(Math.abs(tx > 0 ? (VIEW_W - PAD - cx) : (-cx + PAD)) / tx, Math.abs(ty > 0 ? (VIEW_H - PAD - cy) : (-cy + PAD)) / ty);
-      const ex = clamp(cx + tx * scale, PAD, VIEW_W - PAD), ey = clamp(cy + ty * scale, PAD, VIEW_H - PAD);
-      const color = o.color || '#aaa';
-      ctx.save(); ctx.translate(ex, ey); ctx.rotate(ang); ctx.beginPath(); ctx.moveTo(ARROW, 0); ctx.lineTo(-ARROW, -ARROW * 0.65); ctx.lineTo(-ARROW * 0.3, 0); ctx.lineTo(-ARROW, ARROW * 0.65); ctx.closePath(); ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 10; ctx.fill(); ctx.restore();
-      ctx.font = 'bold 10px JetBrains Mono, monospace'; ctx.textAlign = 'center'; ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 8;
-      ctx.fillText((o.name || '???').slice(0, 8), clamp(ex - Math.cos(ang) * 22, 2, VIEW_W - 2), clamp(ey - Math.sin(ang) * 22, 12, VIEW_H - 2)); ctx.shadowBlur = 0;
+      const o = others[id]; 
+      if (!o.alive) continue;
+      const sx = o.x - camera.x, sy = o.y - camera.y;
+      if (sx > 0 && sx < VIEW_W && sy > 0 && sy < VIEW_H) continue;
+      
+      const ang = Math.atan2(sy - cy, sx - cx);
+      const ex = cx + Math.cos(ang) * (VIEW_W / 2 - PAD);
+      const ey = cy + Math.sin(ang) * (VIEW_H / 2 - PAD);
+      
+      ctx.save();
+      ctx.translate(ex, ey); 
+      ctx.rotate(ang + Math.PI / 2); // Corrects the arrow direction
+      ctx.fillStyle = o.color || '#ff3b5c';
+      ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(5, 5); ctx.lineTo(-5, 5); ctx.fill();
+      ctx.restore();
     }
-    ctx.restore();
   }
 
   function getSprite(p) {
@@ -722,33 +727,72 @@
   }
 
   function drawPlayer(p, isMe) {
-    const px = isMe ? p.x : (p.rx !== undefined ? p.rx : p.x);
-    const py = isMe ? p.y : (p.ry !== undefined ? p.ry : p.y);
-    const sx = px - camera.x, sy = py - camera.y;
-    if (sx < -60 || sx > VIEW_W + 60 || sy < -60 || sy > VIEW_H + 60) return;
-    
-    ctx.save(); if (!p.alive) ctx.globalAlpha = 0.3; ctx.translate(sx, sy);
-    for (let i = 0; i < (p.shields || 0); i++) { ctx.beginPath(); ctx.arc(0, 0, PLAYER_R + 8 + i * 5, 0, Math.PI * 2); ctx.strokeStyle = '#c77dff'; ctx.lineWidth = 2.5; ctx.globalAlpha = (p.alive ? 1 : 0.3) * (1 - i * 0.22); ctx.shadowColor = '#c77dff'; ctx.shadowBlur = 12; ctx.stroke(); ctx.shadowBlur = 0; }
-    ctx.globalAlpha = p.alive ? 1 : 0.3;
-    
-    const img = getSprite(p);
-    if (img) {
-      const s = (PLAYER_R + 8) * 2; ctx.save(); if ((p.facing || 1) < 0) { ctx.scale(-1, 1); } ctx.drawImage(img, -s / 2, -s / 2, s, s); ctx.restore();
-    } else {
-      ctx.save(); ctx.rotate((p.aim || 0) + Math.PI / 2); ctx.beginPath(); ctx.moveTo(0, -PLAYER_R - 3); ctx.lineTo(PLAYER_R, PLAYER_R); ctx.lineTo(0, PLAYER_R * 0.5); ctx.lineTo(-PLAYER_R, PLAYER_R); ctx.closePath();
-      const pcolor = (p.color) || (CHARACTERS[p.char || 'pumpkin'] || CHARACTERS.pumpkin).color || '#fff';
-      ctx.fillStyle = pcolor; ctx.shadowColor = pcolor; ctx.shadowBlur = isMe ? 14 : 6; ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.restore();
-    }
-    ctx.restore();
-    
-    ctx.save(); ctx.translate(sx, sy); ctx.globalAlpha = p.alive ? 1 : 0.4; ctx.font = '600 12px Manrope, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = isMe ? '#fff' : 'rgba(236,236,239,0.85)';
-    ctx.fillText((p.name || '???') + (p.level ? '  Lv' + p.level : ''), 0, -PLAYER_R - 18);
-    const displayHp = p.hp !== undefined ? p.hp : MAX_HP;
-    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(-22, -PLAYER_R - 13, 44, 5);
-    ctx.fillStyle = (displayHp / MAX_HP) > 0.5 ? '#2fd47f' : (displayHp / MAX_HP) > 0.25 ? '#ffb13b' : '#ff3b5c'; ctx.fillRect(-22, -PLAYER_R - 13, 44 * Math.max(0, displayHp / MAX_HP), 5);
-    ctx.restore(); ctx.globalAlpha = 1;
-  }
+  // Use server-synced rx/ry for others, or direct x/y if undefined
+  const px = isMe ? p.x : (p.rx !== undefined ? p.rx : p.x);
+  const py = isMe ? p.y : (p.ry !== undefined ? p.ry : p.y);
+  const sx = px - camera.x, sy = py - camera.y;
+  
+  // Boundary check
+  if (sx < -60 || sx > VIEW_W + 60 || sy < -60 || sy > VIEW_H + 60) return;
+  
+  ctx.save(); 
+  ctx.translate(sx, sy);
 
+  // 1. Draw Shields (Visual Feedback)
+  for (let i = 0; i < (p.shields || 0); i++) { 
+    ctx.beginPath(); 
+    ctx.arc(0, 0, PLAYER_R + 8 + i * 5, 0, Math.PI * 2); 
+    ctx.strokeStyle = '#c77dff'; 
+    ctx.lineWidth = 2.5; 
+    ctx.globalAlpha = (p.alive ? 1 : 0.3) * (1 - i * 0.22); 
+    ctx.shadowColor = '#c77dff'; 
+    ctx.shadowBlur = 12; 
+    ctx.stroke(); 
+  }
+  
+  // 2. Sprite vs Arrow Fallback
+  // Ensure alpha is strictly based on p.alive to fix "invisible" issues
+  ctx.globalAlpha = p.alive ? 1 : 0.3;
+  const img = getSprite(p);
+  
+  if (img && img.complete && img.naturalWidth > 0) {
+    const s = 64; // Force 64x64 size for consistency
+    ctx.save(); 
+    if ((p.facing || 1) < 0) { ctx.scale(-1, 1); } 
+    ctx.drawImage(img, -s / 2, -s / 2, s, s); 
+    ctx.restore();
+  } else {
+    // Arrow fallback if texture failed to load or key is missing
+    ctx.save(); 
+    ctx.rotate((p.aim || 0) + Math.PI / 2); 
+    ctx.beginPath(); 
+    ctx.moveTo(0, -PLAYER_R - 3); 
+    ctx.lineTo(PLAYER_R, PLAYER_R); 
+    ctx.lineTo(0, PLAYER_R * 0.5); 
+    ctx.lineTo(-PLAYER_R, PLAYER_R); 
+    ctx.closePath();
+    const pcolor = (p.color) || '#fff';
+    ctx.fillStyle = pcolor; 
+    ctx.fill(); 
+    ctx.restore();
+  }
+  
+  // 3. UI Layer (Name and HP Bar)
+  ctx.globalAlpha = p.alive ? 1 : 0.4; 
+  ctx.font = '600 12px Manrope, sans-serif'; 
+  ctx.textAlign = 'center'; 
+  ctx.fillStyle = isMe ? '#fff' : 'rgba(236,236,239,0.85)';
+  ctx.fillText((p.name || '???') + (p.level ? '  Lv' + p.level : ''), 0, -PLAYER_R - 18);
+  
+  const displayHp = p.hp !== undefined ? p.hp : MAX_HP;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; 
+  ctx.fillRect(-22, -PLAYER_R - 13, 44, 5);
+  const hpColor = (displayHp / MAX_HP) > 0.5 ? '#2fd47f' : (displayHp / MAX_HP) > 0.25 ? '#ffb13b' : '#ff3b5c'; 
+  ctx.fillStyle = hpColor; 
+  ctx.fillRect(-22, -PLAYER_R - 13, 44 * Math.max(0, displayHp / MAX_HP), 5);
+  
+  ctx.restore(); 
+}
   /* ---------------- LIFECYCLE ---------------- */
   let selectedChar = 'pumpkin';
   function doStart() {
