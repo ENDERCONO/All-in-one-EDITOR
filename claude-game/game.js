@@ -44,8 +44,19 @@
     'music/ChaseMusic/Stellar Blade OST - Maelstrom (1).mp3',
     'music/ChaseMusic/Abaddon Boss Theme (Dynamic Mix) - Stellar Blade OST.mp3'
   ];
-  const WALK_SFX = ['grass/grass_walk1.ogg','grass/grass_walk2.ogg','grass/grass_walk3.ogg','grass/grass_walk4.ogg','grass/grass_walk5.ogg','grass/grass_walk6.ogg','grass/grass_walk7.ogg','grass/grass_walk8.ogg','grass/grass_walk9.ogg','grass/grass_walk10.ogg'];
+  const WALK_SFX = [
+    'grass/grass_walk1.ogg','grass/grass_walk2.ogg','grass/grass_walk3.ogg','grass/grass_walk4.ogg',
+    'grass/grass_walk5.ogg','grass/grass_walk6.ogg','grass/grass_walk7.ogg','grass/grass_walk8.ogg',
+    'grass/grass_walk9.ogg','grass/grass_walk10.ogg',
+    'grass/grass_wander1.ogg','grass/grass_wander2.ogg','grass/grass_wander3.ogg',
+    'grass/grass_wander4.ogg','grass/grass_wander5.ogg','grass/grass_wander6.ogg'
+  ];
   const RUN_SFX  = ['grass/grass_run1.ogg','grass/grass_run2.ogg','grass/grass_run3.ogg','grass/grass_run4.ogg'];
+  const NORMAL_TRACKS = [
+    'music/NormalMusic/Amid the Kelp [41SpQ3rNWnY].mp3',
+    'music/NormalMusic/Blood Crawlers [S1ZtG6Hw9ow].mp3',
+    'music/NormalMusic/Crush Depth [KaFttEublTI].mp3'
+  ];
 
   /* ---------------- CHARACTER DEFINITIONS ---------------- */
   const CHARACTERS = {
@@ -121,14 +132,14 @@
 
   /* ---------------- MUSIC STATE ---------------- */
   const musicState = {
-    chaseAudio: null,
-    chaseVol: 0,
-    chaseTrackIdx: -1,
+    chaseAudio: null,  chaseVol: 0,  chaseTrackIdx: -1,
+    normalAudio: null, normalVol: 0, normalTrackIdx: -1,
     state: 'idle',   // idle | chase | exiting | fading_out
     exitTimer: 0,
     musicVol: 0.7,
     soundVol: 0.7,
   };
+  const NORMAL_FULL = 0.42; // fraction of musicVol at which normal music plays in idle
   const walkAudios = [], runAudios = [];
   let medkits = [], xpBoxes = [];
 
@@ -178,10 +189,14 @@
     } catch (e) {}
   }
 
+  function encTrack(path) {
+    return path.split('/').map(s => encodeURIComponent(s)).join('/');
+  }
+
   function startChaseTrack(idx) {
     if (musicState.chaseAudio) { musicState.chaseAudio.pause(); musicState.chaseAudio.onended = null; }
     musicState.chaseTrackIdx = idx;
-    const a = new Audio(CHASE_TRACKS[idx]);
+    const a = new Audio(encTrack(CHASE_TRACKS[idx]));
     a.volume = 0;
     a.onended = function () {
       if (musicState.state === 'chase' || musicState.state === 'exiting') {
@@ -194,6 +209,20 @@
     };
     a.play().catch(() => {});
     musicState.chaseAudio = a;
+  }
+
+  function startNormalTrack(idx) {
+    if (musicState.normalAudio) { musicState.normalAudio.pause(); musicState.normalAudio.onended = null; }
+    musicState.normalTrackIdx = idx;
+    const a = new Audio(encTrack(NORMAL_TRACKS[idx]));
+    a.volume = 0;
+    a.onended = function () {
+      let next = idx;
+      while (next === idx && NORMAL_TRACKS.length > 1) next = (Math.random() * NORMAL_TRACKS.length) | 0;
+      startNormalTrack(next);
+    };
+    a.play().catch(() => {});
+    musicState.normalAudio = a;
   }
 
   // FIXED: Multi-layered image loading configuration to ensure textures never fail
@@ -739,33 +768,44 @@
     }
     const recentlyShot = t - me.lastHurtTime < 3000;
     const fadeMult = recentlyShot ? SHOT_FADE_MULT : 1;
+    const normTarget = musicState.musicVol * NORMAL_FULL;
+    const chaseTarget = musicState.musicVol;
+    const normRate = normTarget / CHASE_FADE_OUT_T;
+    const chaseInRate = chaseTarget / CHASE_FADE_IN_T;
+    const chaseOutRate = chaseTarget / CHASE_FADE_OUT_T;
     switch (musicState.state) {
       case 'idle':
+        // Normal fades up to full, chase stays silent
+        musicState.normalVol = Math.min(normTarget, musicState.normalVol + normRate * dt);
+        musicState.chaseVol = 0;
         if (shouldChase) { musicState.state = 'chase'; }
         break;
       case 'chase':
-        musicState.chaseVol = Math.min(musicState.musicVol,
-          musicState.chaseVol + (musicState.musicVol / CHASE_FADE_IN_T) * fadeMult * dt);
+        // Normal fades out, chase fades in
+        musicState.normalVol = Math.max(0, musicState.normalVol - normRate * fadeMult * dt);
+        musicState.chaseVol  = Math.min(chaseTarget, musicState.chaseVol + chaseInRate * fadeMult * dt);
         if (!shouldChase) { musicState.state = 'exiting'; musicState.exitTimer = CHASE_EXIT_DELAY; }
         break;
       case 'exiting':
-        musicState.chaseVol = Math.min(musicState.musicVol,
-          musicState.chaseVol + (musicState.musicVol / CHASE_FADE_IN_T) * fadeMult * dt);
+        musicState.chaseVol = Math.min(chaseTarget, musicState.chaseVol + chaseInRate * fadeMult * dt);
         if (shouldChase) { musicState.state = 'chase'; break; }
         musicState.exitTimer -= dt * fadeMult;
         if (musicState.exitTimer <= 0) musicState.state = 'fading_out';
         break;
       case 'fading_out':
-        musicState.chaseVol = Math.max(0,
-          musicState.chaseVol - (musicState.musicVol / CHASE_FADE_OUT_T) * fadeMult * dt);
+        // Chase fades out, normal fades back in
+        musicState.normalVol = Math.min(normTarget, musicState.normalVol + normRate * fadeMult * dt);
+        musicState.chaseVol  = Math.max(0, musicState.chaseVol - chaseOutRate * fadeMult * dt);
         if (shouldChase) { musicState.state = 'chase'; break; }
         if (musicState.chaseVol <= 0) musicState.state = 'idle';
         break;
     }
+    if (musicState.normalAudio) {
+      if (musicState.normalAudio.paused) musicState.normalAudio.play().catch(() => {});
+      musicState.normalAudio.volume = Math.max(0, Math.min(1, musicState.normalVol));
+    }
     if (musicState.chaseAudio) {
-      if (musicState.chaseAudio.paused && musicState.state !== 'idle') {
-        musicState.chaseAudio.play().catch(() => {});
-      }
+      if (musicState.chaseAudio.paused && musicState.chaseVol > 0.001) musicState.chaseAudio.play().catch(() => {});
       musicState.chaseAudio.volume = Math.max(0, Math.min(1, musicState.chaseVol));
     }
 
@@ -1308,10 +1348,12 @@
     started = true; if (gate) gate.style.display = 'none';
     me.x = WORLD_W / 2 + (Math.random() * 400 - 200); me.y = WORLD_H / 2 + (Math.random() * 400 - 200); me.lastCombat = Date.now();
     
-    // Start chase music track at silence (browser allows audio after user gesture)
+    // Start both music tracks at silence — browser allows audio after user gesture here
+    if (!musicState.normalAudio) {
+      startNormalTrack((Math.random() * NORMAL_TRACKS.length) | 0);
+    }
     if (!musicState.chaseAudio) {
-      const idx = (Math.random() * CHASE_TRACKS.length) | 0;
-      startChaseTrack(idx);
+      startChaseTrack((Math.random() * CHASE_TRACKS.length) | 0);
     }
 
     // Fire real-time handshake event to Node.js server
