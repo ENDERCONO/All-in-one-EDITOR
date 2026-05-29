@@ -137,6 +137,14 @@ io.on('connection', (socket) => {
     io.emit('boxBroken', id);
   });
 
+  socket.on('placeWall', (data) => {
+    socket.broadcast.emit('wallPlaced', data);
+  });
+
+  socket.on('wallDestroyed', (id) => {
+    socket.broadcast.emit('wallDestroyed', id);
+  });
+
   socket.on('disconnect', () => {
     console.log(`Player disconnected: ${socket.id}`);
     delete players[socket.id];

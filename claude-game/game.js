@@ -21,6 +21,7 @@
   const BOX_BASE_SIZE = 32, BOX_XP_BASE = 30;
   const BOX_COLORS = ['#ff3b5c','#2fd47f','#4d8bff','#c77dff','#ffb13b','#3bd6ff','#ff7ad6'];
   const DEATH_FADE_MS = 1500, IMMUNE_MS = 1000;
+  const WALL_CD = 20000, WALL_LEN = 240, WALL_HP = 700, WALL_THICK = 10, WALL_MAX_AGE = 15000;
 
   function xpForLevel(l) {
     return Math.round(LEVEL_BASE * Math.pow(LEVEL_GROW, l - 1));
@@ -96,7 +97,7 @@
   };
 
   /* ---------------- DOM / CONFIG ---------------- */
-  let ASSET_BASE = 'claude-game/Assets/', SFX_BASE = 'BalatroSfx/';
+  let ASSET_BASE = 'claude-game/Assets/', SFX_BASE = 'BalatroSfx/', PATH_BASE = '';
   let canvas, ctx, gate, nameInput, joinBtn, dotEl, netEl, countEl, toastEl, cardLayer;
   const dom = {};
   let started = false, inited = false;
@@ -126,7 +127,9 @@
   
   let others = {};
   const bullets = [];
-  const particles = [];  
+  const particles = [];
+  const walls = [];
+  let wallIdCounter = 0;
   const camera = { x: 0, y: 0 };
   let obstacles = [];
 
@@ -146,8 +149,8 @@
   /* ---------------- INPUT ---------------- */
   const keys = {};
   const mouse = { x: VIEW_W / 2, y: VIEW_H / 2, down: false, wx: 0, wy: 0 };
-  let lastFire = 0, lastDash = 0;
-  const DEFAULT_BINDINGS = { up: 'w', down: 's', left: 'a', right: 'd', dash: 'e', shield: ' ' };
+  let lastFire = 0, lastDash = 0, lastWall = -99999;
+  const DEFAULT_BINDINGS = { up: 'w', down: 's', left: 'a', right: 'd', dash: 'e', shield: ' ', wall: 'q' };
   let bindings = { ...DEFAULT_BINDINGS };
   const IS_MOBILE = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
   const MOB = { joyX: 90, joyY: VIEW_H - 90, joyBaseR: 55, joyStickR: 25, dashX: VIEW_W - 75, dashY: VIEW_H - 75, shieldX: VIEW_W - 75, shieldY: VIEW_H - 165, btnR: 38 };
@@ -181,12 +184,48 @@
   function playWalkSfx() {
     const arr = isSprinting() ? RUN_SFX : WALK_SFX;
     try {
-      const src = arr[(Math.random() * arr.length) | 0];
+      const src = PATH_BASE + arr[(Math.random() * arr.length) | 0];
       const c = new Audio(src);
       c.volume = Math.min(1, 0.38 * musicState.soundVol);
       c.playbackRate = 0.92 + Math.random() * 0.18;
       c.play().catch(() => {});
     } catch (e) {}
+  }
+
+  // Returns 0–1 volume multiplier based on world-space distance from local player.
+  // Full volume within ~500 units (roughly on-screen), silent beyond ~2.5 view-widths.
+  function spatialVol(wx, wy) {
+    if (!me || !me.alive) return 0;
+    const dist = Math.hypot(wx - me.x, wy - me.y);
+    const FULL = 500, MAX_D = VIEW_W * 2.5;
+    return dist < FULL ? 1 : Math.max(0, 1 - (dist - FULL) / (MAX_D - FULL));
+  }
+
+  function distPtSeg(px, py, ax, ay, bx, by) {
+    const dx = bx-ax, dy = by-ay, len2 = dx*dx+dy*dy;
+    if (len2 < 0.001) return Math.hypot(px-ax, py-ay);
+    const t = Math.max(0, Math.min(1, ((px-ax)*dx+(py-ay)*dy)/len2));
+    return Math.hypot(px-(ax+t*dx), py-(ay+t*dy));
+  }
+
+  function placeWall() {
+    const t = Date.now();
+    if (!me.alive || t - lastWall < WALL_CD) return;
+    lastWall = t;
+    const cx = me.x + Math.cos(me.aim) * 30;
+    const cy = me.y + Math.sin(me.aim) * 30;
+    const perp = me.aim + Math.PI / 2;
+    const half = WALL_LEN / 2;
+    const w = {
+      id: (++wallIdCounter) + '_' + (myId || 'local'),
+      ownerId: myId,
+      x1: cx - Math.cos(perp) * half, y1: cy - Math.sin(perp) * half,
+      x2: cx + Math.cos(perp) * half, y2: cy + Math.sin(perp) * half,
+      cx, cy, hp: WALL_HP, maxHp: WALL_HP, born: t
+    };
+    walls.push(w);
+    if (socket) socket.emit('placeWall', { id: w.id, ownerId: myId, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, born: t });
+    play('shield', 0.5);
   }
 
   function encTrack(path) {
@@ -196,7 +235,7 @@
   function startChaseTrack(idx) {
     if (musicState.chaseAudio) { musicState.chaseAudio.pause(); musicState.chaseAudio.onended = null; }
     musicState.chaseTrackIdx = idx;
-    const a = new Audio(encTrack(CHASE_TRACKS[idx]));
+    const a = new Audio(encTrack(PATH_BASE + CHASE_TRACKS[idx]));
     a.volume = 0;
     a.onended = function () {
       if (musicState.state === 'chase' || musicState.state === 'exiting') {
@@ -214,7 +253,7 @@
   function startNormalTrack(idx) {
     if (musicState.normalAudio) { musicState.normalAudio.pause(); musicState.normalAudio.onended = null; }
     musicState.normalTrackIdx = idx;
-    const a = new Audio(encTrack(NORMAL_TRACKS[idx]));
+    const a = new Audio(encTrack(PATH_BASE + NORMAL_TRACKS[idx]));
     a.volume = 0;
     a.onended = function () {
       let next = idx;
@@ -412,7 +451,9 @@
 
     socket.on('healthUpdate', (data) => {
       if (data.id === myId) {
-        if (data.hp < me.hp) {
+        // Only apply server HP reductions when caused by damage (fromId present).
+        // Healing events (medkit) have no fromId; client already handled them optimistically.
+        if (data.fromId && data.hp < me.hp) {
           hurtMe(me.hp - data.hp, data.fromId);
         }
       } else if (others[data.id]) {
@@ -451,6 +492,15 @@
     socket.on('boxBroken', (id) => {
       const idx = xpBoxes.findIndex(b => b.id === id);
       if (idx !== -1) { spawnParticles(xpBoxes[idx].x, xpBoxes[idx].y, xpBoxes[idx].color, 10, 130, 0.5); xpBoxes.splice(idx, 1); }
+    });
+
+    socket.on('wallPlaced', (data) => {
+      if (data.ownerId === myId) return; // already placed locally
+      walls.push({ ...data, hp: WALL_HP, maxHp: WALL_HP, cx: (data.x1+data.x2)/2, cy: (data.y1+data.y2)/2 });
+    });
+    socket.on('wallDestroyed', (id) => {
+      const idx = walls.findIndex(w => w.id === id);
+      if (idx !== -1) { spawnParticles(walls[idx].cx, walls[idx].cy, '#8899bb', 18, 200, 0.6); walls.splice(idx, 1); }
     });
   }
 
@@ -584,10 +634,12 @@
   }
 
   /* ---------------- CARD DRAFT UI ---------------- */
-  let draftOpen = false;
+  let draftOpen = false, cardDismissTimer = null;
   const HOVER_SFX = ['cardSlide1', 'cardSlide2', 'highlight1', 'highlight2', 'paper1'];
-  
+
   function openCardDraft() {
+    // Cancel any pending hide-timer so it doesn't close a freshly opened draft
+    if (cardDismissTimer) { clearTimeout(cardDismissTimer); cardDismissTimer = null; }
     if (draftOpen || !cardLayer) return;
     draftOpen = true; play('cardFan2', 0.6);
     const picks = rollCards(3);
@@ -613,7 +665,7 @@
       setTimeout(() => { card.style.transform = 'scale(0)'; }, 380);
     }, 180);
     Array.from(cardLayer.children).forEach(c => { if (c !== card) { c.style.transition = 'opacity .25s, transform .25s'; c.style.opacity = '0'; c.style.transform = 'scale(0)'; } });
-    setTimeout(() => { cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; }, 700);
+    cardDismissTimer = setTimeout(() => { cardDismissTimer = null; cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; }, 700);
     toast('Gained: ' + ab.name);
   }
 
@@ -656,6 +708,7 @@
       if (!started || !gameVisible()) return; const k = e.key.toLowerCase(); keys[k] = true;
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys['shift'] = true;
       if (k === bindings.dash) dash();
+      if (k === bindings.wall) placeWall();
       if (k === bindings.shield) { e.preventDefault(); raiseShield(); }
       if (k === 'k') toggleSettingsPanel();
       if (k === 'escape' && settingsPanelEl && settingsPanelEl.style.display !== 'none') toggleSettingsPanel();
@@ -680,7 +733,7 @@
   function update(dt) {
     const t = Date.now();
     if (!me.alive && t >= me.deadUntil) {
-      me.alive = true; me.hp = MAX_HP; me.ult = 0; me.shields = 0; me.level = 1; me.xp = 0; me.abilities = [];
+      me.alive = true; me.hp = MAX_HP; me.ult = 0; me.shields = 0; me.level = 1; me.xp = 0; me.abilities = []; lastWall = -99999;
       if (draftOpen) { draftOpen = false; if (cardLayer) { cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; } }
       me.mods = { dmg: 0, fireRate: 0, speed: 0, multishot: 0, pierce: 0, lifesteal: 0, thorns: 0, bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0, maxHp: 0, regenRate: 0, regenDelay: 0 };
       me.x = WORLD_W / 2 + (Math.random() * 400 - 200); me.y = WORLD_H / 2 + (Math.random() * 400 - 200); me.lastCombat = Date.now();
@@ -709,6 +762,8 @@
       if (me.anim === 'shoot') { me.frameT += dt; if (me.frameT > 0.18) { me.anim = moving ? 'walk' : 'idle'; } }
       else { me.anim = moving ? 'walk' : 'idle'; }
       me.frameT += dt; if (me.frameT > animFrameTime) { me.frameT = 0; me.frame = me.frame ? 0 : 1; }
+      // Sanity guard: if draftOpen but card layer is gone/empty, unlock firing
+      if (draftOpen && cardLayer && (cardLayer.style.display === 'none' || cardLayer.children.length === 0)) draftOpen = false;
       if (mouse.down && !draftOpen) fire();
       const regenDelayCur = Math.max(500, REGEN_DELAY - (me.mods.regenDelay || 0));
       if (t - me.lastCombat > regenDelayCur && me.hp < effMaxHp()) { me.hp = Math.min(effMaxHp(), me.hp + (REGEN_RATE + (me.mods.regenRate || 0)) * dt); }
@@ -840,7 +895,24 @@
         bullets.splice(i, 1); continue;
       }
 
+      // Wall collision
       const brad = b.radius || BULLET_R;
+      let wallHit = false;
+      for (let wi = walls.length - 1; wi >= 0; wi--) {
+        const w = walls[wi];
+        if (distPtSeg(b.x, b.y, w.x1, w.y1, w.x2, w.y2) < WALL_THICK / 2 + brad) {
+          w.hp -= b.dmg;
+          spawnParticles(b.x, b.y, '#7799cc', 4, 100, 0.3);
+          if (w.hp <= 0) {
+            spawnParticles(w.cx, w.cy, '#8899bb', 18, 200, 0.6);
+            if (socket && w.ownerId === myId) socket.emit('wallDestroyed', w.id);
+            walls.splice(wi, 1);
+          }
+          if ((b.pierce || 0) > 0) { b.pierce--; } else { wallHit = true; }
+          break;
+        }
+      }
+      if (wallHit) { bullets.splice(i, 1); continue; }
       
       // Local client logic: if hit by an enemy projectile, notify server
       if (me.alive && b.owner !== myId && d2(b.x, b.y, me.x, me.y) < (PLAYER_R + brad) ** 2) {
@@ -910,6 +982,11 @@
       if (p.life <= 0) { particles.splice(i, 1); }
     }
 
+    // Expire old walls
+    for (let wi = walls.length - 1; wi >= 0; wi--) {
+      if (t - walls[wi].born > WALL_MAX_AGE) walls.splice(wi, 1);
+    }
+
     if (countEl) countEl.textContent = 1 + Object.keys(others).length;
     updateHud(); updateLeaderboard();
   }
@@ -923,6 +1000,7 @@
     }
     if (d.lvl) { d.lvl.textContent = 'LV ' + me.level; d.xpFill.style.width = Math.min(100, (me.xp / xpForLevel(me.level)) * 100) + '%'; }
     if (d.dashFill) { const cd = Math.max(0, DASH_CD - (Date.now() - lastDash)); d.dashFill.style.width = ((1 - cd / DASH_CD) * 100) + '%'; d.dashTxt.textContent = cd > 0 ? (cd / 1000).toFixed(1) + 's' : 'READY'; }
+    if (d.wallFill) { const cd = Math.max(0, WALL_CD - (Date.now() - lastWall)); d.wallFill.style.width = ((1 - cd / WALL_CD) * 100) + '%'; d.wallTxt.textContent = cd > 0 ? (cd / 1000).toFixed(1) + 's' : 'READY'; }
     if (d.shieldTxt) { d.shieldTxt.textContent = me.shields + ' / ' + SHIELD_MAX; }
     if (d.ultFill) { d.ultFill.style.height = ((me.ult / ULT_MAX) * 100) + '%'; d.ultTxt.textContent = me.ult >= ULT_MAX ? 'READY (Space)' : (ULT_MAX - me.ult) + ' hits to go'; }
   }
@@ -998,6 +1076,32 @@
       ctx.shadowColor = b.explosive > 0 ? '#ff8c42' : b.reflected ? '#c77dff' : '#ff3b5c'; ctx.shadowBlur = b.explosive > 0 ? 18 : 10; ctx.fill(); ctx.shadowBlur = 0;
     }
     
+    // Draw walls
+    const wallNow = Date.now();
+    for (const w of walls) {
+      const age = wallNow - w.born;
+      if (age > WALL_MAX_AGE) continue;
+      const sx1 = w.x1 - camera.x, sy1 = w.y1 - camera.y;
+      const sx2 = w.x2 - camera.x, sy2 = w.y2 - camera.y;
+      const scx = (sx1 + sx2) / 2, scy = (sy1 + sy2) / 2;
+      const fadeAlpha = age > WALL_MAX_AGE - 2000 ? (WALL_MAX_AGE - age) / 2000 : 1;
+      const hpFrac = Math.max(0, w.hp / w.maxHp);
+      const wallColor = hpFrac > 0.5 ? '#6699ee' : hpFrac > 0.25 ? '#ffb13b' : '#ff3b5c';
+      ctx.save();
+      ctx.globalAlpha = 0.88 * fadeAlpha;
+      ctx.lineCap = 'round';
+      ctx.lineWidth = WALL_THICK;
+      ctx.strokeStyle = wallColor;
+      ctx.shadowColor = wallColor; ctx.shadowBlur = 14;
+      ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
+      ctx.shadowBlur = 0;
+      // HP bar above wall center
+      const barW = 60, barH = 4;
+      ctx.fillStyle = '#1a1a22'; ctx.fillRect(scx - barW / 2, scy - 20, barW, barH);
+      ctx.fillStyle = wallColor; ctx.fillRect(scx - barW / 2, scy - 20, barW * hpFrac, barH);
+      ctx.restore();
+    }
+
     for (const id in others) drawPlayer(others[id], false);
     drawPlayer(me, true); drawOffscreenMarkers();
     if (IS_MOBILE) drawMobileOverlay();
@@ -1149,7 +1253,8 @@
   const BIND_ACTIONS = [
     { key: 'up', label: 'Move Up' }, { key: 'down', label: 'Move Down' },
     { key: 'left', label: 'Move Left' }, { key: 'right', label: 'Move Right' },
-    { key: 'dash', label: 'Dash' }, { key: 'shield', label: 'Shield / Ult' }
+    { key: 'dash', label: 'Dash' }, { key: 'shield', label: 'Shield / Ult' },
+    { key: 'wall', label: 'Place Wall' }
   ];
 
   let settingsPanelEl = null, settingsListeningFor = null;
@@ -1183,9 +1288,21 @@
         '<div>' +
           '<div style="display:flex;justify-content:space-between;margin-bottom:9px;font-size:11px;color:#d0d0d8;"><span>Sound Effects</span><span id="caSetSVol" style="color:#c77dff;">' + Math.round(musicState.soundVol * 100) + '%</span></div>' +
           '<input type="range" id="caSetSSlider" min="0" max="100" value="' + Math.round(musicState.soundVol * 100) + '" style="-webkit-appearance:none;appearance:none;width:100%;height:5px;border-radius:3px;background:#2a2a3a;outline:none;cursor:pointer;">' +
+        '</div>' +
+        '<div style="margin-top:18px;padding-top:14px;border-top:1px solid #2a2a32;display:flex;align-items:center;justify-content:space-between;">' +
+          '<span style="font-size:11px;color:#d0d0d8;">Fullscreen</span>' +
+          '<button id="caFsBtn" style="background:#1b1b20;border:1px solid #2a2a32;color:#ececef;cursor:pointer;padding:5px 14px;border-radius:6px;font-family:inherit;font-size:11px;letter-spacing:.06em;">' + (document.fullscreenElement ? 'EXIT' : 'ENTER') + '</button>' +
         '</div>';
       el.querySelector('#caSetMSlider').oninput = function () { musicState.musicVol = +this.value / 100; el.querySelector('#caSetMVol').textContent = this.value + '%'; };
       el.querySelector('#caSetSSlider').oninput = function () { musicState.soundVol = +this.value / 100; el.querySelector('#caSetSVol').textContent = this.value + '%'; };
+      const fsBtn = el.querySelector('#caFsBtn');
+      if (fsBtn) {
+        fsBtn.addEventListener('click', () => {
+          if (!document.fullscreenElement) { document.documentElement.requestFullscreen().catch(() => {}); }
+          else { document.exitFullscreen(); }
+        });
+        document.addEventListener('fullscreenchange', () => { if (fsBtn.isConnected) fsBtn.textContent = document.fullscreenElement ? 'EXIT' : 'ENTER'; });
+      }
     }
 
     function renderControls() {
@@ -1246,15 +1363,9 @@
       renderControls();
     }, true);
 
-    // Gear button in HUD
-    const hudEl = root.querySelector('.ca-hud');
-    if (hudEl) {
-      const gear = document.createElement('button');
-      gear.title = 'Settings (K / Esc)'; gear.textContent = '⚙';
-      gear.style.cssText = 'background:none;border:none;color:#8a8a94;cursor:pointer;font-size:15px;padding:0 2px;line-height:1;pointer-events:auto;';
-      gear.addEventListener('click', toggleSettingsPanel);
-      hudEl.appendChild(gear);
-    }
+    // Wire the dedicated Settings button in the HTML
+    const settingsBtn = root.querySelector('#caSettingsBtn');
+    if (settingsBtn) settingsBtn.addEventListener('click', toggleSettingsPanel);
   }
 
   function toggleSettingsPanel() {
@@ -1382,13 +1493,16 @@
     dom.hp = root.querySelector('#caHpBar'); dom.hpFill = root.querySelector('#caHpFill'); dom.hpText = root.querySelector('#caHpText');
     dom.lvl = root.querySelector('#caLvl'); dom.xpFill = root.querySelector('#caXpFill');
     dom.dashFill = root.querySelector('#caDashFill'); dom.dashTxt = root.querySelector('#caDashTxt'); dom.shieldTxt = root.querySelector('#caShieldTxt');
+    dom.wallFill = root.querySelector('#caWallFill'); dom.wallTxt = root.querySelector('#caWallTxt');
     dom.ultFill = root.querySelector('#caUltFill'); dom.ultTxt = root.querySelector('#caUltTxt');
     const gateCard = root.querySelector('.ca-gate-card'); if (gateCard) buildCharacterPicker(gateCard);
   }
 
   ClaudeArena.init = function (opts) {
     opts = opts || {};
-    if (opts.assetBase) ASSET_BASE = opts.assetBase; if (opts.sfxBase) SFX_BASE = opts.sfxBase;
+    if (opts.assetBase) ASSET_BASE = opts.assetBase;
+    if (opts.sfxBase)  SFX_BASE  = opts.sfxBase;
+    if (opts.pathBase) PATH_BASE = opts.pathBase;
     if (inited) return; inited = true;
     
     const root = opts.mount ? document.querySelector(opts.mount) : document; cacheDom(root);
@@ -1400,8 +1514,8 @@
     setTimeout(() => { for (const k in sfxMap) { if (sfx[sfxMap[k]]) sfx[k] = sfx[sfxMap[k]]; } }, 2000);
 
     // Load walk / run step sounds
-    WALK_SFX.forEach(src => { const a = new Audio(src); a.preload = 'auto'; walkAudios.push(a); });
-    RUN_SFX.forEach(src  => { const a = new Audio(src); a.preload = 'auto'; runAudios.push(a); });
+    WALK_SFX.forEach(src => { const a = new Audio(PATH_BASE + src); a.preload = 'auto'; walkAudios.push(a); });
+    RUN_SFX.forEach(src  => { const a = new Audio(PATH_BASE + src); a.preload = 'auto'; runAudios.push(a); });
 
     bindInput();
     setupSockets();
