@@ -18,7 +18,7 @@
   const VIEW_W = 900, VIEW_H = 600;
   const WORLD_W = VIEW_W * 8, WORLD_H = VIEW_H * 8;
   const PUSH_MS = 120, PULL_MS = 150, STALE_MS = 6000;
-  const SPEED = 240, DASH_DIST = 190, DASH_CD = 5000;
+  const SPEED = 240, SPRINT_MULT = 1.65, DASH_DIST = 190, DASH_CD = 5000;
   const BULLET_SPEED = 580, BULLET_DMG = 33, FIRE_CD = 250;
   const MAX_HP = 100, ULT_MAX = 10, SHIELD_MAX = 3;
   const PLAYER_R = 18, BULLET_R = 5, RESPAWN_MS = 2500;
@@ -112,6 +112,10 @@
   /* ---------------- NET QUEUES ---------------- */
   let outShots=[], outDmg=[], outElims=[];
   let netState={}, pushing=false;
+  // Initialize netState with a first fetch before we start pushing
+  async function initNetState(){
+    try{ const s=await apiGet(); if(s&&typeof s==='object'&&!Array.isArray(s)) netState=s; }catch(e){}
+  }
 
   /* ---------------- ASSETS ---------------- */
   const assets={};
@@ -239,8 +243,9 @@
   async function pushLoop(){
     if(!started||!configured||pushing) return; pushing=true;
     try{
-      let s={}; try{ s=await apiGet(); }catch(e){ s=netState; }
-      if(!s||typeof s!=='object'||Array.isArray(s)) s={};
+      // Merge my slice into last known state without re-fetching (avoids race conditions)
+      const s=Object.assign({},netState);
+      if(!s||typeof s!=='object'||Array.isArray(s)) { pushing=false; return; }
       s[myId]=mySlice();
       const t=Date.now();
       for(const id in s){ if(id===myId) continue; const p=s[id]; if(!p||(t-(p.t||0))>STALE_MS) delete s[id]; }
@@ -249,7 +254,14 @@
   }
   async function pullLoop(){
     if(!started||!configured) return;
-    try{ const s=await apiGet(); if(!s||typeof s!=='object'||Array.isArray(s)) return; netState=s; ingest(s); setNet('live','ok'); }
+    try{
+      const s=await apiGet();
+      if(!s||typeof s!=='object'||Array.isArray(s)) return;
+      // Merge: preserve our own slice, update others from server
+      const merged=Object.assign({},s);
+      if(netState[myId]) merged[myId]=netState[myId]; // keep our local slice authoritative
+      netState=merged; ingest(netState); setNet('live','ok');
+    }
     catch(e){ setNet('reconnecting…','err'); }
   }
   function ingest(s){
@@ -288,7 +300,11 @@
   }
   function effFireCd(){ return FIRE_CD*(1-Math.min(0.75,me.mods.fireRate)); }
   function effDmg(){ return BULLET_DMG*(1+me.mods.dmg); }
-  function effSpeed(){ return SPEED*(1+me.mods.speed + (me.char==='zaid'?0.1:0)); }
+  function isSprinting(){ return !!(keys['shift']||keys['shiftleft']||keys['shiftright']); }
+  function effSpeed(){
+    const sprint = isSprinting() ? SPRINT_MULT : 1.0;
+    return SPEED*(1+me.mods.speed + (me.char==='zaid'?0.1:0))*sprint;
+  }
   function effBulletSpeed(){ return BULLET_SPEED*(1+me.mods.bulletSpeed); }
   function effBulletRadius(){ return BULLET_R*(1+(me.mods.bigBullet||0)*0.5); }
 
@@ -525,9 +541,14 @@
     canvas.addEventListener('contextmenu',e=>e.preventDefault());
     window.addEventListener('keydown',e=>{ if(!started||!gameVisible()) return;
       const k=e.key.toLowerCase(); keys[k]=true;
+      // also track by code for shift
+      if(e.code==='ShiftLeft'||e.code==='ShiftRight') keys['shift']=true;
       if(k==='e') dash();
       if(k===' '){ e.preventDefault(); raiseShield(); } });
-    window.addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=false; });
+    window.addEventListener('keyup',e=>{
+      keys[e.key.toLowerCase()]=false;
+      if(e.code==='ShiftLeft'||e.code==='ShiftRight') keys['shift']=false;
+    });
   }
 
   /* ---------------- SIM ---------------- */
@@ -553,14 +574,17 @@
       let dx=0,dy=0;
       if(keys['w']) dy-=1; if(keys['s']) dy+=1; if(keys['a']) dx-=1; if(keys['d']) dx+=1;
       const moving=(dx||dy);
+      const sprinting=isSprinting();
       if(moving){ const l=Math.hypot(dx,dy); const sp=effSpeed();
         me.x=clamp(me.x+(dx/l)*sp*dt,PLAYER_R,WORLD_W-PLAYER_R);
         me.y=clamp(me.y+(dy/l)*sp*dt,PLAYER_R,WORLD_H-PLAYER_R);
         resolveObstacleCollision(me,PLAYER_R);
       }
+      // Sprint: faster animation cycle; normal walk slower
+      const animFrameTime = sprinting ? 0.10 : 0.22;
       if(me.anim==='shoot'){ me.frameT+=dt; if(me.frameT>0.18){ me.anim=moving?'walk':'idle'; } }
       else { me.anim=moving?'walk':'idle'; }
-      me.frameT+=dt; if(me.frameT>0.22){ me.frameT=0; me.frame=me.frame?0:1; }
+      me.frameT+=dt; if(me.frameT>animFrameTime){ me.frameT=0; me.frame=me.frame?0:1; }
       if(mouse.down && !draftOpen) fire();
       if(t-me.lastCombat>REGEN_DELAY && me.hp<MAX_HP){ me.hp=Math.min(MAX_HP,me.hp+REGEN_RATE*dt); }
     }
@@ -734,9 +758,59 @@
     }
     for(const id in others) drawPlayer(others[id],false);
     drawPlayer(me,true);
+    drawOffscreenMarkers();
   }
 
-  function spriteKey(p){
+  /* ---------------- OFF-SCREEN MARKERS ---------------- */
+  function drawOffscreenMarkers(){
+    const PAD=28, ARROW=10;
+    ctx.save();
+    for(const id in others){
+      const o=others[id]; if(!o.alive) continue;
+      const sx=o.x-camera.x, sy=o.y-camera.y;
+      // Only draw if offscreen
+      if(sx>=0 && sx<=VIEW_W && sy>=0 && sy<=VIEW_H) continue;
+      // Direction from screen center to player
+      const cx=VIEW_W/2, cy=VIEW_H/2;
+      const ang=Math.atan2(sy-cy, sx-cx);
+      // Clamp to screen edge
+      let ex, ey;
+      const tx=Math.cos(ang), ty=Math.sin(ang);
+      const scaleX=(tx>0?(VIEW_W-PAD-cx):(-cx+PAD))/tx;
+      const scaleY=(ty>0?(VIEW_H-PAD-cy):(-cy+PAD))/ty;
+      const scale=Math.min(Math.abs(scaleX), Math.abs(scaleY));
+      ex=clamp(cx+tx*scale, PAD, VIEW_W-PAD);
+      ey=clamp(cy+ty*scale, PAD, VIEW_H-PAD);
+      const color=o.color||'#aaa';
+      // Arrow triangle
+      ctx.save();
+      ctx.translate(ex, ey);
+      ctx.rotate(ang);
+      ctx.beginPath();
+      ctx.moveTo(ARROW,0);
+      ctx.lineTo(-ARROW,-ARROW*0.65);
+      ctx.lineTo(-ARROW*0.3,0);
+      ctx.lineTo(-ARROW,ARROW*0.65);
+      ctx.closePath();
+      ctx.fillStyle=color;
+      ctx.shadowColor=color; ctx.shadowBlur=10;
+      ctx.fill();
+      ctx.restore();
+      // Name label near arrow
+      ctx.font='bold 10px JetBrains Mono, monospace';
+      ctx.textAlign='center';
+      ctx.fillStyle=color;
+      ctx.shadowColor=color; ctx.shadowBlur=8;
+      // Offset label slightly away from edge
+      const lx=clamp(ex-Math.cos(ang)*22, 2, VIEW_W-2);
+      const ly=clamp(ey-Math.sin(ang)*22, 12, VIEW_H-2);
+      ctx.fillText((o.name||'???').slice(0,8), lx, ly);
+      ctx.shadowBlur=0;
+    }
+    ctx.restore();
+  }
+
+  
     const ch=p.char||'pumpkin';
     const anim=p.anim||'idle';
     const fr=(p.frame?1:0)+1;
@@ -811,7 +885,7 @@
     me.lastCombat=Date.now();
     applyCharBonus();
     if(!configured){ setNet('OFFLINE — bin not set','err'); toast('Multiplayer off — solo practice'); }
-    else{ setNet('connecting…'); pushLoop(); setInterval(pushLoop,PUSH_MS); setInterval(pullLoop,PULL_MS); }
+    else{ setNet('connecting…'); initNetState().then(()=>{ pushLoop(); setInterval(pushLoop,PUSH_MS); setInterval(pullLoop,PULL_MS); }); }
   }
 
   function buildCharacterPicker(gateCard){
