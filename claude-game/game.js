@@ -38,26 +38,26 @@
   const STEP_RUN_INT      = 0.20;
 
   const CHASE_TRACKS = [
-    'music/ChaseMusic/Stellar Blade OST - Raven [jl2NfpkBHsg].mp3',
-    'music/ChaseMusic/Stellar Blade OST - Maelstrom.mp3',
-    'music/ChaseMusic/Stellar Blade OST - Juggernaut (1).mp3',
-    'music/ChaseMusic/Stellar Blade OST - Corrupter (1).mp3',
-    'music/ChaseMusic/Stellar Blade OST - Buzzsaw Slide (1).mp3',
-    'music/ChaseMusic/Stellar Blade OST - Maelstrom (1).mp3',
-    'music/ChaseMusic/Abaddon Boss Theme (Dynamic Mix) - Stellar Blade OST.mp3'
+    'claude-game/music/ChaseMusic/Stellar Blade OST - Raven [jl2NfpkBHsg].mp3',
+    'claude-game/music/ChaseMusic/Stellar Blade OST - Maelstrom.mp3',
+    'claude-game/music/ChaseMusic/Stellar Blade OST - Juggernaut (1).mp3',
+    'claude-game/music/ChaseMusic/Stellar Blade OST - Corrupter (1).mp3',
+    'claude-game/music/ChaseMusic/Stellar Blade OST - Buzzsaw Slide (1).mp3',
+    'claude-game/music/ChaseMusic/Stellar Blade OST - Maelstrom (1).mp3',
+    'claude-game/music/ChaseMusic/Abaddon Boss Theme (Dynamic Mix) - Stellar Blade OST.mp3'
   ];
   const WALK_SFX = [
-    'grass/grass_walk1.ogg','grass/grass_walk2.ogg','grass/grass_walk3.ogg','grass/grass_walk4.ogg',
-    'grass/grass_walk5.ogg','grass/grass_walk6.ogg','grass/grass_walk7.ogg','grass/grass_walk8.ogg',
-    'grass/grass_walk9.ogg','grass/grass_walk10.ogg',
-    'grass/grass_wander1.ogg','grass/grass_wander2.ogg','grass/grass_wander3.ogg',
-    'grass/grass_wander4.ogg','grass/grass_wander5.ogg','grass/grass_wander6.ogg'
+    'claude-game/grass_walk1.ogg','claude-game/grass_walk2.ogg','claude-game/grass_walk3.ogg','claude-game/grass_walk4.ogg',
+    'claude-game/grass_walk5.ogg','claude-game/grass_walk6.ogg','claude-game/grass_walk7.ogg','claude-game/grass_walk8.ogg',
+    'claude-game/grass_walk9.ogg','claude-game/grass_walk10.ogg',
+    'claude-game/grass_wander1.ogg','claude-game/grass_wander2.ogg','claude-game/grass_wander3.ogg',
+    'claude-game/grass_wander4.ogg','claude-game/grass_wander5.ogg','claude-game/grass_wander6.ogg'
   ];
-  const RUN_SFX  = ['grass/grass_run1.ogg','grass/grass_run2.ogg','grass/grass_run3.ogg','grass/grass_run4.ogg'];
+  const RUN_SFX  = ['claude-game//grass_run1.ogg','claude-game//grass_run2.ogg','claude-game//grass_run3.ogg','claude-game//grass_run4.ogg'];
   const NORMAL_TRACKS = [
-    'music/NormalMusic/Amid the Kelp [41SpQ3rNWnY].mp3',
-    'music/NormalMusic/Blood Crawlers [S1ZtG6Hw9ow].mp3',
-    'music/NormalMusic/Crush Depth [KaFttEublTI].mp3'
+    'claude-game/music/NormalMusic/Amid the Kelp [41SpQ3rNWnY].mp3',
+    'claude-game/music/NormalMusic/Blood Crawlers [S1ZtG6Hw9ow].mp3',
+    'claude-game/music/NormalMusic/Crush Depth [KaFttEublTI].mp3'
   ];
 
   /* ---------------- CHARACTER DEFINITIONS ---------------- */
