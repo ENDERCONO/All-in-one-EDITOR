@@ -14,7 +14,7 @@
   const BULLET_SPEED = 580, BULLET_DMG = 10, FIRE_CD = 250;
   const MAX_HP = 100, ULT_MAX = 10, SHIELD_MAX = 3;
   const PLAYER_R = 18, BULLET_R = 5, RESPAWN_MS = 2500;
-  const REGEN_DELAY = 5000, REGEN_RATE = 2;
+  const REGEN_DELAY = 5000, REGEN_RATE = 10;
   const XP_PER_DMG = 1, XP_PER_KILL = 60;
   const LEVEL_BASE = 120, LEVEL_GROW = 1.35;
   const MEDKIT_PICKUP_R = 28, MEDKIT_HEAL_AMT = 50;
@@ -120,7 +120,9 @@
     mods: {
       dmg: 0, fireRate: 0, speed: 0, multishot: 0, pierce: 0, lifesteal: 0, thorns: 0,
       bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0,
-      maxHp: 0, regenRate: 0, regenDelay: 0
+      maxHp: 0, regenRate: 0, regenDelay: 0,
+      critChance: 0, onKillHeal: 0, killShield: 0, dashHeal: 0, dashCdReduce: 0,
+      shieldRegen: 0, damageResist: 0, homingStr: 0
     },
     abilities: [],
     points: 0
@@ -577,13 +579,15 @@
   /* ---------------- COMBAT ---------------- */
   function hurtMe(amount, fromId) {
     if (!me.alive) return;
-    me.hp -= amount; me.lastCombat = Date.now(); me.lastHurtTime = Date.now();
+    const reduced = amount * (1 - Math.min(0.6, me.mods.damageResist || 0));
+    me.hp -= reduced; me.lastCombat = Date.now(); me.lastHurtTime = Date.now();
     play('hit', 0.5);
     spawnParticles(me.x, me.y, '#ff3b5c', 6, 150, 0.3);
   }
 
-  function effFireCd() { return FIRE_CD * (1 - Math.min(0.75, me.mods.fireRate)); }
-  function effDmg() { return BULLET_DMG * (1 + me.mods.dmg); }
+  function effFireCd()   { return FIRE_CD * (1 - Math.min(0.75, me.mods.fireRate)); }
+  function effDmg()      { return BULLET_DMG * (1 + me.mods.dmg); }
+  function effDashCd()   { return Math.max(1000, DASH_CD - (me.mods.dashCdReduce || 0) * 1000); }
   function isSprinting() { return !!(keys['shift'] || keys['shiftleft'] || keys['shiftright']); }
   function effSpeed() { return SPEED * (1 + me.mods.speed + (me.char === 'zaid' ? 0.1 : 0)) * (isSprinting() ? SPRINT_MULT : 1.0); }
   function effBulletSpeed() { return BULLET_SPEED * (1 + me.mods.bulletSpeed); }
@@ -631,10 +635,11 @@
   }
 
   function dash() {
-    const t = Date.now(); if (!me.alive || t - lastDash < DASH_CD) return; lastDash = t;
+    const t = Date.now(); if (!me.alive || t - lastDash < effDashCd()) return; lastDash = t;
     me.x = clamp(me.x + Math.cos(me.aim) * DASH_DIST, PLAYER_R, WORLD_W - PLAYER_R);
     me.y = clamp(me.y + Math.sin(me.aim) * DASH_DIST, PLAYER_R, WORLD_H - PLAYER_R);
     resolveObstacleCollision(me, PLAYER_R);
+    if (me.mods.dashHeal > 0) { me.hp = Math.min(effMaxHp(), me.hp + me.mods.dashHeal); spawnParticles(me.x, me.y, '#2fd47f', 6, 90, 0.35); }
     play('dash', 0.55);
     spawnParticles(me.x, me.y, me.color || '#fff', 8, 100, 0.4);
   }
@@ -805,7 +810,7 @@
     if (!me.alive && t >= me.deadUntil) {
       me.alive = true; me.hp = MAX_HP; me.ult = 0; me.shields = 0; me.level = 1; me.xp = 0; me.abilities = []; lastWall = -99999;
       if (draftOpen) { draftOpen = false; if (cardLayer) { cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; } }
-      me.mods = { dmg: 0, fireRate: 0, speed: 0, multishot: 0, pierce: 0, lifesteal: 0, thorns: 0, bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0, maxHp: 0, regenRate: 0, regenDelay: 0 };
+      me.mods = { dmg: 0, fireRate: 0, speed: 0, multishot: 0, pierce: 0, lifesteal: 0, thorns: 0, bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0, maxHp: 0, regenRate: 0, regenDelay: 0, critChance: 0, onKillHeal: 0, killShield: 0, dashHeal: 0, dashCdReduce: 0, shieldRegen: 0, damageResist: 0, homingStr: 0 };
       me.x = WORLD_W / 2 + (Math.random() * 400 - 200); me.y = WORLD_H / 2 + (Math.random() * 400 - 200); me.lastCombat = Date.now();
       if (socket) socket.emit('respawn', { x: me.x, y: me.y });
     }
@@ -1091,7 +1096,7 @@
       d.hpFill.style.background = f > 0.5 ? '#2fd47f' : f > 0.25 ? '#ffb13b' : '#ff3b5c'; d.hpText.textContent = Math.ceil(me.hp) + ' / ' + emx;
     }
     if (d.lvl) { d.lvl.textContent = 'LV ' + me.level; d.xpFill.style.width = Math.min(100, (me.xp / xpForLevel(me.level)) * 100) + '%'; }
-    if (d.dashFill) { const cd = Math.max(0, DASH_CD - (Date.now() - lastDash)); d.dashFill.style.width = ((1 - cd / DASH_CD) * 100) + '%'; d.dashTxt.textContent = cd > 0 ? (cd / 1000).toFixed(1) + 's' : 'READY'; }
+    if (d.dashFill) { const edc = effDashCd(); const cd = Math.max(0, edc - (Date.now() - lastDash)); d.dashFill.style.width = ((1 - cd / edc) * 100) + '%'; d.dashTxt.textContent = cd > 0 ? (cd / 1000).toFixed(1) + 's' : 'READY'; }
     if (d.wallFill) { const cd = Math.max(0, WALL_CD - (Date.now() - lastWall)); d.wallFill.style.width = ((1 - cd / WALL_CD) * 100) + '%'; d.wallTxt.textContent = cd > 0 ? (cd / 1000).toFixed(1) + 's' : 'READY'; }
     if (d.shieldTxt) { d.shieldTxt.textContent = me.shields + ' / ' + SHIELD_MAX; }
     if (d.ultFill) { d.ultFill.style.height = ((me.ult / ULT_MAX) * 100) + '%'; d.ultTxt.textContent = me.ult >= ULT_MAX ? 'READY (Space)' : (ULT_MAX - me.ult) + ' hits to go'; }
