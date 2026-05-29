@@ -820,7 +820,12 @@
 }
   /* ---------------- LIFECYCLE ---------------- */
   let selectedChar = 'pumpkin';
-  function doStart() {
+  async function doStart() {
+    // 1. Wait for assets
+    await loadCharAssets(); 
+    
+    // 2. Then proceed to start the game
+    started = true;
     const n = (nameInput.value || '').trim().slice(0, 14) || 'anon' + ((Math.random() * 99) | 0);
     me.name = n; me.color = CHARACTERS[selectedChar].color; me.char = selectedChar;
     try { localStorage.setItem('caName', n); localStorage.setItem('caChar', selectedChar); } catch (e) {}
