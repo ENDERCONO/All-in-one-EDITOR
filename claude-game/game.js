@@ -10,8 +10,10 @@
   const VIEW_W = 900, VIEW_H = 600;
   const WORLD_W = VIEW_W * 8, WORLD_H = VIEW_H * 8;
   
-  // Optimized Polling Rates to avoid JSONBin Rate Limits (HTTP 429)
-  const PUSH_MS = 300, PULL_MS = 400, STALE_MS = 8000;
+  // Polling Rates — conservative to avoid JSONBin 429 rate-limit errors
+  // JSONBin free tier: ~120 requests/min total. With 2 players: push 1/s + pull 1/s = 4 req/s = 240/min → too fast.
+  // At these rates: push 1/1.2s + pull 1/1.5s ≈ 1.5 req/s per player → safe even with 4 players
+  const PUSH_MS = 1200, PULL_MS = 1500, STALE_MS = 12000;
   
   const SPEED = 240, SPRINT_MULT = 1.65, DASH_DIST = 190, DASH_CD = 5000;
   const BULLET_SPEED = 580, BULLET_DMG = 33, FIRE_CD = 250;
@@ -34,7 +36,7 @@
       sprites: {
         idle1: 'Pumpkin_Idle1.png',   idle2: 'Pumpkin_Idle2.png',
         walk1: 'Pumpkin_Walk1.png',   walk2: 'Pumpkin_Walk2.png',
-        walkShoot1: 'Pumpkin_WalkShoot1.png', walkShoot2: 'Pumpkin_WalkShoot2.png',
+        walkshoot1: 'Pumpkin_WalkShoot1.png', walkshoot2: 'Pumpkin_WalkShoot2.png',
         shoot1: 'Pumpkin_Shoot1.png', shoot2: 'Pumpkin_Shoot2.png',
       }
     },
@@ -45,7 +47,7 @@
       sprites: {
         idle1: 'Zaid_Idle1.png',   idle2: 'Zaid_Idle2.png',
         walk1: 'Zaid_Walk1.png',   walk2: 'Zaid_Walk2.png',
-        walkShoot1: 'Zaid_WalkShoot1.png', walkShoot2: 'Zaid_WalkShoot2.png',
+        walkshoot1: 'Zaid_WalkShoot1.png', walkshoot2: 'Zaid_WalkShoot2.png',
         shoot1: 'Zaid_Shoot1.png', shoot2: 'Zaid_Shoot2.png',
       }
     },
@@ -56,7 +58,7 @@
       sprites: {
         idle1: 'Rich_Idle1.png',   idle2: 'Rich_Idle2.png',
         walk1: 'Rich_Walk1.png',   walk2: 'Rich_Walk2.png',
-        walkShoot1: 'Rich_WalkShoot1.png', walkShoot2: 'Rich_WalkShoot2.png',
+        walkshoot1: 'Rich_WalkShoot1.png', walkshoot2: 'Rich_WalkShoot2.png',
         shoot1: 'Rich_Shoot1.png', shoot2: 'Rich_Shoot2.png',
       }
     }
@@ -106,6 +108,14 @@
   /* ---------------- NET QUEUES ---------------- */
   let outShots = [], outDmg = [], outElims = [];
   let netState = {}, pushing = false;
+  let netBackoff = PUSH_MS;        // grows on 429/errors, resets on success
+  let lastPushHash = '';           // skip push if nothing changed
+  let consecutiveErrors = 0;
+
+  function stateHash() {
+    // cheap dirty check — position + hp + queues
+    return me.x + '|' + me.y + '|' + me.hp + '|' + outShots.length + '|' + outDmg.length + '|' + outElims.length;
+  }
 
   async function initNetState() {
     try { 
@@ -145,7 +155,19 @@
     for (const cid in CHARACTERS) {
       const ch = CHARACTERS[cid];
       for (const animKey in ch.sprites) {
-        tryLoad(cid + '_' + animKey, ASSET_BASE + ch.sprites[animKey]);
+        const filename = ch.sprites[animKey];
+        const key = cid + '_' + animKey;
+        // Try primary path
+        const img = new Image();
+        img.onload = () => { assets[key] = img; };
+        img.onerror = () => {
+          // Try lowercase path fallback (for case-sensitive servers)
+          const img2 = new Image();
+          img2.onload = () => { assets[key] = img2; };
+          img2.onerror = () => { console.warn('[Arena] Sprite not found:', ASSET_BASE + filename, '— check Assets/ folder path'); };
+          img2.src = ASSET_BASE.toLowerCase() + filename;
+        };
+        img.src = ASSET_BASE + filename;
       }
     }
     tryLoad('floor', ASSET_BASE + 'floor.png');
@@ -244,12 +266,22 @@
 
   /* ---------------- NET ---------------- */
   async function apiGet() { 
-    const r = await fetch('https://api.jsonbin.io/v3/b/' + BIN + '/latest', { headers: { 'X-Master-Key': KEY, 'X-Bin-Meta': 'false' } }); 
-    if (!r.ok) throw new Error('GET ' + r.status); return await r.json(); 
+    const r = await fetch('https://api.jsonbin.io/v3/b/' + BIN + '/latest', { 
+      headers: { 'X-Master-Key': KEY, 'X-Bin-Meta': 'false' } 
+    }); 
+    if (r.status === 429) { netBackoff = Math.min(netBackoff * 2, 30000); throw new Error('RATE_LIMIT'); }
+    if (!r.ok) throw new Error('GET ' + r.status); 
+    return await r.json(); 
   }
   async function apiPut(o) { 
-    const r = await fetch('https://api.jsonbin.io/v3/b/' + BIN, { method: 'PUT', headers: { 'X-Master-Key': KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(o) });
-    if (!r.ok) throw new Error('PUT ' + r.status); return await r.json(); 
+    const r = await fetch('https://api.jsonbin.io/v3/b/' + BIN, { 
+      method: 'PUT', 
+      headers: { 'X-Master-Key': KEY, 'Content-Type': 'application/json' }, 
+      body: JSON.stringify(o) 
+    });
+    if (r.status === 429) { netBackoff = Math.min(netBackoff * 2, 30000); throw new Error('RATE_LIMIT'); }
+    if (!r.ok) throw new Error('PUT ' + r.status); 
+    return await r.json(); 
   }
 
   function mySlice() { 
@@ -265,19 +297,31 @@
   }
 
   async function pushLoop() {
-    if (!started || !configured || pushing) return; pushing = true;
+    if (!started || !configured || pushing) return; 
+    
+    // Skip push if nothing has changed and no queued events
+    const hash = stateHash();
+    if (hash === lastPushHash && outShots.length === 0 && outDmg.length === 0 && outElims.length === 0) return;
+    
+    pushing = true;
     try {
       const s = Object.assign({}, netState);
       if (!s || typeof s !== 'object' || Array.isArray(s)) { pushing = false; return; }
       s[myId] = mySlice();
       const t = Date.now();
       for (const id in s) { if (id !== myId) { const p = s[id]; if (!p || (t - (p.t || 0)) > STALE_MS) delete s[id]; } }
-      await apiPut(s); netState = s; 
+      await apiPut(s); 
+      netState = s; 
       outShots = []; outDmg = []; outElims = []; 
+      lastPushHash = stateHash();
+      consecutiveErrors = 0;
+      netBackoff = PUSH_MS; // reset backoff on success
       setNet('live', 'ok');
     } catch (e) { 
-      setNet('reconnecting…', 'err'); 
-      // Prevent data buildup if temporary network drop occurs
+      consecutiveErrors++;
+      const isRateLimit = e.message === 'RATE_LIMIT';
+      setNet(isRateLimit ? 'rate limited…' : 'reconnecting…', 'err'); 
+      // Prevent data buildup
       if (outShots.length > 30) outShots = outShots.slice(-30);
       if (outDmg.length > 20) outDmg = outDmg.slice(-20);
     } finally { pushing = false; }
@@ -290,14 +334,21 @@
       if (!s || typeof s !== 'object' || Array.isArray(s)) return;
       const merged = Object.assign({}, s);
       if (netState[myId]) merged[myId] = netState[myId];
-      netState = merged; ingest(netState); setNet('live', 'ok');
-    } catch (e) { setNet('reconnecting…', 'err'); }
+      netState = merged; ingest(netState); 
+      consecutiveErrors = 0;
+      netBackoff = PUSH_MS;
+      setNet('live', 'ok');
+    } catch (e) { 
+      consecutiveErrors++;
+      const isRateLimit = e.message === 'RATE_LIMIT';
+      setNet(isRateLimit ? 'rate limited…' : 'reconnecting…', 'err'); 
+    }
   }
 
   function ingest(s) {
     const t = Date.now(); const next = {};
     
-    // Server-Authoritative Sync Protection
+    // Server-Authoritative Sync: if server says we took damage, apply it
     if (s[myId] && s[myId].hp < me.hp) {
       const diff = me.hp - s[myId].hp;
       hurtMe(diff, 'server_force');
@@ -307,12 +358,24 @@
       if (id === myId) continue; const p = s[id];
       if (!p || (t - (p.t || 0)) > STALE_MS) continue; 
       
-      // Keep track of old render coordinates for linear smoothing
       const oldPlayer = others[id];
       next[id] = p;
       if (oldPlayer) {
         next[id].rx = oldPlayer.rx;
         next[id].ry = oldPlayer.ry;
+        // Preserve local HP if it's lower than server (our damage registered locally already)
+        // But if server HP is lower, the player healed/died/respawned — trust server
+        if (oldPlayer._localHp !== undefined && oldPlayer._localHp < (p.hp || 0)) {
+          next[id]._localHp = oldPlayer._localHp;
+        } else {
+          // Server has authoritative (lower or reset) HP — sync local
+          next[id]._localHp = p.hp || 0;
+          if (p.hp > 0) next[id]._localKillCredited = false; // respawned
+        }
+        next[id]._localKillCredited = oldPlayer._localKillCredited;
+      } else {
+        next[id]._localHp = p.hp || 0;
+        next[id]._localKillCredited = false;
       }
 
       (p.shots || []).forEach(sh => { 
@@ -624,18 +687,35 @@
       if (b.owner === myId) {
         let hit = false;
         for (const id in others) {
-          const o = others[id]; if (!o.alive) continue;
+          const o = others[id]; 
+          // Allow hitting players even if server says not alive — use local HP tracking
+          // A player is hittable if they were seen recently (within 2x stale time) and local HP > 0
+          const localHp = o._localHp !== undefined ? o._localHp : (o.hp || 0);
+          if (localHp <= 0) continue;
           if (d2(b.x, b.y, o.x, o.y) < (PLAYER_R + brad) ** 2) {
             const dmgAmount = Math.round(b.dmg);
             
-            // Direct Immediate Server Modification (Registers even if target is disconnected)
-            o.hp = Math.max(0, o.hp - dmgAmount);
-            if (netState[id]) netState[id].hp = o.hp;
+            // Apply damage locally immediately — works even if target is "disconnected"
+            o._localHp = Math.max(0, localHp - dmgAmount);
+            o.hp = o._localHp;
+            if (netState[id]) netState[id].hp = o._localHp;
 
             outDmg.push({ id: uid(), target: id, amount: dmgAmount });
             gainUlt(1); gainXp(dmgAmount * XP_PER_DMG);
             if (me.mods.lifesteal > 0) me.hp = Math.min(MAX_HP, me.hp + me.mods.lifesteal);
             spawnParticles(b.x, b.y, '#ffb13b', 5, 120, 0.3); play('hitEnemy', 0.4);
+            
+            // Local kill credit — don't wait for server confirmation
+            if (o._localHp <= 0 && !o._localKillCredited) {
+              o._localKillCredited = true;
+              const killId = uid();
+              outElims.push({ id: killId, killer: myId, victim: id, killerName: me.name, victimName: o.name || '???' });
+              me.elims += 1; me.points += 100; me.hp = Math.min(MAX_HP, me.hp + 50);
+              gainXp(XP_PER_KILL);
+              play('coin5', 0.6); 
+              toast('Eliminated ' + (o.name || 'a player') + '! +50 HP +100pts');
+            }
+            
             if ((b.explosive || 0) > 0) spawnExplosion(b.x, b.y, b.explosive, b.dmg);
             hit = true; break;
           }
@@ -660,8 +740,13 @@
       (p.kills || []).forEach(k => {
         const tag = 'mine' + k.id;
         if (k.killer === myId && !seenDmg.has(tag)) {
-          seenDmg.add(tag); me.elims += 1; me.points += 100; me.hp = Math.min(MAX_HP, me.hp + 50); gainXp(XP_PER_KILL);
-          play('coin5', 0.6); toast('Eliminated ' + (k.victimName || 'a player') + '! +50 HP +100pts');
+          seenDmg.add(tag); 
+          // Only give rewards if not already credited locally (via _localKillCredited)
+          const victim = others[k.victim];
+          if (!victim || !victim._localKillCredited) {
+            me.elims += 1; me.points += 100; me.hp = Math.min(MAX_HP, me.hp + 50); gainXp(XP_PER_KILL);
+            play('coin5', 0.6); toast('Eliminated ' + (k.victimName || 'a player') + '! +50 HP +100pts');
+          }
         }
       });
     }
@@ -740,19 +825,26 @@
   // Sprite Look-up Handler with full support for walkShoot combinations
   function getSprite(p) {
     const ch = p.char || 'pumpkin';
-    let anim = p.anim || 'idle';
-    const fr = (p.frame ? 1 : 0) + 1;
+    let anim = (p.anim || 'idle').toLowerCase();
+    const fr = (p.frame ? 1 : 0) + 1; // 1 or 2
     
-    if (anim === 'shoot' && p.moving) {
-      anim = 'walkShoot';
-    }
+    // prefer walkshoot when moving+shooting
+    if (anim === 'shoot' && p.moving) anim = 'walkshoot';
     
+    // primary key e.g. pumpkin_walkshoot1
     const key1 = ch + '_' + anim + fr;
     if (assets[key1]) return assets[key1];
     
-    const key2 = ch + '_' + (p.anim || 'idle') + fr;
+    // try frame 1 of same anim
+    const key1f = ch + '_' + anim + '1';
+    if (assets[key1f]) return assets[key1f];
+    
+    // fallback to base anim (shoot -> idle, walkshoot -> walk)
+    const baseAnim = anim === 'walkshoot' ? 'walk' : anim === 'shoot' ? 'idle' : anim;
+    const key2 = ch + '_' + baseAnim + fr;
     if (assets[key2]) return assets[key2];
     
+    // last resort: idle1
     const fb = ch + '_idle1';
     if (assets[fb]) return assets[fb];
     return null;
@@ -780,8 +872,9 @@
     
     ctx.save(); ctx.translate(sx, sy); ctx.globalAlpha = p.alive ? 1 : 0.4; ctx.font = '600 12px Manrope, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = isMe ? '#fff' : 'rgba(236,236,239,0.85)';
     ctx.fillText((p.name || '???') + (p.level ? '  Lv' + p.level : ''), 0, -PLAYER_R - 18);
+    const displayHp = isMe ? p.hp : (p._localHp !== undefined ? p._localHp : (p.hp || 0));
     ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(-22, -PLAYER_R - 13, 44, 5);
-    ctx.fillStyle = ((p.hp || 0) / MAX_HP) > 0.5 ? '#2fd47f' : ((p.hp || 0) / MAX_HP) > 0.25 ? '#ffb13b' : '#ff3b5c'; ctx.fillRect(-22, -PLAYER_R - 13, 44 * Math.max(0, (p.hp || 0) / MAX_HP), 5);
+    ctx.fillStyle = (displayHp / MAX_HP) > 0.5 ? '#2fd47f' : (displayHp / MAX_HP) > 0.25 ? '#ffb13b' : '#ff3b5c'; ctx.fillRect(-22, -PLAYER_R - 13, 44 * Math.max(0, displayHp / MAX_HP), 5);
     ctx.restore(); ctx.globalAlpha = 1;
   }
 
@@ -794,7 +887,26 @@
     started = true; if (gate) gate.style.display = 'none';
     me.x = WORLD_W / 2 + (Math.random() * 400 - 200); me.y = WORLD_H / 2 + (Math.random() * 400 - 200); me.lastCombat = Date.now();
     if (!configured) { setNet('OFFLINE — bin not set', 'err'); toast('Multiplayer off — solo practice'); }
-    else { setNet('connecting…'); initNetState().then(() => { pushLoop(); setInterval(pushLoop, PUSH_MS); setInterval(pullLoop, PULL_MS); }); }
+    else { 
+      setNet('connecting…'); 
+      initNetState().then(() => { 
+        // Use dynamic scheduling instead of fixed intervals to respect backoff
+        function schedulePush() {
+          setTimeout(async () => {
+            await pushLoop();
+            schedulePush();
+          }, netBackoff);
+        }
+        function schedulePull() {
+          setTimeout(async () => {
+            await pullLoop();
+            schedulePull();
+          }, Math.max(PULL_MS, netBackoff * 0.8));
+        }
+        schedulePush();
+        schedulePull();
+      }); 
+    }
   }
 
   function buildCharacterPicker(gateCard) {
@@ -842,4 +954,4 @@
   
   ClaudeArena.show = function () { const ni = document.querySelector('#caName'); if (ni) setTimeout(() => ni.focus(), 80); };
   ClaudeArena.isStarted = function () { return started; };
-})();
+})(); 
