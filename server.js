@@ -63,6 +63,44 @@ setInterval(() => {
 /* ---- Players ---- */
 const players = {};
 
+/* ---- Server-side area-effect physics ---- */
+const activePhysicsAE = []; // effects that push/pull players
+const PLAYER_R_SRV = 18;
+
+setInterval(() => {
+  const now = Date.now();
+  // Expire
+  for (let i = activePhysicsAE.length - 1; i >= 0; i--) {
+    if (now - activePhysicsAE[i].registeredAt > activePhysicsAE[i].maxAge) activePhysicsAE.splice(i, 1);
+  }
+  // Apply physics
+  for (const ae of activePhysicsAE) {
+    const age = now - ae.registeredAt;
+    let pullR = 0, pullStrength = 0;
+    if (ae.type === 'arthur_blender') {
+      const frac = Math.min(1, age / ae.maxAge);
+      pullR = 192 + 64 * frac; // TILE*3 → TILE*4
+      pullStrength = 18;        // 180 units/s * 0.1s interval
+    } else if (ae.type === 'rich_tornado') {
+      pullR = 192; pullStrength = 30;
+    }
+    if (pullR === 0) continue;
+    for (const id in players) {
+      if (id === ae.senderId) continue;
+      const p = players[id];
+      if (!p || !p.alive) continue;
+      const dx = p.x - ae.x, dy = p.y - ae.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      if (dist < pullR + PLAYER_R_SRV) {
+        p.x = Math.max(PLAYER_R_SRV, Math.min(WORLD_W - PLAYER_R_SRV, p.x - (dx / dist) * pullStrength));
+        p.y = Math.max(PLAYER_R_SRV, Math.min(WORLD_H - PLAYER_R_SRV, p.y - (dy / dist) * pullStrength));
+        // Push the position directly to that player's socket
+        io.to(id).emit('serverPositionNudge', { x: Math.round(p.x), y: Math.round(p.y) });
+      }
+    }
+  }
+}, 100);
+
 /* ---- Teto Boss ---- */
 const TETO_HP_MAX   = 2000;
 const TETO_SPEED    = 90, TETO_CHARGE_SPEED = 600, TETO_R_SRV = 160;
@@ -87,6 +125,7 @@ setTimeout(() => {
 function applyTetoDamage(id, amount) {
   const p = players[id];
   if (!p || !p.alive) return;
+  if (p.immuneUntil && Date.now() < p.immuneUntil) return; // spawn immunity
   p.hp = Math.max(0, p.hp - amount);
   io.emit('healthUpdate', { id, hp: p.hp, fromId: 'teto' });
   if (p.hp <= 0 && p.alive) {
@@ -189,7 +228,7 @@ io.on('connection', (socket) => {
 
   socket.on('damage', (data) => {
     const target = players[data.targetId]; const attacker = players[socket.id];
-    if (target && target.alive) {
+    if (target && target.alive && !(target.immuneUntil && Date.now() < target.immuneUntil)) {
       target.hp = Math.max(0, target.hp - data.amount);
       io.emit('healthUpdate', { id: data.targetId, hp: target.hp, fromId: socket.id });
       if (target.hp <= 0 && target.alive) {
@@ -206,7 +245,24 @@ io.on('connection', (socket) => {
       players[socket.id].x = data.x; players[socket.id].y = data.y;
       if (data.char)  players[socket.id].char  = data.char;
       if (data.color) players[socket.id].color = data.color;
+      players[socket.id].immuneUntil = Date.now() + 5000; // 5s spawn immunity
       io.emit('stateUpdate', players);
+    }
+  });
+
+  // Client syncing local HP (from area damage, etc.) back to server
+  socket.on('hpSync', (data) => {
+    const p = players[socket.id];
+    if (!p || !p.alive) return;
+    if (p.immuneUntil && Date.now() < p.immuneUntil) return; // don't sync during immunity
+    const newHp = Math.max(0, Math.min(p.hp, data.hp)); // only allow reductions from client
+    if (newHp < p.hp) {
+      p.hp = newHp;
+      io.emit('healthUpdate', { id: socket.id, hp: p.hp });
+      if (p.hp <= 0 && p.alive) {
+        p.alive = false;
+        io.emit('playerKilled', { killerId: 'env', killerName: 'the environment', victimId: socket.id, victimName: p.name });
+      }
     }
   });
 
@@ -217,8 +273,15 @@ io.on('connection', (socket) => {
 
   // Relay ult effects to all other players
   socket.on('ultEffect',         (data) => { socket.broadcast.emit('ultEffect',         { senderId: socket.id, ...data }); });
-  // Relay visual area effects so all clients can render them
-  socket.on('broadcastAE',       (data) => { socket.broadcast.emit('broadcastAE',       { ...data, fromOther: true }); });
+  // Relay visual area effects to ALL clients (sender receives echo back; client filters its own)
+  socket.on('broadcastAE', (data) => {
+    const ae = { ...data, senderId: socket.id, fromOther: true };
+    io.emit('broadcastAE', ae);
+    // Register physics-affecting effects for server-side simulation
+    if (data.type === 'arthur_blender' || data.type === 'rich_tornado') {
+      activePhysicsAE.push({ ...ae, registeredAt: Date.now() });
+    }
+  });
   socket.on('broadcastLollypop', (data) => { socket.broadcast.emit('broadcastLollypop', { ...data }); });
   socket.on('fofoUltStart', () => { if (players[socket.id]) players[socket.id].fofoUltActive = true; socket.broadcast.emit('fofoUltStart', { id: socket.id }); });
   socket.on('fofoUltEnd',   () => { if (players[socket.id]) players[socket.id].fofoUltActive = false; socket.broadcast.emit('fofoUltEnd',   { id: socket.id }); });

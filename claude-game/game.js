@@ -125,6 +125,31 @@
   let socket = null;
   let lastNetUpdate = 0;
   let debugMode = false; // unlocked with code "Gemini"
+  let gameFullscreen = false;
+
+  function applyGameScale() {
+    const root = document.getElementById('caRoot');
+    if (!root) return;
+    if (gameFullscreen) {
+      const sx = window.innerWidth  / VIEW_W;
+      const sy = window.innerHeight / VIEW_H;
+      root.style.position        = 'fixed';
+      root.style.top             = '0';
+      root.style.left            = '0';
+      root.style.transform       = `scale(${sx.toFixed(5)},${sy.toFixed(5)})`;
+      root.style.transformOrigin = '0 0';
+      document.body.style.overflow = 'hidden';
+    } else {
+      root.style.position = root.style.top = root.style.left = '';
+      root.style.transform = root.style.transformOrigin = '';
+      document.body.style.overflow = '';
+    }
+  }
+  function toggleGameFullscreen() {
+    gameFullscreen = !gameFullscreen;
+    applyGameScale();
+  }
+  window.addEventListener('resize', () => { if (gameFullscreen) applyGameScale(); });
 
   /* ---------------- IDENTITY ---------------- */
   let myId = null;
@@ -202,6 +227,8 @@
     exitTimer: 0,
     musicVol: 0.35,
     soundVol: 0.7,
+    deathFadeTimer: 0,   // > 0 → fading out current track before switch
+    deathFadeFrom: 0,    // volume at start of fade
   };
   const NORMAL_FULL = 0.42; // fraction of musicVol at which normal music plays in idle
   const walkAudios = [], runAudios = [];
@@ -333,25 +360,22 @@
   }
 
   function startChaseTrack(idx) {
-    if (musicState.chaseAudio) { musicState.chaseAudio.pause(); musicState.chaseAudio.onended = null; }
+    if (musicState.chaseAudio) { try { musicState.chaseAudio.pause(); } catch(e){} musicState.chaseAudio.onended = null; }
     musicState.chaseTrackIdx = idx;
     const a = new Audio(encTrack(PATH_BASE + CHASE_TRACKS[idx]));
     a.volume = 0;
+    // Always pick a DIFFERENT random track on end (no looping same track)
     a.onended = function () {
-      if (musicState.state === 'chase' || musicState.state === 'exiting') {
-        a.currentTime = 0; a.play().catch(() => {});
-      } else {
-        let next = idx;
-        while (next === idx && CHASE_TRACKS.length > 1) next = (Math.random() * CHASE_TRACKS.length) | 0;
-        startChaseTrack(next);
-      }
+      let next = idx;
+      while (next === idx && CHASE_TRACKS.length > 1) next = (Math.random() * CHASE_TRACKS.length) | 0;
+      startChaseTrack(next);
     };
     a.play().catch(() => {});
     musicState.chaseAudio = a;
   }
 
   function startNormalTrack(idx) {
-    if (musicState.normalAudio) { musicState.normalAudio.pause(); musicState.normalAudio.onended = null; }
+    if (musicState.normalAudio) { try { musicState.normalAudio.pause(); } catch(e){} musicState.normalAudio.onended = null; }
     musicState.normalTrackIdx = idx;
     const a = new Audio(encTrack(PATH_BASE + NORMAL_TRACKS[idx]));
     a.volume = 0;
@@ -556,9 +580,17 @@
       });
     });
 
-    // Received visual area effect from another player
+    // Received visual area effect (server echos back to ALL, filter own by senderId)
     socket.on('broadcastAE', (data) => {
-      areaEffects.push({ ...data, fromOther: true }); // fromOther prevents re-broadcast
+      if (data.senderId === myId) return; // already have it locally
+      areaEffects.push({ ...data, fromOther: true });
+    });
+
+    // Server-authoritative position nudge (from physics effects like blender pull)
+    socket.on('serverPositionNudge', (data) => {
+      if (!me.alive) return;
+      me.x = clamp(data.x, PLAYER_R, WORLD_W - PLAYER_R);
+      me.y = clamp(data.y, PLAYER_R, WORLD_H - PLAYER_R);
     });
 
     // Received Arthur lollypop flight from another player (visual only, no damage)
@@ -626,6 +658,9 @@
           if (draftOpen) { draftOpen = false; if (cardLayer) { cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; } }
           play('death', 0.6);
           spawnParticles(me.x, me.y, '#ff3b5c', 20, 250, 0.8);
+          // Fade out current music track, then switch to a different one
+          musicState.deathFadeTimer = 2.0;
+          musicState.deathFadeFrom = musicState.chaseVol;
           showDeathPicker();
         }
       } else if (others[data.victimId]) {
@@ -1489,6 +1524,8 @@
     const normRate = normTarget / CHASE_FADE_OUT_T;
     const chaseInRate = chaseTarget / CHASE_FADE_IN_T;
     const chaseOutRate = chaseTarget / CHASE_FADE_OUT_T;
+    // Skip state machine while death fade is running (it controls volumes directly)
+    if (musicState.deathFadeTimer > 0) { /* handled above */ } else
     switch (musicState.state) {
       case 'idle':
         // Normal fades up to full, chase stays silent
@@ -1516,6 +1553,35 @@
         if (musicState.chaseVol <= 0) musicState.state = 'idle';
         break;
     }
+    // ── Death music fade + track switch ──
+    if (musicState.deathFadeTimer > 0) {
+      musicState.deathFadeTimer -= dt;
+      const frac = Math.max(0, musicState.deathFadeTimer / 2.0);
+      if (musicState.chaseAudio) musicState.chaseAudio.volume = musicState.deathFadeFrom * frac;
+      if (musicState.normalAudio) musicState.normalAudio.volume = musicState.deathFadeFrom * 0.5 * frac;
+      if (musicState.deathFadeTimer <= 0) {
+        musicState.deathFadeTimer = 0;
+        // Switch to a random different chase track at silence
+        let next = musicState.chaseTrackIdx;
+        while (next === musicState.chaseTrackIdx && CHASE_TRACKS.length > 1) next = (Math.random() * CHASE_TRACKS.length) | 0;
+        startChaseTrack(next);
+        musicState.chaseVol = 0;
+        musicState.state = 'idle';
+      }
+    }
+
+    // ── Music watchdog: if audio ended but wasn't restarted, pick a new track ──
+    if (musicState.chaseAudio && musicState.chaseAudio.ended && musicState.deathFadeTimer <= 0) {
+      let next = musicState.chaseTrackIdx;
+      while (next === musicState.chaseTrackIdx && CHASE_TRACKS.length > 1) next = (Math.random() * CHASE_TRACKS.length) | 0;
+      startChaseTrack(next);
+    }
+    if (musicState.normalAudio && musicState.normalAudio.ended) {
+      let next = musicState.normalTrackIdx;
+      while (next === musicState.normalTrackIdx && NORMAL_TRACKS.length > 1) next = (Math.random() * NORMAL_TRACKS.length) | 0;
+      startNormalTrack(next);
+    }
+
     // FOFO ult overrides all other music
     const fofoMusicOn = fofoMusicAudio && !fofoMusicAudio.paused;
     if (musicState.normalAudio) {
@@ -2343,15 +2409,17 @@
           '<input type="range" id="caSetSSlider" min="0" max="100" value="' + Math.round(musicState.soundVol * 100) + '" style="-webkit-appearance:none;appearance:none;width:100%;height:5px;border-radius:3px;background:#2a2a3a;outline:none;cursor:pointer;">' +
         '</div>' +
         '<div style="padding-top:14px;border-top:1px solid #2a2a32;display:flex;align-items:center;justify-content:space-between;">' +
-          '<span style="font-size:11px;color:#d0d0d8;">Fullscreen</span>' +
-          '<button id="caFsBtn" style="background:#1b1b20;border:1px solid #2a2a32;color:#ececef;cursor:pointer;padding:5px 14px;border-radius:6px;font-family:inherit;font-size:11px;letter-spacing:.06em;">' + (document.fullscreenElement ? 'EXIT FS' : 'ENTER FS') + '</button>' +
+          '<span style="font-size:11px;color:#d0d0d8;">Game Fullscreen</span>' +
+          '<button id="caFsBtn" style="background:#1b1b20;border:1px solid #2a2a32;color:#ececef;cursor:pointer;padding:5px 14px;border-radius:6px;font-family:inherit;font-size:11px;letter-spacing:.06em;">' + (gameFullscreen ? 'EXIT FS' : 'ENTER FS') + '</button>' +
         '</div>';
       el.querySelector('#caSetMSlider').oninput = function () { musicState.musicVol = +this.value / 100; el.querySelector('#caSetMVol').textContent = this.value + '%'; };
       el.querySelector('#caSetSSlider').oninput = function () { musicState.soundVol = +this.value / 100; el.querySelector('#caSetSVol').textContent = this.value + '%'; };
       const fsBtn = el.querySelector('#caFsBtn');
       if (fsBtn) {
-        fsBtn.onclick = () => { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{}); else document.exitFullscreen(); };
-        document.addEventListener('fullscreenchange', () => { if (fsBtn.isConnected) fsBtn.textContent = document.fullscreenElement ? 'EXIT FS' : 'ENTER FS'; });
+        fsBtn.onclick = () => {
+          toggleGameFullscreen();
+          fsBtn.textContent = gameFullscreen ? 'EXIT FS' : 'ENTER FS';
+        };
       }
     }
 
