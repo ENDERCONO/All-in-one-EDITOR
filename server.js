@@ -40,12 +40,31 @@ function generateBoxes() {
   return boxes;
 }
 let xpBoxes = generateBoxes();
+let boxIdCounter = BOX_COUNT + 1;
+
+// Respawn boxes: every 45s, if count < 30, fill back up to 50
+setInterval(() => {
+  if (xpBoxes.length >= 50) return;
+  const r = rng32(Date.now() & 0xffff);
+  const cx = WORLD_W / 2, cy = WORLD_H / 2;
+  const toAdd = Math.min(50 - xpBoxes.length, 15);
+  for (let i = 0; i < toAdd; i++) {
+    const scale = +(0.9 + r() * 0.3).toFixed(3);
+    const w = Math.round(BOX_BASE * scale);
+    const color = BOX_COLORS[(r() * BOX_COLORS.length) | 0];
+    const bx = Math.round(200 + r() * (WORLD_W - 400));
+    const by = Math.round(200 + r() * (WORLD_H - 400));
+    const nb = { id: ++boxIdCounter, x: bx, y: by, w, h: w, scale, color };
+    xpBoxes.push(nb);
+    io.emit('boxSpawned', nb);
+  }
+}, 45000);
 
 /* ---- Players ---- */
 const players = {};
 
 /* ---- Teto Boss ---- */
-const TETO_HP_MAX   = 1000;
+const TETO_HP_MAX   = 2000;
 const TETO_SPEED    = 90, TETO_CHARGE_SPEED = 600, TETO_R_SRV = 160;
 const TETO_LEASH    = 950;   // ~1 screen; stop chasing beyond this
 const TETO_AREA_DMG = 5;     // HP per 100ms (= 50/s) when inside radius
@@ -197,7 +216,10 @@ io.on('connection', (socket) => {
   });
 
   // Relay ult effects to all other players
-  socket.on('ultEffect', (data) => { socket.broadcast.emit('ultEffect', { senderId: socket.id, ...data }); });
+  socket.on('ultEffect',         (data) => { socket.broadcast.emit('ultEffect',         { senderId: socket.id, ...data }); });
+  // Relay visual area effects so all clients can render them
+  socket.on('broadcastAE',       (data) => { socket.broadcast.emit('broadcastAE',       { ...data, fromOther: true }); });
+  socket.on('broadcastLollypop', (data) => { socket.broadcast.emit('broadcastLollypop', { ...data }); });
   socket.on('fofoUltStart', () => { if (players[socket.id]) players[socket.id].fofoUltActive = true; socket.broadcast.emit('fofoUltStart', { id: socket.id }); });
   socket.on('fofoUltEnd',   () => { if (players[socket.id]) players[socket.id].fofoUltActive = false; socket.broadcast.emit('fofoUltEnd',   { id: socket.id }); });
 

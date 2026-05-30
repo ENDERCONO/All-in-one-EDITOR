@@ -22,7 +22,7 @@
   const BOX_COLORS = ['#ff3b5c','#2fd47f','#4d8bff','#c77dff','#ffb13b','#3bd6ff','#ff7ad6'];
   const DEATH_FADE_MS = 1500, IMMUNE_MS = 1000;
   const WALL_CD = 20000, WALL_LEN = 240, WALL_HP = 700, WALL_THICK = 10, WALL_MAX_AGE = 15000;
-  const TETO_R = 160, TETO_MAX_HP = 1000, TETO_XP_HIT = 5, TETO_XP_KILL = 1200, TETO_SPRITE = 512;
+  const TETO_R = 160, TETO_MAX_HP = 2000, TETO_XP_HIT = 5, TETO_XP_KILL = 1200, TETO_SPRITE = 512;
   const TETO_AREA_DMG = 50;   // visual only now; real damage is server-side
   const TETO_DRAW_SCALE = 0.7;
   const TILE = 64;             // world-unit tile size
@@ -169,6 +169,12 @@
   const areaEffects = [];
   // Arthur lollypops in flight
   const arthurLollypops = [];
+
+  // Push an area effect locally AND broadcast to all other clients
+  function pushAE(ae) {
+    areaEffects.push(ae);
+    if (socket && !ae.fromOther) socket.emit('broadcastAE', ae);
+  }
   // Screen shake state
   const screenShake = { x: 0, y: 0, intensity: 0, timer: 0 };
   function addScreenShake(intensity, dur) {
@@ -539,13 +545,34 @@
     });
 
     socket.on('enemyShoot', (sh) => {
-      bullets.push({ 
+      bullets.push({
         id: sh.id, owner: sh.owner, x: sh.x, y: sh.y,
         vx: Math.cos(sh.a) * (sh.spd || BULLET_SPEED), vy: Math.sin(sh.a) * (sh.spd || BULLET_SPEED),
         dmg: sh.dmg || BULLET_DMG, reflected: !!sh.ref, pierce: sh.pierce || 0,
-        explosive: sh.explosive || 0, ricochet: sh.ricochet || 0, radius: sh.radius || BULLET_R, born: Date.now() 
-      }); 
+        explosive: sh.explosive || 0, ricochet: sh.ricochet || 0, radius: sh.radius || BULLET_R,
+        isPumpkinBlast: !!sh.isPumpkinBlast,
+        patchLastX: sh.x, patchLastY: sh.y,
+        born: Date.now()
+      });
     });
+
+    // Received visual area effect from another player
+    socket.on('broadcastAE', (data) => {
+      areaEffects.push({ ...data, fromOther: true }); // fromOther prevents re-broadcast
+    });
+
+    // Received Arthur lollypop flight from another player (visual only, no damage)
+    socket.on('broadcastLollypop', (data) => {
+      arthurLollypops.push({
+        x: data.x, y: data.y, startX: data.x, startY: data.y,
+        vx: data.vx, vy: data.vy, dist: 0, maxDist: data.maxDist,
+        phase: 'fly', timer: 0, owner: data.owner, height: 0,
+        fromOther: true  // don't process damage/blender on landing
+      });
+    });
+
+    // XP box spawned (respawn)
+    socket.on('boxSpawned', (box) => { xpBoxes.push(box); });
 
     socket.on('healthUpdate', (data) => {
       if (data.id === myId) {
@@ -852,7 +879,7 @@
       dmg: 99999, isPumpkinBlast: true, patchLastX: me.x, patchLastY: me.y,
       radius: 22, pierce: 99, explosive: 0, ricochet: 0, reflected: false, born: Date.now() };
     bullets.push(b);
-    if (socket) socket.emit('shoot', { id, x: Math.round(me.x), y: Math.round(me.y), a: +me.aim.toFixed(3), spd, dmg: 200, radius: 22, pierce: 3 });
+    if (socket) socket.emit('shoot', { id, x: Math.round(me.x), y: Math.round(me.y), a: +me.aim.toFixed(3), spd, dmg: 200, radius: 22, pierce: 3, isPumpkinBlast: true });
   }
 
   /* — Zaid: NOW A HERO! — */
@@ -861,7 +888,7 @@
     addScreenShake(8, 0.6);
     spawnParticles(me.x, me.y, '#ffd700', 40, 350, 1.0);
     // Phase 1 ring (4 tiles)
-    areaEffects.push({ type: 'zaid_ring', x: me.x, y: me.y, r: TILE*4, born: Date.now(), maxAge: 600, color: '#ffd700' });
+    pushAE({ type: 'zaid_ring', x: me.x, y: me.y, r: TILE*4, born: Date.now(), maxAge: 600, color: '#ffd700' });
     for (const id in others) {
       const o = others[id]; if (!o.alive) continue;
       if (Math.hypot((o.rx||o.x)-me.x, (o.ry||o.y)-me.y) < TILE*4) {
@@ -875,7 +902,7 @@
       playTerr('Thunder_1.wav', 1.0);
       addScreenShake(10, 0.8);
       spawnParticles(me.x, me.y, '#fff', 50, 450, 1.2);
-      areaEffects.push({ type: 'zaid_ring', x: me.x, y: me.y, r: TILE*5, born: Date.now(), maxAge: 800, color: '#ffffff' });
+      pushAE({ type: 'zaid_ring', x: me.x, y: me.y, r: TILE*5, born: Date.now(), maxAge: 800, color: '#ffffff' });
       for (const id in others) {
         const o = others[id]; if (!o.alive) continue;
         if (Math.hypot((o.rx||o.x)-me.x, (o.ry||o.y)-me.y) < TILE*5) {
@@ -894,7 +921,7 @@
     playTerr('dd2_book_staff_twister_loop.wav', 0.9);
     addScreenShake(7, 0.5);
     spawnParticles(me.x, me.y, '#ffb13b', 30, 300, 0.8);
-    areaEffects.push({ type: 'rich_tornado', x: me.x, y: me.y, r: TILE*3, born: Date.now(), maxAge: 2000, owner: myId });
+    pushAE({ type: 'rich_tornado', x: me.x, y: me.y, r: TILE*3, born: Date.now(), maxAge: 2000, owner: myId });
     // pull + drain
     for (const id in others) {
       const o = others[id]; if (!o.alive) continue;
@@ -939,13 +966,33 @@
     const mathInput = parseInt(enderPopEl.querySelector('#epAnswer').value, 10);
     const correctAns = parseInt(enderPopEl.dataset.answer, 10);
     const mathOk    = mathInput === correctAns;
-    // flexible name match: remove non-alphanum, case-insensitive; empty name from pure-symbol = accept any
-    function normName(n) { return n.replace(/[^a-z0-9]/gi, '').toLowerCase(); }
-    let targetId = null;
+
+    // Fuzzy name match: 70% of target's chars must appear in input (keeps spaces, case-insensitive)
+    function fuzzyMatch(input, target) {
+      const t = target.toLowerCase().trim();
+      const i = input.toLowerCase().trim();
+      if (t === '') return true; // all-symbol name: accept anything
+      if (t === i) return true;  // exact
+      let matched = 0;
+      const pool = i.split('');
+      for (const ch of t) {
+        const idx = pool.indexOf(ch);
+        if (idx !== -1) { matched++; pool.splice(idx, 1); }
+      }
+      return matched / t.length >= 0.7;
+    }
+
+    let targetId = null, bestScore = 0;
     for (const id in others) {
       const o = others[id]; if (!o.alive) continue;
-      const pn = normName(o.name || '');
-      if (pn === '' || pn === normName(nameRaw)) { targetId = id; break; }
+      const pname = (o.name || '').toLowerCase().trim();
+      if (pname === '') { targetId = id; break; } // all-symbol name
+      const t = pname;
+      const inp = nameRaw.toLowerCase().trim();
+      let matched = 0; const pool = inp.split('');
+      for (const ch of t) { const idx = pool.indexOf(ch); if (idx !== -1) { matched++; pool.splice(idx, 1); } }
+      const score = t.length > 0 ? matched / t.length : 0;
+      if (score >= 0.7 && score > bestScore) { bestScore = score; targetId = id; }
     }
     closeEnder();
     if (mathOk && targetId) {
@@ -953,6 +1000,7 @@
       playTerr('dd2_betsy_death_0.wav', 1.0);
       addScreenShake(12, 0.8);
       spawnParticles(o.rx||o.x, o.ry||o.y, '#a259ff', 60, 500, 1.5);
+      pushAE({ type: 'ender_blast', x: o.rx||o.x, y: o.ry||o.y, r: TILE, born: Date.now(), maxAge: 800, color: '#a259ff' });
       if (socket) socket.emit('damage', { targetId, amount: 99999 });
       // nearby splash
       for (const id2 in others) {
@@ -977,12 +1025,17 @@
     playTerr('dd2_javelin_throwers_attack_0.wav', 0.9);
     addScreenShake(5, 0.3);
     spawnParticles(me.x, me.y, '#ff6ec7', 15, 200, 0.5);
-    arthurLollypops.push({
+    const lp = {
       x: me.x, y: me.y, startX: me.x, startY: me.y,
       vx: Math.cos(me.aim)*380, vy: Math.sin(me.aim)*380,
       dist: 0, maxDist: TILE*5,
-      phase: 'fly', timer: 0, owner: myId,
-      height: 0 // for visual arc
+      phase: 'fly', timer: 0, owner: myId, height: 0
+    };
+    arthurLollypops.push(lp);
+    if (socket) socket.emit('broadcastLollypop', {
+      x: Math.round(me.x), y: Math.round(me.y),
+      vx: +lp.vx.toFixed(1), vy: +lp.vy.toFixed(1),
+      maxDist: lp.maxDist, owner: myId
     });
   }
 
@@ -1167,7 +1220,11 @@
     window.addEventListener('mouseup', e => { if (e.button === 0) mouse.down = false; });
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     window.addEventListener('keydown', e => {
-      if (!started || !gameVisible()) return; const k = e.key.toLowerCase(); keys[k] = true;
+      if (!started || !gameVisible()) return;
+      // Don't steal keys when typing in any input/textarea (Ender popup, settings, etc.)
+      const activeTag = (document.activeElement && document.activeElement.tagName || '').toLowerCase();
+      if (activeTag === 'input' || activeTag === 'textarea') return;
+      const k = e.key.toLowerCase(); keys[k] = true;
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys['shift'] = true;
       if (k === bindings.dash) dash();
       if (k === bindings.wall) placeWall();
@@ -1200,13 +1257,16 @@
       // Apply character chosen in death picker
       me.char = selectedChar;
       me.color = CHARACTERS[selectedChar].color;
-      me.alive = true; me.hp = MAX_HP; me.ultCharge = 0; me.ultReady = false;
+      me.alive = true; me.hp = MAX_HP;
+      // Keep ult charge/ready on respawn
       me.level = 1; me.xp = 0; me.levelQueue = 0; me.abilities = []; lastWall = -99999;
       me.fofoUltActive = false; me.danielUltActive = false; me.arthurInvis = false; me.arthurInvisBar = 0;
       me.rbdBar = 0; me.rbdPosHistory = [];
+      me.heroLightningTimer = 0; me.enderSlowTimer = 0; me.pullTimer = 0;
       if (draftOpen) { draftOpen = false; if (cardLayer) { cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; } }
       me.mods = { dmg: 0, fireRate: 0, speed: 0, multishot: 0, pierce: 0, lifesteal: 0, thorns: 0, bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0, maxHp: 0, regenRate: 0, regenDelay: 0, critChance: 0, onKillHeal: 0, killShield: 0, dashHeal: 0, dashCdReduce: 0, damageResist: 0, homingStr: 0 };
       me.x = WORLD_W / 2 + (Math.random() * 400 - 200); me.y = WORLD_H / 2 + (Math.random() * 400 - 200); me.lastCombat = Date.now();
+      me.immuneUntil = Date.now() + 5000; // 5s spawn immunity
       if (socket) socket.emit('respawn', { x: me.x, y: me.y, char: me.char, color: me.color });
     }
 
@@ -1317,7 +1377,7 @@
         me.fofoGooTimer -= dt;
         if (me.fofoGooTimer <= 0 && moving) {
           me.fofoGooTimer = 0.4;
-          areaEffects.push({ type: 'fofo_goo', x: me.x, y: me.y, r: 30, born: t, maxAge: 5000 });
+          pushAE({ type: 'fofo_goo', x: me.x, y: me.y, r: 30, born: t, maxAge: 5000 });
         }
         // charge bar from nearby enemies
         let nearCount = 0;
@@ -1334,7 +1394,7 @@
             playTerr('dd2_etherian_portal_open.wav', 0.8);
             addScreenShake(8, 0.5);
             spawnParticles(me.x, me.y, '#9b59b6', 30, 300, 0.8);
-            areaEffects.push({ type: 'fofo_blast', x: me.x, y: me.y, r: TILE, born: t, maxAge: 600 });
+            pushAE({ type: 'fofo_blast', x: me.x, y: me.y, r: TILE, born: t, maxAge: 600 });
             if (socket) socket.emit('damage', { targetId: nearest.id, amount: 30 });
           }
         }
@@ -1359,17 +1419,17 @@
           lp.dist += step;
           lp.height = Math.sin((lp.dist / lp.maxDist) * Math.PI) * 40;
           if (lp.dist >= lp.maxDist) {
-            // LAND
             lp.phase = 'blast'; lp.timer = 0.1;
             lp.landX = lp.x; lp.landY = lp.y;
             playTerr('dd2_explosive_trap_explode_0.wav', 0.9, lp.x, lp.y);
             addScreenShake(8, 0.5);
             spawnParticles(lp.x, lp.y, '#ff6ec7', 30, 300, 0.8);
-            // 30 dmg in 1 tile
-            for (const id in others) { const o = others[id]; if (!o.alive) continue; if (Math.hypot((o.rx||o.x)-lp.x, (o.ry||o.y)-lp.y) < TILE) { if (socket) socket.emit('damage', { targetId: id, amount: 30 }); lp.dmgDealt = (lp.dmgDealt||0) + 30; } }
-            if (Math.hypot(me.x-lp.x, me.y-lp.y) < TILE) { hurtMe(30, 'arthur'); lp.dmgDealt = (lp.dmgDealt||0) + 30; }
-            // Pass initial blast damage so invis bar counts it too
-            areaEffects.push({ type: 'arthur_blender', x: lp.x, y: lp.y, r: TILE*3, born: t, maxAge: 3000, owner: lp.owner, dmgDealt: lp.dmgDealt||0, phase: 0 });
+            if (!lp.fromOther) {
+              // Only the owner processes damage and creates blender
+              for (const id in others) { const o = others[id]; if (!o.alive) continue; if (Math.hypot((o.rx||o.x)-lp.x, (o.ry||o.y)-lp.y) < TILE) { if (socket) socket.emit('damage', { targetId: id, amount: 30 }); lp.dmgDealt = (lp.dmgDealt||0) + 30; } }
+              if (Math.hypot(me.x-lp.x, me.y-lp.y) < TILE) { hurtMe(30, 'arthur'); lp.dmgDealt = (lp.dmgDealt||0) + 30; }
+              pushAE({ type: 'arthur_blender', x: lp.x, y: lp.y, r: TILE*3, born: t, maxAge: 3000, owner: lp.owner, dmgDealt: lp.dmgDealt||0, phase: 0 });
+            }
           }
         } else {
           lp.timer -= dt;
@@ -1399,7 +1459,8 @@
           anim: me.anim, frame: me.frame, facing: me.facing, moving: !!moving,
           level: me.level, points: me.points,
           invis: !!(me.char==='arthur' && me.arthurInvis),
-          fofoUltActive: !!(me.char==='fofo' && me.fofoUltActive)
+          fofoUltActive: !!(me.char==='fofo' && me.fofoUltActive),
+          spawnImmune: Date.now() < me.immuneUntil
         });
       }
     }
@@ -1559,11 +1620,11 @@
         if (boxHit) continue;
       }
 
-      // Pumpkin blast leaves patch trail
+      // Pumpkin blast leaves patch trail (owner only — pushAE broadcasts to others)
       if (b.isPumpkinBlast && b.owner === myId) {
         const pd = Math.hypot(b.x - (b.patchLastX||b.x), b.y - (b.patchLastY||b.y));
         if (pd > 55) {
-          areaEffects.push({ type: 'pumpkin_patch', x: b.x, y: b.y, r: 40, born: Date.now(), maxAge: 10000 });
+          pushAE({ type: 'pumpkin_patch', x: b.x, y: b.y, r: 40, born: Date.now(), maxAge: 10000 });
           b.patchLastX = b.x; b.patchLastY = b.y;
           spawnParticles(b.x, b.y, '#ff8c42', 5, 80, 0.4);
         }
@@ -1576,6 +1637,7 @@
         if (d2(b.x, b.y, tx, ty) < (TETO_R + brad) ** 2) {
           if (socket) socket.emit('hitTeto', { amount: b.dmg });
           gainXp(TETO_XP_HIT);
+          gainUltCharge(b.dmg * 0.1); // 0.1 ult per damage = 1 ult per 10 dmg on Teto
           spawnParticles(b.x, b.y, '#ff8c42', 6, 140, 0.35);
           playTetoHurt();
           if ((b.pierce || 0) > 0) { b.pierce--; } else { bullets.splice(i, 1); continue; }
@@ -1628,12 +1690,11 @@
         hurtMe(10 * dt, 'fofo_goo');
       }
       if (ae.type === 'arthur_blender') {
-        // grow radius 3→4 tiles over 3s
         const frac = Math.min(1, age / ae.maxAge);
         const curR = (TILE*3 + TILE * frac);
         ae.curR = curR;
-        if (dist < curR + PLAYER_R) {
-          // pull toward center
+        // Pull everyone including me (but not the owner shooting themselves)
+        if (ae.owner !== myId && dist < curR + PLAYER_R) {
           const pull = 180;
           me.x = clamp(me.x - (dx/dist)*pull*dt, PLAYER_R, WORLD_W-PLAYER_R);
           me.y = clamp(me.y - (dy/dist)*pull*dt, PLAYER_R, WORLD_H-PLAYER_R);
@@ -1644,7 +1705,7 @@
           playTerr('dd2_explosive_trap_explode_1.wav', 0.9, ae.x, ae.y);
           addScreenShake(10, 0.7);
           spawnParticles(ae.x, ae.y, '#ff6ec7', 40, 400, 1.0);
-          if (dist < (TILE*4 + PLAYER_R)) hurtMe(60, 'arthur_blender');
+          if (ae.owner !== myId && dist < (TILE*4 + PLAYER_R)) hurtMe(60, 'arthur_blender');
           for (const id in others) {
             const o = others[id]; if (!o.alive) continue;
             if (Math.hypot((o.rx||o.x)-ae.x, (o.ry||o.y)-ae.y) < TILE*4) {
@@ -1689,7 +1750,46 @@
     if (d.lvl) { d.lvl.textContent = 'LV ' + me.level; d.xpFill.style.width = Math.min(100, (me.xp / xpForLevel(me.level)) * 100) + '%'; }
     if (d.dashFill) { const edc = effDashCd(); const cd = Math.max(0, edc - (Date.now() - lastDash)); d.dashFill.style.width = ((1 - cd / edc) * 100) + '%'; d.dashTxt.textContent = cd > 0 ? (cd / 1000).toFixed(1) + 's' : 'READY'; }
     if (d.wallFill) { const cd = Math.max(0, WALL_CD - (Date.now() - lastWall)); d.wallFill.style.width = ((1 - cd / WALL_CD) * 100) + '%'; d.wallTxt.textContent = cd > 0 ? (cd / 1000).toFixed(1) + 's' : 'READY'; }
-    if (d.shieldTxt) { d.shieldTxt.textContent = me.char === 'daniel' ? 'RBD: ' + me.rbdBar + '/3' : me.char === 'arthur' ? 'INVIS: ' + Math.round(me.arthurInvisBar) + '/150' : ''; }
+    // Secondary ability block — label + value + optional bar
+    if (d.secondaryLab) {
+      let lab = '2nd Ability', val = '', barPct = -1, barColor = 'var(--ult)';
+      switch (me.char) {
+        case 'daniel':
+          lab = 'Return by Death'; val = me.rbdBar + ' / 3';
+          barPct = me.rbdBar / 3; barColor = '#2ecc71'; break;
+        case 'arthur':
+          lab = 'Invisibility Bar';
+          val = me.arthurInvis ? 'ACTIVE' : Math.round(me.arthurInvisBar) + '/150';
+          barPct = me.arthurInvisBar / 150; barColor = '#ff6ec7'; break;
+        case 'fofo':
+          if (me.fofoUltActive) {
+            lab = 'Forsaken Timer'; val = me.fofoUltTimer.toFixed(1) + 's';
+            barPct = me.fofoUltTimer / 40; barColor = '#9b59b6';
+          } else {
+            lab = 'Forsaken CD';
+            const fofoCD = Math.max(0, 40 - (Date.now() - me.fofoLastEndTime) / 1000);
+            val = fofoCD > 0 ? fofoCD.toFixed(0) + 's cd' : 'READY';
+            barPct = fofoCD > 0 ? 1 - fofoCD / 40 : 1; barColor = '#9b59b6';
+          } break;
+        case 'ender':
+          if (me.enderSlowTimer > 0) { lab = 'Ender Slowed'; val = me.enderSlowTimer.toFixed(1) + 's'; barPct = me.enderSlowTimer / 5; barColor = '#a259ff'; }
+          else { lab = '+10% XP Gain'; val = ''; } break;
+        case 'zaid': lab = '+10% Speed'; val = ''; break;
+        case 'rich': lab = '+15% Bullet DMG'; val = ''; break;
+        default: lab = '2nd Ability'; val = ''; break;
+      }
+      d.secondaryLab.textContent = lab;
+      if (d.shieldTxt) d.shieldTxt.textContent = val;
+      if (d.secondaryBarWrap && d.secondaryBar) {
+        if (barPct >= 0) {
+          d.secondaryBarWrap.style.display = '';
+          d.secondaryBar.style.width = Math.min(100, barPct * 100) + '%';
+          d.secondaryBar.style.background = barColor;
+        } else {
+          d.secondaryBarWrap.style.display = 'none';
+        }
+      }
+    }
     if (d.ultFill) {
       const f = me.ultReady ? 1 : me.ultCharge / ULT_CHARGE_MAX;
       d.ultFill.style.height = (f * 100) + '%';
@@ -1931,6 +2031,12 @@
         ctx.strokeStyle='#ffb13b'; ctx.lineWidth=3; ctx.shadowColor='#ffb13b'; ctx.shadowBlur=16;
         ctx.beginPath(); ctx.arc(sx, sy, ae.r*(0.4+0.6*frac), spin, spin+Math.PI*1.5); ctx.stroke();
         ctx.beginPath(); ctx.arc(sx, sy, ae.r*(0.2+0.4*frac), spin+Math.PI, spin+Math.PI*2.5); ctx.stroke();
+      } else if (ae.type === 'ender_blast') {
+        ctx.globalAlpha = (1-frac)*0.85;
+        ctx.fillStyle='#a259ff'; ctx.shadowColor='#a259ff'; ctx.shadowBlur=35;
+        ctx.beginPath(); ctx.arc(sx, sy, ae.r*(1+frac*1.5), 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.globalAlpha=(1-frac)*0.5;
+        ctx.stroke();
       } else if (ae.type === 'arthur_blender') {
         const curR = ae.curR || TILE*3;
         const spin2 = (age/1000)*Math.PI*6;
@@ -2118,17 +2224,20 @@
   ctx.fill();
   ctx.restore();
 
-  // Immunity flash ring (local player only)
-  if (isMe && Date.now() < (p.immuneUntil || 0)) {
-    const flashOn = Math.floor(Date.now() / 80) % 2;
+  // Spawn immunity white flicker (visible to all)
+  const isImmune = isMe ? (Date.now() < (p.immuneUntil || 0)) : !!p.spawnImmune;
+  if (isImmune) {
+    const flashOn = Math.floor(Date.now() / 100) % 2;
     if (flashOn) {
       ctx.save();
-      ctx.strokeStyle = '#ffb13b'; ctx.lineWidth = 3;
-      ctx.shadowColor = '#ffb13b'; ctx.shadowBlur = 14;
-      ctx.globalAlpha = 0.85;
-      ctx.beginPath(); ctx.arc(0, 0, PLAYER_R + 12, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4;
+      ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 20;
+      ctx.globalAlpha = fadeAlpha * 0.9;
+      ctx.beginPath(); ctx.arc(0, 0, PLAYER_R + 10, 0, Math.PI * 2); ctx.stroke();
       ctx.restore();
     }
+    // Also make the player semi-transparent during immunity
+    if (isMe) ctx.globalAlpha = 0.6 + 0.4 * (Math.floor(Date.now() / 100) % 2);
   }
 
   // 1. Character aura effects
@@ -2330,18 +2439,9 @@
       renderControls();
     }, true);
 
-    // Also add a floating settings button on the game canvas overlay
+    // Wire the Settings button in HTML
     const settingsBtn = root.querySelector('#caSettingsBtn');
     if (settingsBtn) settingsBtn.addEventListener('click', toggleSettingsPanel);
-    // Fallback: create the button if it doesn't exist in HTML
-    if (!settingsBtn) {
-      const sb = document.createElement('button');
-      sb.id = 'caSettingsBtnFallback';
-      sb.textContent = '⚙';
-      sb.style.cssText = 'position:absolute;top:12px;left:12px;z-index:30;background:rgba(20,20,24,0.82);border:1px solid #2a2a32;color:#ececef;width:34px;height:34px;border-radius:8px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;';
-      sb.addEventListener('click', toggleSettingsPanel);
-      root.querySelector('#caRoot').appendChild(sb);
-    }
   }
 
   function toggleSettingsPanel() {
@@ -2573,8 +2673,12 @@
     toastEl = root.querySelector('#caToast'); cardLayer = root.querySelector('#caCards');
     dom.hp = root.querySelector('#caHpBar'); dom.hpFill = root.querySelector('#caHpFill'); dom.hpText = root.querySelector('#caHpText');
     dom.lvl = root.querySelector('#caLvl'); dom.xpFill = root.querySelector('#caXpFill');
-    dom.dashFill = root.querySelector('#caDashFill'); dom.dashTxt = root.querySelector('#caDashTxt'); dom.shieldTxt = root.querySelector('#caShieldTxt');
+    dom.dashFill = root.querySelector('#caDashFill'); dom.dashTxt = root.querySelector('#caDashTxt');
     dom.wallFill = root.querySelector('#caWallFill'); dom.wallTxt = root.querySelector('#caWallTxt');
+    dom.shieldTxt = root.querySelector('#caShieldTxt');
+    dom.secondaryLab = root.querySelector('#caSecondaryLab');
+    dom.secondaryBarWrap = root.querySelector('#caSecondaryBarWrap');
+    dom.secondaryBar = root.querySelector('#caSecondaryBar');
     dom.ultFill = root.querySelector('#caUltFill'); dom.ultTxt = root.querySelector('#caUltTxt');
     const gateCard = root.querySelector('.ca-gate-card'); if (gateCard) buildCharacterPicker(gateCard);
   }

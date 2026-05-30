@@ -20,17 +20,29 @@
     border:1px solid var(--border); border-radius:10px; box-shadow:0 20px 60px rgba(0,0,0,.5); touch-action:none; }
 
   /* ===== left rail HUD ===== */
-  .ca-rail{ position:absolute; top:16px; left:16px; z-index:20; display:flex; flex-direction:column; gap:10px;
+  .ca-rail{ position:absolute; top:16px; left:16px; z-index:20; display:flex; flex-direction:column; gap:8px;
     width:188px; pointer-events:none; font-family:'JetBrains Mono',monospace; }
   .ca-block{ background:rgba(18,18,22,.78); border:1px solid var(--border); border-radius:10px; padding:9px 11px; }
-  .ca-block .lab{ font-size:9px; letter-spacing:.12em; color:var(--text-dim); text-transform:uppercase; margin-bottom:5px; display:flex; justify-content:space-between; }
-  .ca-bar{ height:9px; background:#23232a; border-radius:6px; overflow:hidden; }
+  .ca-block .lab{ font-size:9px; letter-spacing:.12em; color:var(--text-dim); text-transform:uppercase; margin-bottom:5px; display:flex; justify-content:space-between; align-items:center; }
+  .ca-bar{ height:8px; background:#23232a; border-radius:6px; overflow:hidden; }
   .ca-bar > span{ display:block; height:100%; width:0%; border-radius:6px; transition:width .12s linear; }
   #caHpFill{ background:var(--g); }
   #caXpFill{ background:var(--ult); }
   #caDashFill{ background:var(--b); }
+  #caSecondaryBar{ background:var(--ult); }
   .ca-row{ display:flex; align-items:center; gap:8px; font-size:11px; color:var(--text); }
   .ca-mini{ font-size:9px; color:var(--text-dim); }
+
+  /* Settings button — bottom of left rail */
+  #caSettingsBtn{
+    position:absolute; bottom:44px; left:16px; z-index:25; pointer-events:auto;
+    background:rgba(18,18,22,.88); border:1px solid var(--border); color:var(--text-dim);
+    cursor:pointer; padding:7px 14px; border-radius:8px; width:188px;
+    font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600; letter-spacing:.08em;
+    display:flex; align-items:center; justify-content:center; gap:6px;
+    transition:color .15s,border-color .15s,background .15s; white-space:nowrap;
+  }
+  #caSettingsBtn:hover{ color:var(--text); border-color:var(--ult); background:rgba(26,18,32,.95); }
 
   /* ===== right ult bar ===== */
   .ca-ult{ position:absolute; top:50%; right:18px; transform:translateY(-50%); z-index:20; pointer-events:none;
@@ -74,7 +86,7 @@
   /* ===== join gate ===== */
   .ca-gate{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
     background:rgba(9,9,11,.82); backdrop-filter:blur(6px); z-index:30; border-radius:10px; }
-  .ca-gate-card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:28px 30px; width:min(380px,90vw); text-align:center; }
+  .ca-gate-card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:28px 30px; width:min(420px,90vw); text-align:center; }
   .ca-gate-card h1{ font-family:'Instrument Serif',serif; font-size:30px; font-weight:600; }
   .ca-gate-card h1 em{ color:var(--ult); font-style:italic; }
   .ca-gate-card p{ color:var(--text-dim); font-size:13px; margin:4px 0 18px; line-height:1.5; }
@@ -86,15 +98,6 @@
   .ca-btn:hover{ filter:brightness(1.08); }
   .ca-gate-help{ margin-top:14px; font-size:11px; color:#55555e; line-height:1.6; }
 
-  #caSettingsBtn{
-    position:absolute; top:56px; left:50%; transform:translateX(-50%); z-index:25; pointer-events:auto;
-    background:rgba(18,18,22,.88); border:1px solid var(--border); color:var(--text-dim);
-    cursor:pointer; padding:10px 24px; border-radius:10px;
-    font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:600; letter-spacing:.1em;
-    display:flex; align-items:center; gap:7px; transition:color .15s,border-color .15s,background .15s;
-    white-space:nowrap;
-  }
-  #caSettingsBtn:hover{ color:var(--text); border-color:var(--ult); background:rgba(26,18,32,.95); }
   #caSettings input[type=range]{ width:100%; accent-color:var(--ult); cursor:pointer; }
   #caSettings input[type=range]::-webkit-slider-thumb{
     -webkit-appearance:none; width:14px; height:14px; border-radius:50%;
@@ -103,7 +106,6 @@
   #caSettings input[type=range]::-moz-range-thumb{
     width:14px; height:14px; border-radius:50%; background:var(--ult); border:none; cursor:pointer;
   }
-
 </style>
 </head>
 <body>
@@ -115,6 +117,7 @@
     <span>players <b id="caCount">0</b></span>
   </div>
 
+  <!-- Left HUD rail -->
   <div class="ca-rail">
     <div class="ca-block" id="caHpBar">
       <div class="lab"><span>Health</span><span id="caHpText">100 / 100</span></div>
@@ -125,42 +128,46 @@
       <div class="ca-bar"><span id="caXpFill"></span></div>
     </div>
     <div class="ca-block">
-      <div class="lab"><span>Dash (E)</span><span id="caDashTxt">READY</span></div>
+      <div class="lab"><span>Dash <kbd style="font-size:8px;padding:1px 4px;background:#1b1b20;border:1px solid #2a2a32;border-radius:3px;color:#8a8a94">E</kbd></span><span id="caDashTxt">READY</span></div>
       <div class="ca-bar"><span id="caDashFill"></span></div>
     </div>
     <div class="ca-block">
-      <div class="ca-row"><span>Shields</span><b id="caShieldTxt" style="margin-left:auto;color:var(--ult)">0 / 3</b></div>
-    </div>
-    <div class="ca-block">
-      <div class="lab"><span>Wall (Q)</span><span id="caWallTxt">READY</span></div>
+      <div class="lab"><span>Wall <kbd style="font-size:8px;padding:1px 4px;background:#1b1b20;border:1px solid #2a2a32;border-radius:3px;color:#8a8a94">Q</kbd></span><span id="caWallTxt">READY</span></div>
       <div class="ca-bar"><span id="caWallFill" style="background:var(--b)"></span></div>
+    </div>
+    <!-- Character secondary ability block -->
+    <div class="ca-block" id="caSecondaryBlock">
+      <div class="lab"><span id="caSecondaryLab">2nd Ability</span><span id="caShieldTxt" style="color:var(--ult);font-size:9px;letter-spacing:.05em"></span></div>
+      <div class="ca-bar" id="caSecondaryBarWrap" style="display:none"><span id="caSecondaryBar"></span></div>
     </div>
   </div>
 
+  <!-- ULT bar (right side) -->
   <div class="ca-ult">
     <div class="ca-ult-lab">ULT</div>
     <div class="ca-ult-track"><div id="caUltFill"></div></div>
-    <div id="caUltTxt">10 hits to go</div>
+    <div id="caUltTxt">0/1000 dmg</div>
   </div>
 
+  <!-- Settings button — bottom-left below rail -->
+  <button id="caSettingsBtn">&#9881; Settings &nbsp;<kbd style="font-size:9px;padding:1px 5px;background:#1b1b20;border:1px solid #2a2a32;border-radius:3px;color:#8a8a94;font-family:inherit">K</kbd></button>
+
   <div class="ca-help-bar">
-    <kbd>WASD</kbd>/<kbd>↑↓←→</kbd> move &nbsp; <kbd>SHIFT</kbd> sprint &nbsp; <kbd>Click</kbd> shoot &nbsp; <kbd>E</kbd> dash &nbsp; <kbd>Q</kbd> wall &nbsp; <kbd>Space</kbd> shield &nbsp; <kbd>K</kbd> settings
+    <kbd>WASD</kbd>/<kbd>↑↓←→</kbd> move &nbsp; <kbd>SHIFT</kbd> sprint &nbsp; <kbd>Click</kbd> shoot &nbsp; <kbd>E</kbd> dash &nbsp; <kbd>Q</kbd> wall &nbsp; <kbd>Space</kbd> ult &nbsp; <kbd>K</kbd> settings
   </div>
 
   <div class="ca-cards" id="caCards"></div>
   <div class="ca-toast" id="caToast"></div>
 
-  <button id="caSettingsBtn">&#9881; Settings</button>
-
   <div class="ca-gate" id="caGate">
     <div class="ca-gate-card">
       <h1>Claude <em>Arena</em></h1>
-      <p>Huge arena. Camera follows you. Kill &amp; damage to level up and draft abilities.</p>
+      <p>Huge arena. Camera follows you. Deal damage to charge ULT. Kill &amp; damage to level up and draft abilities.</p>
       <input type="text" id="caName" maxlength="14" placeholder="Pick a name…" autocomplete="off">
       <button type="button" class="ca-btn" id="caJoin">Enter the arena</button>
       <div class="ca-gate-help">
-        <kbd>WASD</kbd>/<kbd>↑↓←→</kbd> move · <kbd>Shift</kbd> sprint · <kbd>Click</kbd> shoot · <kbd>E</kbd> dash (5s) · <kbd>Space</kbd> shield<br>
-        Level up → draft 1 of 3 cards (HP, regen, damage…) · <kbd>K</kbd> rebind keys · death resets all
+        <kbd>WASD</kbd>/<kbd>↑↓←→</kbd> move · <kbd>Shift</kbd> sprint · <kbd>Click</kbd> shoot · <kbd>E</kbd> dash · <kbd>Space</kbd> ult<br>
+        Deal 1000 dmg to charge ult · Level up → pick 1 of 3 ability cards · <kbd>K</kbd> settings
       </div>
     </div>
   </div>
