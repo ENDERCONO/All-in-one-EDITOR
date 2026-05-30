@@ -12,7 +12,7 @@
   
   const SPEED = 240, SPRINT_MULT = 1.65, DASH_DIST = 190, DASH_CD = 5000;
   const BULLET_SPEED = 580, BULLET_DMG = 10, FIRE_CD = 250;
-  const MAX_HP = 100, ULT_MAX = 10, SHIELD_MAX = 3;
+  const MAX_HP = 100;
   const PLAYER_R = 18, BULLET_R = 5, RESPAWN_MS = 2500;
   const REGEN_DELAY = 5000, REGEN_RATE = 10;
   const XP_PER_DMG = 1, XP_PER_KILL = 60;
@@ -22,7 +22,11 @@
   const BOX_COLORS = ['#ff3b5c','#2fd47f','#4d8bff','#c77dff','#ffb13b','#3bd6ff','#ff7ad6'];
   const DEATH_FADE_MS = 1500, IMMUNE_MS = 1000;
   const WALL_CD = 20000, WALL_LEN = 240, WALL_HP = 700, WALL_THICK = 10, WALL_MAX_AGE = 15000;
-  const TETO_R = 160, TETO_MAX_HP = 2067, TETO_XP_HIT = 5, TETO_XP_KILL = 1200, TETO_SPRITE = 512;
+  const TETO_R = 160, TETO_MAX_HP = 3000, TETO_XP_HIT = 5, TETO_XP_KILL = 1200, TETO_SPRITE = 512;
+  const TETO_AREA_DMG = 50;   // dmg/s inside Teto
+  const TETO_DRAW_SCALE = 0.7;
+  const TILE = 64;             // world-unit tile size
+  const ULT_CHARGE_MAX = 1000; // damage dealt → ult ready
 
   function xpForLevel(l) {
     return Math.round(LEVEL_BASE * Math.pow(LEVEL_GROW, l - 1));
@@ -64,36 +68,52 @@
   const CHARACTERS = {
     pumpkin: {
       id: 'pumpkin', label: 'Pumpkin', emoji: '🎃',
-      desc: 'Balanced. Default choice.',
+      desc: 'Balanced. Ult: Pumpkin Blast.',
+      ultName: 'Pumpkin Blast',
       color: '#ff8c42',
-      sprites: {
-        idle1: 'Pumpkin_Idle1.png',   idle2: 'Pumpkin_Idle2.png',
-        walk1: 'Pumpkin_Walk1.png',   walk2: 'Pumpkin_Walk2.png',
-        walkshoot1: 'Pumpkin_WalkShoot1.png', walkshoot2: 'Pumpkin_WalkShoot2.png',
-        shoot1: 'Pumpkin_Shoot1.png', shoot2: 'Pumpkin_Shoot2.png',
-      }
+      sprites: { idle1:'Pumpkin_Idle1.png', idle2:'Pumpkin_Idle2.png', walk1:'Pumpkin_Walk1.png', walk2:'Pumpkin_Walk2.png', walkshoot1:'Pumpkin_WalkShoot1.png', walkshoot2:'Pumpkin_WalkShoot2.png', shoot1:'Pumpkin_Shoot1.png', shoot2:'Pumpkin_Shoot2.png' }
     },
     zaid: {
       id: 'zaid', label: 'Zaid', emoji: '🧑',
-      desc: '+10% move speed.',
+      desc: '+10% speed. Ult: NOW A HERO!',
+      ultName: 'NOW A HERO!',
       color: '#3bd6ff',
-      sprites: {
-        idle1: 'Zaid_Idle1.png',   idle2: 'Zaid_Idle2.png',
-        walk1: 'Zaid_Walk1.png',   walk2: 'Zaid_Walk2.png',
-        walkshoot1: 'Zaid_WalkShoot1.png', walkshoot2: 'Zaid_WalkShoot2.png',
-        shoot1: 'Zaid_Shoot1.png', shoot2: 'Zaid_Shoot2.png',
-      }
+      sprites: { idle1:'Zaid_Idle1.png', idle2:'Zaid_Idle2.png', walk1:'Zaid_Walk1.png', walk2:'Zaid_Walk2.png', walkshoot1:'Zaid_WalkShoot1.png', walkshoot2:'Zaid_WalkShoot2.png', shoot1:'Zaid_Shoot1.png', shoot2:'Zaid_Shoot2.png' }
     },
     rich: {
       id: 'rich', label: 'Rich', emoji: '💰',
-      desc: '+15% bullet damage.',
+      desc: '+15% bullet dmg. Ult: Richless and Poor.',
+      ultName: 'Richless and Poor',
       color: '#ffb13b',
-      sprites: {
-        idle1: 'Rich_Idle1.png',   idle2: 'Rich_Idle2.png',
-        walk1: 'Rich_Walk1.png',   walk2: 'Rich_Walk2.png',
-        walkshoot1: 'Rich_WalkShoot1.png', walkshoot2: 'Rich_WalkShoot2.png',
-        shoot1: 'Rich_Shoot1.png', shoot2: 'Rich_Shoot2.png',
-      }
+      sprites: { idle1:'Rich_Idle1.png', idle2:'Rich_Idle2.png', walk1:'Rich_Walk1.png', walk2:'Rich_Walk2.png', walkshoot1:'Rich_WalkShoot1.png', walkshoot2:'Rich_WalkShoot2.png', shoot1:'Rich_Shoot1.png', shoot2:'Rich_Shoot2.png' }
+    },
+    ender: {
+      id: 'ender', label: 'Ender', emoji: '🔮',
+      desc: '+10% XP gain. Ult: THE ENDER ONE.',
+      ultName: 'THE ENDER ONE',
+      color: '#a259ff',
+      sprites: { idle1:'Ender_Idle1.png', idle2:'Ender_Idle2.png', walk1:'Ender_Walk1.png', walk2:'Ender_Walk2.png', walkshoot1:'Ender_WalkShoot1.png', walkshoot2:'Ender_WalkShoot2.png', shoot1:'Ender_Shoot1.png', shoot2:'Ender_Shoot2.png' }
+    },
+    arthur: {
+      id: 'arthur', label: 'Arthur', emoji: '🍭',
+      desc: 'Invisibility bar. Ult: Lollypop in a Blender.',
+      ultName: 'Lollypop in a Blender',
+      color: '#ff6ec7',
+      sprites: { idle1:'Arthur_Idle1.png', idle2:'Arthur_Idle2.png', walk1:'Arthur_Walk1.png', walk2:'Arthur_Walk2.png', walkshoot1:'Arthur_WalkShoot1.png', walkshoot2:'Arthur_WalkShoot2.png', shoot1:'Arthur_Shoot1.png', shoot2:'Arthur_Shoot2.png' }
+    },
+    fofo: {
+      id: 'fofo', label: 'FOFO', emoji: '💜',
+      desc: '+10% dmg. Ult: We are all Forsaken (40s).',
+      ultName: 'We are all Forsaken',
+      color: '#9b59b6',
+      sprites: { idle1:'Fofo_Idle1.png', idle2:'Fofo_Idle2.png', walk1:'Fofo_Walk1.png', walk2:'Fofo_Walk2.png', walkshoot1:'Fofo_WalkShoot1.png', walkshoot2:'Fofo_WalkShoot2.png', shoot1:'Fofo_Shoot1.png', shoot2:'Fofo_Shoot2.png' }
+    },
+    daniel: {
+      id: 'daniel', label: 'Daniel', emoji: '🎂',
+      desc: 'Return by Death (3 charges). Ult: Happy Birthday.',
+      ultName: 'Happy Birthday',
+      color: '#2ecc71',
+      sprites: { idle1:'Daniel_Idle1.png', idle2:'Daniel_Idle2.png', walk1:'Daniel_Walk1.png', walk2:'Daniel_Walk2.png', walkshoot1:'Daniel_WalkShoot1.png', walkshoot2:'Daniel_WalkShoot2.png', shoot1:'Daniel_Shoot1.png', shoot2:'Daniel_Shoot2.png' }
     }
   };
 
@@ -113,20 +133,50 @@
   /* ---------------- STATE ---------------- */
   const me = {
     id: '', name: '', color: myColor, x: WORLD_W / 2, y: WORLD_H / 2, aim: 0,
-    hp: MAX_HP, ult: 0, shields: 0, elims: 0, alive: true, deadUntil: 0,
-    level: 1, xp: 0, lastCombat: 0, lastHurtTime: 0, stepTimer: 0, immuneUntil: 0, deathTime: 0,
+    hp: MAX_HP, elims: 0, alive: true, deadUntil: 0,
+    level: 1, xp: 0, levelQueue: 0,
+    lastCombat: 0, lastHurtTime: 0, stepTimer: 0, immuneUntil: 0, deathTime: 0,
     anim: 'idle', frame: 0, frameT: 0, facing: 1,
     char: 'pumpkin',
+    // ult system
+    ultCharge: 0, ultReady: false,
+    // arthur
+    arthurInvisBar: 0, arthurInvis: false, arthurUltDmg: 0,
+    // daniel
+    rbdBar: 0, rbdPosHistory: [], rbdHistoryTimer: 0,
+    danielUltActive: false, danielUltTimer: 0,
+    // fofo
+    fofoUltActive: false, fofoUltTimer: 0, fofoChargeBar: 0, fofoLastEndTime: 0, fofoGooTimer: 0,
+    // ender
+    enderSlowTimer: 0,
+    // zaid
+    heroLightningTimer: 0,
+    // pull force (from Rich ult)
+    pullVx: 0, pullVy: 0, pullTimer: 0,
     mods: {
       dmg: 0, fireRate: 0, speed: 0, multishot: 0, pierce: 0, lifesteal: 0, thorns: 0,
       bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0,
       maxHp: 0, regenRate: 0, regenDelay: 0,
       critChance: 0, onKillHeal: 0, killShield: 0, dashHeal: 0, dashCdReduce: 0,
-      shieldRegen: 0, damageResist: 0, homingStr: 0
+      damageResist: 0, homingStr: 0
     },
     abilities: [],
     points: 0
   };
+
+  // Global area-effects array  (pumpkin patches, fofo goo, blenders, rings…)
+  const areaEffects = [];
+  // Arthur lollypops in flight
+  const arthurLollypops = [];
+  // Screen shake state
+  const screenShake = { x: 0, y: 0, intensity: 0, timer: 0 };
+  function addScreenShake(intensity, dur) {
+    screenShake.intensity = Math.max(screenShake.intensity, intensity);
+    screenShake.timer     = Math.max(screenShake.timer, dur);
+  }
+  // FOFO music state
+  let fofoMusicAudio = null;
+  const fofoUltPlayers = new Set(); // ids of others running fofo ult
   
   let others = {};
   const tetoState = { x: 0, y: 0, rx: 0, ry: 0, hp: TETO_MAX_HP, alive: false, state: 'roam', jumpAlpha: 1, jumpTimer: 0 };
@@ -170,18 +220,43 @@
   }
   
   const sfx = {};
+  const sfxPool = {};  // pooled clones per key
+  const SFX_POOL_MAX = 5;
+
   function trySound(k, file) {
     const a = new Audio(); a.preload = 'auto'; a.src = SFX_BASE + file;
-    a.addEventListener('canplaythrough', () => sfx[k] = a, { once: true });
+    a.addEventListener('canplaythrough', () => { sfx[k] = a; sfxPool[k] = []; }, { once: true });
   }
-  
+
   function play(k, vol) {
     const s = sfx[k]; if (!s) return;
     try {
-      const c = s.cloneNode();
+      const pool = sfxPool[k] || (sfxPool[k] = []);
+      // reuse a finished clone or create one (up to SFX_POOL_MAX)
+      let c = pool.find(a => a.ended || a.paused);
+      if (!c) {
+        if (pool.length >= SFX_POOL_MAX) {
+          // stop the oldest and reuse
+          c = pool[0]; try { c.pause(); } catch(e) {}
+        } else {
+          c = s.cloneNode(); pool.push(c);
+        }
+      }
+      c.currentTime = 0;
       c.volume = Math.min(1, (vol == null ? 0.55 : vol) * musicState.soundVol);
       c.playbackRate = 0.95 + Math.random() * 0.10;
-      c.play();
+      c.play().catch(() => {});
+    } catch (e) {}
+  }
+
+  // Play a file from TerrariaSfx folder with optional spatial attenuation
+  function playTerr(filename, baseVol, wx, wy) {
+    const sv = (wx !== undefined) ? spatialVol(wx, wy) : 1;
+    const v = Math.min(1, (baseVol || 0.6) * sv * musicState.soundVol);
+    if (v < 0.02) return;
+    try {
+      const a = new Audio(PATH_BASE + 'claude-game/TerrariaSfx/' + filename);
+      a.volume = v; a.play().catch(() => {});
     } catch (e) {}
   }
 
@@ -337,13 +412,10 @@
       img.onerror = () => res();
       img.src = ASSET_BASE + 'PumpkinMedkit.png';
     }));
-    // Load Teto boss sprite (not in ASSET_BASE — lives in claude-game/teto/)
-    loadPromises.push(new Promise(res => {
-      const img = new Image();
-      img.onload = () => { assets.teto = img; res(); };
-      img.onerror = () => res();
-      img.src = PATH_BASE + 'claude-game/teto/teto.png';
-    }));
+    // Load Teto boss sprite
+    loadPromises.push(new Promise(res => { const img = new Image(); img.onload = () => { assets.teto = img; res(); }; img.onerror = () => res(); img.src = PATH_BASE + 'claude-game/teto/teto.png'; }));
+    // Load Arthur lollypop
+    loadPromises.push(new Promise(res => { const img = new Image(); img.onload = () => { assets['lollypop'] = img; res(); }; img.onerror = () => res(); img.src = ASSET_BASE + 'lollypopArthur.png'; }));
 
     // Wait for all to finish so the "Enter" button doesn't hang
     await Promise.all(loadPromises);
@@ -490,21 +562,77 @@
       if (data.killerId === myId) {
         me.elims += 1; me.points += 100; me.hp = Math.min(effMaxHp(), me.hp + 50);
         gainXp(XP_PER_KILL);
-        play('coin5', 0.6); 
+        play('coin5', 0.6);
         toast('Eliminated ' + data.victimName + '! +50 HP +100pts');
       } else {
         toast(data.killerName + ' eliminated ' + data.victimName);
       }
       if (data.victimId === myId) {
-        me.alive = false; me.shields = 0;
-        me.deadUntil = Date.now() + RESPAWN_MS;
-        me.deathTime = Date.now();
-        if (draftOpen) { draftOpen = false; if (cardLayer) { cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; } }
-        play('death', 0.6);
-        spawnParticles(me.x, me.y, '#ff3b5c', 20, 250, 0.8);
+        // Daniel: Return by Death
+        if (me.char === 'daniel' && me.rbdBar > 0) {
+          me.rbdBar--;
+          const pos = me.rbdPosHistory.length > 0 ? me.rbdPosHistory[0] : { x: me.x, y: me.y };
+          me.x = pos.x; me.y = pos.y; me.hp = effMaxHp();
+          playTerr('RBDsfx.wav', 1.0, me.x, me.y);
+          addScreenShake(12, 0.8);
+          spawnParticles(me.x, me.y, '#2ecc71', 50, 400, 1.5);
+          toast('RETURN BY DEATH! ' + me.rbdBar + ' charges left');
+          if (socket) socket.emit('rbdRevive', { x: Math.round(me.x), y: Math.round(me.y) });
+        } else {
+          me.alive = false;
+          me.deadUntil = Date.now() + RESPAWN_MS;
+          me.deathTime = Date.now();
+          if (me.fofoUltActive) { me.fofoUltActive = false; me.fofoLastEndTime = Date.now(); if (socket) socket.emit('fofoUltEnd'); stopForsakenMusic(); }
+          if (draftOpen) { draftOpen = false; if (cardLayer) { cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; } }
+          play('death', 0.6);
+          spawnParticles(me.x, me.y, '#ff3b5c', 20, 250, 0.8);
+        }
       } else if (others[data.victimId]) {
         others[data.victimId].alive = false;
         others[data.victimId].deathTime = Date.now();
+      }
+    });
+
+    socket.on('rbdRevive', (data) => {
+      if (others[data.id]) { others[data.id].alive = true; others[data.id].hp = 100; others[data.id].x = data.x; others[data.id].y = data.y; }
+      spawnParticles(data.x, data.y, '#2ecc71', 40, 350, 1.2);
+      playTerr('RBDsfx.wav', 0.7, data.x, data.y);
+    });
+
+    socket.on('fofoUltStart', (data) => {
+      fofoUltPlayers.add(data.id);
+      if (others[data.id]) others[data.id].fofoUltActive = true;
+      startForsakenMusic();
+    });
+    socket.on('fofoUltEnd', (data) => {
+      fofoUltPlayers.delete(data.id);
+      if (others[data.id]) others[data.id].fofoUltActive = false;
+      if (fofoUltPlayers.size === 0 && !(me.char === 'fofo' && me.fofoUltActive)) stopForsakenMusic();
+    });
+
+    socket.on('ultEffect', (data) => {
+      if (data.type === 'zaid_lightning' && data.targetId === myId) {
+        me.heroLightningTimer = data.duration || 5;
+        addScreenShake(8, 0.6);
+        spawnParticles(me.x, me.y, '#ffd700', 30, 300, 0.8);
+        toast('HERO LIGHTNING — can\'t move for 5s!');
+      }
+      if (data.type === 'rich_pull' && data.targetId === myId) {
+        const dx = data.cx - me.x, dy = data.cy - me.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        me.pullVx = (dx/dist) * 300; me.pullVy = (dy/dist) * 300; me.pullTimer = 1;
+        addScreenShake(6, 0.5);
+        toast('Being pulled by Rich!');
+      }
+      if (data.type === 'rich_poor' && data.targetId === myId) {
+        const newLevel = Math.max(1, Math.floor(me.level / 2));
+        const lost = me.level - newLevel;
+        me.abilities = me.abilities.slice(0, Math.max(0, me.abilities.length - lost));
+        me.level = newLevel; me.xp = 0;
+        addScreenShake(10, 0.7);
+        spawnParticles(me.x, me.y, '#ff3b5c', 30, 300, 0.8);
+        playTerr('NPC_Killed_1.wav', 0.9);
+        toast('Rich stole your progress! Level: ' + newLevel);
       }
     });
 
@@ -579,17 +707,36 @@
   /* ---------------- COMBAT ---------------- */
   function hurtMe(amount, fromId) {
     if (!me.alive) return;
+    // Daniel ult invulnerability
+    if (me.char === 'daniel' && me.danielUltActive) return;
     const reduced = amount * (1 - Math.min(0.6, me.mods.damageResist || 0));
-    me.hp -= reduced; me.lastCombat = Date.now(); me.lastHurtTime = Date.now();
+    me.hp = Math.max(0, me.hp - reduced);
+    me.lastCombat = Date.now(); me.lastHurtTime = Date.now();
     play('hit', 0.5);
+    addScreenShake(3, 0.15);
     spawnParticles(me.x, me.y, '#ff3b5c', 6, 150, 0.3);
   }
 
-  function effFireCd()   { return FIRE_CD * (1 - Math.min(0.75, me.mods.fireRate)); }
-  function effDmg()      { return BULLET_DMG * (1 + me.mods.dmg); }
-  function effDashCd()   { return Math.max(1000, DASH_CD - (me.mods.dashCdReduce || 0) * 1000); }
+  function fofoMult() { return (me.char === 'fofo' && me.fofoUltActive) ? 0.3 : 1; }
+  function effFireCd()   { return FIRE_CD * (1 - Math.min(0.75, me.mods.fireRate)) * fofoMult(); }
+  function effDmg() {
+    let d = BULLET_DMG * (1 + me.mods.dmg);
+    if (me.char === 'rich') d *= 1.15;
+    if (me.char === 'fofo') d *= (me.fofoUltActive ? 1.5 : 1.1);
+    return d;
+  }
+  function effDashCd()   { return Math.max(500, (DASH_CD - (me.mods.dashCdReduce || 0) * 1000) * fofoMult()); }
   function isSprinting() { return !!(keys['shift'] || keys['shiftleft'] || keys['shiftright']); }
-  function effSpeed() { return SPEED * (1 + me.mods.speed + (me.char === 'zaid' ? 0.1 : 0)) * (isSprinting() ? SPRINT_MULT : 1.0); }
+  function effSpeed() {
+    let s = SPEED * (1 + me.mods.speed);
+    if (me.char === 'zaid') s *= 1.1;
+    if (me.char === 'fofo' && me.fofoUltActive) s *= 3;
+    if (me.char === 'daniel' && me.danielUltActive) s *= 0.7;
+    if (me.heroLightningTimer > 0) s = 0;
+    if (me.char === 'ender' && me.enderSlowTimer > 0) s *= 0.5;
+    // Arthur invisible movement (no speed penalty)
+    return s * (isSprinting() ? SPRINT_MULT : 1.0);
+  }
   function effBulletSpeed() { return BULLET_SPEED * (1 + me.mods.bulletSpeed); }
   function effBulletRadius() { return BULLET_R * (1 + (me.mods.bigBullet || 0) * 0.5); }
   function effMaxHp() { return MAX_HP + (me.mods.maxHp || 0); }
@@ -610,6 +757,8 @@
 
   function fire() {
     const t = Date.now(); if (!me.alive || t - lastFire < effFireCd()) return; lastFire = t;
+    // Arthur shooting ends invisibility
+    if (me.char === 'arthur' && me.arthurInvis) { me.arthurInvis = false; }
     me.lastCombat = t; me.anim = 'shoot'; me.frame = 0; me.frameT = 0;
     const dmg = effDmg() * (me.char === 'rich' ? 1.15 : 1.0);
     const ms = me.mods.multishot || 0;
@@ -644,20 +793,238 @@
     spawnParticles(me.x, me.y, me.color || '#fff', 8, 100, 0.4);
   }
   
-  function raiseShield() {
-    if (!me.alive) return;
-    if (me.ult < ULT_MAX) { toast('Ult not charged'); return; }
-    if (me.shields >= SHIELD_MAX) { toast('Shields maxed (' + SHIELD_MAX + ')'); return; }
-    me.ult = 0; me.shields++;
-    play('shield', 0.5);
-    toast('Shield up (' + me.shields + '/' + SHIELD_MAX + ')');
+  function toggleArthurInvis() {
+    if (!me.alive || me.char !== 'arthur') return;
+    if (!me.arthurInvis && me.arthurInvisBar >= 150) {
+      me.arthurInvis = true;
+      playTerr('Item_1.wav', 0.7);
+      spawnParticles(me.x, me.y, '#ff6ec7', 15, 150, 0.5);
+      toast('Invisible! Shooting ends it.');
+    } else if (me.arthurInvis) {
+      me.arthurInvis = false; toast('Invisibility off.');
+    } else {
+      toast('Invis bar not full (' + Math.round(me.arthurInvisBar) + '/150)');
+    }
+  }
+
+  /* ============================================================
+     ULT FIRE SYSTEM
+  ============================================================ */
+  function fireUlt() {
+    if (!me.alive || !me.ultReady) { if (!me.ultReady) toast('Ult not charged yet (' + Math.round(me.ultCharge) + '/1000 dmg)'); return; }
+    // FOFO cooldown check
+    if (me.char === 'fofo' && (me.fofoUltActive || Date.now() - me.fofoLastEndTime < 40000)) { toast('FOFO ult on cooldown!'); return; }
+    me.ultReady = false; me.ultCharge = 0;
+    switch (me.char) {
+      case 'pumpkin': ultPumpkinBlast(); break;
+      case 'zaid':    ultZaidHero(); break;
+      case 'rich':    ultRichPoor(); break;
+      case 'ender':   ultEnderOpen(); break;
+      case 'arthur':  ultArthurThrow(); break;
+      case 'fofo':    ultFofoForsaken(); break;
+      case 'daniel':  ultDanielBirthday(); break;
+    }
+  }
+
+  /* — Pumpkin Blast — */
+  function ultPumpkinBlast() {
+    playTerr('dd2_betsy_fireball_shot_0.wav', 0.9);
+    addScreenShake(6, 0.4);
+    spawnParticles(me.x, me.y, '#ff8c42', 20, 250, 0.6);
+    const id = 'pb_' + Math.random().toString(36).slice(2,7);
+    const spd = BULLET_SPEED * 1.4;
+    const b = { id, owner: myId, x: me.x, y: me.y, vx: Math.cos(me.aim)*spd, vy: Math.sin(me.aim)*spd,
+      dmg: 99999, isPumpkinBlast: true, patchLastX: me.x, patchLastY: me.y,
+      radius: 22, pierce: 99, explosive: 0, ricochet: 0, reflected: false, born: Date.now() };
+    bullets.push(b);
+    if (socket) socket.emit('shoot', { id, x: Math.round(me.x), y: Math.round(me.y), a: +me.aim.toFixed(3), spd, dmg: 200, radius: 22, pierce: 3 });
+  }
+
+  /* — Zaid: NOW A HERO! — */
+  function ultZaidHero() {
+    playTerr('Thunder_0.wav', 0.9);
+    addScreenShake(8, 0.6);
+    spawnParticles(me.x, me.y, '#ffd700', 40, 350, 1.0);
+    // Phase 1 ring (4 tiles)
+    areaEffects.push({ type: 'zaid_ring', x: me.x, y: me.y, r: TILE*4, born: Date.now(), maxAge: 600, color: '#ffd700' });
+    for (const id in others) {
+      const o = others[id]; if (!o.alive) continue;
+      if (Math.hypot((o.rx||o.x)-me.x, (o.ry||o.y)-me.y) < TILE*4) {
+        if (socket) socket.emit('damage', { targetId: id, amount: 2 });
+        spawnParticles(o.rx||o.x, o.ry||o.y, '#ffd700', 10, 200, 0.5);
+      }
+    }
+    // Phase 2 ring after 1s (5 tiles) + hero lightning
+    setTimeout(() => {
+      if (!started) return;
+      playTerr('Thunder_1.wav', 1.0);
+      addScreenShake(10, 0.8);
+      spawnParticles(me.x, me.y, '#fff', 50, 450, 1.2);
+      areaEffects.push({ type: 'zaid_ring', x: me.x, y: me.y, r: TILE*5, born: Date.now(), maxAge: 800, color: '#ffffff' });
+      for (const id in others) {
+        const o = others[id]; if (!o.alive) continue;
+        if (Math.hypot((o.rx||o.x)-me.x, (o.ry||o.y)-me.y) < TILE*5) {
+          if (socket) socket.emit('damage', { targetId: id, amount: 2 });
+          if (socket) socket.emit('ultEffect', { type: 'zaid_lightning', targetId: id, duration: 5 });
+          spawnParticles(o.rx||o.x, o.ry||o.y, '#ffd700', 20, 300, 0.8);
+          // mark locally
+          if (o) { o.heroLightning = true; o.heroLightningTimer = 5; }
+        }
+      }
+    }, 1000);
+  }
+
+  /* — Rich: Richless and Poor — */
+  function ultRichPoor() {
+    playTerr('dd2_book_staff_twister_loop.wav', 0.9);
+    addScreenShake(7, 0.5);
+    spawnParticles(me.x, me.y, '#ffb13b', 30, 300, 0.8);
+    areaEffects.push({ type: 'rich_tornado', x: me.x, y: me.y, r: TILE*3, born: Date.now(), maxAge: 2000, owner: myId });
+    // pull + drain
+    for (const id in others) {
+      const o = others[id]; if (!o.alive) continue;
+      const dist = Math.hypot((o.rx||o.x)-me.x, (o.ry||o.y)-me.y);
+      if (dist < TILE*3) {
+        if (socket) socket.emit('ultEffect', { type: 'rich_pull', targetId: id, cx: Math.round(me.x), cy: Math.round(me.y) });
+        spawnParticles(o.rx||o.x, o.ry||o.y, '#ffb13b', 8, 150, 0.5);
+      }
+    }
+    setTimeout(() => {
+      for (const id in others) {
+        const o = others[id]; if (!o.alive) continue;
+        if (Math.hypot((o.rx||o.x)-me.x, (o.ry||o.y)-me.y) < TILE*2) {
+          if (socket) socket.emit('ultEffect', { type: 'rich_poor', targetId: id });
+          spawnParticles(o.rx||o.x, o.ry||o.y, '#ff3b5c', 20, 250, 0.7);
+        }
+      }
+    }, 1000);
+  }
+
+  /* — Ender: THE ENDER ONE — */
+  let enderPopEl = null;
+  function ultEnderOpen() {
+    if (!enderPopEl) return;
+    playTerr('Menu_Open.wav', 0.7);
+    // generate math question
+    const op  = Math.random() > 0.5 ? '+' : '-';
+    const a   = 1 + Math.floor(Math.random() * 30);
+    const b   = 1 + Math.floor(Math.random() * 30);
+    const ans = op === '+' ? a + b : a - b;
+    const playerList = Object.values(others).filter(o => o.alive).map(o => o.name || '???').join(', ');
+    enderPopEl.dataset.answer = ans;
+    enderPopEl.querySelector('#epQuestion').textContent = a + ' ' + op + ' ' + b + ' = ?';
+    enderPopEl.querySelector('#epPlayers').textContent  = 'Players: ' + (playerList || '(none)');
+    enderPopEl.querySelector('#epName').value   = '';
+    enderPopEl.querySelector('#epAnswer').value = '';
+    enderPopEl.style.display = 'flex';
+  }
+  function confirmEnder() {
+    if (!enderPopEl) return;
+    const nameRaw   = (enderPopEl.querySelector('#epName').value   || '').trim();
+    const mathInput = parseInt(enderPopEl.querySelector('#epAnswer').value, 10);
+    const correctAns = parseInt(enderPopEl.dataset.answer, 10);
+    const mathOk    = mathInput === correctAns;
+    // flexible name match: remove non-alphanum, case-insensitive; empty name from pure-symbol = accept any
+    function normName(n) { return n.replace(/[^a-z0-9]/gi, '').toLowerCase(); }
+    let targetId = null;
+    for (const id in others) {
+      const o = others[id]; if (!o.alive) continue;
+      const pn = normName(o.name || '');
+      if (pn === '' || pn === normName(nameRaw)) { targetId = id; break; }
+    }
+    closeEnder();
+    if (mathOk && targetId) {
+      const o = others[targetId];
+      playTerr('dd2_betsy_death_0.wav', 1.0);
+      addScreenShake(12, 0.8);
+      spawnParticles(o.rx||o.x, o.ry||o.y, '#a259ff', 60, 500, 1.5);
+      if (socket) socket.emit('damage', { targetId, amount: 99999 });
+      // nearby splash
+      for (const id2 in others) {
+        if (id2 === targetId) continue;
+        const t2 = others[id2]; if (!t2.alive) continue;
+        if (Math.hypot((t2.rx||t2.x)-(o.rx||o.x), (t2.ry||t2.y)-(o.ry||o.y)) < TILE) {
+          if (socket) socket.emit('damage', { targetId: id2, amount: Math.round(((t2.hp||50)/2)) });
+          spawnParticles(t2.rx||t2.x, t2.ry||t2.y, '#a259ff', 15, 200, 0.6);
+        }
+      }
+      toast('THE ENDER ONE activated!');
+    } else {
+      playTerr('Player_Hit_0.wav', 0.8);
+      me.enderSlowTimer = 5;
+      toast('ENDER ONE failed! -50% speed for 5s');
+    }
+  }
+  function closeEnder() { if (enderPopEl) enderPopEl.style.display = 'none'; }
+
+  /* — Arthur: Lollypop in a Blender — */
+  function ultArthurThrow() {
+    playTerr('dd2_javelin_throwers_attack_0.wav', 0.9);
+    addScreenShake(5, 0.3);
+    spawnParticles(me.x, me.y, '#ff6ec7', 15, 200, 0.5);
+    arthurLollypops.push({
+      x: me.x, y: me.y, startX: me.x, startY: me.y,
+      vx: Math.cos(me.aim)*380, vy: Math.sin(me.aim)*380,
+      dist: 0, maxDist: TILE*5,
+      phase: 'fly', timer: 0, owner: myId,
+      height: 0 // for visual arc
+    });
+  }
+
+  /* — FOFO: We are all Forsaken — */
+  function ultFofoForsaken() {
+    me.fofoUltActive = true; me.fofoUltTimer = 40; me.fofoChargeBar = 0; me.fofoGooTimer = 0;
+    playTerr('Roar_0.wav', 1.0);
+    addScreenShake(10, 0.8);
+    spawnParticles(me.x, me.y, '#9b59b6', 40, 350, 1.2);
+    // start FORSAKEN music for everyone
+    if (socket) socket.emit('fofoUltStart');
+    startForsakenMusic();
+    toast('We are all Forsaken… 40s');
+  }
+
+  function startForsakenMusic() {
+    if (fofoMusicAudio) { try { fofoMusicAudio.pause(); } catch(e){} }
+    fofoMusicAudio = new Audio(encTrack(PATH_BASE + 'claude-game/music/ChaseMusic/FORSAKEN OST - NULL_AND_VOID (NOLI CHASE THEME) (1).mp3'));
+    fofoMusicAudio.volume = musicState.musicVol;
+    fofoMusicAudio.loop = true;
+    fofoMusicAudio.play().catch(() => {});
+  }
+  function stopForsakenMusic() {
+    if (fofoMusicAudio) { try { fofoMusicAudio.pause(); fofoMusicAudio = null; } catch(e){} }
+  }
+
+  /* — Daniel: Happy Birthday — */
+  function ultDanielBirthday() {
+    me.danielUltActive = true; me.danielUltTimer = 5;
+    playTerr('DanielUlt.wav', 0.8, me.x, me.y);
+    addScreenShake(5, 0.4);
+    spawnParticles(me.x, me.y, '#2ecc71', 25, 250, 0.8);
+    toast('Happy Birthday! Invulnerable 5s');
   }
   
-  function gainUlt(n) { me.ult = Math.min(ULT_MAX, me.ult + n); }
+  function gainUltCharge(dmg) {
+    if (me.ultReady) return;
+    // FOFO can't recharge during active ult or within 40s cooldown
+    if (me.char === 'fofo' && (me.fofoUltActive || Date.now() - me.fofoLastEndTime < 40000)) return;
+    me.ultCharge = Math.min(ULT_CHARGE_MAX, me.ultCharge + dmg);
+    if (me.ultCharge >= ULT_CHARGE_MAX && !me.ultReady) {
+      me.ultReady = true;
+      playTerr('MaxMana.wav', 0.9);
+      addScreenShake(4, 0.3);
+      toast('ULT READY — Press Space!');
+    }
+  }
+
   function gainXp(n) {
+    if (me.char === 'ender') n *= 1.1; // Ender bonus
     me.xp += n; me.points += Math.round(n);
     let need = xpForLevel(me.level);
-    while (me.xp >= need) { me.xp -= need; me.level++; need = xpForLevel(me.level); play('levelup', 0.7); openCardDraft(); }
+    while (me.xp >= need) {
+      me.xp -= need; me.level++; need = xpForLevel(me.level);
+      play('levelup', 0.7); me.levelQueue++;
+    }
+    if (me.levelQueue > 0 && !draftOpen) { me.levelQueue--; openCardDraft(); }
   }
 
   /* ---------------- ABILITY POOL ---------------- */
@@ -740,7 +1107,11 @@
       setTimeout(() => { card.style.transform = 'scale(0)'; }, 380);
     }, 180);
     Array.from(cardLayer.children).forEach(c => { if (c !== card) { c.style.transition = 'opacity .25s, transform .25s'; c.style.opacity = '0'; c.style.transform = 'scale(0)'; } });
-    cardDismissTimer = setTimeout(() => { cardDismissTimer = null; cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; }, 700);
+    cardDismissTimer = setTimeout(() => {
+      cardDismissTimer = null; cardLayer.style.display = 'none'; cardLayer.innerHTML = '';
+      // pop next queued level-up
+      if (me.levelQueue > 0) { me.levelQueue--; setTimeout(openCardDraft, 250); }
+    }, 700);
     toast('Gained: ' + ab.name);
   }
 
@@ -776,7 +1147,7 @@
 
   function bindInput() {
     canvas.addEventListener('mousemove', onMove);
-    canvas.addEventListener('mousedown', e => { if (e.button === 0 && !draftOpen) { mouse.down = true; fire(); } });
+    canvas.addEventListener('mousedown', e => { if (e.button === 0) { mouse.down = true; fire(); } });
     window.addEventListener('mouseup', e => { if (e.button === 0) mouse.down = false; });
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     window.addEventListener('keydown', e => {
@@ -784,7 +1155,8 @@
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys['shift'] = true;
       if (k === bindings.dash) dash();
       if (k === bindings.wall) placeWall();
-      if (k === bindings.shield) { e.preventDefault(); raiseShield(); }
+      if (k === bindings.shield || k === ' ') { e.preventDefault(); fireUlt(); }
+      if (k === 'r' && me.char === 'arthur') toggleArthurInvis();
       if (k === 'k') toggleSettingsPanel();
       if (k === 'escape' && settingsPanelEl && settingsPanelEl.style.display !== 'none') toggleSettingsPanel();
       if (['arrowup','arrowdown','arrowleft','arrowright'].includes(k)) e.preventDefault();
@@ -808,11 +1180,22 @@
   function update(dt) {
     const t = Date.now();
     if (!me.alive && t >= me.deadUntil) {
-      me.alive = true; me.hp = MAX_HP; me.ult = 0; me.shields = 0; me.level = 1; me.xp = 0; me.abilities = []; lastWall = -99999;
+      me.alive = true; me.hp = MAX_HP; me.ultCharge = 0; me.ultReady = false;
+      me.level = 1; me.xp = 0; me.levelQueue = 0; me.abilities = []; lastWall = -99999;
+      me.fofoUltActive = false; me.danielUltActive = false; me.arthurInvis = false; me.arthurInvisBar = 0;
       if (draftOpen) { draftOpen = false; if (cardLayer) { cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; } }
-      me.mods = { dmg: 0, fireRate: 0, speed: 0, multishot: 0, pierce: 0, lifesteal: 0, thorns: 0, bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0, maxHp: 0, regenRate: 0, regenDelay: 0, critChance: 0, onKillHeal: 0, killShield: 0, dashHeal: 0, dashCdReduce: 0, shieldRegen: 0, damageResist: 0, homingStr: 0 };
+      me.mods = { dmg: 0, fireRate: 0, speed: 0, multishot: 0, pierce: 0, lifesteal: 0, thorns: 0, bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0, maxHp: 0, regenRate: 0, regenDelay: 0, critChance: 0, onKillHeal: 0, killShield: 0, dashHeal: 0, dashCdReduce: 0, damageResist: 0, homingStr: 0 };
       me.x = WORLD_W / 2 + (Math.random() * 400 - 200); me.y = WORLD_H / 2 + (Math.random() * 400 - 200); me.lastCombat = Date.now();
       if (socket) socket.emit('respawn', { x: me.x, y: me.y });
+    }
+
+    // Screen shake decay
+    if (screenShake.timer > 0) {
+      screenShake.timer -= dt;
+      const si = screenShake.intensity * Math.max(0, screenShake.timer / Math.max(0.001, screenShake.timer + 0.01));
+      screenShake.x = (Math.random()*2-1) * si;
+      screenShake.y = (Math.random()*2-1) * si;
+      if (screenShake.timer <= 0) { screenShake.x = 0; screenShake.y = 0; screenShake.intensity = 0; }
     }
     
     if (me.alive) {
@@ -831,7 +1214,7 @@
         const l = Math.hypot(dx, dy); const sp = effSpeed();
         me.x = clamp(me.x + (dx / l) * sp * dt, PLAYER_R, WORLD_W - PLAYER_R);
         me.y = clamp(me.y + (dy / l) * sp * dt, PLAYER_R, WORLD_H - PLAYER_R);
-        resolveObstacleCollision(me, PLAYER_R);
+        if (!me.danielUltActive) resolveObstacleCollision(me, PLAYER_R); // Daniel floats over walls
       }
       const animFrameTime = isSprinting() ? 0.10 : 0.22;
       if (me.anim === 'shoot') { me.frameT += dt; if (me.frameT > 0.18) { me.anim = moving ? 'walk' : 'idle'; } }
@@ -839,7 +1222,7 @@
       me.frameT += dt; if (me.frameT > animFrameTime) { me.frameT = 0; me.frame = me.frame ? 0 : 1; }
       // Sanity guard: if draftOpen but card layer is gone/empty, unlock firing
       if (draftOpen && cardLayer && (cardLayer.style.display === 'none' || cardLayer.children.length === 0)) draftOpen = false;
-      if (mouse.down && !draftOpen) fire();
+      if (mouse.down) fire();
       const regenDelayCur = Math.max(500, REGEN_DELAY - (me.mods.regenDelay || 0));
       if (t - me.lastCombat > regenDelayCur && me.hp < effMaxHp()) { me.hp = Math.min(effMaxHp(), me.hp + (REGEN_RATE + (me.mods.regenRate || 0)) * dt); }
 
@@ -852,6 +1235,127 @@
         }
       } else {
         me.stepTimer = 0;
+      }
+
+      // ── Teto area damage (inside Teto radius = 50 dmg/s) ──
+      if (tetoState.alive) {
+        const tx = tetoState.rx !== undefined ? tetoState.rx : tetoState.x;
+        const ty = tetoState.ry !== undefined ? tetoState.ry : tetoState.y;
+        if (Math.hypot(me.x - tx, me.y - ty) < TETO_R + PLAYER_R) {
+          hurtMe(TETO_AREA_DMG * dt, 'teto');
+          // brief shake burst every ~0.5s rather than every frame
+          if ((t % 500) < 50) addScreenShake(4, 0.2);
+        }
+      }
+
+      // ── Hero lightning (Zaid ult) ──
+      if (me.heroLightningTimer > 0) { me.heroLightningTimer -= dt; if (me.heroLightningTimer < 0) me.heroLightningTimer = 0; }
+
+      // ── Ender slow timer ──
+      if (me.enderSlowTimer > 0) { me.enderSlowTimer -= dt; if (me.enderSlowTimer < 0) me.enderSlowTimer = 0; }
+
+      // ── Pull force (Rich ult) ──
+      if (me.pullTimer > 0) {
+        me.pullTimer -= dt;
+        me.x = clamp(me.x + me.pullVx * dt, PLAYER_R, WORLD_W - PLAYER_R);
+        me.y = clamp(me.y + me.pullVy * dt, PLAYER_R, WORLD_H - PLAYER_R);
+      }
+
+      // ── Daniel ult countdown ──
+      if (me.char === 'daniel' && me.danielUltActive) {
+        me.danielUltTimer -= dt;
+        // stair particles behind player
+        spawnParticles(me.x, me.y, '#2ecc71', 2, 40, 0.4);
+        if (me.danielUltTimer <= 0) {
+          me.danielUltActive = false; me.danielUltTimer = 0;
+          me.rbdBar = Math.min(3, me.rbdBar + 1);
+          toast('Return by Death charge: ' + me.rbdBar + '/3');
+          spawnParticles(me.x, me.y, '#2ecc71', 20, 200, 0.6);
+        }
+      }
+      // Daniel position history (1 entry/sec for last 20s)
+      if (me.char === 'daniel') {
+        me.rbdHistoryTimer -= dt;
+        if (me.rbdHistoryTimer <= 0) {
+          me.rbdHistoryTimer = 1;
+          me.rbdPosHistory.push({ x: me.x, y: me.y, t });
+          me.rbdPosHistory = me.rbdPosHistory.filter(p => t - p.t < 20000);
+        }
+      }
+
+      // ── Arthur invisibility bar decay ──
+      if (me.char === 'arthur') {
+        if (me.arthurInvis) {
+          me.arthurInvisBar = Math.max(0, me.arthurInvisBar - 10 * dt);
+          if (me.arthurInvisBar <= 0) { me.arthurInvis = false; toast('Invisibility ended'); }
+        }
+      }
+
+      // ── FOFO ult tick ──
+      if (me.char === 'fofo' && me.fofoUltActive) {
+        me.fofoUltTimer -= dt;
+        // goo trail
+        me.fofoGooTimer -= dt;
+        if (me.fofoGooTimer <= 0 && moving) {
+          me.fofoGooTimer = 0.4;
+          areaEffects.push({ type: 'fofo_goo', x: me.x, y: me.y, r: 30, born: t, maxAge: 5000 });
+        }
+        // charge bar from nearby enemies
+        let nearCount = 0;
+        for (const id in others) { const o = others[id]; if (!o.alive) continue; if (Math.hypot((o.rx||o.x)-me.x, (o.ry||o.y)-me.y) < 400) nearCount++; }
+        me.fofoChargeBar = Math.min(10, me.fofoChargeBar + nearCount * 5 * dt);
+        if (me.fofoChargeBar >= 10) {
+          me.fofoChargeBar = 0;
+          // teleport to nearest enemy
+          let nearest = null, nearD = Infinity;
+          for (const id in others) { const o = others[id]; if (!o.alive) continue; const d = Math.hypot((o.rx||o.x)-me.x, (o.ry||o.y)-me.y); if (d < nearD) { nearD = d; nearest = { id, ox: o.rx||o.x, oy: o.ry||o.y }; } }
+          if (nearest) {
+            me.x = clamp(nearest.ox + (Math.random()-0.5)*60, PLAYER_R, WORLD_W-PLAYER_R);
+            me.y = clamp(nearest.oy + (Math.random()-0.5)*60, PLAYER_R, WORLD_H-PLAYER_R);
+            playTerr('dd2_etherian_portal_open.wav', 0.8);
+            addScreenShake(8, 0.5);
+            spawnParticles(me.x, me.y, '#9b59b6', 30, 300, 0.8);
+            areaEffects.push({ type: 'fofo_blast', x: me.x, y: me.y, r: TILE, born: t, maxAge: 600 });
+            if (socket) socket.emit('damage', { targetId: nearest.id, amount: 30 });
+          }
+        }
+        // FOFO music volume
+        if (fofoMusicAudio) fofoMusicAudio.volume = musicState.musicVol;
+        // screen shake for players near FOFO (only me)
+        addScreenShake(1, 0.1);
+        if (me.fofoUltTimer <= 0) {
+          me.fofoUltActive = false; me.fofoUltTimer = 0; me.fofoLastEndTime = t;
+          if (socket) socket.emit('fofoUltEnd');
+          stopForsakenMusic();
+          toast('Forsaken ended.');
+        }
+      }
+
+      // ── Arthur lollypops ──
+      for (let li = arthurLollypops.length - 1; li >= 0; li--) {
+        const lp = arthurLollypops[li];
+        if (lp.phase === 'fly') {
+          const step = 380 * dt;
+          lp.x += lp.vx * dt; lp.y += lp.vy * dt;
+          lp.dist += step;
+          lp.height = Math.sin((lp.dist / lp.maxDist) * Math.PI) * 40;
+          if (lp.dist >= lp.maxDist) {
+            // LAND
+            lp.phase = 'blast'; lp.timer = 0.1;
+            lp.landX = lp.x; lp.landY = lp.y;
+            playTerr('dd2_explosive_trap_explode_0.wav', 0.9, lp.x, lp.y);
+            addScreenShake(8, 0.5);
+            spawnParticles(lp.x, lp.y, '#ff6ec7', 30, 300, 0.8);
+            // 30 dmg in 1 tile
+            for (const id in others) { const o = others[id]; if (!o.alive) continue; if (Math.hypot((o.rx||o.x)-lp.x, (o.ry||o.y)-lp.y) < TILE) { if (socket) socket.emit('damage', { targetId: id, amount: 30 }); lp.dmgDealt = (lp.dmgDealt||0) + 30; } }
+            if (Math.hypot(me.x-lp.x, me.y-lp.y) < TILE) { hurtMe(30, 'arthur'); lp.dmgDealt = (lp.dmgDealt||0) + 30; }
+            // Pass initial blast damage so invis bar counts it too
+            areaEffects.push({ type: 'arthur_blender', x: lp.x, y: lp.y, r: TILE*3, born: t, maxAge: 3000, owner: lp.owner, dmgDealt: lp.dmgDealt||0, phase: 0 });
+          }
+        } else {
+          lp.timer -= dt;
+          if (lp.timer <= 0) arthurLollypops.splice(li, 1);
+        }
       }
 
       // Medkit proximity pickup
@@ -874,7 +1378,9 @@
         socket.emit('move', {
           x: Math.round(me.x), y: Math.round(me.y), aim: +me.aim.toFixed(2),
           anim: me.anim, frame: me.frame, facing: me.facing, moving: !!moving,
-          level: me.level, points: me.points, shields: me.shields
+          level: me.level, points: me.points,
+          invis: !!(me.char==='arthur' && me.arthurInvis),
+          fofoUltActive: !!(me.char==='fofo' && me.fofoUltActive)
         });
       }
     }
@@ -930,13 +1436,15 @@
         if (musicState.chaseVol <= 0) musicState.state = 'idle';
         break;
     }
+    // FOFO ult overrides all other music
+    const fofoMusicOn = fofoMusicAudio && !fofoMusicAudio.paused;
     if (musicState.normalAudio) {
-      if (musicState.normalAudio.paused) musicState.normalAudio.play().catch(() => {});
-      musicState.normalAudio.volume = Math.max(0, Math.min(1, musicState.normalVol));
+      if (!fofoMusicOn && musicState.normalAudio.paused) musicState.normalAudio.play().catch(() => {});
+      musicState.normalAudio.volume = fofoMusicOn ? 0 : Math.max(0, Math.min(1, musicState.normalVol));
     }
     if (musicState.chaseAudio) {
-      if (musicState.chaseAudio.paused && musicState.chaseVol > 0.001) musicState.chaseAudio.play().catch(() => {});
-      musicState.chaseAudio.volume = Math.max(0, Math.min(1, musicState.chaseVol));
+      if (!fofoMusicOn && musicState.chaseAudio.paused && musicState.chaseVol > 0.001) musicState.chaseAudio.play().catch(() => {});
+      musicState.chaseAudio.volume = fofoMusicOn ? 0 : Math.max(0, Math.min(1, musicState.chaseVol));
     }
 
     // 60FPS Client-Side Interpolation Loop for Smooth Remote Rendering
@@ -1000,19 +1508,13 @@
       
       // Local client logic: if hit by an enemy projectile, notify server
       if (me.alive && b.owner !== myId && d2(b.x, b.y, me.x, me.y) < (PLAYER_R + brad) ** 2) {
-        if (Date.now() < me.immuneUntil) { bullets.splice(i, 1); continue; } // shield break immunity
-        if (me.shields > 0 && !b.reflected) {
-          me.shields--;
-          me.immuneUntil = Date.now() + IMMUNE_MS;
-          play('foil2', 0.5);
-          spawnBullet(Math.atan2(b.vy, b.vx) + Math.PI, BULLET_SPEED * 2, b.dmg * 2, true, 0, {});
-          toast('Shield reflected! (' + me.shields + ' left)  [1s immune]'); bullets.splice(i, 1); continue;
-        } else {
-          if (me.mods.thorns > 0 && b.owner) {
-            if (socket) socket.emit('damage', { targetId: b.owner, amount: Math.round(b.dmg * me.mods.thorns) });
-          }
-          bullets.splice(i, 1); continue;
+        if (Date.now() < me.immuneUntil) { bullets.splice(i, 1); continue; }
+        // Daniel ult: invulnerable
+        if (me.char === 'daniel' && me.danielUltActive) { bullets.splice(i, 1); continue; }
+        if (me.mods.thorns > 0 && b.owner) {
+          if (socket) socket.emit('damage', { targetId: b.owner, amount: Math.round(b.dmg * me.mods.thorns) });
         }
+        bullets.splice(i, 1); continue;
       }
       
       // Check XP box hits (owner bullets only, before player check)
@@ -1038,6 +1540,16 @@
         if (boxHit) continue;
       }
 
+      // Pumpkin blast leaves patch trail
+      if (b.isPumpkinBlast && b.owner === myId) {
+        const pd = Math.hypot(b.x - (b.patchLastX||b.x), b.y - (b.patchLastY||b.y));
+        if (pd > 55) {
+          areaEffects.push({ type: 'pumpkin_patch', x: b.x, y: b.y, r: 40, born: Date.now(), maxAge: 10000 });
+          b.patchLastX = b.x; b.patchLastY = b.y;
+          spawnParticles(b.x, b.y, '#ff8c42', 5, 80, 0.4);
+        }
+      }
+
       // Teto hit check (my bullets only)
       if (b.owner === myId && tetoState.alive) {
         const tx = tetoState.rx !== undefined ? tetoState.rx : tetoState.x;
@@ -1057,12 +1569,15 @@
         for (const id in others) {
           const o = others[id]; if (!o.alive) continue;
           if (d2(b.x, b.y, o.x, o.y) < (PLAYER_R + brad) ** 2) {
-            const dmgAmount = Math.round(b.dmg);
-            
+            let dmgAmount = Math.round(b.dmg);
+            if (b.isPumpkinBlast) {
+              const oHp = o.hp || 100;
+              dmgAmount = oHp < 50 ? oHp + 1 : Math.round(oHp * 0.99);
+            }
             // Client-sided damage trigger: report to WebSocket server
             if (socket) socket.emit('damage', { targetId: id, amount: dmgAmount });
 
-            gainUlt(1); gainXp(dmgAmount * XP_PER_DMG);
+            gainUltCharge(dmgAmount); gainXp(dmgAmount * XP_PER_DMG);
             if (me.mods.lifesteal > 0) me.hp = Math.min(effMaxHp(), me.hp + me.mods.lifesteal);
             spawnParticles(b.x, b.y, '#ffb13b', 5, 120, 0.3); play('hitEnemy', 0.4);
             
@@ -1077,6 +1592,63 @@
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i]; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.92; p.vy *= 0.92; p.life -= dt;
       if (p.life <= 0) { particles.splice(i, 1); }
+    }
+
+    // ── Area effects tick ──
+    for (let ai = areaEffects.length - 1; ai >= 0; ai--) {
+      const ae = areaEffects[ai];
+      const age = t - ae.born;
+      if (age > ae.maxAge) { areaEffects.splice(ai, 1); continue; }
+      if (!me.alive) continue;
+      const dx = me.x - ae.x, dy = me.y - ae.y;
+      const dist = Math.hypot(dx, dy);
+      if (ae.type === 'pumpkin_patch' && dist < ae.r + PLAYER_R) {
+        hurtMe(10 * dt, 'pumpkin_patch');
+      }
+      if (ae.type === 'fofo_goo' && dist < ae.r + PLAYER_R) {
+        hurtMe(10 * dt, 'fofo_goo');
+      }
+      if (ae.type === 'arthur_blender') {
+        // grow radius 3→4 tiles over 3s
+        const frac = Math.min(1, age / ae.maxAge);
+        const curR = (TILE*3 + TILE * frac);
+        ae.curR = curR;
+        if (dist < curR + PLAYER_R) {
+          // pull toward center
+          const pull = 180;
+          me.x = clamp(me.x - (dx/dist)*pull*dt, PLAYER_R, WORLD_W-PLAYER_R);
+          me.y = clamp(me.y - (dy/dist)*pull*dt, PLAYER_R, WORLD_H-PLAYER_R);
+        }
+        // on expire: 60 dmg
+        if (age >= ae.maxAge - 20 && !ae.finalized) {
+          ae.finalized = true;
+          playTerr('dd2_explosive_trap_explode_1.wav', 0.9, ae.x, ae.y);
+          addScreenShake(10, 0.7);
+          spawnParticles(ae.x, ae.y, '#ff6ec7', 40, 400, 1.0);
+          if (dist < (TILE*4 + PLAYER_R)) hurtMe(60, 'arthur_blender');
+          for (const id in others) {
+            const o = others[id]; if (!o.alive) continue;
+            if (Math.hypot((o.rx||o.x)-ae.x, (o.ry||o.y)-ae.y) < TILE*4) {
+              if (socket) socket.emit('damage', { targetId: id, amount: 60 });
+              if (ae.owner === myId) { ae.dmgDealt = (ae.dmgDealt||0) + 60; }
+            }
+          }
+          // Arthur inv bar fill
+          if (ae.owner === myId && me.char === 'arthur') {
+            me.arthurUltDmg = (me.arthurUltDmg||0) + (ae.dmgDealt||0);
+            if (me.arthurUltDmg >= 150) { me.arthurInvisBar = 150; me.arthurUltDmg = 0; toast('Invisibility bar full! Press R'); }
+          }
+        }
+      }
+    }
+
+    // ── FOFO: other players near me cause screen shake ──
+    for (const id in others) {
+      const o = others[id];
+      if (o.fofoUltActive) {
+        const d = Math.hypot(me.x-(o.rx||o.x), me.y-(o.ry||o.y));
+        if (d < 400) addScreenShake((1 - d/400)*6, 0.12);
+      }
     }
 
     // Expire old walls
@@ -1098,13 +1670,21 @@
     if (d.lvl) { d.lvl.textContent = 'LV ' + me.level; d.xpFill.style.width = Math.min(100, (me.xp / xpForLevel(me.level)) * 100) + '%'; }
     if (d.dashFill) { const edc = effDashCd(); const cd = Math.max(0, edc - (Date.now() - lastDash)); d.dashFill.style.width = ((1 - cd / edc) * 100) + '%'; d.dashTxt.textContent = cd > 0 ? (cd / 1000).toFixed(1) + 's' : 'READY'; }
     if (d.wallFill) { const cd = Math.max(0, WALL_CD - (Date.now() - lastWall)); d.wallFill.style.width = ((1 - cd / WALL_CD) * 100) + '%'; d.wallTxt.textContent = cd > 0 ? (cd / 1000).toFixed(1) + 's' : 'READY'; }
-    if (d.shieldTxt) { d.shieldTxt.textContent = me.shields + ' / ' + SHIELD_MAX; }
-    if (d.ultFill) { d.ultFill.style.height = ((me.ult / ULT_MAX) * 100) + '%'; d.ultTxt.textContent = me.ult >= ULT_MAX ? 'READY (Space)' : (ULT_MAX - me.ult) + ' hits to go'; }
+    if (d.shieldTxt) { d.shieldTxt.textContent = me.char === 'daniel' ? 'RBD: ' + me.rbdBar + '/3' : me.char === 'arthur' ? 'INVIS: ' + Math.round(me.arthurInvisBar) + '/150' : ''; }
+    if (d.ultFill) {
+      const f = me.ultReady ? 1 : me.ultCharge / ULT_CHARGE_MAX;
+      d.ultFill.style.height = (f * 100) + '%';
+      d.ultFill.style.background = me.ultReady ? '#c77dff' : '#4d8bff';
+      const ultName = CHARACTERS[me.char] ? CHARACTERS[me.char].ultName : 'ULT';
+      d.ultTxt.textContent = me.ultReady ? '✦ ' + ultName + ' READY (Space)' : Math.round(me.ultCharge) + '/' + ULT_CHARGE_MAX + ' dmg';
+    }
   }
 
   /* ---------------- RENDER ---------------- */
   function draw() {
     ctx.clearRect(0, 0, VIEW_W, VIEW_H);
+    ctx.save();
+    ctx.translate(screenShake.x, screenShake.y);
     if (assets.floor) {
       const pat = ctx.createPattern(assets.floor, 'repeat'); ctx.save();
       ctx.translate(-camera.x % assets.floor.width, -camera.y % assets.floor.height);
@@ -1186,7 +1766,8 @@
         ctx.beginPath(); ctx.ellipse(stx, sty + hs - 18, hs * 0.55, hs * 0.08, 0, 0, Math.PI * 2); ctx.fill();
         // Sprite or fallback circle
         if (assets.teto && assets.teto.complete && assets.teto.naturalWidth > 0) {
-          ctx.drawImage(assets.teto, stx - hs, sty - hs, TETO_SPRITE, TETO_SPRITE);
+          const ds = TETO_SPRITE * TETO_DRAW_SCALE;
+          ctx.drawImage(assets.teto, stx - ds/2, sty - ds/2, ds, ds);
         } else {
           ctx.fillStyle = '#ff8c42'; ctx.shadowColor = '#ff8c42'; ctx.shadowBlur = 40;
           ctx.beginPath(); ctx.arc(stx, sty, TETO_R, 0, Math.PI * 2); ctx.fill();
@@ -1232,9 +1813,152 @@
       ctx.restore();
     }
 
+    // Draw area effects
+    drawAreaEffects();
+    // Draw Arthur lollypops in flight
+    for (const lp of arthurLollypops) {
+      if (lp.phase !== 'fly') continue;
+      const sx = lp.x - camera.x, sy = lp.y - camera.y - lp.height;
+      ctx.save();
+      if (assets['lollypop'] && assets['lollypop'].complete) { ctx.drawImage(assets['lollypop'], sx-16, sy-16, 32, 32); }
+      else { ctx.fillStyle='#ff6ec7'; ctx.beginPath(); ctx.arc(sx,sy,10,0,Math.PI*2); ctx.fill(); }
+      // shadow on ground
+      ctx.globalAlpha=0.3; ctx.fillStyle='#000'; ctx.beginPath(); ctx.ellipse(lp.x-camera.x, lp.y-camera.y, 12, 5, 0, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+
     for (const id in others) drawPlayer(others[id], false);
-    drawPlayer(me, true); drawOffscreenMarkers();
+    drawPlayer(me, true);
+
+    // Brawl-Stars ult preview (only for local player, only when ult ready)
+    if (me.alive && me.ultReady) drawUltPreview();
+
+    // FOFO vignette/dark effect when near a FOFO ult
+    drawFofoVignette();
+
+    drawOffscreenMarkers();
     if (IS_MOBILE) drawMobileOverlay();
+    ctx.restore(); // end screen shake translate
+  }
+
+  function drawAreaEffects() {
+    const now = Date.now();
+    for (const ae of areaEffects) {
+      const age = now - ae.born;
+      const frac = Math.min(1, age / ae.maxAge);
+      const sx = ae.x - camera.x, sy = ae.y - camera.y;
+      if (sx < -200 || sx > VIEW_W+200 || sy < -200 || sy > VIEW_H+200) continue;
+      ctx.save();
+      ctx.globalAlpha = (1 - frac) * 0.55;
+      if (ae.type === 'pumpkin_patch') {
+        ctx.fillStyle = '#ff8c42'; ctx.shadowColor='#ff8c42'; ctx.shadowBlur=18;
+        ctx.beginPath(); ctx.arc(sx, sy, ae.r, 0, Math.PI*2); ctx.fill();
+        ctx.shadowBlur=0; ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.globalAlpha=(1-frac)*0.3;
+        ctx.stroke();
+      } else if (ae.type === 'fofo_goo') {
+        ctx.fillStyle='#9b59b6'; ctx.shadowColor='#9b59b6'; ctx.shadowBlur=12;
+        ctx.beginPath(); ctx.arc(sx, sy, ae.r, 0, Math.PI*2); ctx.fill();
+      } else if (ae.type === 'fofo_blast') {
+        ctx.globalAlpha = (1-frac)*0.8;
+        ctx.fillStyle='#9b59b6'; ctx.shadowColor='#9b59b6'; ctx.shadowBlur=30;
+        ctx.beginPath(); ctx.arc(sx, sy, ae.r, 0, Math.PI*2); ctx.fill();
+      } else if (ae.type === 'zaid_ring') {
+        ctx.globalAlpha = (1-frac)*0.7;
+        ctx.strokeStyle = ae.color||'#ffd700'; ctx.lineWidth=4; ctx.shadowColor=ae.color||'#ffd700'; ctx.shadowBlur=20;
+        ctx.beginPath(); ctx.arc(sx, sy, ae.r, 0, Math.PI*2); ctx.stroke();
+      } else if (ae.type === 'rich_tornado') {
+        const spin = (age/1000)*Math.PI*4;
+        ctx.globalAlpha = (1-frac)*0.6;
+        ctx.strokeStyle='#ffb13b'; ctx.lineWidth=3; ctx.shadowColor='#ffb13b'; ctx.shadowBlur=16;
+        ctx.beginPath(); ctx.arc(sx, sy, ae.r*(0.4+0.6*frac), spin, spin+Math.PI*1.5); ctx.stroke();
+        ctx.beginPath(); ctx.arc(sx, sy, ae.r*(0.2+0.4*frac), spin+Math.PI, spin+Math.PI*2.5); ctx.stroke();
+      } else if (ae.type === 'arthur_blender') {
+        const curR = ae.curR || TILE*3;
+        const spin2 = (age/1000)*Math.PI*6;
+        ctx.globalAlpha = 0.45;
+        ctx.strokeStyle='#ff6ec7'; ctx.lineWidth=5; ctx.shadowColor='#ff6ec7'; ctx.shadowBlur=20;
+        for (let k=0; k<3; k++) { const a=spin2+k*(Math.PI*2/3); ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(sx+Math.cos(a)*curR, sy+Math.sin(a)*curR); ctx.stroke(); }
+        ctx.globalAlpha=0.2; ctx.fillStyle='#ff6ec7'; ctx.beginPath(); ctx.arc(sx,sy,curR,0,Math.PI*2); ctx.fill();
+      }
+      ctx.shadowBlur=0; ctx.restore();
+    }
+  }
+
+  function drawUltPreview() {
+    const sx = me.x - camera.x, sy = me.y - camera.y;
+    ctx.save(); ctx.globalAlpha = 0.35 + 0.15*Math.sin(Date.now()/200);
+    switch (me.char) {
+      case 'pumpkin': {
+        // Show blast line + landing zone
+        ctx.strokeStyle='#ff8c42'; ctx.lineWidth=3; ctx.setLineDash([8,6]); ctx.shadowColor='#ff8c42'; ctx.shadowBlur=10;
+        ctx.beginPath(); ctx.moveTo(sx, sy);
+        ctx.lineTo(sx+Math.cos(me.aim)*400, sy+Math.sin(me.aim)*400); ctx.stroke();
+        ctx.setLineDash([]); ctx.fillStyle='rgba(255,140,66,0.2)'; ctx.beginPath();
+        ctx.arc(sx+Math.cos(me.aim)*400, sy+Math.sin(me.aim)*400, 40, 0, Math.PI*2); ctx.fill();
+        break;
+      }
+      case 'zaid': {
+        ctx.strokeStyle='#ffd700'; ctx.lineWidth=2; ctx.shadowColor='#ffd700'; ctx.shadowBlur=12;
+        ctx.beginPath(); ctx.arc(sx,sy,TILE*4,0,Math.PI*2); ctx.stroke();
+        ctx.globalAlpha*=0.5; ctx.strokeStyle='#fff'; ctx.beginPath(); ctx.arc(sx,sy,TILE*5,0,Math.PI*2); ctx.stroke();
+        break;
+      }
+      case 'rich': {
+        ctx.strokeStyle='#ffb13b'; ctx.lineWidth=3; ctx.shadowColor='#ffb13b'; ctx.shadowBlur=14;
+        ctx.beginPath(); ctx.arc(sx,sy,TILE*3,0,Math.PI*2); ctx.stroke();
+        ctx.fillStyle='rgba(255,177,59,0.1)'; ctx.beginPath(); ctx.arc(sx,sy,TILE*3,0,Math.PI*2); ctx.fill();
+        break;
+      }
+      case 'ender': {
+        ctx.strokeStyle='#a259ff'; ctx.lineWidth=2; ctx.shadowColor='#a259ff'; ctx.shadowBlur=14;
+        ctx.beginPath(); ctx.arc(sx,sy,TILE,0,Math.PI*2); ctx.stroke();
+        break;
+      }
+      case 'arthur': {
+        // Parabola preview
+        const steps=20, maxD=TILE*5;
+        ctx.strokeStyle='#ff6ec7'; ctx.lineWidth=2; ctx.setLineDash([5,5]); ctx.shadowColor='#ff6ec7'; ctx.shadowBlur=10;
+        ctx.beginPath();
+        for (let s=0; s<=steps; s++) {
+          const f=s/steps; const px2=sx+Math.cos(me.aim)*maxD*f; const py2=sy+Math.sin(me.aim)*maxD*f - Math.sin(f*Math.PI)*40;
+          if (s===0) ctx.moveTo(px2,py2); else ctx.lineTo(px2,py2);
+        }
+        ctx.stroke(); ctx.setLineDash([]);
+        const lx=sx+Math.cos(me.aim)*maxD, ly=sy+Math.sin(me.aim)*maxD;
+        ctx.fillStyle='rgba(255,110,199,0.25)'; ctx.beginPath(); ctx.arc(lx,ly,TILE*3,0,Math.PI*2); ctx.fill();
+        ctx.strokeStyle='#ff6ec7'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(lx,ly,TILE*3,0,Math.PI*2); ctx.stroke();
+        break;
+      }
+      case 'fofo': {
+        ctx.strokeStyle='#9b59b6'; ctx.lineWidth=3; ctx.shadowColor='#9b59b6'; ctx.shadowBlur=18;
+        ctx.beginPath(); ctx.arc(sx,sy,60,0,Math.PI*2); ctx.stroke();
+        ctx.fillStyle='rgba(155,89,182,0.15)'; ctx.beginPath(); ctx.arc(sx,sy,60,0,Math.PI*2); ctx.fill();
+        break;
+      }
+      case 'daniel': {
+        ctx.strokeStyle='#2ecc71'; ctx.lineWidth=2; ctx.setLineDash([6,4]); ctx.shadowColor='#2ecc71'; ctx.shadowBlur=12;
+        for (let s=1; s<=5; s++) { ctx.fillStyle='rgba(46,204,113,0.2)'; ctx.fillRect(sx+Math.cos(me.aim)*s*28-10, sy+Math.sin(me.aim)*s*28-6, 20, 12); }
+        ctx.setLineDash([]);
+        break;
+      }
+    }
+    ctx.shadowBlur=0; ctx.restore();
+  }
+
+  function drawFofoVignette() {
+    let maxIntensity = 0;
+    const checkFofo = (fx, fy) => {
+      const d = Math.hypot(me.x - fx, me.y - fy);
+      if (d < 500) maxIntensity = Math.max(maxIntensity, 1 - d/500);
+    };
+    if (me.char === 'fofo' && me.fofoUltActive) checkFofo(me.x, me.y);
+    for (const id in others) { const o = others[id]; if (o.fofoUltActive) checkFofo(o.rx||o.x, o.ry||o.y); }
+    if (maxIntensity > 0.05) {
+      const grad = ctx.createRadialGradient(VIEW_W/2, VIEW_H/2, VIEW_W*0.2, VIEW_W/2, VIEW_H/2, VIEW_W*0.8);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, 'rgba(30,0,40,' + (maxIntensity*0.7) + ')');
+      ctx.fillStyle = grad; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    }
   }
 
   /* ---------------- OFF-SCREEN MARKERS ---------------- */
@@ -1315,13 +2039,16 @@
   ctx.save(); 
   ctx.translate(sx, sy);
 
-  // Compute fade alpha for death
+  // Compute fade alpha for death / invisibility
   let fadeAlpha = 1;
   if (!p.alive) {
     const elapsed = p.deathTime ? Math.min(DEATH_FADE_MS, Date.now() - p.deathTime) : DEATH_FADE_MS;
     fadeAlpha = Math.max(0, 1 - elapsed / DEATH_FADE_MS);
   }
   if (fadeAlpha <= 0) { ctx.restore(); return; }
+  // Arthur invisible: only draw at 15% alpha for others
+  if (!isMe && p.invis) { ctx.globalAlpha = 0.12; }
+  if (isMe && me.arthurInvis) { fadeAlpha = 0.25; } // ghost for self
 
   // 0. Shadow
   ctx.save();
@@ -1345,15 +2072,24 @@
     }
   }
 
-  // 1. Draw Shields (visible for all players)
-  for (let i = 0; i < (p.shields || 0); i++) {
-    ctx.beginPath();
-    ctx.arc(0, 0, PLAYER_R + 8 + i * 5, 0, Math.PI * 2);
-    ctx.strokeStyle = '#c77dff';
-    ctx.lineWidth = 2.5;
-    ctx.globalAlpha = fadeAlpha * (1 - i * 0.22);
-    ctx.shadowColor = '#c77dff'; ctx.shadowBlur = 12;
-    ctx.stroke();
+  // 1. Character aura effects
+  if (isMe && me.heroLightningTimer > 0) {
+    ctx.save(); ctx.globalAlpha = fadeAlpha * (0.5 + 0.5*Math.sin(Date.now()/80));
+    ctx.strokeStyle='#ffd700'; ctx.lineWidth=4; ctx.shadowColor='#ffd700'; ctx.shadowBlur=20;
+    ctx.beginPath(); ctx.arc(0,0,PLAYER_R+10,0,Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+  if ((isMe ? (me.char==='fofo' && me.fofoUltActive) : p.fofoUltActive)) {
+    ctx.save(); ctx.globalAlpha = fadeAlpha*0.6;
+    ctx.strokeStyle='#9b59b6'; ctx.lineWidth=3; ctx.shadowColor='#9b59b6'; ctx.shadowBlur=22;
+    ctx.beginPath(); ctx.arc(0,0,PLAYER_R+8,0,Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+  if ((isMe ? (me.char==='daniel' && me.danielUltActive) : false)) {
+    ctx.save(); ctx.globalAlpha = fadeAlpha*0.7;
+    ctx.strokeStyle='#2ecc71'; ctx.lineWidth=4; ctx.shadowColor='#2ecc71'; ctx.shadowBlur=20;
+    ctx.beginPath(); ctx.arc(0,0,PLAYER_R+10,0,Math.PI*2); ctx.stroke();
+    ctx.restore();
   }
 
   // 2. Sprite vs Arrow Fallback
@@ -1530,7 +2266,7 @@
     for (const t of e.changedTouches) {
       const tx = (t.clientX - s.left) * s.sx, ty = (t.clientY - s.top) * s.sy;
       if (Math.hypot(tx - MOB.dashX, ty - MOB.dashY) < MOB.btnR + 10) { dash(); continue; }
-      if (Math.hypot(tx - MOB.shieldX, ty - MOB.shieldY) < MOB.btnR + 10) { raiseShield(); continue; }
+      if (Math.hypot(tx - MOB.shieldX, ty - MOB.shieldY) < MOB.btnR + 10) { fireUlt(); continue; }
       if (tx < VIEW_W * 0.45 && !joy.active) {
         joy.active = true; joy.id = t.identifier; joy.bx = tx; joy.by = ty; joy.dx = 0; joy.dy = 0;
       } else if (!aimT.active) {
@@ -1583,13 +2319,13 @@
     ctx.font = 'bold 11px JetBrains Mono,monospace';
     ctx.fillStyle = dashCD > 0 ? 'rgba(77,139,255,0.55)' : '#4d8bff';
     ctx.fillText(dashCD > 0 ? (dashCD / 1000).toFixed(1) : 'DASH', MOB.dashX, MOB.dashY);
-    // Shield/Ult button
-    const ultReady = me.ult >= ULT_MAX;
+    // Ult button
+    const ultReady = me.ultReady;
     ctx.beginPath(); ctx.arc(MOB.shieldX, MOB.shieldY, MOB.btnR, 0, Math.PI * 2);
     ctx.fillStyle = ultReady ? 'rgba(199,125,255,0.28)' : 'rgba(28,28,40,0.85)'; ctx.fill();
     ctx.strokeStyle = ultReady ? 'rgba(199,125,255,0.9)' : 'rgba(199,125,255,0.35)'; ctx.lineWidth = 2.5; ctx.stroke();
     ctx.fillStyle = ultReady ? '#c77dff' : 'rgba(199,125,255,0.55)';
-    ctx.fillText(ultReady ? 'ULT' : me.ult + '/' + ULT_MAX, MOB.shieldX, MOB.shieldY);
+    ctx.fillText(ultReady ? 'ULT' : Math.round(me.ultCharge) + '/' + ULT_CHARGE_MAX, MOB.shieldX, MOB.shieldY);
     ctx.textBaseline = 'alphabetic'; ctx.restore();
   }
 
@@ -1603,6 +2339,8 @@
     started = true;
     const n = (nameInput.value || '').trim().slice(0, 14) || 'anon' + ((Math.random() * 99) | 0);
     me.name = n; me.color = CHARACTERS[selectedChar].color; me.char = selectedChar;
+    me.ultCharge = 0; me.ultReady = false; me.arthurInvis = false; me.arthurInvisBar = 0;
+    me.rbdBar = 0; me.rbdPosHistory = []; me.fofoUltActive = false; me.danielUltActive = false;
     try { localStorage.setItem('caName', n); localStorage.setItem('caChar', selectedChar); } catch (e) {}
     started = true; if (gate) gate.style.display = 'none';
     me.x = WORLD_W / 2 + (Math.random() * 400 - 200); me.y = WORLD_H / 2 + (Math.random() * 400 - 200); me.lastCombat = Date.now();
@@ -1622,15 +2360,53 @@
   }
 
   function buildCharacterPicker(gateCard) {
-    const pickerDiv = document.createElement('div'); pickerDiv.id = 'caCharPicker'; pickerDiv.style.cssText = 'display:flex;gap:10px;margin-bottom:14px;justify-content:center;';
+    const wrap = document.createElement('div');
+    wrap.id = 'caCharPicker';
+    wrap.style.cssText = 'display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:14px;max-height:260px;overflow-y:auto;';
     for (const cid in CHARACTERS) {
-      const ch = CHARACTERS[cid]; const btn = document.createElement('button'); btn.className = 'ca-char-btn' + (cid === 'pumpkin' ? ' active' : ''); btn.dataset.char = cid;
-      btn.style.cssText = `flex:1; background:${cid === selectedChar ? 'rgba(199,125,255,0.15)' : '#0f0f12'}; border:2px solid ${cid === selectedChar ? ch.color : '#2a2a32'}; color:#ececef; padding:10px 6px; border-radius:9px; cursor:pointer; font-family:inherit; font-size:12px; line-height:1.4; transition:all .15s;`;
-      btn.innerHTML = `<div style="font-size:22px">${ch.emoji}</div><div style="font-weight:700;color:${ch.color}">${ch.label}</div><div style="font-size:10px;color:#8a8a94">${ch.desc}</div>`;
-      btn.addEventListener('click', () => { selectedChar = cid; pickerDiv.querySelectorAll('.ca-char-btn').forEach(b => { const bch = CHARACTERS[b.dataset.char]; const active = b.dataset.char === cid; b.style.background = active ? 'rgba(199,125,255,0.15)' : '#0f0f12'; b.style.border = `2px solid ${active ? bch.color : '#2a2a32'}`; }); });
-      pickerDiv.appendChild(btn);
+      const ch = CHARACTERS[cid];
+      const btn = document.createElement('button');
+      btn.className = 'ca-char-btn'; btn.dataset.char = cid;
+      const active = cid === selectedChar;
+      btn.style.cssText = `background:${active?'rgba(199,125,255,0.15)':'#0f0f12'};border:2px solid ${active?ch.color:'#2a2a32'};color:#ececef;padding:8px 4px;border-radius:9px;cursor:pointer;font-family:inherit;font-size:11px;line-height:1.4;transition:all .15s;text-align:center;`;
+      btn.innerHTML = `<div style="font-size:20px">${ch.emoji}</div><div style="font-weight:700;color:${ch.color};font-size:12px">${ch.label}</div><div style="font-size:9px;color:#8a8a94;line-height:1.2">${ch.desc}</div>`;
+      btn.addEventListener('click', () => {
+        selectedChar = cid;
+        wrap.querySelectorAll('.ca-char-btn').forEach(b => {
+          const bch = CHARACTERS[b.dataset.char]; const on = b.dataset.char === cid;
+          b.style.background = on ? 'rgba(199,125,255,0.15)' : '#0f0f12';
+          b.style.border = `2px solid ${on ? bch.color : '#2a2a32'}`;
+        });
+      });
+      wrap.appendChild(btn);
     }
-    gateCard.insertBefore(pickerDiv, gateCard.querySelector('.ca-btn'));
+    gateCard.insertBefore(wrap, gateCard.querySelector('.ca-btn'));
+  }
+
+  function buildEnderPop(root) {
+    const el = document.createElement('div');
+    el.id = 'caEnderPop';
+    el.style.cssText = 'display:none;position:absolute;inset:0;z-index:60;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);';
+    el.innerHTML = `<div style="background:#0d0d14;border:2px solid #a259ff;border-radius:14px;padding:24px 28px;min-width:300px;font-family:'JetBrains Mono',monospace;color:#ececef;">
+      <div style="font-size:15px;font-weight:700;color:#a259ff;margin-bottom:12px;letter-spacing:.1em;">THE ENDER ONE</div>
+      <div id="epPlayers" style="font-size:9px;color:#666;margin-bottom:10px;"></div>
+      <div style="margin-bottom:10px;font-size:11px;color:#d0d0d8;">Target player name:</div>
+      <input id="epName" type="text" placeholder="Player name..." style="width:100%;background:#1a1a22;border:1px solid #2a2a32;color:#fff;padding:6px 10px;border-radius:6px;font-family:inherit;font-size:12px;margin-bottom:14px;box-sizing:border-box;">
+      <div style="margin-bottom:8px;font-size:11px;color:#d0d0d8;">Math question:</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+        <span id="epQuestion" style="font-size:14px;color:#ffd700;font-weight:700;">? + ? = ?</span>
+        <input id="epAnswer" type="number" placeholder="=" style="width:80px;background:#1a1a22;border:1px solid #2a2a32;color:#fff;padding:6px 8px;border-radius:6px;font-family:inherit;font-size:12px;">
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button id="epConfirm" style="flex:1;background:#a259ff;border:none;color:#fff;padding:9px;border-radius:8px;cursor:pointer;font-family:inherit;font-weight:700;font-size:12px;">EXECUTE</button>
+        <button id="epCancel" style="flex:1;background:#2a2a32;border:none;color:#aaa;padding:9px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:12px;">Cancel</button>
+      </div>
+    </div>`;
+    root.querySelector('#caRoot').appendChild(el);
+    enderPopEl = el;
+    el.querySelector('#epConfirm').addEventListener('click', confirmEnder);
+    el.querySelector('#epCancel').addEventListener('click', closeEnder);
+    el.querySelector('#epAnswer').addEventListener('keydown', e => { if (e.key==='Enter') confirmEnder(); if (e.key==='Escape') closeEnder(); });
   }
 
   function cacheDom(root) {
@@ -1671,7 +2447,7 @@
     if (joinBtn) joinBtn.addEventListener('click', doStart);
     if (nameInput) { nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') doStart(); }); try { nameInput.value = localStorage.getItem('caName') || ''; } catch (e) {} }
     try { const sb = JSON.parse(localStorage.getItem('caBindings')); if (sb) Object.assign(bindings, sb); } catch (ex) {}
-    buildLeaderboard(root); buildSettingsPanel(root); requestAnimationFrame(tick);
+    buildLeaderboard(root); buildSettingsPanel(root); buildEnderPop(root); requestAnimationFrame(tick);
   };
   
   ClaudeArena.show = function () { const ni = document.querySelector('#caName'); if (ni) setTimeout(() => ni.focus(), 80); };
