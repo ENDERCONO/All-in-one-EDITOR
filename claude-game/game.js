@@ -238,7 +238,7 @@
   const keys = {};
   const mouse = { x: VIEW_W / 2, y: VIEW_H / 2, down: false, wx: 0, wy: 0 };
   let lastFire = 0, lastDash = 0, lastWall = -99999;
-  const DEFAULT_BINDINGS = { up: 'w', down: 's', left: 'a', right: 'd', dash: 'e', shield: ' ', wall: 'q' };
+  const DEFAULT_BINDINGS = { up: 'w', down: 's', left: 'a', right: 'd', dash: 'e', ult: ' ', wall: 'q' };
   let bindings = { ...DEFAULT_BINDINGS };
   const IS_MOBILE = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
   const MOB = { joyX: 90, joyY: VIEW_H - 90, joyBaseR: 55, joyStickR: 25, dashX: VIEW_W - 75, dashY: VIEW_H - 75, shieldX: VIEW_W - 75, shieldY: VIEW_H - 165, btnR: 38 };
@@ -610,7 +610,7 @@
       if (data.id === myId) {
         if (data.fromId === 'teto') {
           // Server-authoritative teto damage — sync directly and show effects
-          if (!debugMode && data.hp < me.hp) {
+          if (!debugMode && data.hp < me.hp && Date.now() >= (me.immuneUntil || 0)) {
             const diff = me.hp - data.hp;
             me.hp = Math.max(0, data.hp);
             me.lastCombat = Date.now(); me.lastHurtTime = Date.now();
@@ -781,10 +781,12 @@
   }
 
   /* ---------------- COMBAT ---------------- */
+  let lastHpSync = 0;
+
   function hurtMe(amount, fromId) {
     if (!me.alive) return;
-    if (debugMode) return; // infinite HP in debug mode
-    // Daniel ult invulnerability
+    if (debugMode) return;
+    if (Date.now() < (me.immuneUntil || 0)) return; // spawn / post-respawn immunity
     if (me.char === 'daniel' && me.danielUltActive) return;
     const reduced = amount * (1 - Math.min(0.6, me.mods.damageResist || 0));
     me.hp = Math.max(0, me.hp - reduced);
@@ -792,6 +794,12 @@
     play('hit', 0.5);
     addScreenShake(3, 0.15);
     spawnParticles(me.x, me.y, '#ff3b5c', 6, 150, 0.3);
+    // Sync HP to server (so others see correct HP and death is handled correctly)
+    const now2 = Date.now();
+    if (socket && now2 - lastHpSync > 200) {
+      lastHpSync = now2;
+      socket.emit('hpSync', { hp: Math.ceil(me.hp) });
+    }
   }
 
   function fofoMult() { return (me.char === 'fofo' && me.fofoUltActive) ? 0.3 : 1; }
@@ -1263,7 +1271,7 @@
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys['shift'] = true;
       if (k === bindings.dash) dash();
       if (k === bindings.wall) placeWall();
-      if (k === bindings.shield || k === ' ') { e.preventDefault(); fireUlt(); }
+      if (k === (bindings.ult || ' ') || k === ' ') { e.preventDefault(); fireUlt(); }
       if (k === 'r' && me.char === 'arthur') toggleArthurInvis();
       if (k === 'k') toggleSettingsPanel();
       if (k === 'escape' && settingsPanelEl && settingsPanelEl.style.display !== 'none') toggleSettingsPanel();
@@ -1378,8 +1386,13 @@
       // ── Daniel ult countdown ──
       if (me.char === 'daniel' && me.danielUltActive) {
         me.danielUltTimer -= dt;
-        // stair particles behind player
-        spawnParticles(me.x, me.y, '#2ecc71', 2, 40, 0.4);
+        // Stairs — large green platform behind player, broadcast to all
+        me.danielStairTimer = (me.danielStairTimer || 0) - dt;
+        if (me.danielStairTimer <= 0) {
+          me.danielStairTimer = 0.12;
+          pushAE({ type: 'daniel_stair', x: me.x, y: me.y, r: 36, born: t, maxAge: 900, aim: me.aim });
+          spawnParticles(me.x, me.y, '#2ecc71', 6, 55, 0.5);
+        }
         if (me.danielUltTimer <= 0) {
           me.danielUltActive = false; me.danielUltTimer = 0;
           me.rbdBar = Math.min(3, me.rbdBar + 1);
@@ -2097,6 +2110,19 @@
         ctx.strokeStyle='#ffb13b'; ctx.lineWidth=3; ctx.shadowColor='#ffb13b'; ctx.shadowBlur=16;
         ctx.beginPath(); ctx.arc(sx, sy, ae.r*(0.4+0.6*frac), spin, spin+Math.PI*1.5); ctx.stroke();
         ctx.beginPath(); ctx.arc(sx, sy, ae.r*(0.2+0.4*frac), spin+Math.PI, spin+Math.PI*2.5); ctx.stroke();
+      } else if (ae.type === 'daniel_stair') {
+        ctx.globalAlpha = (1-frac) * 0.82;
+        ctx.fillStyle='#2ecc71'; ctx.shadowColor='#4eff9e'; ctx.shadowBlur=18;
+        // Draw a rectangular platform step
+        const stepW = ae.r * 2.5, stepH = ae.r * 0.55;
+        ctx.save(); ctx.translate(sx,sy);
+        ctx.rotate(ae.aim || 0);
+        ctx.fillRect(-stepW/2, -stepH/2, stepW, stepH);
+        ctx.shadowBlur=0; ctx.strokeStyle='#4eff9e'; ctx.lineWidth=2;
+        ctx.strokeRect(-stepW/2, -stepH/2, stepW, stepH);
+        // Inner shine
+        ctx.fillStyle='rgba(100,255,160,0.35)'; ctx.fillRect(-stepW/2+3, -stepH/2+3, stepW-6, 4);
+        ctx.restore();
       } else if (ae.type === 'ender_blast') {
         ctx.globalAlpha = (1-frac)*0.85;
         ctx.fillStyle='#a259ff'; ctx.shadowColor='#a259ff'; ctx.shadowBlur=35;
@@ -2371,8 +2397,8 @@
   const BIND_ACTIONS = [
     { key: 'up', label: 'Move Up' }, { key: 'down', label: 'Move Down' },
     { key: 'left', label: 'Move Left' }, { key: 'right', label: 'Move Right' },
-    { key: 'dash', label: 'Dash' }, { key: 'shield', label: 'Shield / Ult' },
-    { key: 'wall', label: 'Place Wall' }
+    { key: 'dash', label: 'Dash (E)' }, { key: 'ult', label: 'Fire Ult (Space)' },
+    { key: 'wall', label: 'Place Wall (Q)' }
   ];
 
   let settingsPanelEl = null, settingsListeningFor = null;
