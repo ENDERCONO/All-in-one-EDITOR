@@ -1096,7 +1096,7 @@
 
   function startForsakenMusic() {
     if (fofoMusicAudio) { try { fofoMusicAudio.pause(); } catch(e){} }
-    fofoMusicAudio = new Audio(encTrack(PATH_BASE + 'claude-game/music/ChaseMusic/FORSAKEN OST - NULL_AND_VOID (NOLI CHASE THEME) (1).mp3'));
+    fofoMusicAudio = new Audio(encTrack(PATH_BASE + 'claude-game/music/ChaseMusic/FORSAKEN OST - NULL_AND_VOID (NOLI CHASE THEME).mp3'));
     fofoMusicAudio.volume = musicState.musicVol;
     fofoMusicAudio.loop = true;
     fofoMusicAudio.play().catch(() => {});
@@ -2434,9 +2434,12 @@
           '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:11px;color:#d0d0d8;"><span>Sound Effects</span><span id="caSetSVol" style="color:#c77dff;">' + Math.round(musicState.soundVol * 100) + '%</span></div>' +
           '<input type="range" id="caSetSSlider" min="0" max="100" value="' + Math.round(musicState.soundVol * 100) + '" style="-webkit-appearance:none;appearance:none;width:100%;height:5px;border-radius:3px;background:#2a2a3a;outline:none;cursor:pointer;">' +
         '</div>' +
-        '<div style="padding-top:14px;border-top:1px solid #2a2a32;display:flex;align-items:center;justify-content:space-between;">' +
-          '<span style="font-size:11px;color:#d0d0d8;">Game Fullscreen</span>' +
-          '<button id="caFsBtn" style="background:#1b1b20;border:1px solid #2a2a32;color:#ececef;cursor:pointer;padding:5px 14px;border-radius:6px;font-family:inherit;font-size:11px;letter-spacing:.06em;">' + (gameFullscreen ? 'EXIT FS' : 'ENTER FS') + '</button>' +
+        '<div style="padding-top:14px;border-top:1px solid #2a2a32;">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">' +
+            '<span style="font-size:11px;color:#d0d0d8;">Scale game to fill screen</span>' +
+            '<button id="caFsBtn" style="background:' + (gameFullscreen?'rgba(199,125,255,.2)':'#1b1b20') + ';border:1px solid ' + (gameFullscreen?'#c77dff':'#2a2a32') + ';color:#ececef;cursor:pointer;padding:5px 14px;border-radius:6px;font-family:inherit;font-size:11px;letter-spacing:.06em;">' + (gameFullscreen ? '↙ SHRINK' : '↗ FULLSCREEN') + '</button>' +
+          '</div>' +
+          '<div style="font-size:9px;color:#55555e;">Stretches the game canvas + all UI to fill your browser viewport. Press again to restore.</div>' +
         '</div>';
       el.querySelector('#caSetMSlider').oninput = function () { musicState.musicVol = +this.value / 100; el.querySelector('#caSetMVol').textContent = this.value + '%'; };
       el.querySelector('#caSetSSlider').oninput = function () { musicState.soundVol = +this.value / 100; el.querySelector('#caSetSVol').textContent = this.value + '%'; };
@@ -2444,7 +2447,9 @@
       if (fsBtn) {
         fsBtn.onclick = () => {
           toggleGameFullscreen();
-          fsBtn.textContent = gameFullscreen ? 'EXIT FS' : 'ENTER FS';
+          fsBtn.textContent    = gameFullscreen ? '↙ SHRINK' : '↗ FULLSCREEN';
+          fsBtn.style.background  = gameFullscreen ? 'rgba(199,125,255,.2)' : '#1b1b20';
+          fsBtn.style.borderColor = gameFullscreen ? '#c77dff' : '#2a2a32';
         };
       }
     }
@@ -2533,9 +2538,39 @@
       renderControls();
     }, true);
 
-    // Wire the Settings button in HTML
-    const settingsBtn = root.querySelector('#caSettingsBtn');
-    if (settingsBtn) settingsBtn.addEventListener('click', toggleSettingsPanel);
+    // Always build the settings button via JS so it's guaranteed to exist
+    const oldBtn = root.querySelector('#caSettingsBtn');
+    if (oldBtn) oldBtn.remove(); // remove any stale HTML version
+    const caRootEl = root.querySelector('#caRoot');
+    if (caRootEl) {
+      const sb = document.createElement('button');
+      sb.id = 'caSettingsBtn';
+      sb.innerHTML = '&#9881; Settings';
+      sb.style.cssText = [
+        'position:absolute',
+        'bottom:50px',
+        'right:18px',
+        'z-index:35',         // above gate overlay (30) so always clickable
+        'pointer-events:auto',
+        'background:rgba(14,14,18,.92)',
+        'border:1px solid #3a3a44',
+        'color:#c77dff',
+        'cursor:pointer',
+        'padding:7px 16px',
+        'border-radius:8px',
+        'font-family:"JetBrains Mono",monospace',
+        'font-size:11px',
+        'font-weight:600',
+        'letter-spacing:.08em',
+        'white-space:nowrap',
+        'transition:border-color .15s,background .15s',
+        'box-shadow:0 2px 12px rgba(0,0,0,.5)'
+      ].join(';');
+      sb.addEventListener('mouseenter', () => { sb.style.borderColor='#c77dff'; sb.style.background='rgba(30,10,42,.95)'; });
+      sb.addEventListener('mouseleave', () => { sb.style.borderColor='#3a3a44'; sb.style.background='rgba(14,14,18,.92)'; });
+      sb.addEventListener('click', toggleSettingsPanel);
+      caRootEl.appendChild(sb);
+    }
   }
 
   function toggleSettingsPanel() {

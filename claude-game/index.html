@@ -8,126 +8,171 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root{ --bg:#09090b; --surface:#141418; --surface-2:#1b1b20; --border:#2a2a32;
-    --text:#ececef; --text-dim:#8a8a94; --g:#2fd47f; --r:#ff3b5c; --b:#4d8bff; --ult:#c77dff; }
-  *{box-sizing:border-box;margin:0;padding:0;}
-  html,body{ height:100%; background:var(--bg); color:var(--text); font-family:'Manrope',sans-serif;
-    -webkit-font-smoothing:antialiased; overflow:hidden; user-select:none;
-    display:flex; align-items:center; justify-content:center; min-height:100vh; }
-
-  /* ── root container always matches canvas ── */
-  #caRoot{ position:relative; width:900px; height:600px; flex-shrink:0; }
-  #caCanvas{ background:#0c0c10; display:block; width:900px; height:600px;
-    border:1px solid var(--border); border-radius:10px;
-    box-shadow:0 20px 60px rgba(0,0,0,.5); touch-action:none; }
-
-  /* ── Left HUD rail ── */
-  .ca-rail{ position:absolute; top:14px; left:14px; z-index:20; display:flex; flex-direction:column; gap:7px;
-    width:182px; pointer-events:none; font-family:'JetBrains Mono',monospace; }
-  .ca-block{ background:rgba(16,16,20,.84); border:1px solid var(--border); border-radius:9px; padding:8px 10px; }
-  .ca-block .lab{ font-size:9px; letter-spacing:.11em; color:var(--text-dim); text-transform:uppercase;
-    margin-bottom:5px; display:flex; justify-content:space-between; align-items:center; }
-  .ca-bar{ height:7px; background:#1e1e26; border-radius:5px; overflow:hidden; }
-  .ca-bar > span{ display:block; height:100%; width:0%; border-radius:5px; transition:width .12s linear; }
-  #caHpFill{ background:var(--g); }
-  #caXpFill{ background:var(--ult); }
-  #caDashFill{ background:var(--b); }
-  #caWallFill{ background:var(--b); }
-  #caSecondaryBar{ background:var(--ult); }
-
-  /* ── Settings button – top of left rail, easy to reach ── */
-  #caSettingsBtn{
-    position:absolute; top:14px; left:14px; z-index:30; pointer-events:auto;
-    background:rgba(20,20,26,.90); border:1px solid var(--border); color:var(--text-dim);
-    cursor:pointer; padding:6px 12px; border-radius:8px; width:182px;
-    font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600; letter-spacing:.08em;
-    display:flex; align-items:center; justify-content:center; gap:7px;
-    transition:color .15s, border-color .15s, background .15s;
+  :root{
+    --bg:#09090b; --surface:#141418; --surface-2:#1b1b20; --border:#2a2a32;
+    --text:#ececef; --text-dim:#8a8a94; --g:#2fd47f; --r:#ff3b5c; --b:#4d8bff; --ult:#c77dff;
   }
-  #caSettingsBtn:hover{ color:var(--text); border-color:var(--ult); background:rgba(28,14,38,.95); }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html, body{
+    height:100%; background:var(--bg); color:var(--text);
+    font-family:'Manrope',sans-serif; -webkit-font-smoothing:antialiased;
+    overflow:hidden; user-select:none;
+    display:flex; align-items:center; justify-content:center; min-height:100vh;
+  }
 
-  /* ── Right ULT bar ── */
-  .ca-ult{ position:absolute; top:50%; right:16px; transform:translateY(-50%); z-index:20;
-    pointer-events:none; display:flex; flex-direction:column; align-items:center; gap:8px;
-    font-family:'JetBrains Mono',monospace; }
-  .ca-ult-track{ width:15px; height:190px; background:#1e1e26; border:1px solid var(--border);
-    border-radius:9px; overflow:hidden; display:flex; align-items:flex-end; }
+  /* root container — always 900×600 logical pixels; JS may transform-scale it */
+  #caRoot{ position:relative; width:900px; height:600px; flex-shrink:0; }
+
+  #caCanvas{
+    display:block; width:900px; height:600px; background:#0c0c10;
+    border:1px solid var(--border); border-radius:10px;
+    box-shadow:0 20px 60px rgba(0,0,0,.5); touch-action:none;
+  }
+
+  /* ===== Left HUD rail — always in game ===== */
+  .ca-rail{
+    position:absolute; top:14px; left:14px; z-index:20;
+    display:flex; flex-direction:column; gap:7px;
+    width:182px; pointer-events:none; font-family:'JetBrains Mono',monospace;
+  }
+  .ca-block{
+    background:rgba(14,14,18,.88); border:1px solid var(--border);
+    border-radius:9px; padding:8px 10px;
+  }
+  .ca-block .lab{
+    font-size:9px; letter-spacing:.11em; color:var(--text-dim); text-transform:uppercase;
+    margin-bottom:5px; display:flex; justify-content:space-between; align-items:center;
+  }
+  .ca-bar{ height:7px; background:#1c1c24; border-radius:5px; overflow:hidden; }
+  .ca-bar > span{ display:block; height:100%; width:0%; border-radius:5px; transition:width .12s linear; }
+  #caHpFill   { background:var(--g); }
+  #caXpFill   { background:var(--ult); }
+  #caDashFill { background:var(--b); }
+  #caWallFill { background:var(--b); }
+  #caSecondaryBar { background:var(--ult); }
+
+  /* ===== Right ULT charge bar ===== */
+  .ca-ult{
+    position:absolute; top:50%; right:16px; transform:translateY(-50%);
+    z-index:20; pointer-events:none;
+    display:flex; flex-direction:column; align-items:center; gap:8px;
+    font-family:'JetBrains Mono',monospace;
+  }
+  .ca-ult-track{
+    width:14px; height:190px; background:#1c1c24; border:1px solid var(--border);
+    border-radius:8px; overflow:hidden; display:flex; align-items:flex-end;
+  }
   #caUltFill{ width:100%; height:0%; background:linear-gradient(0deg,var(--ult),#e9c6ff); transition:height .15s linear; }
   .ca-ult-lab{ font-size:9px; letter-spacing:.1em; color:var(--text-dim); text-transform:uppercase; }
-  #caUltTxt{ font-size:10px; color:var(--ult); text-align:center; width:78px; line-height:1.4; }
+  #caUltTxt  { font-size:10px; color:var(--ult); text-align:center; width:76px; line-height:1.4; }
 
-  /* ── Top status pill ── */
-  .ca-hud{ position:absolute; top:14px; left:50%; transform:translateX(-50%); z-index:20; pointer-events:none;
-    font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-dim);
-    background:rgba(18,18,22,.75); border:1px solid var(--border); border-radius:999px;
-    padding:5px 14px; display:flex; gap:14px; align-items:center; letter-spacing:.04em; }
+  /* ===== Top connection pill ===== */
+  .ca-hud{
+    position:absolute; top:14px; left:50%; transform:translateX(-50%); z-index:20;
+    pointer-events:none; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-dim);
+    background:rgba(16,16,20,.80); border:1px solid var(--border); border-radius:999px;
+    padding:5px 14px; display:flex; gap:14px; align-items:center; letter-spacing:.04em;
+  }
   .ca-hud b{ color:var(--text); }
-  .ca-status-dot{ width:6px; height:6px; border-radius:50%; background:var(--text-dim);
-    display:inline-block; margin-right:4px; }
-  .ca-status-dot.ok{ background:var(--g); box-shadow:0 0 6px var(--g); }
+  .ca-status-dot{
+    width:6px; height:6px; border-radius:50%; background:var(--text-dim);
+    display:inline-block; margin-right:4px;
+  }
+  .ca-status-dot.ok { background:var(--g); box-shadow:0 0 6px var(--g); }
   .ca-status-dot.err{ background:var(--r); }
 
-  /* ── Bottom help ── */
-  .ca-help-bar{ position:absolute; bottom:10px; left:14px; z-index:20;
-    font-family:'JetBrains Mono',monospace; font-size:9px; color:#4a4a56; line-height:1.8; pointer-events:none; }
-  .ca-help-bar kbd{ background:var(--surface-2); border:1px solid var(--border); border-radius:3px;
-    padding:1px 4px; font-size:9px; color:var(--text-dim); font-family:inherit; }
+  /* ===== Bottom help hint ===== */
+  .ca-help-bar{
+    position:absolute; bottom:10px; left:14px; z-index:20;
+    font-family:'JetBrains Mono',monospace; font-size:9px; color:#44444e;
+    line-height:1.9; pointer-events:none;
+  }
+  .ca-help-bar kbd{
+    background:var(--surface-2); border:1px solid var(--border); border-radius:3px;
+    padding:1px 4px; font-size:8px; color:#666; font-family:inherit;
+  }
 
-  /* ── Toast ── */
-  .ca-toast{ position:absolute; bottom:18px; left:50%; transform:translateX(-50%); z-index:25;
-    background:rgba(18,18,22,.92); border:1px solid var(--border); border-radius:999px; padding:7px 18px;
-    font-size:11px; color:var(--text); opacity:0; transition:opacity .3s; pointer-events:none; white-space:nowrap; }
+  /* ===== Toast ===== */
+  .ca-toast{
+    position:absolute; bottom:18px; left:50%; transform:translateX(-50%); z-index:28;
+    background:rgba(16,16,20,.94); border:1px solid var(--border); border-radius:999px;
+    padding:7px 20px; font-size:11px; color:var(--text);
+    opacity:0; transition:opacity .3s; pointer-events:none; white-space:nowrap;
+  }
   .ca-toast.show{ opacity:1; }
 
-  /* ── Card draft ── */
-  .ca-cards{ position:absolute; top:22px; left:50%; transform:translateX(-50%); z-index:40;
-    display:none; gap:20px; pointer-events:auto; }
-  .ca-card{ width:155px; height:195px; background:var(--surface); border:2px solid var(--rar,#888);
+  /* ===== Card draft ===== */
+  .ca-cards{
+    position:absolute; top:22px; left:50%; transform:translateX(-50%);
+    z-index:40; display:none; gap:20px; pointer-events:auto;
+  }
+  .ca-card{
+    width:155px; height:195px; background:var(--surface); border:2px solid var(--rar,#888);
     border-radius:13px; padding:13px 11px; cursor:pointer; transform-origin:center center;
-    box-shadow:0 0 24px color-mix(in srgb,var(--rar,#888) 40%,transparent); display:flex; flex-direction:column; }
-  .ca-card-rar{ font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:.14em; color:var(--rar,#888); }
-  .ca-card-art{ flex:1; margin:7px 0; border-radius:7px; background:
-    repeating-linear-gradient(45deg,rgba(255,255,255,.03) 0 8px,transparent 8px 16px),var(--surface-2); }
+    box-shadow:0 0 24px color-mix(in srgb,var(--rar,#888) 40%,transparent);
+    display:flex; flex-direction:column;
+  }
+  .ca-card-rar { font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:.14em; color:var(--rar,#888); }
+  .ca-card-art {
+    flex:1; margin:7px 0; border-radius:7px;
+    background: repeating-linear-gradient(45deg,rgba(255,255,255,.03) 0 8px,transparent 8px 16px),var(--surface-2);
+  }
   .ca-card-name{ font-family:'Instrument Serif',serif; font-size:18px; line-height:1.05; }
   .ca-card-desc{ font-size:10px; color:var(--text-dim); margin-top:3px; line-height:1.35; }
 
-  /* ── Join gate ── */
-  .ca-gate{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-    background:rgba(9,9,11,.85); backdrop-filter:blur(6px); z-index:30; border-radius:10px; }
-  .ca-gate-card{ background:var(--surface); border:1px solid var(--border); border-radius:13px;
-    padding:26px 28px; width:min(420px,88vw); text-align:center; }
+  /* ===== Join gate (shown before start) ===== */
+  .ca-gate{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    background:rgba(9,9,11,.87); backdrop-filter:blur(6px); z-index:30; border-radius:10px;
+  }
+  .ca-gate-card{
+    background:var(--surface); border:1px solid var(--border); border-radius:13px;
+    padding:26px 28px; width:min(430px,90vw); text-align:center;
+  }
   .ca-gate-card h1{ font-family:'Instrument Serif',serif; font-size:28px; font-weight:600; }
   .ca-gate-card h1 em{ color:var(--ult); font-style:italic; }
   .ca-gate-card p{ color:var(--text-dim); font-size:12px; margin:4px 0 16px; line-height:1.5; }
-  .ca-gate-card input{ width:100%; background:#0f0f12; border:1px solid var(--border); color:var(--text);
-    padding:11px 13px; border-radius:9px; font-size:14px; font-family:inherit; margin-bottom:11px; outline:none; }
+  .ca-gate-card input{
+    width:100%; background:#0f0f12; border:1px solid var(--border); color:var(--text);
+    padding:11px 13px; border-radius:9px; font-size:14px; font-family:inherit;
+    margin-bottom:11px; outline:none;
+  }
   .ca-gate-card input:focus{ border-color:var(--ult); }
-  .ca-btn{ width:100%; background:var(--ult); color:#15011f; border:none; cursor:pointer; padding:11px;
-    border-radius:9px; font-size:14px; font-weight:700; font-family:inherit; }
+  .ca-btn{
+    width:100%; background:var(--ult); color:#15011f; border:none; cursor:pointer;
+    padding:11px; border-radius:9px; font-size:14px; font-weight:700; font-family:inherit;
+  }
   .ca-btn:hover{ filter:brightness(1.08); }
   .ca-gate-help{ margin-top:12px; font-size:10px; color:#55555e; line-height:1.7; }
-  .ca-gate-help kbd{ background:var(--surface-2); border:1px solid var(--border); border-radius:3px;
-    padding:1px 4px; font-size:9px; color:var(--text-dim); font-family:'JetBrains Mono',monospace; }
+  .ca-gate-help kbd{
+    background:var(--surface-2); border:1px solid var(--border); border-radius:3px;
+    padding:1px 4px; font-size:9px; color:var(--text-dim); font-family:'JetBrains Mono',monospace;
+  }
 
-  /* ── Settings panel sliders ── */
+  /* Settings panel range sliders */
   #caSettings input[type=range]{ width:100%; accent-color:var(--ult); cursor:pointer; }
+  #caSettings input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:13px; height:13px; border-radius:50%;
+    background:var(--ult); cursor:pointer;
+  }
+  #caSettings input[type=range]::-moz-range-thumb{
+    width:13px; height:13px; border-radius:50%; background:var(--ult); border:none; cursor:pointer;
+  }
 </style>
 </head>
 <body>
 <div id="caRoot">
+  <!-- Game canvas -->
   <canvas id="caCanvas" width="900" height="600"></canvas>
 
-  <!-- Top status -->
+  <!-- Top connection status pill -->
   <div class="ca-hud">
     <span><span class="ca-status-dot" id="caDot"></span><span id="caNet">connecting…</span></span>
     <span>players <b id="caCount">0</b></span>
   </div>
 
-  <!-- Settings button — very top of left rail -->
-  <button id="caSettingsBtn">&#9881;&nbsp;Settings&nbsp;<span style="opacity:.5;font-size:9px">[K]</span></button>
-
-  <!-- Left HUD rail (below settings btn — offset to not overlap) -->
-  <div class="ca-rail" style="top:52px;">
+  <!-- Left HUD rail (health, xp, cooldowns, character secondary) -->
+  <div class="ca-rail">
     <div class="ca-block" id="caHpBar">
       <div class="lab"><span>Health</span><span id="caHpText">100 / 100</span></div>
       <div class="ca-bar"><span id="caHpFill"></span></div>
@@ -138,22 +183,22 @@
     </div>
     <div class="ca-block">
       <div class="lab">
-        <span>Dash</span>
+        <span>Dash <span style="opacity:.55;font-size:8px">[E]</span></span>
         <span id="caDashTxt" style="color:var(--b)">READY</span>
       </div>
       <div class="ca-bar"><span id="caDashFill"></span></div>
     </div>
     <div class="ca-block">
       <div class="lab">
-        <span>Wall</span>
+        <span>Wall <span style="opacity:.55;font-size:8px">[Q]</span></span>
         <span id="caWallTxt" style="color:var(--b)">READY</span>
       </div>
       <div class="ca-bar"><span id="caWallFill"></span></div>
     </div>
-    <!-- Character secondary / passive block -->
+    <!-- Character passive / secondary info -->
     <div class="ca-block" id="caSecondaryBlock">
       <div class="lab">
-        <span id="caSecondaryLab" style="color:var(--text-dim)">2nd Ability</span>
+        <span id="caSecondaryLab" style="font-size:9px">2nd Ability</span>
         <span id="caShieldTxt" style="color:var(--ult);font-size:9px"></span>
       </div>
       <div class="ca-bar" id="caSecondaryBarWrap" style="display:none">
@@ -162,37 +207,47 @@
     </div>
   </div>
 
-  <!-- ULT charge bar (right side) -->
+  <!-- Right ULT bar -->
   <div class="ca-ult">
     <div class="ca-ult-lab">ULT</div>
     <div class="ca-ult-track"><div id="caUltFill"></div></div>
     <div id="caUltTxt">0/1000</div>
   </div>
 
-  <!-- Bottom help text -->
+  <!-- Bottom help line -->
   <div class="ca-help-bar">
-    <kbd>WASD</kbd> move &nbsp; <kbd>Shift</kbd> sprint &nbsp; <kbd>Click</kbd> shoot &nbsp;
-    <kbd>E</kbd> dash &nbsp; <kbd>Q</kbd> wall &nbsp; <kbd>Space</kbd> ult &nbsp;
-    <kbd>R</kbd> Arthur invis &nbsp; <kbd>K</kbd> settings
+    <kbd>WASD</kbd> move &nbsp;
+    <kbd>E</kbd> dash &nbsp;
+    <kbd>Q</kbd> wall &nbsp;
+    <kbd>Space</kbd> ult &nbsp;
+    <kbd>R</kbd> Arthur invis &nbsp;
+    <kbd>K</kbd> settings
   </div>
 
+  <!-- Card draft overlay -->
   <div class="ca-cards" id="caCards"></div>
+
+  <!-- Toast notification -->
   <div class="ca-toast" id="caToast"></div>
 
-  <!-- Join gate -->
+  <!-- Join gate (shown before entering arena) -->
   <div class="ca-gate" id="caGate">
     <div class="ca-gate-card">
       <h1>Claude <em>Arena</em></h1>
-      <p>Real-time multiplayer arena. Deal 1000 damage to charge your ULT. Kill &amp; take hits to level up and draft ability cards.</p>
+      <p>
+        Real-time multiplayer arena &mdash; 7 characters, each with a unique ULT.<br>
+        Deal 1000 damage to charge your ULT &bull; Level up to draft abilities &bull; Beat Teto
+      </p>
       <input type="text" id="caName" maxlength="14" placeholder="Pick a name…" autocomplete="off">
       <button type="button" class="ca-btn" id="caJoin">Enter the arena</button>
       <div class="ca-gate-help">
-        <kbd>WASD</kbd> move &nbsp; <kbd>Shift</kbd> sprint &nbsp; <kbd>Click</kbd> shoot &nbsp;
-        <kbd>E</kbd> dash &nbsp; <kbd>Q</kbd> wall &nbsp; <kbd>Space</kbd> ult &nbsp; <kbd>K</kbd> settings<br>
-        7 characters · each with a unique ult · level up to draft abilities · Teto boss on the map
+        <kbd>WASD</kbd> move &nbsp; <kbd>Shift</kbd> sprint &nbsp; <kbd>Click</kbd> shoot<br>
+        <kbd>E</kbd> dash &nbsp; <kbd>Q</kbd> wall &nbsp; <kbd>Space</kbd> ult &nbsp; <kbd>K</kbd> settings
       </div>
     </div>
   </div>
+
+  <!-- NOTE: Settings button is injected by game.js (buildSettingsPanel) -->
 </div>
 
 <script src="game.js"></script>
