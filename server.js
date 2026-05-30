@@ -45,47 +45,108 @@ let xpBoxes = generateBoxes();
 const players = {};
 
 /* ---- Teto Boss ---- */
-const TETO_HP_MAX = 3000;
-const TETO_SPEED = 90, TETO_CHARGE_SPEED = 600, TETO_R_SRV = 160;
+const TETO_HP_MAX   = 1000;
+const TETO_SPEED    = 90, TETO_CHARGE_SPEED = 600, TETO_R_SRV = 160;
+const TETO_LEASH    = 950;   // ~1 screen; stop chasing beyond this
+const TETO_AREA_DMG = 5;     // HP per 100ms (= 50/s) when inside radius
+const TETO_FIRST_SPAWN_MS  = 60000;   // 1 min before first appearance
+const TETO_RESPAWN_MS      = 180000;  // 3 min respawn after death
 
 function randTetoPos() { return { x: Math.round(WORLD_W * 0.15 + Math.random() * WORLD_W * 0.7), y: Math.round(WORLD_H * 0.15 + Math.random() * WORLD_H * 0.7) }; }
 
 const tetoPos = randTetoPos();
-const teto = { x: tetoPos.x, y: tetoPos.y, hp: TETO_HP_MAX, alive: true, state: 'roam', vx: 0, vy: 0, chargeTarget: null, stateTimer: 0, lastCharge: 0, lastStomp: 0, lastJump: 0, lastRoar: 0 };
+const teto = { x: tetoPos.x, y: tetoPos.y, hp: TETO_HP_MAX, alive: false, state: 'roam', vx: 0, vy: 0, chargeTarget: null, stateTimer: 0, lastCharge: 0, lastStomp: 0, lastJump: 0, lastRoar: 0 };
+
+// Teto starts hidden for 1 minute
+setTimeout(() => {
+  const pos = randTetoPos();
+  teto.x = pos.x; teto.y = pos.y; teto.hp = TETO_HP_MAX; teto.alive = true; teto.state = 'roam';
+  io.emit('tetoRespawn', { x: Math.round(teto.x), y: Math.round(teto.y) });
+  io.emit('caToast', 'TETO has appeared!');
+}, TETO_FIRST_SPAWN_MS);
+
+function applyTetoDamage(id, amount) {
+  const p = players[id];
+  if (!p || !p.alive) return;
+  p.hp = Math.max(0, p.hp - amount);
+  io.emit('healthUpdate', { id, hp: p.hp, fromId: 'teto' });
+  if (p.hp <= 0 && p.alive) {
+    p.alive = false;
+    io.emit('playerKilled', { killerId: 'teto', killerName: 'Teto', victimId: id, victimName: p.name });
+  }
+}
 
 function tetoTick() {
   if (!teto.alive) return;
   const DT = 0.1; const now = Date.now();
+
+  // --- Server-side area damage (50 HP/s = 5 per 100ms) ---
+  for (const id in players) {
+    const p = players[id];
+    if (!p || !p.alive) continue;
+    const dist = Math.sqrt((p.x - teto.x) ** 2 + (p.y - teto.y) ** 2);
+    if (dist < TETO_R_SRV) applyTetoDamage(id, TETO_AREA_DMG);
+  }
+
   let nearest = null, nearDist2 = Infinity;
   for (const id in players) { const p = players[id]; if (!p || !p.alive) continue; const d2 = (p.x - teto.x) ** 2 + (p.y - teto.y) ** 2; if (d2 < nearDist2) { nearDist2 = d2; nearest = p; } }
-  if (!nearest) { teto.vx = 0; teto.vy = 0; }
-  else {
-    const dx = nearest.x - teto.x, dy = nearest.y - teto.y; const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+  const nearDist = nearest ? Math.sqrt(nearDist2) : Infinity;
+  // Leash: if nearest player is > TETO_LEASH away, wander back to center
+  const withinLeash = nearest && nearDist < TETO_LEASH;
+
+  if (!nearest || !withinLeash) {
+    // Wander toward world center slowly
+    const cx = WORLD_W / 2, cy = WORLD_H / 2;
+    const wx = cx - teto.x, wy = cy - teto.y, wd = Math.sqrt(wx*wx+wy*wy)||1;
+    teto.vx = (wx/wd) * TETO_SPEED * 0.4;
+    teto.vy = (wy/wd) * TETO_SPEED * 0.4;
+    if (teto.state !== 'roam') { teto.state = 'roam'; teto.chargeTarget = null; }
+  } else {
+    const dx = nearest.x - teto.x, dy = nearest.y - teto.y; const dist = nearDist || 1;
     if (teto.state === 'roam') {
       teto.vx = (dx / dist) * TETO_SPEED; teto.vy = (dy / dist) * TETO_SPEED;
       if (now - teto.lastRoar > 18000) { teto.lastRoar = now; io.emit('tetoRoar', { x: teto.x, y: teto.y }); }
-      if (now - teto.lastCharge > 8000 && dist < 2800) { teto.state = 'charge'; teto.lastCharge = now; teto.chargeTarget = { x: nearest.x, y: nearest.y }; io.emit('tetoCharge', { x: teto.x, y: teto.y }); }
-      else if (now - teto.lastStomp > 13000 && dist < TETO_R_SRV + 350) { teto.state = 'stomp'; teto.lastStomp = now; teto.stateTimer = 1300; teto.vx = 0; teto.vy = 0; io.emit('tetoStomp', { x: teto.x, y: teto.y, r: TETO_R_SRV + 240 }); }
-      else if (now - teto.lastJump > 24000) {
+      if (now - teto.lastCharge > 8000 && dist < 2800) {
+        teto.state = 'charge'; teto.lastCharge = now; teto.chargeTarget = { x: nearest.x, y: nearest.y }; io.emit('tetoCharge', { x: teto.x, y: teto.y });
+      } else if (now - teto.lastStomp > 13000 && dist < TETO_R_SRV + 350) {
+        teto.state = 'stomp'; teto.lastStomp = now; teto.stateTimer = 1300; teto.vx = 0; teto.vy = 0;
+        io.emit('tetoStomp', { x: teto.x, y: teto.y, r: TETO_R_SRV + 240 });
+        // Server-side stomp damage
+        setTimeout(() => {
+          for (const id in players) {
+            const p = players[id]; if (!p || !p.alive) continue;
+            if (Math.sqrt((p.x-teto.x)**2+(p.y-teto.y)**2) < TETO_R_SRV + 240) applyTetoDamage(id, 25);
+          }
+        }, 600);
+      } else if (now - teto.lastJump > 24000) {
         teto.state = 'jump'; teto.lastJump = now; teto.stateTimer = 1000; teto.vx = 0; teto.vy = 0;
         const toX = Math.max(300, Math.min(WORLD_W - 300, nearest.x + (Math.random() - 0.5) * 350));
         const toY = Math.max(300, Math.min(WORLD_H - 300, nearest.y + (Math.random() - 0.5) * 350));
         io.emit('tetoJump', { fromX: teto.x, fromY: teto.y, toX, toY });
-        setTimeout(() => { teto.x = toX; teto.y = toY; }, 950);
+        setTimeout(() => {
+          teto.x = toX; teto.y = toY;
+          // Server-side landing damage
+          for (const id in players) {
+            const p = players[id]; if (!p || !p.alive) continue;
+            if (Math.sqrt((p.x-toX)**2+(p.y-toY)**2) < TETO_R_SRV + 120) applyTetoDamage(id, 40);
+          }
+        }, 950);
       }
     } else if (teto.state === 'charge') {
       if (teto.chargeTarget) {
-        const cdx = teto.chargeTarget.x - teto.x, cdy = teto.chargeTarget.y - teto.y; const cdist = Math.sqrt(cdx * cdx + cdy * cdy) || 1;
+        const cdx = teto.chargeTarget.x - teto.x, cdy = teto.chargeTarget.y - teto.y; const cdist = Math.sqrt(cdx*cdx+cdy*cdy)||1;
         if (cdist < TETO_R_SRV) { teto.state = 'roam'; teto.chargeTarget = null; teto.vx = 0; teto.vy = 0; }
-        else { teto.vx = (cdx / cdist) * TETO_CHARGE_SPEED; teto.vy = (cdy / cdist) * TETO_CHARGE_SPEED; }
+        else { teto.vx = (cdx/cdist)*TETO_CHARGE_SPEED; teto.vy = (cdy/cdist)*TETO_CHARGE_SPEED; }
       } else { teto.state = 'roam'; }
     } else if (teto.state === 'stomp' || teto.state === 'jump') {
       teto.vx = 0; teto.vy = 0; teto.stateTimer -= 100; if (teto.stateTimer <= 0) teto.state = 'roam';
     }
   }
+
   teto.x = Math.max(300, Math.min(WORLD_W - 300, teto.x + teto.vx * DT));
   teto.y = Math.max(300, Math.min(WORLD_H - 300, teto.y + teto.vy * DT));
-  io.emit('tetoUpdate', { x: Math.round(teto.x), y: Math.round(teto.y), hp: teto.hp, state: teto.state, alive: true });
+  io.emit('tetoUpdate', { x: Math.round(teto.x), y: Math.round(teto.y), hp: teto.hp, state: teto.state, alive: teto.alive });
 }
 setInterval(tetoTick, 100);
 
@@ -121,7 +182,13 @@ io.on('connection', (socket) => {
   });
 
   socket.on('respawn', (data) => {
-    if (players[socket.id]) { players[socket.id].hp = 100; players[socket.id].alive = true; players[socket.id].x = data.x; players[socket.id].y = data.y; io.emit('stateUpdate', players); }
+    if (players[socket.id]) {
+      players[socket.id].hp = 100; players[socket.id].alive = true;
+      players[socket.id].x = data.x; players[socket.id].y = data.y;
+      if (data.char)  players[socket.id].char  = data.char;
+      if (data.color) players[socket.id].color = data.color;
+      io.emit('stateUpdate', players);
+    }
   });
 
   socket.on('rbdRevive', (data) => {
@@ -157,12 +224,16 @@ io.on('connection', (socket) => {
         teto.x = pos.x; teto.y = pos.y; teto.hp = TETO_HP_MAX; teto.alive = true; teto.state = 'roam';
         teto.lastCharge = 0; teto.lastStomp = 0; teto.lastJump = 0; teto.lastRoar = 0;
         io.emit('tetoRespawn', { x: Math.round(teto.x), y: Math.round(teto.y) });
-      }, 30000); // 30 seconds respawn
+      }, TETO_RESPAWN_MS); // 3 minutes
     }
   });
 
   socket.on('placeWall',    (data) => { socket.broadcast.emit('wallPlaced', data); });
   socket.on('wallDestroyed',(id)   => { socket.broadcast.emit('wallDestroyed', id); });
+  // On join, also send current teto state with correct alive flag
+  socket.on('requestTetoState', () => {
+    socket.emit('tetoUpdate', { x: Math.round(teto.x), y: Math.round(teto.y), hp: teto.hp, state: teto.state, alive: teto.alive });
+  });
 
   socket.on('disconnect', () => {
     console.log(`Player disconnected: ${socket.id}`);

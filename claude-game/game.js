@@ -22,8 +22,8 @@
   const BOX_COLORS = ['#ff3b5c','#2fd47f','#4d8bff','#c77dff','#ffb13b','#3bd6ff','#ff7ad6'];
   const DEATH_FADE_MS = 1500, IMMUNE_MS = 1000;
   const WALL_CD = 20000, WALL_LEN = 240, WALL_HP = 700, WALL_THICK = 10, WALL_MAX_AGE = 15000;
-  const TETO_R = 160, TETO_MAX_HP = 3000, TETO_XP_HIT = 5, TETO_XP_KILL = 1200, TETO_SPRITE = 512;
-  const TETO_AREA_DMG = 50;   // dmg/s inside Teto
+  const TETO_R = 160, TETO_MAX_HP = 1000, TETO_XP_HIT = 5, TETO_XP_KILL = 1200, TETO_SPRITE = 512;
+  const TETO_AREA_DMG = 50;   // visual only now; real damage is server-side
   const TETO_DRAW_SCALE = 0.7;
   const TILE = 64;             // world-unit tile size
   const ULT_CHARGE_MAX = 1000; // damage dealt → ult ready
@@ -124,6 +124,7 @@
   let started = false, inited = false;
   let socket = null;
   let lastNetUpdate = 0;
+  let debugMode = false; // unlocked with code "Gemini"
 
   /* ---------------- IDENTITY ---------------- */
   let myId = null;
@@ -303,7 +304,7 @@
 
   function placeWall() {
     const t = Date.now();
-    if (!me.alive || t - lastWall < WALL_CD) return;
+    if (!me.alive || (!debugMode && t - lastWall < WALL_CD)) return;
     lastWall = t;
     const cx = me.x + Math.cos(me.aim) * 30;
     const cy = me.y + Math.sin(me.aim) * 30;
@@ -548,10 +549,22 @@
 
     socket.on('healthUpdate', (data) => {
       if (data.id === myId) {
-        // Only apply server HP reductions when caused by damage (fromId present).
-        // Healing events (medkit) have no fromId; client already handled them optimistically.
-        if (data.fromId && data.hp < me.hp) {
+        if (data.fromId === 'teto') {
+          // Server-authoritative teto damage — sync directly and show effects
+          if (!debugMode && data.hp < me.hp) {
+            const diff = me.hp - data.hp;
+            me.hp = Math.max(0, data.hp);
+            me.lastCombat = Date.now(); me.lastHurtTime = Date.now();
+            play('hit', 0.4);
+            addScreenShake(3, 0.15);
+            spawnParticles(me.x, me.y, '#ff8c42', 6, 150, 0.3);
+          }
+        } else if (data.fromId && data.hp < me.hp) {
+          // Player bullet damage — apply locally (server authoritative)
           hurtMe(me.hp - data.hp, data.fromId);
+        } else if (!data.fromId && data.hp > me.hp) {
+          // Healing (medkit) — sync up
+          me.hp = Math.min(effMaxHp(), data.hp);
         }
       } else if (others[data.id]) {
         others[data.id].hp = data.hp;
@@ -586,6 +599,7 @@
           if (draftOpen) { draftOpen = false; if (cardLayer) { cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; } }
           play('death', 0.6);
           spawnParticles(me.x, me.y, '#ff3b5c', 20, 250, 0.8);
+          showDeathPicker();
         }
       } else if (others[data.victimId]) {
         others[data.victimId].alive = false;
@@ -676,8 +690,8 @@
       spawnParticles(data.x, data.y, '#ff8c42', 50, data.r * 1.2, 0.8);
       spawnParticles(data.x, data.y, '#ffb13b', 30, data.r * 0.6, 0.5);
       playTetoSound(0.9);
-      const dist = Math.hypot(me.x - data.x, me.y - data.y);
-      if (me.alive && dist < data.r) { hurtMe(25, 'teto'); toast('Teto stomped! -25 HP'); }
+      addScreenShake(8, 0.5);
+      // damage is now server-side
     });
     socket.on('tetoJump', (data) => {
       tetoState.jumpAlpha = 0; tetoState.jumpTimer = 950;
@@ -687,8 +701,8 @@
         tetoState.rx = data.toX; tetoState.ry = data.toY;
         tetoState.jumpAlpha = 1; tetoState.jumpTimer = 0;
         spawnParticles(data.toX, data.toY, '#ff8c42', 50, 400, 1.0);
-        const dist = Math.hypot(me.x - data.toX, me.y - data.toY);
-        if (me.alive && dist < TETO_R + 120) { hurtMe(40, 'teto'); toast('Teto landed on you! -40 HP'); }
+        addScreenShake(10, 0.6);
+        // damage is now server-side
       }, 950);
     });
     socket.on('tetoCharge', () => { playTetoSound(0.7); });
@@ -707,6 +721,7 @@
   /* ---------------- COMBAT ---------------- */
   function hurtMe(amount, fromId) {
     if (!me.alive) return;
+    if (debugMode) return; // infinite HP in debug mode
     // Daniel ult invulnerability
     if (me.char === 'daniel' && me.danielUltActive) return;
     const reduced = amount * (1 - Math.min(0.6, me.mods.damageResist || 0));
@@ -718,14 +733,14 @@
   }
 
   function fofoMult() { return (me.char === 'fofo' && me.fofoUltActive) ? 0.3 : 1; }
-  function effFireCd()   { return FIRE_CD * (1 - Math.min(0.75, me.mods.fireRate)) * fofoMult(); }
+  function effFireCd()   { return debugMode ? 50 : FIRE_CD * (1 - Math.min(0.75, me.mods.fireRate)) * fofoMult(); }
   function effDmg() {
     let d = BULLET_DMG * (1 + me.mods.dmg);
     if (me.char === 'rich') d *= 1.15;
     if (me.char === 'fofo') d *= (me.fofoUltActive ? 1.5 : 1.1);
     return d;
   }
-  function effDashCd()   { return Math.max(500, (DASH_CD - (me.mods.dashCdReduce || 0) * 1000) * fofoMult()); }
+  function effDashCd()   { return debugMode ? 100 : Math.max(500, (DASH_CD - (me.mods.dashCdReduce || 0) * 1000) * fofoMult()); }
   function isSprinting() { return !!(keys['shift'] || keys['shiftleft'] || keys['shiftright']); }
   function effSpeed() {
     let s = SPEED * (1 + me.mods.speed);
@@ -1004,6 +1019,7 @@
   }
   
   function gainUltCharge(dmg) {
+    if (debugMode) { me.ultReady = true; return; }
     if (me.ultReady) return;
     // FOFO can't recharge during active ult or within 40s cooldown
     if (me.char === 'fofo' && (me.fofoUltActive || Date.now() - me.fofoLastEndTime < 40000)) return;
@@ -1180,13 +1196,18 @@
   function update(dt) {
     const t = Date.now();
     if (!me.alive && t >= me.deadUntil) {
+      hideDeathPicker();
+      // Apply character chosen in death picker
+      me.char = selectedChar;
+      me.color = CHARACTERS[selectedChar].color;
       me.alive = true; me.hp = MAX_HP; me.ultCharge = 0; me.ultReady = false;
       me.level = 1; me.xp = 0; me.levelQueue = 0; me.abilities = []; lastWall = -99999;
       me.fofoUltActive = false; me.danielUltActive = false; me.arthurInvis = false; me.arthurInvisBar = 0;
+      me.rbdBar = 0; me.rbdPosHistory = [];
       if (draftOpen) { draftOpen = false; if (cardLayer) { cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; } }
       me.mods = { dmg: 0, fireRate: 0, speed: 0, multishot: 0, pierce: 0, lifesteal: 0, thorns: 0, bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0, maxHp: 0, regenRate: 0, regenDelay: 0, critChance: 0, onKillHeal: 0, killShield: 0, dashHeal: 0, dashCdReduce: 0, damageResist: 0, homingStr: 0 };
       me.x = WORLD_W / 2 + (Math.random() * 400 - 200); me.y = WORLD_H / 2 + (Math.random() * 400 - 200); me.lastCombat = Date.now();
-      if (socket) socket.emit('respawn', { x: me.x, y: me.y });
+      if (socket) socket.emit('respawn', { x: me.x, y: me.y, char: me.char, color: me.color });
     }
 
     // Screen shake decay
@@ -1237,14 +1258,12 @@
         me.stepTimer = 0;
       }
 
-      // ── Teto area damage (inside Teto radius = 50 dmg/s) ──
+      // ── Teto area proximity (damage is server-side; client shows visual warning) ──
       if (tetoState.alive) {
         const tx = tetoState.rx !== undefined ? tetoState.rx : tetoState.x;
         const ty = tetoState.ry !== undefined ? tetoState.ry : tetoState.y;
         if (Math.hypot(me.x - tx, me.y - ty) < TETO_R + PLAYER_R) {
-          hurtMe(TETO_AREA_DMG * dt, 'teto');
-          // brief shake burst every ~0.5s rather than every frame
-          if ((t % 500) < 50) addScreenShake(4, 0.2);
+          if ((t % 500) < 55) addScreenShake(4, 0.2); // visual pulse
         }
       }
 
@@ -1835,10 +1854,50 @@
 
     // FOFO vignette/dark effect when near a FOFO ult
     drawFofoVignette();
-
     drawOffscreenMarkers();
+    if (started) drawCanvasHud();
     if (IS_MOBILE) drawMobileOverlay();
     ctx.restore(); // end screen shake translate
+  }
+
+  function drawCanvasHud() {
+    const now = Date.now();
+    ctx.save();
+    ctx.font = 'bold 11px JetBrains Mono, monospace';
+    ctx.textAlign = 'left';
+
+    // Wall cooldown (Q) — bottom-left
+    const wallCd  = debugMode ? 0 : Math.max(0, WALL_CD - (now - lastWall));
+    const dashCd  = debugMode ? 0 : Math.max(0, effDashCd() - (now - lastDash));
+    const barW = 90, barH = 6, pad = 12;
+    const by = VIEW_H - 18;
+
+    // Wall bar
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(pad, by - barH, barW, barH);
+    const wf = 1 - wallCd / WALL_CD;
+    ctx.fillStyle = wallCd === 0 ? '#6699ee' : '#3355aa';
+    ctx.fillRect(pad, by - barH, barW * wf, barH);
+    ctx.fillStyle = wallCd === 0 ? '#aaccff' : '#667799';
+    ctx.fillText('Q Wall: ' + (wallCd > 0 ? (wallCd/1000).toFixed(1)+'s' : 'READY'), pad, by - barH - 3);
+
+    // Dash bar
+    const dx2 = pad + barW + 14;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(dx2, by - barH, barW, barH);
+    const df = 1 - dashCd / effDashCd();
+    ctx.fillStyle = dashCd === 0 ? '#4d8bff' : '#22447a';
+    ctx.fillRect(dx2, by - barH, barW * Math.min(1, df), barH);
+    ctx.fillStyle = dashCd === 0 ? '#88bbff' : '#4466aa';
+    ctx.fillText('E Dash: ' + (dashCd > 0 ? (dashCd/1000).toFixed(1)+'s' : 'READY'), dx2, by - barH - 3);
+
+    // Debug mode badge
+    if (debugMode) {
+      ctx.fillStyle = 'rgba(0,255,0,0.18)'; ctx.fillRect(VIEW_W/2 - 50, 6, 100, 18);
+      ctx.fillStyle = '#00ff88'; ctx.textAlign = 'center';
+      ctx.fillText('⚙ DEBUG MODE', VIEW_W/2, 18);
+      ctx.textAlign = 'left';
+    }
+
+    ctx.restore();
   }
 
   function drawAreaEffects() {
@@ -2148,14 +2207,15 @@
     el.id = 'caSettings';
     el.style.cssText = 'display:none;position:absolute;inset:0;z-index:55;align-items:center;justify-content:center;background:rgba(9,9,11,.92);backdrop-filter:blur(6px);border-radius:10px;';
     el.innerHTML =
-      '<div style="background:#141418;border:1px solid #2a2a32;border-radius:14px;width:min(340px,92vw);overflow:hidden;font-family:\'JetBrains Mono\',monospace;">' +
+      '<div style="background:#141418;border:1px solid #2a2a32;border-radius:14px;width:min(360px,92vw);overflow:hidden;font-family:\'JetBrains Mono\',monospace;">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;padding:15px 20px;border-bottom:1px solid #2a2a32;">' +
-          '<span style="font-size:13px;font-weight:700;color:#ececef;letter-spacing:.08em;">SETTINGS</span>' +
+          '<span style="font-size:13px;font-weight:700;color:#ececef;letter-spacing:.08em;">SETTINGS  <span style="font-size:9px;color:#555">K to toggle</span></span>' +
           '<button id="caSetClose" style="background:none;border:none;color:#8a8a94;cursor:pointer;font-size:22px;line-height:1;padding:0;">×</button>' +
         '</div>' +
         '<div style="display:flex;border-bottom:1px solid #2a2a32;">' +
-          '<button class="ca-set-tab" data-tab="audio" style="flex:1;background:#1b1b20;border:none;border-bottom:2px solid #c77dff;color:#c77dff;cursor:pointer;padding:11px 0;font-family:inherit;font-size:11px;letter-spacing:.08em;">AUDIO</button>' +
-          '<button class="ca-set-tab" data-tab="controls" style="flex:1;background:transparent;border:none;border-bottom:2px solid transparent;color:#8a8a94;cursor:pointer;padding:11px 0;font-family:inherit;font-size:11px;letter-spacing:.08em;">CONTROLS</button>' +
+          '<button class="ca-set-tab" data-tab="audio"    style="flex:1;background:#1b1b20;border:none;border-bottom:2px solid #c77dff;color:#c77dff;cursor:pointer;padding:10px 0;font-family:inherit;font-size:10px;letter-spacing:.07em;">AUDIO</button>' +
+          '<button class="ca-set-tab" data-tab="controls" style="flex:1;background:transparent;border:none;border-bottom:2px solid transparent;color:#8a8a94;cursor:pointer;padding:10px 0;font-family:inherit;font-size:10px;letter-spacing:.07em;">CONTROLS</button>' +
+          '<button class="ca-set-tab" data-tab="debug"    style="flex:1;background:transparent;border:none;border-bottom:2px solid transparent;color:#8a8a94;cursor:pointer;padding:10px 0;font-family:inherit;font-size:10px;letter-spacing:.07em;">DEBUG</button>' +
         '</div>' +
         '<div id="caSetContent" style="padding:18px 20px;min-height:195px;"></div>' +
       '</div>';
@@ -2165,27 +2225,24 @@
 
     function renderAudio() {
       content.innerHTML =
-        '<div style="margin-bottom:22px;">' +
-          '<div style="display:flex;justify-content:space-between;margin-bottom:9px;font-size:11px;color:#d0d0d8;"><span>Music Volume</span><span id="caSetMVol" style="color:#c77dff;">' + Math.round(musicState.musicVol * 100) + '%</span></div>' +
+        '<div style="margin-bottom:18px;">' +
+          '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:11px;color:#d0d0d8;"><span>Music Volume</span><span id="caSetMVol" style="color:#c77dff;">' + Math.round(musicState.musicVol * 100) + '%</span></div>' +
           '<input type="range" id="caSetMSlider" min="0" max="100" value="' + Math.round(musicState.musicVol * 100) + '" style="-webkit-appearance:none;appearance:none;width:100%;height:5px;border-radius:3px;background:#2a2a3a;outline:none;cursor:pointer;">' +
         '</div>' +
-        '<div>' +
-          '<div style="display:flex;justify-content:space-between;margin-bottom:9px;font-size:11px;color:#d0d0d8;"><span>Sound Effects</span><span id="caSetSVol" style="color:#c77dff;">' + Math.round(musicState.soundVol * 100) + '%</span></div>' +
+        '<div style="margin-bottom:18px;">' +
+          '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:11px;color:#d0d0d8;"><span>Sound Effects</span><span id="caSetSVol" style="color:#c77dff;">' + Math.round(musicState.soundVol * 100) + '%</span></div>' +
           '<input type="range" id="caSetSSlider" min="0" max="100" value="' + Math.round(musicState.soundVol * 100) + '" style="-webkit-appearance:none;appearance:none;width:100%;height:5px;border-radius:3px;background:#2a2a3a;outline:none;cursor:pointer;">' +
         '</div>' +
-        '<div style="margin-top:18px;padding-top:14px;border-top:1px solid #2a2a32;display:flex;align-items:center;justify-content:space-between;">' +
+        '<div style="padding-top:14px;border-top:1px solid #2a2a32;display:flex;align-items:center;justify-content:space-between;">' +
           '<span style="font-size:11px;color:#d0d0d8;">Fullscreen</span>' +
-          '<button id="caFsBtn" style="background:#1b1b20;border:1px solid #2a2a32;color:#ececef;cursor:pointer;padding:5px 14px;border-radius:6px;font-family:inherit;font-size:11px;letter-spacing:.06em;">' + (document.fullscreenElement ? 'EXIT' : 'ENTER') + '</button>' +
+          '<button id="caFsBtn" style="background:#1b1b20;border:1px solid #2a2a32;color:#ececef;cursor:pointer;padding:5px 14px;border-radius:6px;font-family:inherit;font-size:11px;letter-spacing:.06em;">' + (document.fullscreenElement ? 'EXIT FS' : 'ENTER FS') + '</button>' +
         '</div>';
       el.querySelector('#caSetMSlider').oninput = function () { musicState.musicVol = +this.value / 100; el.querySelector('#caSetMVol').textContent = this.value + '%'; };
       el.querySelector('#caSetSSlider').oninput = function () { musicState.soundVol = +this.value / 100; el.querySelector('#caSetSVol').textContent = this.value + '%'; };
       const fsBtn = el.querySelector('#caFsBtn');
       if (fsBtn) {
-        fsBtn.addEventListener('click', () => {
-          if (!document.fullscreenElement) { document.documentElement.requestFullscreen().catch(() => {}); }
-          else { document.exitFullscreen(); }
-        });
-        document.addEventListener('fullscreenchange', () => { if (fsBtn.isConnected) fsBtn.textContent = document.fullscreenElement ? 'EXIT' : 'ENTER'; });
+        fsBtn.onclick = () => { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{}); else document.exitFullscreen(); };
+        document.addEventListener('fullscreenchange', () => { if (fsBtn.isConnected) fsBtn.textContent = document.fullscreenElement ? 'EXIT FS' : 'ENTER FS'; });
       }
     }
 
@@ -2202,20 +2259,45 @@
       content.innerHTML = html;
       content.querySelectorAll('.ca-kb-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-          if (settingsListeningFor) {
-            const p = content.querySelector('[data-listening]');
-            if (p) { p.textContent = keyLabel(bindings[settingsListeningFor]); p.style.borderColor = '#2a2a32'; p.removeAttribute('data-listening'); }
-          }
+          if (settingsListeningFor) { const p = content.querySelector('[data-listening]'); if (p) { p.textContent = keyLabel(bindings[settingsListeningFor]); p.style.borderColor = '#2a2a32'; p.removeAttribute('data-listening'); } }
           settingsListeningFor = btn.dataset.action;
           btn.textContent = '…'; btn.style.borderColor = '#c77dff'; btn.setAttribute('data-listening', '1');
         });
       });
       content.querySelector('#caKbReset2').addEventListener('click', () => {
-        Object.assign(bindings, DEFAULT_BINDINGS);
-        settingsListeningFor = null;
-        try { localStorage.removeItem('caBindings'); } catch (ex) {}
-        renderControls();
+        Object.assign(bindings, DEFAULT_BINDINGS); settingsListeningFor = null;
+        try { localStorage.removeItem('caBindings'); } catch (ex) {} renderControls();
       });
+    }
+
+    function renderDebug() {
+      const dbColor = debugMode ? '#00ff88' : '#8a8a94';
+      const dbBg    = debugMode ? 'rgba(0,255,136,0.12)' : '#1b1b20';
+      content.innerHTML =
+        '<div style="margin-bottom:16px;font-size:10px;color:#666;line-height:1.5;">Enter code to toggle debug mode.<br>Debug: ∞ HP · ult always ready · no cooldowns.</div>' +
+        '<div style="display:flex;gap:8px;margin-bottom:14px;">' +
+          '<input id="dbCodeInput" type="password" placeholder="Enter code…" style="flex:1;background:#0f0f12;border:1px solid #2a2a32;color:#fff;padding:7px 10px;border-radius:6px;font-family:inherit;font-size:12px;">' +
+          '<button id="dbCodeBtn" style="background:#1b1b20;border:1px solid #2a2a32;color:#ececef;padding:7px 12px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:11px;">UNLOCK</button>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:8px;background:' + dbBg + ';border:1px solid ' + dbColor + ';">' +
+          '<span style="font-size:11px;color:' + dbColor + ';">Debug Mode</span>' +
+          '<span style="font-size:11px;font-weight:700;color:' + dbColor + ';">' + (debugMode ? 'ON ⚙' : 'OFF') + '</span>' +
+        '</div>';
+      const inp = content.querySelector('#dbCodeInput');
+      const btn = content.querySelector('#dbCodeBtn');
+      const tryUnlock = () => {
+        if ((inp.value || '').trim() === 'Gemini') {
+          debugMode = !debugMode;
+          toast(debugMode ? '⚙ DEBUG MODE ON' : 'Debug mode off');
+          inp.value = '';
+          renderDebug();
+        } else {
+          inp.style.borderColor = '#ff3b5c';
+          setTimeout(() => { inp.style.borderColor = '#2a2a32'; }, 800);
+        }
+      };
+      btn.addEventListener('click', tryUnlock);
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') tryUnlock(); });
     }
 
     function switchTab(tab) {
@@ -2226,7 +2308,9 @@
         t.style.background = on ? '#1b1b20' : 'transparent';
         t.style.borderBottom = on ? '2px solid #c77dff' : '2px solid transparent';
       });
-      if (tab === 'audio') renderAudio(); else renderControls();
+      if (tab === 'audio') renderAudio();
+      else if (tab === 'controls') renderControls();
+      else renderDebug();
     }
     switchTab('audio');
     el.querySelectorAll('.ca-set-tab').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
@@ -2237,19 +2321,27 @@
       e.preventDefault(); e.stopPropagation();
       const k = e.key.toLowerCase();
       if (k === 'escape') {
-        const btn = content.querySelector('[data-listening]');
-        if (btn) { btn.textContent = keyLabel(bindings[settingsListeningFor]); btn.style.borderColor = '#2a2a32'; btn.removeAttribute('data-listening'); }
+        const btn2 = content.querySelector('[data-listening]');
+        if (btn2) { btn2.textContent = keyLabel(bindings[settingsListeningFor]); btn2.style.borderColor = '#2a2a32'; btn2.removeAttribute('data-listening'); }
         settingsListeningFor = null; return;
       }
-      bindings[settingsListeningFor] = k;
-      settingsListeningFor = null;
+      bindings[settingsListeningFor] = k; settingsListeningFor = null;
       try { localStorage.setItem('caBindings', JSON.stringify(bindings)); } catch (ex) {}
       renderControls();
     }, true);
 
-    // Wire the dedicated Settings button in the HTML
+    // Also add a floating settings button on the game canvas overlay
     const settingsBtn = root.querySelector('#caSettingsBtn');
     if (settingsBtn) settingsBtn.addEventListener('click', toggleSettingsPanel);
+    // Fallback: create the button if it doesn't exist in HTML
+    if (!settingsBtn) {
+      const sb = document.createElement('button');
+      sb.id = 'caSettingsBtnFallback';
+      sb.textContent = '⚙';
+      sb.style.cssText = 'position:absolute;top:12px;left:12px;z-index:30;background:rgba(20,20,24,0.82);border:1px solid #2a2a32;color:#ececef;width:34px;height:34px;border-radius:8px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;';
+      sb.addEventListener('click', toggleSettingsPanel);
+      root.querySelector('#caRoot').appendChild(sb);
+    }
   }
 
   function toggleSettingsPanel() {
@@ -2383,6 +2475,71 @@
     gateCard.insertBefore(wrap, gateCard.querySelector('.ca-btn'));
   }
 
+  /* ---- Death character-picker overlay ---- */
+  let deathPickerEl = null;
+  let deathPickerTimer = null;
+
+  function buildDeathPicker(root) {
+    const el = document.createElement('div');
+    el.id = 'caDeathPicker';
+    el.style.cssText = 'display:none;position:absolute;inset:0;z-index:50;align-items:center;justify-content:center;background:rgba(0,0,0,0.82);backdrop-filter:blur(4px);';
+    el.innerHTML = `
+      <div style="background:#0d0d14;border:1px solid #2a2a32;border-radius:16px;padding:22px 26px;min-width:380px;max-width:520px;font-family:'JetBrains Mono',monospace;color:#ececef;text-align:center;">
+        <div style="font-size:16px;font-weight:700;color:#ff3b5c;margin-bottom:4px;letter-spacing:.08em;">YOU DIED</div>
+        <div id="dpCountdown" style="font-size:12px;color:#8a8a94;margin-bottom:14px;">Respawning in 2.5s…</div>
+        <div style="font-size:11px;color:#d0d0d8;margin-bottom:10px;">Choose your character:</div>
+        <div id="dpGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:14px;"></div>
+      </div>`;
+    root.querySelector('#caRoot').appendChild(el);
+    deathPickerEl = el;
+    // build grid
+    const grid = el.querySelector('#dpGrid');
+    for (const cid in CHARACTERS) {
+      const ch = CHARACTERS[cid];
+      const btn = document.createElement('button');
+      btn.dataset.char = cid;
+      btn.style.cssText = `background:#0f0f12;border:2px solid #2a2a32;color:#ececef;padding:8px 4px;border-radius:9px;cursor:pointer;font-family:inherit;font-size:11px;line-height:1.4;transition:all .15s;text-align:center;`;
+      btn.innerHTML = `<div style="font-size:18px">${ch.emoji}</div><div style="font-weight:700;color:${ch.color};font-size:11px">${ch.label}</div>`;
+      btn.addEventListener('click', () => {
+        selectedChar = cid;
+        grid.querySelectorAll('button').forEach(b => {
+          const bc = CHARACTERS[b.dataset.char];
+          const on = b.dataset.char === cid;
+          b.style.background = on ? 'rgba(199,125,255,0.15)' : '#0f0f12';
+          b.style.border = `2px solid ${on ? bc.color : '#2a2a32'}`;
+        });
+      });
+      grid.appendChild(btn);
+    }
+  }
+
+  function showDeathPicker() {
+    if (!deathPickerEl) return;
+    deathPickerEl.style.display = 'flex';
+    // Highlight current char
+    const grid = deathPickerEl.querySelector('#dpGrid');
+    grid.querySelectorAll('button').forEach(b => {
+      const ch = CHARACTERS[b.dataset.char];
+      const on = b.dataset.char === selectedChar;
+      b.style.background = on ? 'rgba(199,125,255,0.15)' : '#0f0f12';
+      b.style.border = `2px solid ${on ? ch.color : '#2a2a32'}`;
+    });
+    // Countdown
+    const cdEl = deathPickerEl.querySelector('#dpCountdown');
+    const deadline = me.deadUntil;
+    if (deathPickerTimer) clearInterval(deathPickerTimer);
+    deathPickerTimer = setInterval(() => {
+      const rem = Math.max(0, deadline - Date.now());
+      cdEl.textContent = 'Respawning in ' + (rem / 1000).toFixed(1) + 's…';
+      if (rem <= 0) { clearInterval(deathPickerTimer); deathPickerTimer = null; hideDeathPicker(); }
+    }, 100);
+  }
+
+  function hideDeathPicker() {
+    if (deathPickerEl) deathPickerEl.style.display = 'none';
+    if (deathPickerTimer) { clearInterval(deathPickerTimer); deathPickerTimer = null; }
+  }
+
   function buildEnderPop(root) {
     const el = document.createElement('div');
     el.id = 'caEnderPop';
@@ -2447,7 +2604,7 @@
     if (joinBtn) joinBtn.addEventListener('click', doStart);
     if (nameInput) { nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') doStart(); }); try { nameInput.value = localStorage.getItem('caName') || ''; } catch (e) {} }
     try { const sb = JSON.parse(localStorage.getItem('caBindings')); if (sb) Object.assign(bindings, sb); } catch (ex) {}
-    buildLeaderboard(root); buildSettingsPanel(root); buildEnderPop(root); requestAnimationFrame(tick);
+    buildLeaderboard(root); buildSettingsPanel(root); buildEnderPop(root); buildDeathPicker(root); requestAnimationFrame(tick);
   };
   
   ClaudeArena.show = function () { const ni = document.querySelector('#caName'); if (ni) setTimeout(() => ni.focus(), 80); };
