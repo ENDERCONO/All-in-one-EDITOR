@@ -80,9 +80,9 @@ setInterval(() => {
     if (ae.type === 'arthur_blender') {
       const frac = Math.min(1, age / ae.maxAge);
       pullR = 192 + 64 * frac; // TILE*3 → TILE*4
-      pullStrength = 18;        // 180 units/s * 0.1s interval
+      pullStrength = 55;        // strong gravity per 100ms tick
     } else if (ae.type === 'rich_tornado') {
-      pullR = 192; pullStrength = 30;
+      pullR = 192; pullStrength = 70;
     }
     if (pullR === 0) continue;
     for (const id in players) {

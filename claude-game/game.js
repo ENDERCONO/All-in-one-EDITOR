@@ -202,6 +202,8 @@
   }
   // Screen shake state
   const screenShake = { x: 0, y: 0, intensity: 0, timer: 0 };
+  // Daniel RBD black-flash state
+  const rbdFlash = { active: false, alpha: 0, phase: 'none', timer: 0 };
   function addScreenShake(intensity, dur) {
     screenShake.intensity = Math.max(screenShake.intensity, intensity);
     screenShake.timer     = Math.max(screenShake.timer, dur);
@@ -649,6 +651,8 @@
           addScreenShake(12, 0.8);
           spawnParticles(me.x, me.y, '#2ecc71', 50, 400, 1.5);
           toast('RETURN BY DEATH! ' + me.rbdBar + ' charges left');
+          // Black screen flash: 0.1s fade in → 0.5s fade out
+          rbdFlash.active = true; rbdFlash.phase = 'in'; rbdFlash.alpha = 0; rbdFlash.timer = 0;
           if (socket) socket.emit('rbdRevive', { x: Math.round(me.x), y: Math.round(me.y) });
         } else {
           me.alive = false;
@@ -1321,6 +1325,17 @@
       screenShake.y = (Math.random()*2-1) * si;
       if (screenShake.timer <= 0) { screenShake.x = 0; screenShake.y = 0; screenShake.intensity = 0; }
     }
+    // Daniel RBD black flash
+    if (rbdFlash.active) {
+      rbdFlash.timer += dt;
+      if (rbdFlash.phase === 'in') {
+        rbdFlash.alpha = Math.min(1, rbdFlash.timer / 0.1);
+        if (rbdFlash.timer >= 0.1) { rbdFlash.phase = 'out'; rbdFlash.timer = 0; }
+      } else {
+        rbdFlash.alpha = Math.max(0, 1 - rbdFlash.timer / 0.5);
+        if (rbdFlash.timer >= 0.5) { rbdFlash.active = false; rbdFlash.alpha = 0; }
+      }
+    }
     
     if (me.alive) {
       me.aim = Math.atan2((mouse.y + camera.y) - me.y, (mouse.x + camera.x) - me.x);
@@ -1425,7 +1440,7 @@
         me.fofoGooTimer -= dt;
         if (me.fofoGooTimer <= 0 && moving) {
           me.fofoGooTimer = 0.4;
-          pushAE({ type: 'fofo_goo', x: me.x, y: me.y, r: 30, born: t, maxAge: 5000 });
+          pushAE({ type: 'fofo_goo', x: me.x, y: me.y, r: 30, born: t, maxAge: 5000, owner: myId });
         }
         // charge bar from nearby enemies
         let nearCount = 0;
@@ -1473,9 +1488,8 @@
             addScreenShake(8, 0.5);
             spawnParticles(lp.x, lp.y, '#ff6ec7', 30, 300, 0.8);
             if (!lp.fromOther) {
-              // Only the owner processes damage and creates blender
+              // Only the owner processes damage and creates blender (owner NOT hit)
               for (const id in others) { const o = others[id]; if (!o.alive) continue; if (Math.hypot((o.rx||o.x)-lp.x, (o.ry||o.y)-lp.y) < TILE) { if (socket) socket.emit('damage', { targetId: id, amount: 30 }); lp.dmgDealt = (lp.dmgDealt||0) + 30; } }
-              if (Math.hypot(me.x-lp.x, me.y-lp.y) < TILE) { hurtMe(30, 'arthur'); lp.dmgDealt = (lp.dmgDealt||0) + 30; }
               pushAE({ type: 'arthur_blender', x: lp.x, y: lp.y, r: TILE*3, born: t, maxAge: 3000, owner: lp.owner, dmgDealt: lp.dmgDealt||0, phase: 0 });
             }
           }
@@ -1703,7 +1717,7 @@
       if (b.isPumpkinBlast && b.owner === myId) {
         const pd = Math.hypot(b.x - (b.patchLastX||b.x), b.y - (b.patchLastY||b.y));
         if (pd > 55) {
-          pushAE({ type: 'pumpkin_patch', x: b.x, y: b.y, r: 40, born: Date.now(), maxAge: 10000 });
+          pushAE({ type: 'pumpkin_patch', x: b.x, y: b.y, r: 40, born: Date.now(), maxAge: 10000, owner: myId });
           b.patchLastX = b.x; b.patchLastY = b.y;
           spawnParticles(b.x, b.y, '#ff8c42', 5, 80, 0.4);
         }
@@ -1762,11 +1776,19 @@
       if (!me.alive) continue;
       const dx = me.x - ae.x, dy = me.y - ae.y;
       const dist = Math.hypot(dx, dy);
-      if (ae.type === 'pumpkin_patch' && dist < ae.r + PLAYER_R) {
+      if (ae.type === 'pumpkin_patch' && ae.owner !== myId && dist < ae.r + PLAYER_R) {
         hurtMe(10 * dt, 'pumpkin_patch');
       }
-      if (ae.type === 'fofo_goo' && dist < ae.r + PLAYER_R) {
+      if (ae.type === 'fofo_goo' && ae.owner !== myId && dist < ae.r + PLAYER_R) {
         hurtMe(10 * dt, 'fofo_goo');
+      }
+      if (ae.type === 'rich_tornado' && ae.owner !== myId) {
+        const pullR = TILE * 3;
+        if (dist < pullR + PLAYER_R) {
+          const pull = 320;
+          me.x = clamp(me.x - (dx/dist)*pull*dt, PLAYER_R, WORLD_W-PLAYER_R);
+          me.y = clamp(me.y - (dy/dist)*pull*dt, PLAYER_R, WORLD_H-PLAYER_R);
+        }
       }
       if (ae.type === 'arthur_blender') {
         const frac = Math.min(1, age / ae.maxAge);
@@ -1774,7 +1796,7 @@
         ae.curR = curR;
         // Pull everyone including me (but not the owner shooting themselves)
         if (ae.owner !== myId && dist < curR + PLAYER_R) {
-          const pull = 180;
+          const pull = 420; // strong gravity, server also nudges every 100ms
           me.x = clamp(me.x - (dx/dist)*pull*dt, PLAYER_R, WORLD_W-PLAYER_R);
           me.y = clamp(me.y - (dy/dist)*pull*dt, PLAYER_R, WORLD_H-PLAYER_R);
         }
@@ -2036,46 +2058,26 @@
     drawOffscreenMarkers();
     if (started) drawCanvasHud();
     if (IS_MOBILE) drawMobileOverlay();
+    // Daniel RBD black flash — drawn last, on top of everything
+    if (rbdFlash.active && rbdFlash.alpha > 0) {
+      ctx.save();
+      ctx.globalAlpha = rbdFlash.alpha;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(-screenShake.x, -screenShake.y, VIEW_W + 4, VIEW_H + 4);
+      ctx.restore();
+    }
     ctx.restore(); // end screen shake translate
   }
 
   function drawCanvasHud() {
-    const now = Date.now();
+    if (!debugMode) return; // only draw in debug mode
     ctx.save();
     ctx.font = 'bold 11px JetBrains Mono, monospace';
-    ctx.textAlign = 'left';
-
-    // Wall cooldown (Q) — bottom-left
-    const wallCd  = debugMode ? 0 : Math.max(0, WALL_CD - (now - lastWall));
-    const dashCd  = debugMode ? 0 : Math.max(0, effDashCd() - (now - lastDash));
-    const barW = 90, barH = 6, pad = 12;
-    const by = VIEW_H - 18;
-
-    // Wall bar
-    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(pad, by - barH, barW, barH);
-    const wf = 1 - wallCd / WALL_CD;
-    ctx.fillStyle = wallCd === 0 ? '#6699ee' : '#3355aa';
-    ctx.fillRect(pad, by - barH, barW * wf, barH);
-    ctx.fillStyle = wallCd === 0 ? '#aaccff' : '#667799';
-    ctx.fillText('Q Wall: ' + (wallCd > 0 ? (wallCd/1000).toFixed(1)+'s' : 'READY'), pad, by - barH - 3);
-
-    // Dash bar
-    const dx2 = pad + barW + 14;
-    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(dx2, by - barH, barW, barH);
-    const df = 1 - dashCd / effDashCd();
-    ctx.fillStyle = dashCd === 0 ? '#4d8bff' : '#22447a';
-    ctx.fillRect(dx2, by - barH, barW * Math.min(1, df), barH);
-    ctx.fillStyle = dashCd === 0 ? '#88bbff' : '#4466aa';
-    ctx.fillText('E Dash: ' + (dashCd > 0 ? (dashCd/1000).toFixed(1)+'s' : 'READY'), dx2, by - barH - 3);
-
-    // Debug mode badge
-    if (debugMode) {
-      ctx.fillStyle = 'rgba(0,255,0,0.18)'; ctx.fillRect(VIEW_W/2 - 50, 6, 100, 18);
-      ctx.fillStyle = '#00ff88'; ctx.textAlign = 'center';
-      ctx.fillText('⚙ DEBUG MODE', VIEW_W/2, 18);
-      ctx.textAlign = 'left';
-    }
-
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(0,200,80,0.18)';
+    ctx.fillRect(VIEW_W/2 - 60, 6, 120, 20);
+    ctx.fillStyle = '#00ff88';
+    ctx.fillText('⚙ DEBUG MODE', VIEW_W/2, 20);
     ctx.restore();
   }
 
