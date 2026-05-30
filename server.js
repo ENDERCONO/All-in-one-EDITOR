@@ -8,59 +8,33 @@ const io = new Server(server);
 
 app.use(express.static(__dirname));
 
-/* ---- World constants (must match client) ---- */
 const WORLD_W = 900 * 8, WORLD_H = 600 * 8;
 
 /* ---- Medkits ---- */
 const MEDKIT_MAX = 10, MEDKIT_HEAL = 50, MEDKIT_SPAWN_MS = 20000;
 let medkits = [], medkitIdCounter = 0;
-
 function spawnMedkit() {
   if (medkits.length >= MEDKIT_MAX) return;
-  const mk = {
-    id: ++medkitIdCounter,
-    x: Math.round(400 + Math.random() * (WORLD_W - 800)),
-    y: Math.round(400 + Math.random() * (WORLD_H - 800))
-  };
-  medkits.push(mk);
-  io.emit('medkitSpawned', mk);
+  const mk = { id: ++medkitIdCounter, x: Math.round(400 + Math.random() * (WORLD_W - 800)), y: Math.round(400 + Math.random() * (WORLD_H - 800)) };
+  medkits.push(mk); io.emit('medkitSpawned', mk);
 }
-// Spawn 4 medkits immediately so new players see them on join
 for (let i = 0; i < 4; i++) spawnMedkit();
 setInterval(spawnMedkit, MEDKIT_SPAWN_MS);
 
-/* ---- XP Boxes (deterministic generation) ---- */
+/* ---- XP Boxes ---- */
 const BOX_COUNT = 50, BOX_BASE = 32;
 const BOX_COLORS = ['#ff3b5c','#2fd47f','#4d8bff','#c77dff','#ffb13b','#3bd6ff','#ff7ad6'];
-
 function rng32(seed) {
   let a = seed;
-  return () => {
-    a |= 0; a = a + 0x6D2B79F5 | 0;
-    let t = Math.imul(a ^ a >>> 15, 1 | a);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
+  return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 }
-
 function generateBoxes() {
-  const r = rng32(7777);
-  const cx = WORLD_W / 2, cy = WORLD_H / 2;
-  const boxes = [];
+  const r = rng32(7777); const cx = WORLD_W / 2, cy = WORLD_H / 2; const boxes = [];
   for (let i = 0; i < BOX_COUNT; i++) {
-    const scale = +(0.9 + r() * 0.3).toFixed(3);
-    const w = Math.round(BOX_BASE * scale);
-    const color = BOX_COLORS[(r() * BOX_COLORS.length) | 0];
-    const rx = r(), ry = r();
-    let x, y;
-    if (i < 10) {
-      // First 10 boxes clustered around the spawn center so players see them immediately
-      x = Math.round(cx - 500 + rx * 1000);
-      y = Math.round(cy - 350 + ry * 700);
-    } else {
-      x = Math.round(400 + rx * (WORLD_W - 800));
-      y = Math.round(400 + ry * (WORLD_H - 800));
-    }
+    const scale = +(0.9 + r() * 0.3).toFixed(3); const w = Math.round(BOX_BASE * scale); const color = BOX_COLORS[(r() * BOX_COLORS.length) | 0];
+    const rx = r(), ry = r(); let x, y;
+    if (i < 10) { x = Math.round(cx - 500 + rx * 1000); y = Math.round(cy - 350 + ry * 700); }
+    else { x = Math.round(400 + rx * (WORLD_W - 800)); y = Math.round(400 + ry * (WORLD_H - 800)); }
     boxes.push({ id: i + 1, x, y, w, h: w, scale, color });
   }
   return boxes;
@@ -71,73 +45,29 @@ let xpBoxes = generateBoxes();
 const players = {};
 
 /* ---- Teto Boss ---- */
-const TETO_HP_MAX   = 999999;
-const TETO_SPEED    = 90;
-const TETO_CHARGE_SPEED = 600;
-const TETO_R_SRV    = 160;  // must match client TETO_R
+const TETO_HP_MAX = 3000;
+const TETO_SPEED = 90, TETO_CHARGE_SPEED = 600, TETO_R_SRV = 160;
 
-function randTetoPos() {
-  return {
-    x: Math.round(WORLD_W * 0.15 + Math.random() * WORLD_W * 0.7),
-    y: Math.round(WORLD_H * 0.15 + Math.random() * WORLD_H * 0.7)
-  };
-}
+function randTetoPos() { return { x: Math.round(WORLD_W * 0.15 + Math.random() * WORLD_W * 0.7), y: Math.round(WORLD_H * 0.15 + Math.random() * WORLD_H * 0.7) }; }
 
 const tetoPos = randTetoPos();
-const teto = {
-  x: tetoPos.x, y: tetoPos.y,
-  hp: TETO_HP_MAX, alive: true,
-  state: 'roam',
-  vx: 0, vy: 0,
-  chargeTarget: null,
-  stateTimer: 0,
-  lastCharge: 0, lastStomp: 0, lastJump: 0, lastRoar: 0
-};
+const teto = { x: tetoPos.x, y: tetoPos.y, hp: TETO_HP_MAX, alive: true, state: 'roam', vx: 0, vy: 0, chargeTarget: null, stateTimer: 0, lastCharge: 0, lastStomp: 0, lastJump: 0, lastRoar: 0 };
 
 function tetoTick() {
   if (!teto.alive) return;
-  const DT = 0.1;
-  const now = Date.now();
-
-  // Find nearest alive player
+  const DT = 0.1; const now = Date.now();
   let nearest = null, nearDist2 = Infinity;
-  for (const id in players) {
-    const p = players[id];
-    if (!p || !p.alive) continue;
-    const d2 = (p.x - teto.x) ** 2 + (p.y - teto.y) ** 2;
-    if (d2 < nearDist2) { nearDist2 = d2; nearest = p; }
-  }
-
+  for (const id in players) { const p = players[id]; if (!p || !p.alive) continue; const d2 = (p.x - teto.x) ** 2 + (p.y - teto.y) ** 2; if (d2 < nearDist2) { nearDist2 = d2; nearest = p; } }
   if (!nearest) { teto.vx = 0; teto.vy = 0; }
   else {
-    const dx = nearest.x - teto.x, dy = nearest.y - teto.y;
-    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-
+    const dx = nearest.x - teto.x, dy = nearest.y - teto.y; const dist = Math.sqrt(dx * dx + dy * dy) || 1;
     if (teto.state === 'roam') {
-      teto.vx = (dx / dist) * TETO_SPEED;
-      teto.vy = (dy / dist) * TETO_SPEED;
-
-      // Roar — periodic aggression
-      if (now - teto.lastRoar > 18000) {
-        teto.lastRoar = now;
-        io.emit('tetoRoar', { x: teto.x, y: teto.y });
-      }
-      // Charge — rush at player
-      if (now - teto.lastCharge > 8000 && dist < 2800) {
-        teto.state = 'charge'; teto.lastCharge = now;
-        teto.chargeTarget = { x: nearest.x, y: nearest.y };
-        io.emit('tetoCharge', { x: teto.x, y: teto.y });
-      }
-      // Stomp — shockwave when player is close
-      else if (now - teto.lastStomp > 13000 && dist < TETO_R_SRV + 350) {
-        teto.state = 'stomp'; teto.lastStomp = now; teto.stateTimer = 1300;
-        teto.vx = 0; teto.vy = 0;
-        io.emit('tetoStomp', { x: teto.x, y: teto.y, r: TETO_R_SRV + 240 });
-      }
-      // Jump — teleport near a player
+      teto.vx = (dx / dist) * TETO_SPEED; teto.vy = (dy / dist) * TETO_SPEED;
+      if (now - teto.lastRoar > 18000) { teto.lastRoar = now; io.emit('tetoRoar', { x: teto.x, y: teto.y }); }
+      if (now - teto.lastCharge > 8000 && dist < 2800) { teto.state = 'charge'; teto.lastCharge = now; teto.chargeTarget = { x: nearest.x, y: nearest.y }; io.emit('tetoCharge', { x: teto.x, y: teto.y }); }
+      else if (now - teto.lastStomp > 13000 && dist < TETO_R_SRV + 350) { teto.state = 'stomp'; teto.lastStomp = now; teto.stateTimer = 1300; teto.vx = 0; teto.vy = 0; io.emit('tetoStomp', { x: teto.x, y: teto.y, r: TETO_R_SRV + 240 }); }
       else if (now - teto.lastJump > 24000) {
-        teto.state = 'jump'; teto.lastJump = now; teto.stateTimer = 1000;
-        teto.vx = 0; teto.vy = 0;
+        teto.state = 'jump'; teto.lastJump = now; teto.stateTimer = 1000; teto.vx = 0; teto.vy = 0;
         const toX = Math.max(300, Math.min(WORLD_W - 300, nearest.x + (Math.random() - 0.5) * 350));
         const toY = Math.max(300, Math.min(WORLD_H - 300, nearest.y + (Math.random() - 0.5) * 350));
         io.emit('tetoJump', { fromX: teto.x, fromY: teto.y, toX, toY });
@@ -145,25 +75,16 @@ function tetoTick() {
       }
     } else if (teto.state === 'charge') {
       if (teto.chargeTarget) {
-        const cdx = teto.chargeTarget.x - teto.x, cdy = teto.chargeTarget.y - teto.y;
-        const cdist = Math.sqrt(cdx * cdx + cdy * cdy) || 1;
-        if (cdist < TETO_R_SRV) {
-          teto.state = 'roam'; teto.chargeTarget = null; teto.vx = 0; teto.vy = 0;
-        } else {
-          teto.vx = (cdx / cdist) * TETO_CHARGE_SPEED;
-          teto.vy = (cdy / cdist) * TETO_CHARGE_SPEED;
-        }
+        const cdx = teto.chargeTarget.x - teto.x, cdy = teto.chargeTarget.y - teto.y; const cdist = Math.sqrt(cdx * cdx + cdy * cdy) || 1;
+        if (cdist < TETO_R_SRV) { teto.state = 'roam'; teto.chargeTarget = null; teto.vx = 0; teto.vy = 0; }
+        else { teto.vx = (cdx / cdist) * TETO_CHARGE_SPEED; teto.vy = (cdy / cdist) * TETO_CHARGE_SPEED; }
       } else { teto.state = 'roam'; }
     } else if (teto.state === 'stomp' || teto.state === 'jump') {
-      teto.vx = 0; teto.vy = 0;
-      teto.stateTimer -= 100;
-      if (teto.stateTimer <= 0) teto.state = 'roam';
+      teto.vx = 0; teto.vy = 0; teto.stateTimer -= 100; if (teto.stateTimer <= 0) teto.state = 'roam';
     }
   }
-
   teto.x = Math.max(300, Math.min(WORLD_W - 300, teto.x + teto.vx * DT));
   teto.y = Math.max(300, Math.min(WORLD_H - 300, teto.y + teto.vy * DT));
-
   io.emit('tetoUpdate', { x: Math.round(teto.x), y: Math.round(teto.y), hp: teto.hp, state: teto.state, alive: true });
 }
 setInterval(tetoTick, 100);
@@ -172,11 +93,7 @@ io.on('connection', (socket) => {
   console.log(`Player connected: ${socket.id}`);
 
   socket.on('join', (data) => {
-    players[socket.id] = {
-      id: socket.id, name: data.name, color: data.color, char: data.char,
-      x: data.x, y: data.y, aim: 0, hp: 100, level: 1, points: 0, elims: 0,
-      anim: 'idle', frame: 0, facing: 1, moving: false, alive: true, shields: 0
-    };
+    players[socket.id] = { id: socket.id, name: data.name, color: data.color, char: data.char, x: data.x, y: data.y, aim: 0, hp: 100, level: 1, points: 0, elims: 0, anim: 'idle', frame: 0, facing: 1, moving: false, alive: true, fofoUltActive: false, invis: false };
     socket.emit('init_id', socket.id);
     socket.emit('boxesInit', xpBoxes);
     socket.emit('medkitsInit', medkits);
@@ -185,60 +102,50 @@ io.on('connection', (socket) => {
   });
 
   socket.on('move', (d) => {
-    if (players[socket.id]) {
-      Object.assign(players[socket.id], d);
-      socket.broadcast.emit('playerMoved', { id: socket.id, ...d });
-    }
+    if (players[socket.id]) { Object.assign(players[socket.id], d); socket.broadcast.emit('playerMoved', { id: socket.id, ...d }); }
   });
 
-  socket.on('shoot', (shotData) => {
-    socket.broadcast.emit('enemyShoot', { owner: socket.id, ...shotData });
-  });
+  socket.on('shoot', (shotData) => { socket.broadcast.emit('enemyShoot', { owner: socket.id, ...shotData }); });
 
   socket.on('damage', (data) => {
-    const target = players[data.targetId];
-    const attacker = players[socket.id];
+    const target = players[data.targetId]; const attacker = players[socket.id];
     if (target && target.alive) {
       target.hp = Math.max(0, target.hp - data.amount);
       io.emit('healthUpdate', { id: data.targetId, hp: target.hp, fromId: socket.id });
       if (target.hp <= 0 && target.alive) {
         target.alive = false;
         if (attacker) { attacker.elims += 1; attacker.points += 100; }
-        io.emit('playerKilled', {
-          killerId: socket.id, killerName: attacker ? attacker.name : 'Someone',
-          victimId: data.targetId, victimName: target.name
-        });
+        io.emit('playerKilled', { killerId: socket.id, killerName: attacker ? attacker.name : 'Someone', victimId: data.targetId, victimName: target.name });
       }
     }
   });
 
   socket.on('respawn', (data) => {
-    if (players[socket.id]) {
-      players[socket.id].hp = 100; players[socket.id].alive = true;
-      players[socket.id].x = data.x; players[socket.id].y = data.y;
-      io.emit('stateUpdate', players);
-    }
+    if (players[socket.id]) { players[socket.id].hp = 100; players[socket.id].alive = true; players[socket.id].x = data.x; players[socket.id].y = data.y; io.emit('stateUpdate', players); }
   });
 
+  socket.on('rbdRevive', (data) => {
+    if (players[socket.id]) { players[socket.id].hp = 100; players[socket.id].alive = true; players[socket.id].x = data.x; players[socket.id].y = data.y; }
+    io.emit('rbdRevive', { id: socket.id, x: data.x, y: data.y });
+  });
+
+  // Relay ult effects to all other players
+  socket.on('ultEffect', (data) => { socket.broadcast.emit('ultEffect', { senderId: socket.id, ...data }); });
+  socket.on('fofoUltStart', () => { if (players[socket.id]) players[socket.id].fofoUltActive = true; socket.broadcast.emit('fofoUltStart', { id: socket.id }); });
+  socket.on('fofoUltEnd',   () => { if (players[socket.id]) players[socket.id].fofoUltActive = false; socket.broadcast.emit('fofoUltEnd',   { id: socket.id }); });
+
   socket.on('pickupMedkit', (id) => {
-    const idx = medkits.findIndex(m => m.id === id);
-    if (idx === -1) return;
+    const idx = medkits.findIndex(m => m.id === id); if (idx === -1) return;
     medkits.splice(idx, 1);
-    const p = players[socket.id];
-    if (p) { p.hp = Math.min(100, p.hp + MEDKIT_HEAL); io.emit('healthUpdate', { id: socket.id, hp: p.hp }); }
+    const p = players[socket.id]; if (p) { p.hp = Math.min(100, p.hp + MEDKIT_HEAL); io.emit('healthUpdate', { id: socket.id, hp: p.hp }); }
     io.emit('medkitRemoved', id);
   });
 
-  socket.on('breakBox', (id) => {
-    const idx = xpBoxes.findIndex(b => b.id === id);
-    if (idx === -1) return;
-    xpBoxes.splice(idx, 1);
-    io.emit('boxBroken', id);
-  });
+  socket.on('breakBox', (id) => { const idx = xpBoxes.findIndex(b => b.id === id); if (idx === -1) return; xpBoxes.splice(idx, 1); io.emit('boxBroken', id); });
 
   socket.on('hitTeto', (data) => {
     if (!teto.alive) return;
-    const dmg = Math.max(1, Math.min(200, data.amount || 1));
+    const dmg = Math.max(1, Math.min(5000, data.amount || 1));
     teto.hp = Math.max(0, teto.hp - dmg);
     io.emit('tetoHurt', { hp: teto.hp });
     if (teto.hp <= 0 && teto.alive) {
@@ -247,21 +154,15 @@ io.on('connection', (socket) => {
       io.emit('tetoKilled', { killerId: socket.id, killerName: killer ? killer.name : 'Someone' });
       setTimeout(() => {
         const pos = randTetoPos();
-        teto.x = pos.x; teto.y = pos.y;
-        teto.hp = TETO_HP_MAX; teto.alive = true; teto.state = 'roam';
+        teto.x = pos.x; teto.y = pos.y; teto.hp = TETO_HP_MAX; teto.alive = true; teto.state = 'roam';
         teto.lastCharge = 0; teto.lastStomp = 0; teto.lastJump = 0; teto.lastRoar = 0;
         io.emit('tetoRespawn', { x: Math.round(teto.x), y: Math.round(teto.y) });
-      }, 40000);
+      }, 30000); // 30 seconds respawn
     }
   });
 
-  socket.on('placeWall', (data) => {
-    socket.broadcast.emit('wallPlaced', data);
-  });
-
-  socket.on('wallDestroyed', (id) => {
-    socket.broadcast.emit('wallDestroyed', id);
-  });
+  socket.on('placeWall',    (data) => { socket.broadcast.emit('wallPlaced', data); });
+  socket.on('wallDestroyed',(id)   => { socket.broadcast.emit('wallDestroyed', id); });
 
   socket.on('disconnect', () => {
     console.log(`Player disconnected: ${socket.id}`);
