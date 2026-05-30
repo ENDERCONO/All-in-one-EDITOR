@@ -125,31 +125,20 @@
   let socket = null;
   let lastNetUpdate = 0;
   let debugMode = false; // unlocked with code "Gemini"
-  let gameFullscreen = false;
-
+  // Always scale to fill the viewport (aspect-ratio preserved, centered)
   function applyGameScale() {
     const root = document.getElementById('caRoot');
     if (!root) return;
-    if (gameFullscreen) {
-      const sx = window.innerWidth  / VIEW_W;
-      const sy = window.innerHeight / VIEW_H;
-      root.style.position        = 'fixed';
-      root.style.top             = '0';
-      root.style.left            = '0';
-      root.style.transform       = `scale(${sx.toFixed(5)},${sy.toFixed(5)})`;
-      root.style.transformOrigin = '0 0';
-      document.body.style.overflow = 'hidden';
-    } else {
-      root.style.position = root.style.top = root.style.left = '';
-      root.style.transform = root.style.transformOrigin = '';
-      document.body.style.overflow = '';
-    }
+    const scale = Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H);
+    const ox = Math.round((window.innerWidth  - VIEW_W * scale) / 2);
+    const oy = Math.round((window.innerHeight - VIEW_H * scale) / 2);
+    root.style.position        = 'fixed';
+    root.style.left            = ox + 'px';
+    root.style.top             = oy + 'px';
+    root.style.transform       = `scale(${scale.toFixed(6)})`;
+    root.style.transformOrigin = '0 0';
   }
-  function toggleGameFullscreen() {
-    gameFullscreen = !gameFullscreen;
-    applyGameScale();
-  }
-  window.addEventListener('resize', () => { if (gameFullscreen) applyGameScale(); });
+  window.addEventListener('resize', applyGameScale);
 
   /* ---------------- IDENTITY ---------------- */
   let myId = null;
@@ -2435,25 +2424,9 @@
         '<div style="margin-bottom:18px;">' +
           '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:11px;color:#d0d0d8;"><span>Sound Effects</span><span id="caSetSVol" style="color:#c77dff;">' + Math.round(musicState.soundVol * 100) + '%</span></div>' +
           '<input type="range" id="caSetSSlider" min="0" max="100" value="' + Math.round(musicState.soundVol * 100) + '" style="-webkit-appearance:none;appearance:none;width:100%;height:5px;border-radius:3px;background:#2a2a3a;outline:none;cursor:pointer;">' +
-        '</div>' +
-        '<div style="padding-top:14px;border-top:1px solid #2a2a32;">' +
-          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">' +
-            '<span style="font-size:11px;color:#d0d0d8;">Scale game to fill screen</span>' +
-            '<button id="caFsBtn" style="background:' + (gameFullscreen?'rgba(199,125,255,.2)':'#1b1b20') + ';border:1px solid ' + (gameFullscreen?'#c77dff':'#2a2a32') + ';color:#ececef;cursor:pointer;padding:5px 14px;border-radius:6px;font-family:inherit;font-size:11px;letter-spacing:.06em;">' + (gameFullscreen ? '↙ SHRINK' : '↗ FULLSCREEN') + '</button>' +
-          '</div>' +
-          '<div style="font-size:9px;color:#55555e;">Stretches the game canvas + all UI to fill your browser viewport. Press again to restore.</div>' +
         '</div>';
       el.querySelector('#caSetMSlider').oninput = function () { musicState.musicVol = +this.value / 100; el.querySelector('#caSetMVol').textContent = this.value + '%'; };
       el.querySelector('#caSetSSlider').oninput = function () { musicState.soundVol = +this.value / 100; el.querySelector('#caSetSVol').textContent = this.value + '%'; };
-      const fsBtn = el.querySelector('#caFsBtn');
-      if (fsBtn) {
-        fsBtn.onclick = () => {
-          toggleGameFullscreen();
-          fsBtn.textContent    = gameFullscreen ? '↙ SHRINK' : '↗ FULLSCREEN';
-          fsBtn.style.background  = gameFullscreen ? 'rgba(199,125,255,.2)' : '#1b1b20';
-          fsBtn.style.borderColor = gameFullscreen ? '#c77dff' : '#2a2a32';
-        };
-      }
     }
 
     function renderControls() {
@@ -2820,7 +2793,9 @@
     if (opts.sfxBase)  SFX_BASE  = opts.sfxBase;
     if (opts.pathBase) PATH_BASE = opts.pathBase;
     if (inited) return; inited = true;
-    
+
+    applyGameScale(); // fill viewport immediately
+
     const root = opts.mount ? document.querySelector(opts.mount) : document; cacheDom(root);
     obstacles = buildObstacles(); loadCharAssets();
     try { const sc = localStorage.getItem('caChar'); if (sc && CHARACTERS[sc]) selectedChar = sc; } catch (e) {}
