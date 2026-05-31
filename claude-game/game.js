@@ -131,8 +131,9 @@
     if (!root) return;
     const aw = document.body.clientWidth  || window.innerWidth;
     const ah = document.body.clientHeight || window.innerHeight;
-    const scale = Math.min(aw / VIEW_W, ah / VIEW_H);
-    root.style.transform       = `scale(${scale.toFixed(6)})`;
+    // Cap at 1.0 so the UI never gets bigger than designed — scales down on small screens only
+    const scale = Math.min(1.0, aw / VIEW_W, ah / VIEW_H);
+    root.style.transform       = scale < 0.999 ? `scale(${scale.toFixed(6)})` : '';
     root.style.transformOrigin = 'center center';
   }
   window.addEventListener('resize', applyGameScale);
@@ -2406,6 +2407,32 @@
     if (!others) return;
     const cx = VIEW_W / 2, cy = VIEW_H / 2, PAD = 40;
     try {
+      // ── Fogged-enemy markers: enemies visible on screen but hidden in darkness ──
+      if (visPath) {
+        const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
+        for (const id in others) {
+          const o = others[id];
+          if (!o || !o.alive || o.x === undefined) continue;
+          const sx = o.x - camera.x, sy = o.y - camera.y;
+          if (sx < 0 || sx > VIEW_W || sy < 0 || sy > VIEW_H) continue; // off-screen handled below
+          if (ctx.isPointInPath(visPath, sx, sy)) continue; // visible — no marker needed
+          // Enemy is on-screen but in darkness: show pulsing directional marker
+          const ang = Math.atan2(sy - cy, sx - cx);
+          const ex = cx + Math.cos(ang) * (VIEW_W / 2 - PAD);
+          const ey = cy + Math.sin(ang) * (VIEW_H / 2 - PAD);
+          ctx.save();
+          ctx.globalAlpha = 0.55 + 0.4 * pulse;
+          ctx.translate(ex, ey);
+          ctx.rotate(ang + Math.PI / 2);
+          ctx.fillStyle = o.color || '#ff3b5c';
+          ctx.shadowColor = o.color || '#ff3b5c'; ctx.shadowBlur = 8;
+          ctx.beginPath();
+          ctx.moveTo(0, -8); ctx.lineTo(4, 4); ctx.lineTo(-4, 4);
+          ctx.closePath(); ctx.fill();
+          ctx.shadowBlur = 0;
+          ctx.restore();
+        }
+      }
       // Teto offscreen indicator
       if (tetoState.alive) {
         const tsx = tetoState.rx - camera.x, tsy = tetoState.ry - camera.y;
