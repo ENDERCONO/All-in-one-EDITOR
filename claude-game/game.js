@@ -28,6 +28,12 @@
   const TILE = 64;             // world-unit tile size
   const ULT_CHARGE_MAX = 1000; // damage dealt → ult ready
 
+  /* ---------------- BOT CONSTANTS ---------------- */
+  const BOT_COUNT    = 7;
+  const BOT_SIGHT_R  = 560;
+  const BOT_FIRE_CD  = 380;
+  const BOT_NAMES    = ['Zaid','Pumpkin','Rich','Yuna','BoomerMan','Young','Man','Diddy','Epstein','Mr.','Freaky','GPT','Skibidi','Tikitiki','Bludy','Pillar','Chaser','Nigglet','Epstindih','Dih','Puh','Arthur'];
+
   function xpForLevel(l) {
     return Math.round(LEVEL_BASE * Math.pow(LEVEL_GROW, l - 1));
   }
@@ -125,18 +131,15 @@
   let socket = null;
   let lastNetUpdate = 0;
   let debugMode = false; // unlocked with code "Gemini"
-  // Always scale to fill the viewport (aspect-ratio preserved, centered)
+  // Scale to fit the available body space (never upscale past 1:1), flex keeps it centered
   function applyGameScale() {
     const root = document.getElementById('caRoot');
     if (!root) return;
-    const scale = Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H);
-    const ox = Math.round((window.innerWidth  - VIEW_W * scale) / 2);
-    const oy = Math.round((window.innerHeight - VIEW_H * scale) / 2);
-    root.style.position        = 'fixed';
-    root.style.left            = ox + 'px';
-    root.style.top             = oy + 'px';
-    root.style.transform       = `scale(${scale.toFixed(6)})`;
-    root.style.transformOrigin = '0 0';
+    const aw = document.body.clientWidth  || window.innerWidth;
+    const ah = document.body.clientHeight || window.innerHeight;
+    const scale = Math.min(1, aw / VIEW_W, ah / VIEW_H);
+    root.style.transform       = scale < 0.999 ? `scale(${scale.toFixed(6)})` : '';
+    root.style.transformOrigin = 'center center';
   }
   window.addEventListener('resize', applyGameScale);
 
@@ -202,6 +205,8 @@
   const fofoUltPlayers = new Set(); // ids of others running fofo ult
   
   let others = {};
+  let bots = [];
+  let botIdSeq = 0;
   const tetoState = { x: 0, y: 0, rx: 0, ry: 0, hp: TETO_MAX_HP, alive: false, state: 'roam', jumpAlpha: 1, jumpTimer: 0 };
   const bullets = [];
   const particles = [];
@@ -232,8 +237,14 @@
   const DEFAULT_BINDINGS = { up: 'w', down: 's', left: 'a', right: 'd', dash: 'e', ult: ' ', wall: 'q' };
   let bindings = { ...DEFAULT_BINDINGS };
   const IS_MOBILE = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
-  const MOB = { joyX: 90, joyY: VIEW_H - 90, joyBaseR: 55, joyStickR: 25, dashX: VIEW_W - 75, dashY: VIEW_H - 75, shieldX: VIEW_W - 75, shieldY: VIEW_H - 165, btnR: 38 };
+  const MOB = {
+    joyX: 110, joyY: VIEW_H - 95, joyBaseR: 65, joyStickR: 27,
+    shootX: VIEW_W - 145, shootY: VIEW_H - 95, shootBaseR: 65, shootStickR: 27,
+    dashX: VIEW_W - 48, dashY: VIEW_H - 190, btnR: 28,
+    shieldX: VIEW_W - 48, shieldY: VIEW_H - 258
+  };
   const joy = { active: false, id: -1, bx: 0, by: 0, dx: 0, dy: 0 };
+  const shootJoy = { active: false, id: -1, bx: 0, by: 0, dx: 0, dy: 0, firing: false };
   const aimT = { active: false, id: -1 };
 
   /* ---------------- ASSETS ---------------- */
@@ -1166,8 +1177,8 @@
     { id: 'regen3', name: 'Quick Heal',          rarity: 'rare',      desc: 'Regen starts 2s sooner',          apply: m => m.mods.regenDelay = Math.min((m.mods.regenDelay || 0) + 2000, 4000) }
   ];
 
-  function rollCards(n) {
-    const lvl = me.level;
+  function rollCards(n, lvlOverride) {
+    const lvl = lvlOverride !== undefined ? lvlOverride : me.level;
     const w = { common: Math.max(8, 55 - lvl * 4), rare: 30, epic: 12 + lvl * 1.5, legendary: 3 + lvl * 1.2 };
     function pick() {
       const total = Object.values(w).reduce((a, b) => a + b, 0); let r = Math.random() * total;
@@ -1233,6 +1244,7 @@
     const el = document.getElementById('caLbRows'); if (!el) return;
     const all = [{ name: me.name || 'You', level: me.level, points: me.points, elims: me.elims, color: me.color, isMe: true }];
     for (const id in others) { const o = others[id]; all.push({ name: o.name || '???', level: o.level || 1, points: o.points || 0, elims: o.elims || 0, color: o.color || '#aaa', isMe: false }); }
+    for (const bot of bots) { if (!bot.killed) all.push({ name: bot.name + ' [BOT]', level: bot.level, points: bot.points, elims: bot.elims, color: bot.color, isMe: false }); }
     all.sort((a, b) => (b.points - a.points) || (b.level - a.level));
     el.innerHTML = all.slice(0, 10).map((p, i) =>
       `<div style="display:flex;align-items:center;gap:5px;padding:2px 0;${i > 0 ? 'border-top:1px solid rgba(255,255,255,0.04)' : ''}">
@@ -1301,7 +1313,7 @@
       me.heroLightningTimer = 0; me.enderSlowTimer = 0; me.pullTimer = 0;
       if (draftOpen) { draftOpen = false; if (cardLayer) { cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; } }
       me.mods = { dmg: 0, fireRate: 0, speed: 0, multishot: 0, pierce: 0, lifesteal: 0, thorns: 0, bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0, maxHp: 0, regenRate: 0, regenDelay: 0, critChance: 0, onKillHeal: 0, killShield: 0, dashHeal: 0, dashCdReduce: 0, damageResist: 0, homingStr: 0 };
-      me.x = WORLD_W / 2 + (Math.random() * 400 - 200); me.y = WORLD_H / 2 + (Math.random() * 400 - 200); me.lastCombat = Date.now();
+      me.x = 400 + Math.random() * (WORLD_W - 800); me.y = 400 + Math.random() * (WORLD_H - 800); me.lastCombat = Date.now();
       me.immuneUntil = Date.now() + 5000; // 5s spawn immunity
       if (socket) socket.emit('respawn', { x: me.x, y: me.y, char: me.char, color: me.color });
     }
@@ -1327,7 +1339,11 @@
     }
     
     if (me.alive) {
-      me.aim = Math.atan2((mouse.y + camera.y) - me.y, (mouse.x + camera.x) - me.x);
+      if (IS_MOBILE && shootJoy.active && shootJoy.firing) {
+        me.aim = Math.atan2(shootJoy.dy, shootJoy.dx);
+      } else {
+        me.aim = Math.atan2((mouse.y + camera.y) - me.y, (mouse.x + camera.x) - me.x);
+      }
       me.facing = Math.cos(me.aim) < 0 ? -1 : 1;
       let dx = 0, dy = 0;
       if (IS_MOBILE && joy.active) { dx = joy.dx; dy = joy.dy; }
@@ -1350,7 +1366,7 @@
       me.frameT += dt; if (me.frameT > animFrameTime) { me.frameT = 0; me.frame = me.frame ? 0 : 1; }
       // Sanity guard: if draftOpen but card layer is gone/empty, unlock firing
       if (draftOpen && cardLayer && (cardLayer.style.display === 'none' || cardLayer.children.length === 0)) draftOpen = false;
-      if (mouse.down) fire();
+      if (mouse.down || (IS_MOBILE && shootJoy.firing)) fire();
       const regenDelayCur = Math.max(500, REGEN_DELAY - (me.mods.regenDelay || 0));
       if (t - me.lastCombat > regenDelayCur && me.hp < effMaxHp()) { me.hp = Math.min(effMaxHp(), me.hp + (REGEN_RATE + (me.mods.regenRate || 0)) * dt); }
 
@@ -1431,15 +1447,17 @@
           me.fofoGooTimer = 0.4;
           pushAE({ type: 'fofo_goo', x: me.x, y: me.y, r: 30, born: t, maxAge: 5000, owner: myId });
         }
-        // charge bar from nearby enemies
+        // charge bar from nearby enemies (includes bots)
         let nearCount = 0;
         for (const id in others) { const o = others[id]; if (!o.alive) continue; if (Math.hypot((o.rx||o.x)-me.x, (o.ry||o.y)-me.y) < 400) nearCount++; }
-        me.fofoChargeBar = Math.min(10, me.fofoChargeBar + nearCount * 5 * dt);
+        for (const bot of bots) { if (bot.alive && Math.hypot(bot.x-me.x, bot.y-me.y) < 400) nearCount++; }
+        me.fofoChargeBar = Math.min(10, me.fofoChargeBar + Math.min(nearCount, 2) * 5 * dt);
         if (me.fofoChargeBar >= 10) {
           me.fofoChargeBar = 0;
-          // teleport to nearest enemy
+          // teleport to nearest enemy — check real players and bots
           let nearest = null, nearD = Infinity;
-          for (const id in others) { const o = others[id]; if (!o.alive) continue; const d = Math.hypot((o.rx||o.x)-me.x, (o.ry||o.y)-me.y); if (d < nearD) { nearD = d; nearest = { id, ox: o.rx||o.x, oy: o.ry||o.y }; } }
+          for (const id in others) { const o = others[id]; if (!o.alive) continue; const d = Math.hypot((o.rx||o.x)-me.x, (o.ry||o.y)-me.y); if (d < nearD) { nearD = d; nearest = { id: id, ox: o.rx||o.x, oy: o.ry||o.y, isBot: false }; } }
+          for (const bot of bots) { if (!bot.alive) continue; const d = Math.hypot(bot.x-me.x, bot.y-me.y); if (d < nearD) { nearD = d; nearest = { id: bot.id, ox: bot.x, oy: bot.y, isBot: true, botRef: bot }; } }
           if (nearest) {
             me.x = clamp(nearest.ox + (Math.random()-0.5)*60, PLAYER_R, WORLD_W-PLAYER_R);
             me.y = clamp(nearest.oy + (Math.random()-0.5)*60, PLAYER_R, WORLD_H-PLAYER_R);
@@ -1447,7 +1465,16 @@
             addScreenShake(8, 0.5);
             spawnParticles(me.x, me.y, '#9b59b6', 30, 300, 0.8);
             pushAE({ type: 'fofo_blast', x: me.x, y: me.y, r: TILE, born: t, maxAge: 600 });
-            if (socket) socket.emit('damage', { targetId: nearest.id, amount: 30 });
+            if (nearest.isBot && nearest.botRef) {
+              nearest.botRef.hp -= 30; nearest.botRef.lastCombat = Date.now();
+              gainUltCharge(30); gainXp(30 * XP_PER_DMG);
+              if (nearest.botRef.hp <= 0) {
+                nearest.botRef.alive = false; nearest.botRef.hp = 0;
+                nearest.botRef.deathTime = Date.now(); nearest.botRef.deadUntil = Date.now() + RESPAWN_MS;
+                me.elims++; me.points += 100; gainXp(XP_PER_KILL);
+                toast(nearest.botRef.name + ' bot down! +100 pts');
+              }
+            } else if (socket) { socket.emit('damage', { targetId: nearest.id, amount: 30 }); }
           }
         }
         // FOFO music volume
@@ -1676,9 +1703,34 @@
         if (me.mods.thorns > 0 && b.owner) {
           if (socket) socket.emit('damage', { targetId: b.owner, amount: Math.round(b.dmg * me.mods.thorns) });
         }
+        // Bot bullets apply damage locally — no server for bots
+        if (b.owner && b.owner.startsWith('bot_')) hurtMe(b.dmg, b.owner);
         bullets.splice(i, 1); continue;
       }
-      
+
+      // Bot-vs-bot bullet damage (bot bullets hitting other bots)
+      if (b.owner && b.owner.startsWith('bot_')) {
+        let botHit = false;
+        for (let bi3 = 0; bi3 < bots.length; bi3++) {
+          const hitBot = bots[bi3];
+          if (!hitBot.alive || hitBot.id === b.owner) continue;
+          if (d2(b.x, b.y, hitBot.x, hitBot.y) < (PLAYER_R + brad) ** 2) {
+            hitBot.hp -= b.dmg; hitBot.lastCombat = Date.now();
+            spawnParticles(b.x, b.y, '#ffb13b', 3, 80, 0.25);
+            if (hitBot.hp <= 0) {
+              hitBot.alive = false; hitBot.hp = 0;
+              hitBot.deathTime = Date.now(); hitBot.deadUntil = Date.now() + RESPAWN_MS;
+              spawnParticles(hitBot.x, hitBot.y, hitBot.color || '#ff3b5c', 16, 220, 0.7);
+              // Award the killer bot XP
+              const killerBot = bots.find(b2 => b2.id === b.owner);
+              if (killerBot) { killerBot.elims++; killerBot.points += 100; botGainXp(killerBot, XP_PER_KILL); }
+            }
+            botHit = true; break;
+          }
+        }
+        if (botHit) { bullets.splice(i, 1); continue; }
+      }
+
       // Check XP box hits (owner bullets only, before player check)
       if (b.owner === myId) {
         let boxHit = false;
@@ -1746,6 +1798,30 @@
             
             if ((b.explosive || 0) > 0) spawnExplosion(b.x, b.y, b.explosive, b.dmg);
             hit = true; break;
+          }
+        }
+        // Hit detection against local bots
+        if (!hit) {
+          for (let bi2 = 0; bi2 < bots.length; bi2++) {
+            const bot = bots[bi2]; if (!bot.alive) continue;
+            if (d2(b.x, b.y, bot.x, bot.y) < (PLAYER_R + brad) ** 2) {
+              const dmgAmt = Math.round(b.dmg);
+              bot.hp -= dmgAmt; bot.lastCombat = Date.now();
+              gainUltCharge(dmgAmt); gainXp(dmgAmt * XP_PER_DMG); botGainXp(bot, dmgAmt * XP_PER_DMG);
+              if (me.mods.lifesteal > 0) me.hp = Math.min(effMaxHp(), me.hp + me.mods.lifesteal);
+              spawnParticles(b.x, b.y, '#ffb13b', 5, 120, 0.3); play('hitEnemy', 0.4);
+              if ((b.explosive || 0) > 0) spawnExplosion(b.x, b.y, b.explosive, b.dmg);
+              if (bot.hp <= 0) {
+                bot.alive = false; bot.hp = 0; bot.deathTime = Date.now(); bot.deadUntil = Date.now() + RESPAWN_MS;
+                me.elims++; me.points += 100;
+                me.hp = Math.min(effMaxHp(), me.hp + 50);
+                gainXp(XP_PER_KILL);
+                toast(bot.name + ' bot down! +100 pts');
+                spawnParticles(bot.x, bot.y, bot.color || '#ff3b5c', 22, 260, 0.8);
+                play('death', 0.5);
+              }
+              hit = true; break;
+            }
           }
         }
         if (hit) { if ((b.pierce || 0) > 0) { b.pierce--; } else { bullets.splice(i, 1); } }
@@ -1826,7 +1902,8 @@
       if (t - walls[wi].born > WALL_MAX_AGE) walls.splice(wi, 1);
     }
 
-    if (countEl) countEl.textContent = 1 + Object.keys(others).length;
+    tickBots(dt, t);
+    if (countEl) countEl.textContent = 1 + Object.keys(others).length + bots.filter(b => b.alive).length;
     updateHud(); updateLeaderboard();
   }
 
@@ -2037,6 +2114,7 @@
     }
 
     for (const id in others) drawPlayer(others[id], false);
+    for (const bot of bots) drawPlayer(bot, false);
     drawPlayer(me, true);
 
     // Brawl-Stars ult preview (only for local player, only when ult ready)
@@ -2232,10 +2310,11 @@
           ctx.restore();
         }
       }
-      for (const id in others) {
-        const o = others[id];
-        if (!o || o.x === undefined || o.y === undefined) continue;
-        const sx = o.x - camera.x, sy = o.y - camera.y;
+      const markerTargets = [];
+      for (const id in others) { const o = others[id]; if (o && o.x !== undefined) markerTargets.push({ x: o.x, y: o.y, color: o.color || '#ff3b5c' }); }
+      for (const bot of bots) { if (bot.alive) markerTargets.push({ x: bot.x, y: bot.y, color: bot.color || '#ff3b5c' }); }
+      for (const m of markerTargets) {
+        const sx = m.x - camera.x, sy = m.y - camera.y;
         if (sx > 0 && sx < VIEW_W && sy > 0 && sy < VIEW_H) continue;
         const ang = Math.atan2(sy - cy, sx - cx);
         const ex = cx + Math.cos(ang) * (VIEW_W / 2 - PAD);
@@ -2243,7 +2322,7 @@
         ctx.save();
         ctx.translate(ex, ey);
         ctx.rotate(ang + Math.PI / 2);
-        ctx.fillStyle = o.color || '#ff3b5c';
+        ctx.fillStyle = m.color;
         ctx.beginPath();
         ctx.moveTo(0, -10);
         ctx.lineTo(5, 5);
@@ -2561,13 +2640,16 @@
     const s = rectScale();
     for (const t of e.changedTouches) {
       const tx = (t.clientX - s.left) * s.sx, ty = (t.clientY - s.top) * s.sy;
-      if (Math.hypot(tx - MOB.dashX, ty - MOB.dashY) < MOB.btnR + 10) { dash(); continue; }
-      if (Math.hypot(tx - MOB.shieldX, ty - MOB.shieldY) < MOB.btnR + 10) { fireUlt(); continue; }
-      if (tx < VIEW_W * 0.45 && !joy.active) {
+      // Buttons take priority
+      if (Math.hypot(tx - MOB.dashX, ty - MOB.dashY) < MOB.btnR + 14) { dash(); continue; }
+      if (Math.hypot(tx - MOB.shieldX, ty - MOB.shieldY) < MOB.btnR + 14) { fireUlt(); continue; }
+      // Left half → movement joystick
+      if (tx < VIEW_W * 0.5 && !joy.active) {
         joy.active = true; joy.id = t.identifier; joy.bx = tx; joy.by = ty; joy.dx = 0; joy.dy = 0;
-      } else if (!aimT.active) {
-        aimT.active = true; aimT.id = t.identifier;
-        mouse.x = tx; mouse.y = ty; if (!draftOpen) { mouse.down = true; fire(); }
+      // Right half → shoot joystick (Brawl Stars style)
+      } else if (tx >= VIEW_W * 0.5 && !shootJoy.active) {
+        shootJoy.active = true; shootJoy.id = t.identifier;
+        shootJoy.bx = tx; shootJoy.by = ty; shootJoy.dx = 0; shootJoy.dy = 0; shootJoy.firing = false;
       }
     }
   }
@@ -2581,7 +2663,11 @@
         const rx = tx - joy.bx, ry = ty - joy.by, dist = Math.hypot(rx, ry);
         if (dist > 8) { joy.dx = rx / dist; joy.dy = ry / dist; } else { joy.dx = 0; joy.dy = 0; }
       }
-      if (aimT.active && t.identifier === aimT.id) { mouse.x = tx; mouse.y = ty; }
+      if (shootJoy.active && t.identifier === shootJoy.id) {
+        const rx = tx - shootJoy.bx, ry = ty - shootJoy.by, dist = Math.hypot(rx, ry);
+        if (dist > 14) { shootJoy.dx = rx / dist; shootJoy.dy = ry / dist; shootJoy.firing = true; }
+        else { shootJoy.dx = 0; shootJoy.dy = 0; shootJoy.firing = false; }
+      }
     }
   }
 
@@ -2589,7 +2675,10 @@
     e.preventDefault();
     for (const t of e.changedTouches) {
       if (joy.active && t.identifier === joy.id) { joy.active = false; joy.dx = 0; joy.dy = 0; }
-      if (aimT.active && t.identifier === aimT.id) { aimT.active = false; mouse.down = false; }
+      if (shootJoy.active && t.identifier === shootJoy.id) {
+        if (!shootJoy.firing && !draftOpen) fire(); // tap = single shot
+        shootJoy.active = false; shootJoy.dx = 0; shootJoy.dy = 0; shootJoy.firing = false;
+      }
     }
   }
 
@@ -2597,32 +2686,239 @@
     if (!started) return;
     ctx.save();
     ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
-    // Joystick base
+
+    // --- Left movement joystick ---
     ctx.beginPath(); ctx.arc(MOB.joyX, MOB.joyY, MOB.joyBaseR, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 2; ctx.stroke();
-    // Joystick stick
-    const offX = joy.active ? joy.dx * (MOB.joyBaseR - MOB.joyStickR) : 0;
-    const offY = joy.active ? joy.dy * (MOB.joyBaseR - MOB.joyStickR) : 0;
-    ctx.beginPath(); ctx.arc(MOB.joyX + offX, MOB.joyY + offY, MOB.joyStickR, 0, Math.PI * 2);
-    ctx.fillStyle = joy.active ? 'rgba(199,125,255,0.55)' : 'rgba(255,255,255,0.18)'; ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 2; ctx.stroke();
-    // Dash button
+    ctx.fillStyle = 'rgba(255,255,255,0.04)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.beginPath(); ctx.arc(MOB.joyX, MOB.joyY, MOB.joyBaseR * 0.42, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 1; ctx.stroke();
+    const joyOffX = joy.active ? joy.dx * (MOB.joyBaseR - MOB.joyStickR) : 0;
+    const joyOffY = joy.active ? joy.dy * (MOB.joyBaseR - MOB.joyStickR) : 0;
+    ctx.beginPath(); ctx.arc(MOB.joyX + joyOffX, MOB.joyY + joyOffY, MOB.joyStickR, 0, Math.PI * 2);
+    ctx.fillStyle = joy.active ? 'rgba(199,125,255,0.6)' : 'rgba(255,255,255,0.16)'; ctx.fill();
+    ctx.strokeStyle = joy.active ? 'rgba(199,125,255,0.9)' : 'rgba(255,255,255,0.28)'; ctx.lineWidth = 2; ctx.stroke();
+
+    // --- Right shoot joystick (Brawl Stars wheel) ---
+    const shootActive = shootJoy.active;
+    const shootFiring = shootJoy.firing;
+    ctx.beginPath(); ctx.arc(MOB.shootX, MOB.shootY, MOB.shootBaseR, 0, Math.PI * 2);
+    ctx.fillStyle = shootFiring ? 'rgba(255,55,85,0.10)' : (shootActive ? 'rgba(255,55,85,0.06)' : 'rgba(255,255,255,0.04)'); ctx.fill();
+    ctx.strokeStyle = shootFiring ? 'rgba(255,55,85,0.90)' : (shootActive ? 'rgba(255,55,85,0.55)' : 'rgba(255,255,255,0.18)');
+    ctx.lineWidth = shootFiring ? 3 : 2; ctx.stroke();
+    // inner ring
+    ctx.beginPath(); ctx.arc(MOB.shootX, MOB.shootY, MOB.shootBaseR * 0.42, 0, Math.PI * 2);
+    ctx.strokeStyle = shootActive ? 'rgba(255,55,85,0.22)' : 'rgba(255,255,255,0.07)'; ctx.lineWidth = 1; ctx.stroke();
+    // crosshair lines on base
+    if (!shootActive) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.10)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(MOB.shootX - MOB.shootBaseR * 0.55, MOB.shootY); ctx.lineTo(MOB.shootX + MOB.shootBaseR * 0.55, MOB.shootY); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(MOB.shootX, MOB.shootY - MOB.shootBaseR * 0.55); ctx.lineTo(MOB.shootX, MOB.shootY + MOB.shootBaseR * 0.55); ctx.stroke();
+    }
+    // stick
+    const shOffX = shootJoy.active ? shootJoy.dx * (MOB.shootBaseR - MOB.shootStickR) : 0;
+    const shOffY = shootJoy.active ? shootJoy.dy * (MOB.shootBaseR - MOB.shootStickR) : 0;
+    ctx.beginPath(); ctx.arc(MOB.shootX + shOffX, MOB.shootY + shOffY, MOB.shootStickR, 0, Math.PI * 2);
+    ctx.fillStyle = shootFiring ? 'rgba(255,55,85,0.75)' : (shootActive ? 'rgba(255,55,85,0.40)' : 'rgba(255,255,255,0.16)'); ctx.fill();
+    ctx.strokeStyle = shootActive ? 'rgba(255,85,105,0.9)' : 'rgba(255,255,255,0.28)'; ctx.lineWidth = 2; ctx.stroke();
+    // FIRE label
+    ctx.font = 'bold 10px JetBrains Mono,monospace';
+    ctx.fillStyle = shootActive ? 'rgba(255,55,85,0.95)' : 'rgba(255,255,255,0.22)';
+    ctx.fillText('FIRE', MOB.shootX, MOB.shootY + MOB.shootBaseR + 13);
+
+    // --- DASH button ---
     const dashCD = Math.max(0, DASH_CD - (Date.now() - lastDash));
     ctx.beginPath(); ctx.arc(MOB.dashX, MOB.dashY, MOB.btnR, 0, Math.PI * 2);
-    ctx.fillStyle = dashCD > 0 ? 'rgba(28,28,40,0.85)' : 'rgba(77,139,255,0.28)'; ctx.fill();
-    ctx.strokeStyle = dashCD > 0 ? 'rgba(77,139,255,0.35)' : 'rgba(77,139,255,0.9)'; ctx.lineWidth = 2.5; ctx.stroke();
-    ctx.font = 'bold 11px JetBrains Mono,monospace';
+    ctx.fillStyle = dashCD > 0 ? 'rgba(20,20,32,0.88)' : 'rgba(77,139,255,0.28)'; ctx.fill();
+    ctx.strokeStyle = dashCD > 0 ? 'rgba(77,139,255,0.35)' : 'rgba(77,139,255,0.9)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.font = 'bold 10px JetBrains Mono,monospace';
     ctx.fillStyle = dashCD > 0 ? 'rgba(77,139,255,0.55)' : '#4d8bff';
     ctx.fillText(dashCD > 0 ? (dashCD / 1000).toFixed(1) : 'DASH', MOB.dashX, MOB.dashY);
-    // Ult button
+
+    // --- ULT button ---
     const ultReady = me.ultReady;
     ctx.beginPath(); ctx.arc(MOB.shieldX, MOB.shieldY, MOB.btnR, 0, Math.PI * 2);
-    ctx.fillStyle = ultReady ? 'rgba(199,125,255,0.28)' : 'rgba(28,28,40,0.85)'; ctx.fill();
-    ctx.strokeStyle = ultReady ? 'rgba(199,125,255,0.9)' : 'rgba(199,125,255,0.35)'; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.fillStyle = ultReady ? 'rgba(199,125,255,0.28)' : 'rgba(20,20,32,0.88)'; ctx.fill();
+    ctx.strokeStyle = ultReady ? 'rgba(199,125,255,0.9)' : 'rgba(199,125,255,0.35)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.font = 'bold 10px JetBrains Mono,monospace';
     ctx.fillStyle = ultReady ? '#c77dff' : 'rgba(199,125,255,0.55)';
-    ctx.fillText(ultReady ? 'ULT' : Math.round(me.ultCharge) + '/' + ULT_CHARGE_MAX, MOB.shieldX, MOB.shieldY);
+    ctx.fillText(ultReady ? 'ULT' : (Math.round(me.ultCharge / ULT_CHARGE_MAX * 100) + '%'), MOB.shieldX, MOB.shieldY);
+
     ctx.textBaseline = 'alphabetic'; ctx.restore();
+  }
+
+  /* ---------------- SPAWN HELPER ---------------- */
+  function randomSpawnPos() {
+    // Power distribution: values cluster near center, can still reach 38% of world radius
+    const maxR = Math.min(WORLD_W, WORLD_H) * 0.38;
+    const r = Math.pow(Math.random(), 1.8) * maxR;
+    const angle = Math.random() * Math.PI * 2;
+    return {
+      x: clamp(WORLD_W / 2 + Math.cos(angle) * r, PLAYER_R * 4, WORLD_W - PLAYER_R * 4),
+      y: clamp(WORLD_H / 2 + Math.sin(angle) * r, PLAYER_R * 4, WORLD_H - PLAYER_R * 4)
+    };
+  }
+
+  /* ---------------- BOT SYSTEM ---------------- */
+  function spawnBot() {
+    const charKeys = Object.keys(CHARACTERS);
+    const char = charKeys[(Math.random() * charKeys.length) | 0];
+    const pos = randomSpawnPos();
+    const id = 'bot_' + (++botIdSeq);
+    const bot = {
+      id, name: BOT_NAMES[(botIdSeq - 1) % BOT_NAMES.length],
+      color: CHARACTERS[char].color, char,
+      x: pos.x, y: pos.y, rx: pos.x, ry: pos.y,
+      aim: Math.random() * Math.PI * 2, facing: 1,
+      hp: MAX_HP, alive: true, deadUntil: 0, deathTime: 0,
+      level: 1, xp: 0, anim: 'idle', frame: 0, frameT: 0, moving: false,
+      isBot: true, lastBotFire: 0, lastCombat: 0,
+      botFireCd: BOT_FIRE_CD + Math.random() * 250,
+      wanderAngle: Math.random() * Math.PI * 2, wanderTimer: 0,
+      ultCharge: 0, ultReady: false,
+      mods: { dmg:0, fireRate:0, speed:0, multishot:0, pierce:0, lifesteal:0, thorns:0,
+              bulletSpeed:0, explosive:0, ricochet:0, bigBullet:0, spreadShot:0, rapidBurst:0,
+              maxHp:0, regenRate:0, regenDelay:0, critChance:0, onKillHeal:0, killShield:0,
+              dashHeal:0, dashCdReduce:0, damageResist:0, homingStr:0 },
+      abilities: [], points: 0, elims: 0,
+      immuneUntil: Date.now() + IMMUNE_MS, spawnImmune: true, killed: false
+    };
+    bots.push(bot);
+    return bot;
+  }
+
+  function botGainXp(bot, n) {
+    bot.xp += n; bot.points += Math.round(n);
+    let need = xpForLevel(bot.level);
+    while (bot.xp >= need) {
+      bot.xp -= need; bot.level++; need = xpForLevel(bot.level);
+      const picks = rollCards(3, bot.level);
+      const chosen = picks[(Math.random() * picks.length) | 0];
+      if (chosen) { chosen.apply(bot); bot.abilities.push(chosen.id); }
+    }
+  }
+
+  function tickBots(dt, t) {
+    if (!started) return;
+    const now = Date.now();
+    const realPlayers = 1 + Object.keys(others).length;
+    const shouldRespawn = realPlayers < 5;
+
+    // Top up bots when < 5 real players
+    const activeBots = bots.filter(b => !b.killed);
+    if (shouldRespawn && activeBots.length < BOT_COUNT) {
+      const toAdd = BOT_COUNT - activeBots.length;
+      for (let i = 0; i < toAdd; i++) spawnBot();
+    }
+
+    for (let bi = bots.length - 1; bi >= 0; bi--) {
+      const bot = bots[bi];
+      if (bot.killed) { bots.splice(bi, 1); continue; }
+
+      if (!bot.alive) {
+        if (!shouldRespawn) { bot.killed = true; continue; }
+        if (now >= bot.deadUntil) {
+          const pos = randomSpawnPos();
+          bot.x = pos.x; bot.y = pos.y; bot.rx = pos.x; bot.ry = pos.y;
+          bot.hp = MAX_HP; bot.alive = true;
+          bot.ultCharge = 0; bot.ultReady = false;
+          bot.immuneUntil = now + IMMUNE_MS; bot.spawnImmune = true;
+          bot.level = 1; bot.xp = 0; bot.abilities = [];
+          bot.mods = { dmg:0, fireRate:0, speed:0, multishot:0, pierce:0, lifesteal:0, thorns:0,
+                       bulletSpeed:0, explosive:0, ricochet:0, bigBullet:0, spreadShot:0, rapidBurst:0,
+                       maxHp:0, regenRate:0, regenDelay:0, critChance:0, onKillHeal:0, killShield:0,
+                       dashHeal:0, dashCdReduce:0, damageResist:0, homingStr:0 };
+        }
+        continue;
+      }
+
+      bot.spawnImmune = now < bot.immuneUntil;
+
+      // Find nearest target (me, other real players, or other bots)
+      let tgtX = me.x, tgtY = me.y;
+      let tgtDist = me.alive ? Math.hypot(bot.x - me.x, bot.y - me.y) : Infinity;
+
+      for (const id in others) {
+        const o = others[id]; if (!o.alive) continue;
+        const ox = o.rx !== undefined ? o.rx : o.x, oy = o.ry !== undefined ? o.ry : o.y;
+        const d = Math.hypot(bot.x - ox, bot.y - oy);
+        if (d < tgtDist) { tgtDist = d; tgtX = ox; tgtY = oy; }
+      }
+      for (const b2 of bots) {
+        if (b2 === bot || !b2.alive) continue;
+        const d = Math.hypot(bot.x - b2.x, bot.y - b2.y);
+        if (d < tgtDist) { tgtDist = d; tgtX = b2.x; tgtY = b2.y; }
+      }
+
+      const inSight = tgtDist < BOT_SIGHT_R;
+      let dx = 0, dy = 0;
+
+      if (inSight && tgtDist > PLAYER_R * 3) {
+        const dl = tgtDist;
+        dx = (tgtX - bot.x) / dl; dy = (tgtY - bot.y) / dl;
+        bot.aim = Math.atan2(tgtY - bot.y, tgtX - bot.x);
+      } else if (!inSight) {
+        bot.wanderTimer -= dt;
+        if (bot.wanderTimer <= 0) {
+          bot.wanderAngle += (Math.random() - 0.5) * Math.PI * 1.2;
+          bot.wanderTimer = 1.0 + Math.random() * 2.0;
+        }
+        dx = Math.cos(bot.wanderAngle); dy = Math.sin(bot.wanderAngle);
+        bot.aim = bot.wanderAngle;
+      }
+
+      // Move
+      const spd = SPEED * 0.82;
+      const moving = (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01);
+      if (moving) {
+        bot.x = clamp(bot.x + dx * spd * dt, PLAYER_R, WORLD_W - PLAYER_R);
+        bot.y = clamp(bot.y + dy * spd * dt, PLAYER_R, WORLD_H - PLAYER_R);
+        const preX = bot.x, preY = bot.y;
+        resolveObstacleCollision(bot, PLAYER_R);
+        // If pushed back by a wall, change wander direction to steer around it
+        if (Math.abs(bot.x - preX) > 0.5 || Math.abs(bot.y - preY) > 0.5) {
+          bot.wanderAngle += Math.PI * (0.6 + Math.random() * 0.8);
+          bot.wanderTimer = 0.4 + Math.random() * 0.8;
+        }
+      }
+      bot.rx = bot.x; bot.ry = bot.y;
+      bot.facing = Math.cos(bot.aim) < 0 ? -1 : 1;
+      bot.moving = moving;
+
+      // Animate
+      bot.frameT += dt;
+      if (bot.frameT > 0.2) { bot.frameT = 0; bot.frame = bot.frame ? 0 : 1; }
+      if (inSight) { bot.anim = moving ? (now - bot.lastBotFire < 220 ? 'walkshoot' : 'walk') : (now - bot.lastBotFire < 220 ? 'shoot' : 'idle'); }
+      else { bot.anim = moving ? 'walk' : 'idle'; }
+
+      // Shoot when in sight and not immune
+      const fireCd = bot.botFireCd * Math.max(0.4, 1 - (bot.mods.fireRate || 0));
+      if (inSight && now > bot.immuneUntil && now - bot.lastBotFire > fireCd) {
+        bot.lastBotFire = now;
+        const bspd = BULLET_SPEED * 0.88;
+        const bdmg = BULLET_DMG * (1 + (bot.mods.dmg || 0));
+        const aimJitter = (Math.random() - 0.5) * 0.18;
+        bullets.push({
+          id: 'bb_' + now + '_' + bi, owner: bot.id,
+          x: bot.x + Math.cos(bot.aim) * (PLAYER_R + 3),
+          y: bot.y + Math.sin(bot.aim) * (PLAYER_R + 3),
+          vx: Math.cos(bot.aim + aimJitter) * bspd,
+          vy: Math.sin(bot.aim + aimJitter) * bspd,
+          dmg: bdmg, born: now, pierce: 0, explosive: 0, ricochet: 0, radius: BULLET_R
+        });
+      }
+
+      // Regen
+      if (now - (bot.lastCombat || 0) > REGEN_DELAY && bot.hp < MAX_HP) {
+        bot.hp = Math.min(MAX_HP, bot.hp + REGEN_RATE * dt);
+      }
+
+      // Passive ult charge build (cosmetic)
+      if (!bot.ultReady) {
+        bot.ultCharge = Math.min(ULT_CHARGE_MAX, (bot.ultCharge || 0) + 15 * dt);
+        if (bot.ultCharge >= ULT_CHARGE_MAX) bot.ultReady = true;
+      }
+    }
   }
 
   /* ---------------- LIFECYCLE ---------------- */
@@ -2639,7 +2935,10 @@
     me.rbdBar = 0; me.rbdPosHistory = []; me.fofoUltActive = false; me.danielUltActive = false;
     try { localStorage.setItem('caName', n); localStorage.setItem('caChar', selectedChar); } catch (e) {}
     started = true; if (gate) gate.style.display = 'none';
-    me.x = WORLD_W / 2 + (Math.random() * 400 - 200); me.y = WORLD_H / 2 + (Math.random() * 400 - 200); me.lastCombat = Date.now();
+    const sp0 = randomSpawnPos(); me.x = sp0.x; me.y = sp0.y; me.lastCombat = Date.now();
+    // Spawn bots if fewer than 5 real players
+    bots = []; botIdSeq = 0;
+    if (1 + Object.keys(others).length < 5) { for (let _b = 0; _b < BOT_COUNT; _b++) spawnBot(); }
     
     // Start both music tracks at silence — browser allows audio after user gesture here
     if (!musicState.normalAudio) {
