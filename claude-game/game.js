@@ -207,7 +207,7 @@
   let fogCanvas = null, fogCtx = null;
   let visPath = null; // current-frame visibility polygon for enemy culling
   let firstPersonMode = false;
-  const FPS_RAYS = 480, FPS_FOV = Math.PI * 0.82, FPS_MAX_DIST = 2200;
+  const FPS_RAYS = 480, FPS_FOV = Math.PI * 0.58, FPS_MAX_DIST = 2200;
   const FPS_STRIP = Math.max(1, Math.ceil(VIEW_W / FPS_RAYS));
   const FPS_HALF_TAN = Math.tan(FPS_FOV / 2); // precomputed for perspective-correct projection
   const tetoState = { x: 0, y: 0, rx: 0, ry: 0, hp: TETO_MAX_HP, alive: false, state: 'roam', jumpAlpha: 1, jumpTimer: 0 };
@@ -1382,7 +1382,7 @@
         me.aim += (e.movementX || 0) * sens;
         me.facing = Math.cos(me.aim) < 0 ? -1 : 1;
         // vertical look pitch (clamped, doesn't affect bullet physics)
-        me.pitch = clamp((me.pitch || 0) + (e.movementY || 0) * sens * 0.55, -0.8, 0.8);
+        me.pitch = clamp((me.pitch || 0) - (e.movementY || 0) * sens * 0.55, -0.8, 0.8);
       }
     });
     canvas.addEventListener('click', () => {
@@ -2684,7 +2684,8 @@
 
       if (minT < FPS_MAX_DIST) {
         const perp = minT * Math.cos(angle - me.aim);
-        const wh = Math.round(Math.min(VIEW_H * 3.5, (VIEW_H * 260) / Math.max(1, perp)));
+        // Scale: world looks 3× bigger (scale 780), wall is 3× shorter (÷3) → net constant 260 but feels right at new FOV
+        const wh = Math.round(Math.min(VIEW_H * 2.8, (VIEW_H * 200) / Math.max(1, perp)));
         const horizon = VIEW_H / 2 + pitchOff;
         const wt = Math.round(horizon - wh / 2);
 
@@ -2701,6 +2702,81 @@
         ctx.fillStyle = `rgb(${wr},${wg},${wb})`;
         ctx.fillRect(x0, wt, x1 - x0 + 1, wh);
       }
+    }
+
+    // ── Placed walls (Q ability) — transparent glowing barriers ──
+    {
+      const _wNow = Date.now();
+      const _horizon = VIEW_H / 2 + pitchOff;
+      // Helper: project a world point to {scx, perp, valid}
+      const _projPt = (wx, wy) => {
+        const d = Math.hypot(wx - me.x, wy - me.y);
+        if (d < 1) return null;
+        let rel = Math.atan2(wy - me.y, wx - me.x) - me.aim;
+        while (rel > Math.PI) rel -= Math.PI * 2;
+        while (rel < -Math.PI) rel += Math.PI * 2;
+        if (Math.abs(rel) > Math.PI * 0.52) return null; // behind or way off FOV
+        const scx = VIEW_W / 2 * (1 + Math.tan(rel) / FPS_HALF_TAN);
+        return { scx, perp: d * Math.cos(rel) };
+      };
+
+      ctx.save();
+      for (const w of walls) {
+        const age = _wNow - w.born;
+        if (age > WALL_MAX_AGE) continue;
+        const fadeA = age > WALL_MAX_AGE - 2000 ? (WALL_MAX_AGE - age) / 2000 : 1;
+        const hpFrac = Math.max(0, w.hp / (w.maxHp || WALL_HP));
+
+        // HP-driven colour: blue (full) → orange (half) → red (low)
+        let cr, cg, cb;
+        if (hpFrac > 0.5) { const f = (hpFrac - 0.5) * 2; cr = Math.round(lerp(255, 102, f)); cg = Math.round(lerp(177, 153, f)); cb = Math.round(lerp(59, 238, f)); }
+        else               { const f = hpFrac * 2;          cr = Math.round(lerp(255, 180, f)); cg = Math.round(lerp(59,  177, f)); cb = 59; }
+
+        const p1 = _projPt(w.x1, w.y1), p2 = _projPt(w.x2, w.y2);
+        if (!p1 || !p2) continue;
+
+        // Depth check at mid-point — skip if fully occluded by solid wall
+        const midScx = Math.round((p1.scx + p2.scx) / 2);
+        const midPerp = (p1.perp + p2.perp) / 2;
+        if (midPerp <= 1) continue;
+        if (zbuf[Math.max(0, Math.min(VIEW_W - 1, midScx))] < midPerp * 0.96) continue;
+
+        // Wall heights at both endpoints
+        const wh1 = Math.round(Math.min(VIEW_H * 2.8, (VIEW_H * 200) / Math.max(1, p1.perp)));
+        const wh2 = Math.round(Math.min(VIEW_H * 2.8, (VIEW_H * 200) / Math.max(1, p2.perp)));
+        const top1 = Math.round(_horizon - wh1 / 2), bot1 = top1 + wh1;
+        const top2 = Math.round(_horizon - wh2 / 2), bot2 = top2 + wh2;
+
+        // Filled trapezoid — semi-transparent
+        ctx.globalAlpha = 0.42 * fadeA;
+        ctx.fillStyle = `rgb(${cr},${cg},${cb})`;
+        ctx.beginPath();
+        ctx.moveTo(p1.scx, top1); ctx.lineTo(p2.scx, top2);
+        ctx.lineTo(p2.scx, bot2); ctx.lineTo(p1.scx, bot1);
+        ctx.closePath(); ctx.fill();
+
+        // Bright edges — top, bottom, sides
+        const bright = `rgb(${Math.min(255,cr+70)},${Math.min(255,cg+70)},${Math.min(255,cb+70)})`;
+        ctx.globalAlpha = 0.88 * fadeA;
+        ctx.strokeStyle = bright; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(p1.scx, top1); ctx.lineTo(p2.scx, top2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(p1.scx, bot1); ctx.lineTo(p2.scx, bot2); ctx.stroke();
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(p1.scx, top1); ctx.lineTo(p1.scx, bot1); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(p2.scx, top2); ctx.lineTo(p2.scx, bot2); ctx.stroke();
+
+        // Scanline shimmer — horizontal lines for force-field look
+        ctx.globalAlpha = 0.18 * fadeA;
+        ctx.fillStyle = bright;
+        const steps = Math.max(2, Math.round(wh1 / 18));
+        for (let s = 0; s <= steps; s++) {
+          const tf = s / steps;
+          const y1 = top1 + (bot1 - top1) * tf, y2 = top2 + (bot2 - top2) * tf;
+          ctx.beginPath(); ctx.moveTo(p1.scx, y1); ctx.lineTo(p2.scx, y2); ctx.stroke();
+        }
+      }
+      ctx.globalAlpha = 1;
+      ctx.restore();
     }
 
     // ── Sprite billboard rendering — other players as PNG billboards ──
@@ -2720,8 +2796,8 @@
 
     for (const s of sprites) {
       const perp = s.dist * Math.cos(s.rel);
-      // Players are 0.5× the wall scale height
-      const sh = Math.round(Math.min(VIEW_H * 1.4, (VIEW_H * 260 * 0.5) / Math.max(1, perp)));
+      // Players are 0.6× wall scale (shorter than walls)
+      const sh = Math.round(Math.min(VIEW_H * 1.5, (VIEW_H * 200 * 0.6) / Math.max(1, perp)));
       const sw = sh;
       // Perspective-correct screen X using tan-mapping
       const scx = Math.round(VIEW_W / 2 * (1 + Math.tan(s.rel) / FPS_HALF_TAN));
@@ -2791,7 +2867,8 @@
         if (Math.abs(tRel) <= FPS_FOV / 2 + 0.25) {
           const tPerp = tDist * Math.cos(tRel);
           // Teto is large — scale billboard proportionally to its TETO_R
-          const tsh = Math.round(Math.min(VIEW_H * 3.5, (VIEW_H * 320) / Math.max(1, tPerp)));
+          // Teto is massive — 1.8× wall height
+          const tsh = Math.round(Math.min(VIEW_H * 3.2, (VIEW_H * 200 * 1.8) / Math.max(1, tPerp)));
           const tsw = tsh;
           const tscx = Math.round(VIEW_W / 2 * (1 + Math.tan(tRel) / FPS_HALF_TAN));
           const tsx = tscx - tsw / 2, tst = Math.round((VIEW_H - tsh) / 2 + pitchOff);
@@ -2852,6 +2929,113 @@
       ctx.restore();
     }
 
+    // ── Area effects (ult patches, rings, goo, blenders) in FPS ──
+    {
+      const _aeNow = Date.now();
+      const _horizon = VIEW_H / 2 + pitchOff;
+      // Helper: project world pos → {scx, perp} or null if behind/off-screen
+      const _projAE = (wx, wy) => {
+        const d = Math.hypot(wx - me.x, wy - me.y);
+        if (d < 2) return null;
+        let rel = Math.atan2(wy - me.y, wx - me.x) - me.aim;
+        while (rel > Math.PI) rel -= Math.PI * 2;
+        while (rel < -Math.PI) rel += Math.PI * 2;
+        if (Math.abs(rel) > Math.PI * 0.54) return null;
+        const perp = d * Math.cos(rel);
+        if (perp <= 1) return null;
+        return { scx: VIEW_W / 2 * (1 + Math.tan(rel) / FPS_HALF_TAN), perp, dist: d };
+      };
+
+      ctx.save();
+      for (const ae of areaEffects) {
+        const age = _aeNow - ae.born;
+        const frac = Math.min(1, age / ae.maxAge);
+        const lifeA = 1 - frac;
+        const pp = _projAE(ae.x, ae.y);
+        if (!pp) continue;
+        const fogF = Math.min(1, Math.max(0, (pp.perp - FOG_START) / (FPS_MAX_DIST - FOG_START)));
+        const baseAlpha = lifeA * Math.max(0, 1 - fogF * 0.8);
+        if (baseAlpha < 0.04) continue;
+
+        // Floor-radius → screen half-width
+        const r = ae.r || 40;
+        const floorW = Math.max(8, Math.round((r * VIEW_W) / Math.max(1, pp.perp * FPS_HALF_TAN * 2)));
+        // Floor Y: below horizon, depth-based
+        const floorY = Math.round(_horizon + Math.min(VIEW_H * 0.48, (VIEW_H * 80) / Math.max(1, pp.perp)));
+        const floorH = Math.max(4, Math.round(floorW * 0.3));
+        // Vertical pillar height for standing effects
+        const pillarH = Math.round(Math.min(VIEW_H * 0.7, (VIEW_H * 200 * 0.6) / Math.max(1, pp.perp)));
+        const pillarTop = _horizon - pillarH / 2;
+        const scx = Math.round(pp.scx);
+
+        ctx.save();
+        ctx.globalAlpha = baseAlpha;
+
+        if (ae.type === 'pumpkin_patch') {
+          // Orange floor disc
+          ctx.fillStyle = '#ff8c42'; ctx.shadowColor = '#ff8c42'; ctx.shadowBlur = 12;
+          ctx.beginPath(); ctx.ellipse(scx, floorY, floorW, floorH, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = baseAlpha * 0.35;
+          ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.ellipse(scx, floorY, floorW, floorH, 0, 0, Math.PI * 2); ctx.stroke();
+        } else if (ae.type === 'fofo_goo') {
+          ctx.fillStyle = '#9b59b6'; ctx.shadowColor = '#9b59b6'; ctx.shadowBlur = 10;
+          ctx.beginPath(); ctx.ellipse(scx, floorY, floorW, floorH, 0, 0, Math.PI * 2); ctx.fill();
+        } else if (ae.type === 'fofo_blast') {
+          ctx.fillStyle = '#c77dff'; ctx.shadowColor = '#c77dff'; ctx.shadowBlur = 28;
+          ctx.beginPath(); ctx.arc(scx, _horizon, pillarH * 0.5 * (1 - frac * 0.5), 0, Math.PI * 2); ctx.fill();
+        } else if (ae.type === 'zaid_ring') {
+          // Gold/white expanding ring around the world point
+          const ringR = Math.max(6, Math.round((ae.r * VIEW_W) / Math.max(1, pp.perp * FPS_HALF_TAN * 2)));
+          ctx.strokeStyle = ae.color || '#ffd700'; ctx.lineWidth = 4;
+          ctx.shadowColor = ae.color || '#ffd700'; ctx.shadowBlur = 20;
+          ctx.beginPath(); ctx.arc(scx, _horizon, ringR, 0, Math.PI * 2); ctx.stroke();
+          // Vertical flash column
+          ctx.globalAlpha = baseAlpha * 0.25;
+          ctx.fillStyle = ae.color || '#ffd700';
+          ctx.fillRect(scx - floorW * 0.5, pillarTop, floorW, pillarH);
+        } else if (ae.type === 'rich_tornado') {
+          const spin = (age / 800) * Math.PI * 4;
+          ctx.strokeStyle = '#ffb13b'; ctx.lineWidth = 3;
+          ctx.shadowColor = '#ffb13b'; ctx.shadowBlur = 16;
+          const tR = Math.max(5, Math.round((ae.r * VIEW_W * 0.4) / Math.max(1, pp.perp * FPS_HALF_TAN * 2)));
+          ctx.beginPath(); ctx.arc(scx, _horizon + pillarH * 0.1, tR, spin, spin + Math.PI * 1.6); ctx.stroke();
+          ctx.globalAlpha = baseAlpha * 0.3;
+          ctx.fillStyle = '#ffb13b';
+          ctx.fillRect(scx - floorW * 0.4, pillarTop, floorW * 0.8, pillarH);
+        } else if (ae.type === 'arthur_blender') {
+          const spin2 = (age / 600) * Math.PI * 6;
+          const bR = Math.max(8, Math.round(((ae.curR || ae.r) * VIEW_W * 0.45) / Math.max(1, pp.perp * FPS_HALF_TAN * 2)));
+          ctx.strokeStyle = '#ff6ec7'; ctx.lineWidth = 4;
+          ctx.shadowColor = '#ff6ec7'; ctx.shadowBlur = 22;
+          for (let k = 0; k < 3; k++) {
+            const a = spin2 + k * (Math.PI * 2 / 3);
+            ctx.beginPath(); ctx.moveTo(scx, _horizon); ctx.lineTo(scx + Math.cos(a) * bR, _horizon + Math.sin(a) * bR * 0.25); ctx.stroke();
+          }
+          ctx.globalAlpha = baseAlpha * 0.15;
+          ctx.fillStyle = '#ff6ec7';
+          ctx.beginPath(); ctx.ellipse(scx, _horizon, bR, bR * 0.25, 0, 0, Math.PI * 2); ctx.fill();
+        } else if (ae.type === 'daniel_stair') {
+          // Green platform strip at floor level
+          const sw2 = Math.max(10, floorW * 2.2), sh2 = Math.max(4, Math.round(floorH * 0.6));
+          ctx.fillStyle = '#2ecc71'; ctx.shadowColor = '#4eff9e'; ctx.shadowBlur = 14;
+          ctx.fillRect(scx - sw2 / 2, floorY - sh2 / 2, sw2, sh2);
+          ctx.strokeStyle = '#4eff9e'; ctx.lineWidth = 1.5;
+          ctx.strokeRect(scx - sw2 / 2, floorY - sh2 / 2, sw2, sh2);
+        } else if (ae.type === 'ender_blast') {
+          ctx.fillStyle = '#a259ff'; ctx.shadowColor = '#a259ff'; ctx.shadowBlur = 35;
+          ctx.beginPath(); ctx.arc(scx, _horizon, pillarH * 0.55 * (1 + frac * 1.2), 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+          ctx.globalAlpha = baseAlpha * 0.5;
+          ctx.beginPath(); ctx.arc(scx, _horizon, pillarH * 0.55 * (1 + frac * 1.2), 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+        ctx.restore();
+      }
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+
     // ── XP box billboards (brown squares, shorter than walls) ──
     const _fpsItemHelper = (wx, wy, renderFn) => {
       const d = Math.hypot(wx - me.x, wy - me.y);
@@ -2864,7 +3048,8 @@
       const scx2 = Math.round(VIEW_W / 2 * (1 + Math.tan(rel) / FPS_HALF_TAN));
       const zpx2 = Math.max(0, Math.min(VIEW_W - 1, scx2));
       if (zbuf[zpx2] < d) return;
-      const sz = Math.round((VIEW_H * 260 * 0.85) / Math.max(1, perp)); // shorter than walls but large enough to spot
+      // Boxes: 0.45× wall scale (2× shorter than walls)
+      const sz = Math.round((VIEW_H * 200 * 0.45) / Math.max(1, perp));
       const fogF = Math.min(1, Math.max(0, (perp - FOG_START) / (FPS_MAX_DIST * 0.6 - FOG_START)));
       const alpha = Math.max(0.1, 1 - fogF * 0.9);
       // vertically centered slightly below horizon (item resting on floor)
