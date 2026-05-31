@@ -1382,7 +1382,7 @@
         me.aim += (e.movementX || 0) * sens;
         me.facing = Math.cos(me.aim) < 0 ? -1 : 1;
         // vertical look pitch (clamped, doesn't affect bullet physics)
-        me.pitch = clamp((me.pitch || 0) - (e.movementY || 0) * sens * 0.55, -0.8, 0.8);
+        me.pitch = clamp((me.pitch || 0) - (e.movementY || 0) * sens * 0.55, -Math.PI / 2, Math.PI / 2);
       }
     });
     canvas.addEventListener('click', () => {
@@ -1445,7 +1445,8 @@
       me.alive = true; me.hp = MAX_HP;
       // Keep ult charge/ready on respawn
       me.level = 1; me.xp = 0; me.levelQueue = 0; me.abilities = []; lastWall = -99999;
-      me.fofoUltActive = false; me.danielUltActive = false; me.arthurInvis = false; me.arthurInvisBar = 0;
+      me.fofoUltActive = false; me.fofoLastEndTime = 0; me.fofoChargeBar = 0; // fofo ult CD clears on death
+      me.danielUltActive = false; me.arthurInvis = false; me.arthurInvisBar = 0;
       me.rbdBar = 0; me.rbdPosHistory = [];
       me.heroLightningTimer = 0; me.enderSlowTimer = 0; me.pullTimer = 0; me.pitch = 0;
       if (draftOpen) { draftOpen = false; if (cardLayer) { cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; } }
@@ -2449,11 +2450,16 @@
           ctx.save();
           ctx.globalAlpha = 0.55 + 0.4 * pulse;
           ctx.translate(ex, ey);
+          // Dark pill background
+          ctx.fillStyle = 'rgba(0,0,0,0.72)';
+          ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
           ctx.rotate(ang + Math.PI / 2);
           ctx.fillStyle = o.color || '#ff3b5c';
-          ctx.shadowColor = o.color || '#ff3b5c'; ctx.shadowBlur = 8;
+          ctx.shadowColor = o.color || '#ff3b5c'; ctx.shadowBlur = 6;
           ctx.beginPath();
-          ctx.moveTo(0, -8); ctx.lineTo(4, 4); ctx.lineTo(-4, 4);
+          ctx.moveTo(0, -7); ctx.lineTo(4, 4); ctx.lineTo(-4, 4);
           ctx.closePath(); ctx.fill();
           ctx.shadowBlur = 0;
           ctx.restore();
@@ -2487,13 +2493,19 @@
         const { ex, ey } = clampEdge(ang, PAD, PAD);
         ctx.save();
         ctx.translate(ex, ey);
+        // Dark pill background — makes it unambiguous this is a UI element
+        ctx.fillStyle = 'rgba(0,0,0,0.72)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        // Coloured arrow pointing toward the off-screen player
         ctx.rotate(ang + Math.PI / 2);
         ctx.fillStyle = o.color || '#ff3b5c';
+        ctx.shadowColor = o.color || '#ff3b5c'; ctx.shadowBlur = 6;
         ctx.beginPath();
-        ctx.moveTo(0, -10);
-        ctx.lineTo(5, 5);
-        ctx.lineTo(-5, 5);
-        ctx.fill();
+        ctx.moveTo(0, -8); ctx.lineTo(5, 4); ctx.lineTo(-5, 4);
+        ctx.closePath(); ctx.fill();
+        ctx.shadowBlur = 0;
         ctx.restore();
       }
     } catch (e) {
@@ -2634,7 +2646,7 @@
 
     // Pitch shifts the horizon; clamp so we don't expose canvas background
     const _pitch = (me.pitch || 0);
-    const _pitchPx = Math.round(_pitch * VIEW_H * 0.38);
+    const _pitchPx = Math.round(_pitch * (VIEW_H / 2) / (Math.PI / 2)); // ±π/2 → ±VIEW_H/2
     const _horizY = VIEW_H / 2 + _pitchPx;
 
     // ── Ceiling (medium gray-blue, brighter than before) ──
@@ -2656,7 +2668,7 @@
     const zbuf = new Float32Array(VIEW_W).fill(FPS_MAX_DIST);
     const FOG_START = 400, FOG_COLOR = [14, 14, 20];
     const pitch = (me.pitch || 0);          // vertical look, -0.8..+0.8
-    const pitchOff = Math.round(pitch * VIEW_H * 0.38); // pixel offset for horizon
+    const pitchOff = Math.round(pitch * (VIEW_H / 2) / (Math.PI / 2)); // ±π/2 maps to ±VIEW_H/2
 
     for (let i = 0; i < FPS_RAYS; i++) {
       // Perspective-correct (tan-mapped) angle — eliminates fish-eye
@@ -2813,13 +2825,15 @@
       if (vis < 0.08) continue;
 
       const fogFrac = Math.min(1, Math.max(0, (perp - FOG_START) / (FPS_MAX_DIST - FOG_START)));
+      const spriteAlpha = vis * Math.max(0.08, 1 - fogFrac * 0.9);
       ctx.save();
-      ctx.globalAlpha = vis * Math.max(0.08, 1 - fogFrac * 0.9);
-      ctx.beginPath(); ctx.rect(ssx, sst, sw, sh); ctx.clip(); // clip to billboard bounds
+      ctx.globalAlpha = spriteAlpha;
 
+      // ── Sprite image (clipped to billboard bounds) ──
+      ctx.save();
+      ctx.beginPath(); ctx.rect(ssx, sst, sw, sh); ctx.clip();
       const img = getSprite(s.o);
       if (img && img.complete && img.naturalWidth > 0) {
-        // Draw PNG sprite billboard (flip horizontally if facing left)
         const facing = s.o.facing || 1;
         if (facing < 0) {
           ctx.save();
@@ -2831,28 +2845,29 @@
           ctx.drawImage(img, ssx, sst, sw, sh);
         }
       } else {
-        // Fallback: colored silhouette
         ctx.fillStyle = s.o.color || '#ff3b5c';
         ctx.fillRect(ssx, sst + sh * 0.2, sw, sh * 0.55);
         ctx.beginPath(); ctx.arc(scx, sst + sh * 0.12, sw * 0.28, 0, Math.PI * 2); ctx.fill();
       }
+      ctx.restore(); // release clip — health bar drawn OUTSIDE clip below
 
-      // HP bar + name — visible as soon as the billboard has any meaningful size
-      if (sh > 18) {
-        const hpF = Math.max(0, ((s.o.hp || 100) / effMaxHp()));
-        const barH = Math.max(4, Math.round(sh * 0.04));
-        const barY = sst - barH - 2;
-        ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(ssx, barY, sw, barH);
-        ctx.fillStyle = hpF > 0.5 ? '#2fd47f' : hpF > 0.25 ? '#ffb13b' : '#ff3b5c';
-        ctx.fillRect(ssx, barY, sw * hpF, barH);
-        // Name label
-        const fSz = Math.max(8, Math.round(sh * 0.09));
-        ctx.font = `bold ${fSz}px JetBrains Mono,monospace`;
-        ctx.fillStyle = '#fff'; ctx.shadowColor = '#000'; ctx.shadowBlur = 4;
-        ctx.textAlign = 'center';
-        ctx.fillText((s.o.name || '?') + '  Lv' + (s.o.level || 1), scx, barY - 3);
-        ctx.shadowBlur = 0;
-      }
+      // ── HP bar + name — always above the sprite, unclipped ──
+      const barH = Math.max(5, Math.round(sh * 0.045));
+      const barY = sst - barH - 3;
+      const hpF = Math.max(0, (s.o.hp || 100) / effMaxHp());
+      ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(ssx, barY, sw, barH);
+      ctx.fillStyle = hpF > 0.5 ? '#2fd47f' : hpF > 0.25 ? '#ffb13b' : '#ff3b5c';
+      ctx.fillRect(ssx, barY, sw * hpF, barH);
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 0.5;
+      ctx.strokeRect(ssx, barY, sw, barH);
+      // Name label (visible from further away at min size 9px)
+      const fSz = Math.max(9, Math.round(sh * 0.1));
+      ctx.font = `bold ${fSz}px JetBrains Mono,monospace`;
+      ctx.fillStyle = '#fff'; ctx.shadowColor = '#000'; ctx.shadowBlur = 5;
+      ctx.textAlign = 'center';
+      ctx.fillText((s.o.name || '?') + '  Lv' + (s.o.level || 1), scx, barY - 4);
+      ctx.shadowBlur = 0;
+
       ctx.restore();
     }
 
@@ -3300,6 +3315,56 @@
       };
       fpsRow.appendChild(fpsLab); fpsRow.appendChild(fpsBtn);
       content.appendChild(fpsRow);
+
+      // ── Change Class button ──
+      const classRow = document.createElement('div');
+      classRow.style.cssText = 'margin-top:14px;padding-top:14px;border-top:1px solid #2a2a32;';
+      const classBtn = document.createElement('button');
+      classBtn.textContent = 'Change Class';
+      classBtn.style.cssText = 'width:100%;background:#1b1b20;border:1px solid #2a2a32;color:#c77dff;cursor:pointer;padding:9px;border-radius:8px;font-family:inherit;font-size:11px;font-weight:700;letter-spacing:.06em;transition:border-color .15s,background .15s;';
+      classBtn.onmouseenter = () => { classBtn.style.borderColor = '#c77dff'; classBtn.style.background = 'rgba(199,125,255,0.10)'; };
+      classBtn.onmouseleave = () => { classBtn.style.borderColor = '#2a2a32'; classBtn.style.background = '#1b1b20'; };
+      classBtn.onclick = () => {
+        toggleSettingsPanel();
+        openChangeClassPanel();
+      };
+      classRow.appendChild(classBtn);
+      content.appendChild(classRow);
+    }
+
+    // ── Floating change-class overlay (usable mid-game) ──
+    let changeClassEl = null;
+    function openChangeClassPanel() {
+      if (changeClassEl) { changeClassEl.remove(); changeClassEl = null; return; }
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:absolute;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.82);backdrop-filter:blur(4px);border-radius:10px;';
+      overlay.innerHTML = `<div style="background:#0d0d14;border:1px solid #2a2a32;border-radius:16px;padding:20px 24px;min-width:360px;max-width:500px;font-family:'JetBrains Mono',monospace;color:#ececef;text-align:center;">
+        <div style="font-size:13px;font-weight:700;color:#c77dff;margin-bottom:4px;letter-spacing:.08em;">CHANGE CLASS</div>
+        <div style="font-size:10px;color:#666;margin-bottom:14px;">Takes effect on next respawn (or immediately if dead)</div>
+        <div id="ccGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:14px;"></div>
+        <button id="ccClose" style="background:#2a2a32;border:none;color:#aaa;padding:9px 24px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:11px;">Cancel</button>
+      </div>`;
+      const grid = overlay.querySelector('#ccGrid');
+      for (const cid in CHARACTERS) {
+        const ch = CHARACTERS[cid];
+        const btn = document.createElement('button');
+        const on = cid === selectedChar;
+        btn.dataset.char = cid;
+        btn.style.cssText = `background:${on ? 'rgba(199,125,255,0.15)' : '#0f0f12'};border:2px solid ${on ? ch.color : '#2a2a32'};color:#ececef;padding:8px 4px;border-radius:9px;cursor:pointer;font-family:inherit;font-size:11px;line-height:1.4;text-align:center;transition:all .15s;`;
+        btn.innerHTML = `<div style="font-size:18px">${ch.emoji}</div><div style="font-weight:700;color:${ch.color};font-size:11px">${ch.label}</div>`;
+        btn.onclick = () => {
+          selectedChar = cid;
+          me.char = cid; me.color = ch.color;
+          if (socket) socket.emit('move', { x: Math.round(me.x), y: Math.round(me.y), aim: +me.aim.toFixed(2), char: cid, color: ch.color });
+          overlay.remove(); changeClassEl = null;
+          toast('Class changed to ' + ch.label + (me.alive ? ' (respawn to see full change)' : ''));
+        };
+        grid.appendChild(btn);
+      }
+      overlay.querySelector('#ccClose').onclick = () => { overlay.remove(); changeClassEl = null; };
+      const _caRoot = document.getElementById('caRoot') || el.closest('#caRoot') || document.body;
+      _caRoot.appendChild(overlay);
+      changeClassEl = overlay;
     }
 
     function renderControls() {
