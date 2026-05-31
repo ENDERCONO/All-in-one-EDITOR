@@ -170,7 +170,8 @@
       bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0,
       maxHp: 0, regenRate: 0, regenDelay: 0,
       critChance: 0, onKillHeal: 0, killShield: 0, dashHeal: 0, dashCdReduce: 0,
-      damageResist: 0, homingStr: 0
+      damageResist: 0, homingStr: 0,
+      poison: 0, shrapnel: 0, ghost: 0, knockback: 0, overcharge: 0, adrenaline: 0
     },
     abilities: [],
     points: 0
@@ -199,6 +200,10 @@
   const fofoUltPlayers = new Set(); // ids of others running fofo ult
   
   let others = {};
+  const poisonTargets = {}; // { id: { dmgPerSec, endTime, tickT } }
+  let adrenalineTimer = 0;  // seconds remaining on speed boost
+  let _shotCount = 0;       // for overcharge tracking
+  let fogCanvas = null, fogCtx = null;
   const tetoState = { x: 0, y: 0, rx: 0, ry: 0, hp: TETO_MAX_HP, alive: false, state: 'roam', jumpAlpha: 1, jumpTimer: 0 };
   const bullets = [];
   const particles = [];
@@ -477,6 +482,25 @@
       if (Math.abs(x - WORLD_W / 2) < 300 && Math.abs(y - WORLD_H / 2) < 300) continue;
       out.push({ x, y, w: s, h: s, type: 'small' });
     }
+    // ── L-shapes ──
+    const lrng = mulberry32(5555);
+    for (let i = 0; i < 22; i++) {
+      const x = 200 + lrng() * (WORLD_W - 400), y = 200 + lrng() * (WORLD_H - 400);
+      if (Math.abs(x - WORLD_W/2) < 550 && Math.abs(y - WORLD_H/2) < 550) continue;
+      const w1 = 90 + lrng()*110, thick = 32 + lrng()*28, h2 = 80 + lrng()*110;
+      out.push({ x, y, w: w1, h: thick, type: 'wall' });
+      out.push({ x, y: y + thick, w: thick, h: h2, type: 'wall' });
+    }
+    // ── U-shapes ──
+    const urng = mulberry32(6666);
+    for (let i = 0; i < 12; i++) {
+      const x = 300 + urng() * (WORLD_W - 600), y = 300 + urng() * (WORLD_H - 600);
+      if (Math.abs(x - WORLD_W/2) < 550 && Math.abs(y - WORLD_H/2) < 550) continue;
+      const W = 130 + urng()*110, H = 110 + urng()*70, t = 28 + urng()*24;
+      out.push({ x: x,       y: y,     w: t,     h: H, type: 'wall' }); // left arm
+      out.push({ x: x+W+t,   y: y,     w: t,     h: H, type: 'wall' }); // right arm
+      out.push({ x: x,       y: y+H-t, w: W+2*t, h: t, type: 'wall' }); // base
+    }
     return out;
   }
 
@@ -691,6 +715,10 @@
         addScreenShake(6, 0.5);
         toast('Being pulled by Rich!');
       }
+      if (data.type === 'knockback' && data.targetId === myId) {
+        me.pullVx = data.vx || 0; me.pullVy = data.vy || 0; me.pullTimer = 0.35;
+        addScreenShake(4, 0.25);
+      }
       if (data.type === 'rich_poor' && data.targetId === myId) {
         const newLevel = Math.max(1, Math.floor(me.level / 2));
         const lost = me.level - newLevel;
@@ -785,6 +813,7 @@
     play('hit', 0.5);
     addScreenShake(3, 0.15);
     spawnParticles(me.x, me.y, '#ff3b5c', 6, 150, 0.3);
+    if ((me.mods.adrenaline || 0) > 0) { adrenalineTimer = Math.max(adrenalineTimer, 2.5); }
     // Sync HP to server immediately for bot hits (prevents stale-HP phantom damage from server)
     const isBot = fromId && typeof fromId === 'string' && fromId.startsWith('bot_');
     const now2 = Date.now();
@@ -831,7 +860,7 @@
   function effDashCd()   { return debugMode ? 100 : Math.max(500, (DASH_CD - (me.mods.dashCdReduce || 0) * 1000) * fofoMult()); }
   function isSprinting() { return !!(keys['shift'] || keys['shiftleft'] || keys['shiftright']); }
   function effSpeed() {
-    let s = SPEED * (1 + me.mods.speed);
+    let s = SPEED * (1 + me.mods.speed) * (adrenalineTimer > 0 ? 1.4 : 1);
     if (me.char === 'zaid') s *= 1.1;
     if (me.char === 'fofo' && me.fofoUltActive) s *= 3;
     if (me.char === 'daniel' && me.danielUltActive) s *= 0.7;
@@ -855,7 +884,7 @@
     // Broadcast directly down the WebSocket loop
     if (socket) socket.emit('shoot', shot);
 
-    bullets.push({ id, owner: myId, x: sx, y: sy, vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd, dmg, reflected: !!ref, pierce: pierce || 0, explosive: opts.explosive || 0, ricochet: opts.ricochet || 0, radius, born: Date.now() });
+    bullets.push({ id, owner: myId, x: sx, y: sy, vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd, dmg, reflected: !!ref, pierce: pierce || 0, explosive: opts.explosive || 0, ricochet: opts.ricochet || 0, radius, born: Date.now(), poison: opts.poison || 0, shrapnel: opts.shrapnel || 0, ghost: opts.ghost || 0, knockback: opts.knockback || 0 });
   }
 
   function fire() {
@@ -863,11 +892,27 @@
     // Arthur shooting ends invisibility
     if (me.char === 'arthur' && me.arthurInvis) { me.arthurInvis = false; }
     me.lastCombat = t; me.anim = 'shoot'; me.frame = 0; me.frameT = 0;
-    const dmg = effDmg() * (me.char === 'rich' ? 1.15 : 1.0);
+    let dmg = effDmg() * (me.char === 'rich' ? 1.15 : 1.0);
+    // Crit check
+    if ((me.mods.critChance || 0) > 0 && Math.random() < me.mods.critChance) {
+      dmg *= 2; spawnParticles(me.x, me.y, '#ffff44', 4, 100, 0.2);
+    }
+    // Overcharge: every Nth shot deals 3x dmg + explosion
+    _shotCount++;
+    const ovN = me.mods.overcharge || 0;
+    const isOvercharge = ovN > 0 && (_shotCount % ovN === 0);
+    if (isOvercharge) { dmg *= 3; spawnParticles(me.x, me.y, '#ff8800', 8, 160, 0.4); }
     const ms = me.mods.multishot || 0;
     const pierce = me.mods.pierce || 0;
     const spd = effBulletSpeed();
-    const opts = { explosive: me.mods.explosive || 0, ricochet: me.mods.ricochet || 0 };
+    const opts = {
+      explosive: (me.mods.explosive || 0) + (isOvercharge ? 40 : 0),
+      ricochet: me.mods.ricochet || 0,
+      poison: me.mods.poison || 0,
+      shrapnel: me.mods.shrapnel || 0,
+      ghost: me.mods.ghost || 0,
+      knockback: me.mods.knockback || 0,
+    };
 
     if (ms > 0) {
       const spreadAng = 0.13;
@@ -1181,7 +1226,31 @@
     { id: 'hp3',    name: 'Titan Body',          rarity: 'epic',      desc: '+70 max HP (restores immediately)', apply: m => { m.mods.maxHp += 70; m.hp = Math.min(m.hp + 70, MAX_HP + m.mods.maxHp); } },
     { id: 'regen1', name: 'Regeneration',        rarity: 'common',    desc: '+1 HP/s out-of-combat regen',     apply: m => m.mods.regenRate += 1 },
     { id: 'regen2', name: 'Fast Recovery',       rarity: 'rare',      desc: '+2 HP/s out-of-combat regen',     apply: m => m.mods.regenRate += 2 },
-    { id: 'regen3', name: 'Quick Heal',          rarity: 'rare',      desc: 'Regen starts 2s sooner',          apply: m => m.mods.regenDelay = Math.min((m.mods.regenDelay || 0) + 2000, 4000) }
+    { id: 'regen3', name: 'Quick Heal',          rarity: 'rare',      desc: 'Regen starts 2s sooner',          apply: m => m.mods.regenDelay = Math.min((m.mods.regenDelay || 0) + 2000, 4000) },
+  // ── Poison ──
+  { id: 'venom1',  name: 'Venom Tip',          rarity: 'rare',      desc: 'Bullets apply poison (5 dmg/s for 3s)',      apply: m => { m.mods.poison = Math.max(m.mods.poison||0, 5); } },
+  { id: 'venom2',  name: 'Necrotic Rounds',     rarity: 'epic',      desc: 'Bullets apply poison (12 dmg/s for 4s)',     apply: m => { m.mods.poison = Math.max(m.mods.poison||0, 12); } },
+  // ── Shrapnel ──
+  { id: 'shrap1',  name: 'Frag Tip',            rarity: 'epic',      desc: 'Bullets fragment into 4 shards on impact',  apply: m => { m.mods.shrapnel = (m.mods.shrapnel||0) + 4; } },
+  { id: 'shrap2',  name: 'Cluster Flechette',   rarity: 'legendary', desc: 'Bullets fragment into 8 shards on impact',  apply: m => { m.mods.shrapnel = (m.mods.shrapnel||0) + 8; } },
+  // ── Ghost bullets ──
+  { id: 'ghost1',  name: 'Ghost Rounds',        rarity: 'epic',      desc: 'Bullets phase through walls + pierce 2',    apply: m => { m.mods.ghost = (m.mods.ghost||0) + 1; m.mods.pierce += 2; } },
+  // ── Knockback ──
+  { id: 'knock1',  name: 'Stopping Power',      rarity: 'rare',      desc: 'Bullets push enemies back',                 apply: m => { m.mods.knockback = (m.mods.knockback||0) + 180; } },
+  { id: 'knock2',  name: 'Shockwave',           rarity: 'epic',      desc: 'Stronger knockback + small blast',          apply: m => { m.mods.knockback = (m.mods.knockback||0) + 320; m.mods.explosive = Math.max(m.mods.explosive||0, 28); } },
+  // ── Overcharge ──
+  { id: 'ovchg1',  name: 'Overcharge',          rarity: 'legendary', desc: 'Every 4th shot: 3× dmg + mini-explosion',   apply: m => { m.mods.overcharge = Math.max(m.mods.overcharge||0, 4); } },
+  // ── Adrenaline ──
+  { id: 'adren1',  name: 'Adrenaline Rush',     rarity: 'epic',      desc: 'Taking damage: +40% speed for 2.5s',        apply: m => { m.mods.adrenaline = (m.mods.adrenaline||0) + 1; } },
+  // ── Crits ──
+  { id: 'crit1',   name: 'Lucky Shots',         rarity: 'common',    desc: '18% crit chance (2× damage)',               apply: m => { m.mods.critChance = (m.mods.critChance||0) + 0.18; } },
+  { id: 'crit2',   name: 'Glass Cannon',        rarity: 'rare',      desc: '+35% crit, -20 max HP',                     apply: m => { m.mods.critChance = (m.mods.critChance||0) + 0.35; m.mods.maxHp = (m.mods.maxHp||0) - 20; m.hp = Math.max(1, m.hp - 20); } },
+  // ── Lifesteal combo ──
+  { id: 'vamp1',   name: 'Blood Drain',         rarity: 'epic',      desc: '+6 HP/hit, +30 HP/kill',                    apply: m => { m.mods.lifesteal += 6; m.mods.onKillHeal = (m.mods.onKillHeal||0) + 30; } },
+  // ── Combo: Poison + Explosion ──
+  { id: 'toxboom', name: 'Toxic Detonation',    rarity: 'legendary', desc: 'COMBO: Poison bullets that also explode',   apply: m => { m.mods.poison = Math.max(m.mods.poison||0, 8); m.mods.explosive = Math.max(m.mods.explosive||0, 40); } },
+  // ── Combo: Ghost + Spread ──
+  { id: 'phasebar',name: 'Phase Barrage',       rarity: 'legendary', desc: 'COMBO: 3 wall-phasing spread bullets',      apply: m => { m.mods.ghost = (m.mods.ghost||0) + 1; m.mods.multishot = (m.mods.multishot||0) + 1; m.mods.pierce += 3; } }
   ];
 
   function rollCards(n, lvlOverride) {
@@ -1318,7 +1387,7 @@
       me.rbdBar = 0; me.rbdPosHistory = [];
       me.heroLightningTimer = 0; me.enderSlowTimer = 0; me.pullTimer = 0;
       if (draftOpen) { draftOpen = false; if (cardLayer) { cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; } }
-      me.mods = { dmg: 0, fireRate: 0, speed: 0, multishot: 0, pierce: 0, lifesteal: 0, thorns: 0, bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0, maxHp: 0, regenRate: 0, regenDelay: 0, critChance: 0, onKillHeal: 0, killShield: 0, dashHeal: 0, dashCdReduce: 0, damageResist: 0, homingStr: 0 };
+      me.mods = { dmg: 0, fireRate: 0, speed: 0, multishot: 0, pierce: 0, lifesteal: 0, thorns: 0, bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0, maxHp: 0, regenRate: 0, regenDelay: 0, critChance: 0, onKillHeal: 0, killShield: 0, dashHeal: 0, dashCdReduce: 0, damageResist: 0, homingStr: 0, poison: 0, shrapnel: 0, ghost: 0, knockback: 0, overcharge: 0, adrenaline: 0 };
       const rsp = randomSpawnPos(); me.x = rsp.x; me.y = rsp.y; me.lastCombat = Date.now();
       me.immuneUntil = Date.now() + 5000;
       if (socket) { socket.emit('respawn', { x: me.x, y: me.y, char: me.char, color: me.color }); socket.emit('hpSync', { hp: MAX_HP }); lastHpSync = Date.now(); }
@@ -1655,6 +1724,7 @@
       if (t - b.born > 4500 || b.x < -40 || b.x > WORLD_W + 40 || b.y < -40 || b.y > WORLD_H + 40) { bullets.splice(i, 1); continue; }
 
       let blocked = false;
+      if (b.ghost && b.ghost > 0) { /* ghost bullets skip obstacle checks */ } else
       for (const o of obstacles) {
         if (b.x >= o.x && b.x <= o.x + o.w && b.y >= o.y && b.y <= o.y + o.h) {
           if ((b.ricochet || 0) > 0) {
@@ -1765,8 +1835,26 @@
             gainUltCharge(dmgAmount); gainXp(dmgAmount * XP_PER_DMG);
             if (me.mods.lifesteal > 0) me.hp = Math.min(effMaxHp(), me.hp + me.mods.lifesteal);
             spawnParticles(b.x, b.y, '#ffb13b', 5, 120, 0.3); play('hitEnemy', 0.4);
-            
             if ((b.explosive || 0) > 0) spawnExplosion(b.x, b.y, b.explosive, b.dmg);
+            // Poison
+            if ((b.poison || 0) > 0) {
+              poisonTargets[id] = { dmgPerSec: b.poison, endTime: Date.now() + 3500, tickT: 0 };
+              spawnParticles(o.rx||o.x, o.ry||o.y, '#44ff55', 5, 70, 0.5);
+            }
+            // Shrapnel: spawn sub-bullets
+            if ((b.shrapnel || 0) > 0 && !b.isShrapnel) {
+              const blen = Math.hypot(b.vx, b.vy) || 1;
+              for (let s = 0; s < b.shrapnel; s++) {
+                const sa = Math.atan2(b.vy, b.vx) + (Math.random() - 0.5) * Math.PI * 1.4;
+                const sspd = (effBulletSpeed() || 400) * (0.5 + Math.random() * 0.3);
+                bullets.push({ id: 'sh_'+Date.now()+'_'+s, owner: myId, x: b.x, y: b.y, vx: Math.cos(sa)*sspd, vy: Math.sin(sa)*sspd, dmg: Math.round(b.dmg * 0.35), reflected: false, pierce: 0, explosive: (b.explosive||0) > 0 ? 15 : 0, ricochet: 0, radius: BULLET_R * 0.7, born: Date.now(), isShrapnel: true, ghost: b.ghost||0 });
+              }
+            }
+            // Knockback
+            if ((b.knockback || 0) > 0) {
+              const kbLen = Math.hypot(b.vx, b.vy) || 1;
+              if (socket) socket.emit('ultEffect', { type: 'knockback', targetId: id, vx: (b.vx/kbLen) * b.knockback, vy: (b.vy/kbLen) * b.knockback });
+            }
             hit = true; break;
           }
         }
@@ -1848,6 +1936,22 @@
       if (t - walls[wi].born > WALL_MAX_AGE) walls.splice(wi, 1);
     }
 
+    // ── Poison tick ──
+    const pnow = Date.now();
+    for (const pid in poisonTargets) {
+      const pt = poisonTargets[pid];
+      if (pnow > pt.endTime || !others[pid] || !others[pid].alive) { delete poisonTargets[pid]; continue; }
+      pt.tickT += dt;
+      if (pt.tickT >= 1.0) {
+        pt.tickT -= 1.0;
+        const pdmg = Math.round(pt.dmgPerSec);
+        if (socket) socket.emit('damage', { targetId: pid, amount: pdmg });
+        gainUltCharge(pdmg * 0.5);
+        const po = others[pid]; if (po) spawnParticles(po.rx||po.x, po.ry||po.y, '#44ff88', 4, 70, 0.4);
+      }
+    }
+    // ── Adrenaline decay ──
+    if (adrenalineTimer > 0) { adrenalineTimer -= dt; if (adrenalineTimer < 0) adrenalineTimer = 0; }
     if (countEl) countEl.textContent = 1 + Object.keys(others).length;
     updateHud(); updateLeaderboard();
   }
@@ -2066,6 +2170,7 @@
 
     // FOFO vignette/dark effect when near a FOFO ult
     drawFofoVignette();
+    drawFogOfWar();
     drawOffscreenMarkers();
     if (started) drawCanvasHud();
     if (IS_MOBILE) drawMobileOverlay();
@@ -2401,6 +2506,70 @@
 
   ctx.restore();
 }
+
+  /* ---------------- FOG OF WAR ---------------- */
+  function drawFogOfWar() {
+    if (!fogCanvas || !me.alive || !started) return;
+    const mx = me.x - camera.x, my = me.y - camera.y;
+    const maxR = Math.hypot(VIEW_W, VIEW_H) + 60;
+
+    // Visible obstacles (in or near viewport)
+    const visObs = obstacles.filter(o => {
+      const sx = o.x - camera.x, sy = o.y - camera.y;
+      return sx < VIEW_W + 200 && sx + o.w > -200 && sy < VIEW_H + 200 && sy + o.h > -200;
+    });
+
+    // Collect ray angles: 3 per obstacle corner + boundary sweep
+    const angles = [];
+    for (const o of visObs) {
+      for (const [cx, cy] of [[o.x,o.y],[o.x+o.w,o.y],[o.x,o.y+o.h],[o.x+o.w,o.y+o.h]]) {
+        const a = Math.atan2(cy - me.y, cx - me.x);
+        angles.push(a - 0.0002, a, a + 0.0002);
+      }
+    }
+    for (let i = 0; i < 64; i++) angles.push(-Math.PI + i / 64 * Math.PI * 2);
+    angles.sort((a, b) => a - b);
+
+    // Cast ray for each angle, find nearest obstacle
+    const pts = [];
+    for (const angle of angles) {
+      const dx = Math.cos(angle), dy = Math.sin(angle);
+      let minT = maxR;
+      for (const o of visObs) {
+        const tx1 = dx === 0 ? -1e9 : (o.x - me.x) / dx;
+        const tx2 = dx === 0 ?  1e9 : (o.x + o.w - me.x) / dx;
+        const ty1 = dy === 0 ? -1e9 : (o.y - me.y) / dy;
+        const ty2 = dy === 0 ?  1e9 : (o.y + o.h - me.y) / dy;
+        const tmin = Math.max(Math.min(tx1, tx2), Math.min(ty1, ty2));
+        const tmax = Math.min(Math.max(tx1, tx2), Math.max(ty1, ty2));
+        if (tmax >= 0 && tmin <= tmax && tmin >= 0 && tmin < minT) minT = tmin;
+      }
+      pts.push([mx + dx * minT, my + dy * minT]);
+    }
+
+    // Draw dark fog on offscreen canvas, punch out the visible polygon
+    fogCtx.clearRect(0, 0, VIEW_W, VIEW_H);
+    fogCtx.fillStyle = 'rgba(0,0,0,0.80)';
+    fogCtx.fillRect(0, 0, VIEW_W, VIEW_H);
+    fogCtx.globalCompositeOperation = 'destination-out';
+    fogCtx.fillStyle = 'rgba(255,255,255,1)';
+    fogCtx.beginPath();
+    fogCtx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) fogCtx.lineTo(pts[i][0], pts[i][1]);
+    fogCtx.closePath();
+    fogCtx.fill();
+    // Soft fade at edge of visibility
+    fogCtx.globalCompositeOperation = 'destination-out';
+    const grad = fogCtx.createRadialGradient(mx, my, maxR * 0.65, mx, my, maxR * 0.98);
+    grad.addColorStop(0, 'rgba(255,255,255,0)');
+    grad.addColorStop(1, 'rgba(255,255,255,0.55)');
+    fogCtx.fillStyle = grad;
+    fogCtx.fillRect(0, 0, VIEW_W, VIEW_H);
+    fogCtx.globalCompositeOperation = 'source-over';
+
+    ctx.drawImage(fogCanvas, 0, 0);
+  }
+
   /* ---------------- SETTINGS PANEL ---------------- */
   function keyLabel(k) {
     const M = { ' ': 'Space', 'arrowup': '↑', 'arrowdown': '↓', 'arrowleft': '←', 'arrowright': '→', 'shift': 'Shift', 'control': 'Ctrl', 'alt': 'Alt', 'escape': 'Esc', 'enter': 'Enter', 'backspace': '⌫', 'tab': 'Tab' };
@@ -2872,6 +3041,9 @@
     if (inited) return; inited = true;
 
     applyGameScale(); // fill viewport immediately
+    fogCanvas = document.createElement('canvas');
+    fogCanvas.width = VIEW_W; fogCanvas.height = VIEW_H;
+    fogCtx = fogCanvas.getContext('2d');
 
     const root = opts.mount ? document.querySelector(opts.mount) : document; cacheDom(root);
     obstacles = buildObstacles(); loadCharAssets();

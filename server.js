@@ -36,6 +36,25 @@ function buildObstacles() {
     if (Math.abs(x - WORLD_W / 2) < 300 && Math.abs(y - WORLD_H / 2) < 300) continue;
     out.push({ x, y, w: s, h: s });
   }
+  // ── L-shapes ──
+  const lrng = mulberry32(5555);
+  for (let i = 0; i < 22; i++) {
+    const x = 200 + lrng() * (WORLD_W - 400), y = 200 + lrng() * (WORLD_H - 400);
+    if (Math.abs(x - WORLD_W/2) < 550 && Math.abs(y - WORLD_H/2) < 550) continue;
+    const w1 = 90 + lrng()*110, thick = 32 + lrng()*28, h2 = 80 + lrng()*110;
+    out.push({ x, y, w: w1, h: thick });
+    out.push({ x, y: y + thick, w: thick, h: h2 });
+  }
+  // ── U-shapes ──
+  const urng = mulberry32(6666);
+  for (let i = 0; i < 12; i++) {
+    const x = 300 + urng() * (WORLD_W - 600), y = 300 + urng() * (WORLD_H - 600);
+    if (Math.abs(x - WORLD_W/2) < 550 && Math.abs(y - WORLD_H/2) < 550) continue;
+    const W = 130 + urng()*110, H = 110 + urng()*70, t = 28 + urng()*24;
+    out.push({ x: x,       y: y,     w: t,     h: H }); // left arm
+    out.push({ x: x+W+t,   y: y,     w: t,     h: H }); // right arm
+    out.push({ x: x,       y: y+H-t, w: W+2*t, h: t }); // base
+  }
   return out;
 }
 const OBSTACLES = buildObstacles();
@@ -80,6 +99,10 @@ function generateBoxes() {
     const rx = r(), ry = r(); let x, y;
     if (i < 10) { x = Math.round(cx - 500 + rx * 1000); y = Math.round(cy - 350 + ry * 700); }
     else { x = Math.round(400 + rx * (WORLD_W - 800)); y = Math.round(400 + ry * (WORLD_H - 800)); }
+    // Reject boxes that land on top of obstacles
+    let onObs = false;
+    for (const o of OBSTACLES) { if (x+w/2 > o.x && x-w/2 < o.x+o.w && y+w/2 > o.y && y-w/2 < o.y+o.h) { onObs = true; break; } }
+    if (onObs) continue;
     boxes.push({ id: i + 1, x, y, w, h: w, scale, color });
   }
   return boxes;
@@ -99,6 +122,9 @@ setInterval(() => {
     const color = BOX_COLORS[(r() * BOX_COLORS.length) | 0];
     const bx = Math.round(200 + r() * (WORLD_W - 400));
     const by = Math.round(200 + r() * (WORLD_H - 400));
+    let onObs2 = false;
+    for (const o of OBSTACLES) { if (bx+w/2 > o.x && bx-w/2 < o.x+o.w && by+w/2 > o.y && by-w/2 < o.y+o.h) { onObs2 = true; break; } }
+    if (onObs2) continue;
     const nb = { id: ++boxIdCounter, x: bx, y: by, w, h: w, scale, color };
     xpBoxes.push(nb);
     io.emit('boxSpawned', nb);
@@ -414,13 +440,41 @@ function botTick() {
     // ── Movement (wander toward target with some inaccuracy) ──
     bot._wanderTimer -= DT;
     if (bot._wanderTimer <= 0) {
-      bot._wanderTimer = 1.5 + Math.random() * 2;
+      bot._wanderTimer = 0.8 + Math.random() * 1.2;
       if (nearest) {
-        const baseAng = Math.atan2(nearest.y - bot.y, nearest.x - bot.x);
-        bot._wanderAngle = baseAng + (Math.random() - 0.5) * 0.8;
+        const dist = nearDist;
+        // Lead targeting: predict where target will be in ~0.4s
+        const leadT = Math.min(dist / 480, 0.5);
+        const predX = nearest.x + (nearest._vx || 0) * leadT / DT;
+        const predY = nearest.y + (nearest._vy || 0) * leadT / DT;
+        const baseAng = Math.atan2(predY - bot.y, predX - bot.x);
+        // Strafe perpendicular to target direction (random left/right)
+        const perpDir = bot._strafeDir || 1;
+        const strafeAng = baseAng + Math.PI / 2 * perpDir;
+        // Flip strafe direction occasionally
+        if (Math.random() < 0.35) bot._strafeDir = -perpDir;
+        // Blend approach + strafe based on distance
+        if (dist < 220) {
+          // Too close: back off + strafe
+          bot._wanderAngle = baseAng + Math.PI + Math.PI / 3 * perpDir;
+        } else if (dist > 500) {
+          // Far: approach directly
+          bot._wanderAngle = baseAng + (Math.random() - 0.5) * 0.4;
+        } else {
+          // Mid range: strafe + approach blend
+          bot._wanderAngle = strafeAng * 0.6 + baseAng * 0.4 + (Math.random() - 0.5) * 0.3;
+        }
+        // Low HP: retreat toward wall/cover
+        if (bot.hp < 30) bot._wanderAngle = baseAng + Math.PI + (Math.random() - 0.5) * 0.8;
       } else {
         bot._wanderAngle = Math.random() * Math.PI * 2;
       }
+    }
+    // Track target velocity for lead prediction
+    if (nearest) {
+      nearest._vx = nearest.x - (nearest._px || nearest.x);
+      nearest._vy = nearest.y - (nearest._py || nearest.y);
+      nearest._px = nearest.x; nearest._py = nearest.y;
     }
     const spd = BOT_SPEED * DT;
     const preX = bot.x, preY = bot.y;
@@ -446,8 +500,13 @@ function botTick() {
     if (nearest && nearestId && now - bot._lastShot > bot._shotInterval) {
       bot._lastShot = now;
       bot.anim = 'shoot';
-      const inaccuracy = (Math.random() - 0.5) * 0.9;
-      const shotAngle  = bot.aim + inaccuracy;
+      // Lead prediction for shot angle
+      const leadT2 = Math.min(nearDist / 480, 0.6);
+      const lx = nearest.x + (nearest._vx || 0) * leadT2 / DT;
+      const ly = nearest.y + (nearest._vy || 0) * leadT2 / DT;
+      const leadAim = Math.atan2(ly - bot.y, lx - bot.x);
+      const inaccuracy = (Math.random() - 0.5) * (0.35 + nearDist / BOT_HIT_RANGE * 0.5);
+      const shotAngle  = leadAim + inaccuracy;
       io.emit('enemyShoot', {
         owner: botId,
         id:    'bs_' + Math.random().toString(36).slice(2, 7),
