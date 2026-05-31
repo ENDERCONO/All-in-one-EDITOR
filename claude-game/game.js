@@ -204,6 +204,7 @@
   let adrenalineTimer = 0;  // seconds remaining on speed boost
   let _shotCount = 0;       // for overcharge tracking
   let fogCanvas = null, fogCtx = null;
+  let visPath = null; // current-frame visibility polygon for enemy culling
   const tetoState = { x: 0, y: 0, rx: 0, ry: 0, hp: TETO_MAX_HP, alive: false, state: 'roam', jumpAlpha: 1, jumpTimer: 0 };
   const bullets = [];
   const particles = [];
@@ -1311,7 +1312,7 @@
   let lbEl = null;
   function buildLeaderboard(root) {
     lbEl = document.createElement('div'); lbEl.id = 'caLeaderboard';
-    lbEl.style.cssText = `position:absolute; top:16px; right:18px; z-index:20; pointer-events:none; width:200px; font-family:'JetBrains Mono',monospace; font-size:11px; background:rgba(18,18,22,.78); border:1px solid #2a2a32; border-radius:10px; padding:9px 11px; color:#ececef;`;
+    lbEl.style.cssText = `position:absolute; top:16px; right:52px; z-index:20; pointer-events:none; width:190px; font-family:'JetBrains Mono',monospace; font-size:11px; background:rgba(18,18,22,.78); border:1px solid #2a2a32; border-radius:10px; padding:9px 11px; color:#ececef;`;
     lbEl.innerHTML = '<div style="font-size:9px;letter-spacing:.12em;color:#8a8a94;text-transform:uppercase;margin-bottom:6px">Leaderboard</div><div id="caLbRows"></div>';
     root.querySelector('#caRoot').appendChild(lbEl);
   }
@@ -2361,7 +2362,9 @@
       }
       for (const id in others) {
         const o = others[id];
+        // Don't show off-screen indicators for bots — they're always present as AI
         if (!o || o.x === undefined || o.y === undefined) continue;
+        if (id.startsWith('bot_')) continue;
         const sx = o.x - camera.x, sy = o.y - camera.y;
         if (sx > 0 && sx < VIEW_W && sy > 0 && sy < VIEW_H) continue;
         const ang = Math.atan2(sy - cy, sx - cx);
@@ -2407,9 +2410,12 @@
   const px = isMe ? p.x : (p.rx !== undefined ? p.rx : p.x);
   const py = isMe ? p.y : (p.ry !== undefined ? p.ry : p.y);
   const sx = px - camera.x, sy = py - camera.y;
-  
+
   // Boundary check
   if (sx < -60 || sx > VIEW_W + 60 || sy < -60 || sy > VIEW_H + 60) return;
+
+  // Fog of war: hide enemies that are outside the visible polygon
+  if (!isMe && visPath && ctx.isPointInPath(visPath, sx, sy) === false) return;
   
   ctx.save(); 
   ctx.translate(sx, sy);
@@ -2509,7 +2515,8 @@
 
   /* ---------------- FOG OF WAR ---------------- */
   function drawFogOfWar() {
-    if (!fogCanvas || !me.alive || !started) return;
+    if (!fogCanvas || !started) { visPath = null; return; }
+    if (!me.alive) { visPath = null; return; } // show everything when dead/spectating
     const mx = me.x - camera.x, my = me.y - camera.y;
     const maxR = Math.hypot(VIEW_W, VIEW_H) + 60;
 
@@ -2547,27 +2554,31 @@
       pts.push([mx + dx * minT, my + dy * minT]);
     }
 
-    // Draw dark fog on offscreen canvas, punch out the visible polygon
+    // Build visibility Path2D (used for enemy culling in drawPlayer)
+    const vp = new Path2D();
+    vp.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) vp.lineTo(pts[i][0], pts[i][1]);
+    vp.closePath();
+    visPath = vp;
+
+    // Draw dark fog on offscreen canvas — lighter shade so terrain still readable
     fogCtx.clearRect(0, 0, VIEW_W, VIEW_H);
-    fogCtx.fillStyle = 'rgba(0,0,0,0.80)';
+    fogCtx.fillStyle = 'rgba(0,0,0,0.55)';
     fogCtx.fillRect(0, 0, VIEW_W, VIEW_H);
+    // Punch out the visible polygon
     fogCtx.globalCompositeOperation = 'destination-out';
     fogCtx.fillStyle = 'rgba(255,255,255,1)';
-    fogCtx.beginPath();
-    fogCtx.moveTo(pts[0][0], pts[0][1]);
-    for (let i = 1; i < pts.length; i++) fogCtx.lineTo(pts[i][0], pts[i][1]);
-    fogCtx.closePath();
-    fogCtx.fill();
-    // Soft fade at edge of visibility
-    fogCtx.globalCompositeOperation = 'destination-out';
-    const grad = fogCtx.createRadialGradient(mx, my, maxR * 0.65, mx, my, maxR * 0.98);
+    fogCtx.fill(vp);
+    // Soft vignette fade at edges of visibility radius
+    const fadeR1 = Math.min(VIEW_W, VIEW_H) * 0.35, fadeR2 = Math.min(VIEW_W, VIEW_H) * 0.55;
+    const grad = fogCtx.createRadialGradient(mx, my, fadeR1, mx, my, fadeR2);
     grad.addColorStop(0, 'rgba(255,255,255,0)');
-    grad.addColorStop(1, 'rgba(255,255,255,0.55)');
+    grad.addColorStop(1, 'rgba(255,255,255,0.42)');
     fogCtx.fillStyle = grad;
     fogCtx.fillRect(0, 0, VIEW_W, VIEW_H);
     fogCtx.globalCompositeOperation = 'source-over';
 
-    ctx.drawImage(fogCanvas, 0, 0);
+    ctx.drawImage(fogCanvas, 0, 0, VIEW_W, VIEW_H);
   }
 
   /* ---------------- SETTINGS PANEL ---------------- */
@@ -3041,11 +3052,25 @@
     if (inited) return; inited = true;
 
     applyGameScale(); // fill viewport immediately
-    fogCanvas = document.createElement('canvas');
-    fogCanvas.width = VIEW_W; fogCanvas.height = VIEW_H;
-    fogCtx = fogCanvas.getContext('2d');
 
     const root = opts.mount ? document.querySelector(opts.mount) : document; cacheDom(root);
+
+    // High-DPI canvas: render at device pixel ratio for sharp text/lines on retina screens
+    const _dpr = window.devicePixelRatio || 1;
+    if (_dpr > 1 && canvas) {
+      canvas.width  = VIEW_W * _dpr;
+      canvas.height = VIEW_H * _dpr;
+      // CSS size stays 900×600; the transform in applyGameScale handles display scaling
+      ctx = canvas.getContext('2d');
+      ctx.scale(_dpr, _dpr);
+    }
+
+    // Fog canvas matches main canvas resolution
+    fogCanvas = document.createElement('canvas');
+    fogCanvas.width  = VIEW_W * _dpr;
+    fogCanvas.height = VIEW_H * _dpr;
+    fogCtx = fogCanvas.getContext('2d');
+    if (_dpr > 1) fogCtx.scale(_dpr, _dpr);
     obstacles = buildObstacles(); loadCharAssets();
     try { const sc = localStorage.getItem('caChar'); if (sc && CHARACTERS[sc]) selectedChar = sc; } catch (e) {}
 
