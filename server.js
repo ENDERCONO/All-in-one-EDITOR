@@ -9,6 +9,51 @@ const io = new Server(server);
 app.use(express.static(__dirname));
 
 const WORLD_W = 900 * 8, WORLD_H = 600 * 8;
+const PLAYER_R_OBS = 18; // collision radius for obstacle resolution
+
+/* ---- World obstacles (same seed as client so layout matches) ---- */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function buildObstacles() {
+  const out = [];
+  const rng = mulberry32(1337);
+  for (let i = 0; i < 140; i++) {
+    const w = 60 + rng() * 180, h = 60 + rng() * 180;
+    const x = 80 + rng() * (WORLD_W - 160 - w), y = 80 + rng() * (WORLD_H - 160 - h);
+    if (Math.abs(x - WORLD_W / 2) < 400 && Math.abs(y - WORLD_H / 2) < 400) continue;
+    out.push({ x, y, w, h });
+  }
+  const sr = mulberry32(9999);
+  for (let i = 0; i < 300; i++) {
+    const s = 18 + sr() * 28;
+    const x = 100 + sr() * (WORLD_W - 200), y = 100 + sr() * (WORLD_H - 200);
+    if (Math.abs(x - WORLD_W / 2) < 300 && Math.abs(y - WORLD_H / 2) < 300) continue;
+    out.push({ x, y, w: s, h: s });
+  }
+  return out;
+}
+const OBSTACLES = buildObstacles();
+
+function resolveObstacleCollision(p, r) {
+  for (const o of OBSTACLES) {
+    const nx = Math.max(o.x, Math.min(p.x, o.x + o.w));
+    const ny = Math.max(o.y, Math.min(p.y, o.y + o.h));
+    const dx = p.x - nx, dy = p.y - ny;
+    if (dx * dx + dy * dy < r * r) {
+      const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+      const ex = p.x - cx, ey = p.y - cy;
+      const ox = (o.w / 2 + r) - Math.abs(ex), oy = (o.h / 2 + r) - Math.abs(ey);
+      if (ox < oy) p.x += ex > 0 ? ox : -ox;
+      else         p.y += ey > 0 ? oy : -oy;
+    }
+  }
+}
 
 /* ---- Medkits ---- */
 const MEDKIT_MAX = 10, MEDKIT_HEAL = 50, MEDKIT_SPAWN_MS = 20000;
@@ -65,7 +110,7 @@ const players = {};
 
 /* ---- Server-side area-effect physics ---- */
 const activePhysicsAE = []; // effects that push/pull players
-const PLAYER_R_SRV = 18;
+const PLAYER_R_SRV = PLAYER_R_OBS;
 
 setInterval(() => {
   const now = Date.now();
@@ -236,11 +281,11 @@ const BOT_COLORS = ['#ff3b5c','#2fd47f','#4d8bff','#c77dff','#ffb13b','#3bd6ff',
 
 const BOT_MAX            = 7;    // max active bots
 const BOT_REAL_THRESHOLD = 5;    // disable bots when this many real players are connected
-const BOT_SPEED          = 175;  // units/s — slower than real players (240)
-const BOT_FIRE_MIN       = 1100; // ms between shots — min (kinda bad)
-const BOT_FIRE_MAX       = 2600; // ms between shots — max
-const BOT_ACCURACY       = 0.28; // max hit probability per shot
-const BOT_HIT_RANGE      = 600;  // max range at which bot can hit
+const BOT_SPEED          = 185;  // units/s — slightly slower than real players (240)
+const BOT_FIRE_MIN       = 700;  // ms between shots — min
+const BOT_FIRE_MAX       = 1600; // ms between shots — max
+const BOT_ACCURACY       = 0.55; // hit probability per shot at close range
+const BOT_HIT_RANGE      = 650;  // max range at which bot can hit
 
 let botIdCounter = 0;
 const bots = {};
@@ -270,10 +315,12 @@ function applyPlayerDamage(targetId, amount, killerId, killerName) {
   if (target.immuneUntil && Date.now() < target.immuneUntil) return false;
   target.hp = Math.max(0, target.hp - amount);
   io.emit('healthUpdate', { id: targetId, hp: target.hp, fromId: killerId });
+  // Award damage points to killer immediately
+  const killer = players[killerId];
+  if (killer) killer.points = (killer.points || 0) + amount;
   if (target.hp <= 0 && target.alive) {
     target.alive = false;
-    const killer = players[killerId];
-    if (killer) { killer.elims = (killer.elims || 0) + 1; killer.points = (killer.points || 0) + 100; }
+    if (killer) { killer.elims = (killer.elims || 0) + 1; killer.points = (killer.points || 0) + 100; killer.level = Math.min(10, (killer.level || 1) + 1); }
     io.emit('playerKilled', {
       killerId, killerName: killerName || (killer ? killer.name : 'Unknown'),
       victimId: targetId, victimName: target.name
@@ -297,7 +344,7 @@ function createBot() {
     x: pos.x, y: pos.y,
     aim: Math.random() * Math.PI * 2,
     hp: 100, alive: true, deadUntil: 0,
-    level: 1 + ((Math.random() * 3) | 0),
+    level: 1,
     xp: 0, points: 0, elims: 0,
     anim: 'idle', frame: 0, facing: 1, moving: false,
     fofoUltActive: false, invis: false, spawnImmune: false,
@@ -344,7 +391,7 @@ function botTick() {
         const pos = rndSpawnPos();
         bot.x = pos.x; bot.y = pos.y;
         bot.hp = 100; bot.alive = true;
-        bot.level = 1 + ((Math.random() * 3) | 0);
+        // level stays — bots level up with kills
         io.emit('playerMoved', {
           id: botId, x: Math.round(bot.x), y: Math.round(bot.y),
           aim: bot.aim, anim: 'idle', frame: 0, facing: bot.facing,
@@ -376,8 +423,18 @@ function botTick() {
       }
     }
     const spd = BOT_SPEED * DT;
+    const preX = bot.x, preY = bot.y;
     bot.x = Math.max(50, Math.min(WORLD_W - 50, bot.x + Math.cos(bot._wanderAngle) * spd));
     bot.y = Math.max(50, Math.min(WORLD_H - 50, bot.y + Math.sin(bot._wanderAngle) * spd));
+    resolveObstacleCollision(bot, PLAYER_R_OBS);
+    resolveObstacleCollision(bot, PLAYER_R_OBS); // second pass for corners
+    bot.x = Math.max(50, Math.min(WORLD_W - 50, bot.x));
+    bot.y = Math.max(50, Math.min(WORLD_H - 50, bot.y));
+    // If wall blocked movement, steer away
+    if (Math.hypot(bot.x - preX, bot.y - preY) < Math.abs(spd) * 0.3) {
+      bot._wanderAngle += Math.PI * (0.5 + Math.random() * 0.9);
+      bot._wanderTimer = 0;
+    }
     if (nearest) {
       bot.aim    = Math.atan2(nearest.y - bot.y, nearest.x - bot.x);
       bot.facing = Math.cos(bot.aim) < 0 ? -1 : 1;

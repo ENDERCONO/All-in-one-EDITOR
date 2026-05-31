@@ -125,14 +125,14 @@
   let socket = null;
   let lastNetUpdate = 0;
   let debugMode = false; // unlocked with code "Gemini"
-  // Scale to fit the available body space (never upscale past 1:1), flex keeps it centered
+  // Scale to fill the available space, flex centers it
   function applyGameScale() {
     const root = document.getElementById('caRoot');
     if (!root) return;
     const aw = document.body.clientWidth  || window.innerWidth;
     const ah = document.body.clientHeight || window.innerHeight;
-    const scale = Math.min(1, aw / VIEW_W, ah / VIEW_H);
-    root.style.transform       = scale < 0.999 ? `scale(${scale.toFixed(6)})` : '';
+    const scale = Math.min(aw / VIEW_W, ah / VIEW_H);
+    root.style.transform       = `scale(${scale.toFixed(6)})`;
     root.style.transformOrigin = 'center center';
   }
   window.addEventListener('resize', applyGameScale);
@@ -602,24 +602,17 @@
 
     socket.on('healthUpdate', (data) => {
       if (data.id === myId) {
-        if (data.fromId === 'teto') {
-          if (!debugMode && data.hp < me.hp && Date.now() >= (me.immuneUntil || 0)) {
-            me.hp = Math.max(0, data.hp);
-            me.lastCombat = Date.now(); me.lastHurtTime = Date.now();
-            play('hit', 0.4); addScreenShake(3, 0.15);
-            spawnParticles(me.x, me.y, '#ff8c42', 6, 150, 0.3);
-          }
-        } else if (data.fromId && !debugMode && Date.now() >= (me.immuneUntil || 0)) {
-          // Use server HP directly — avoids delta double-counting with local bot damage.
-          // Only apply if server says HP is LOWER than our current local HP.
-          if (data.hp < me.hp) {
-            me.hp = Math.max(0, data.hp);
-            me.lastCombat = Date.now(); me.lastHurtTime = Date.now();
-            play('hit', 0.5); addScreenShake(3, 0.15);
-            spawnParticles(me.x, me.y, '#ff3b5c', 6, 150, 0.3);
-          }
+        if (debugMode) return; // debug mode: ignore all server damage
+        if (data.hp < me.hp) {
+          // Server is authoritative — always apply damage if server says HP went down.
+          // Server already enforces immunity (immuneUntil), so no client-side check needed.
+          me.hp = Math.max(0, data.hp);
+          me.lastCombat = Date.now(); me.lastHurtTime = Date.now();
+          const col = data.fromId === 'teto' ? '#ff8c42' : '#ff3b5c';
+          play('hit', data.fromId === 'teto' ? 0.4 : 0.5); addScreenShake(3, 0.15);
+          spawnParticles(me.x, me.y, col, 6, 150, 0.3);
         } else if (!data.fromId && data.hp > me.hp) {
-          me.hp = Math.min(effMaxHp(), data.hp);
+          me.hp = Math.min(effMaxHp(), data.hp); // healing (medkit)
         }
       } else if (others[data.id]) {
         others[data.id].hp = data.hp;
