@@ -208,16 +208,218 @@ function tetoTick() {
 }
 setInterval(tetoTick, 100);
 
+/* ===================================================================
+   BOT SYSTEM
+   =================================================================== */
+const BOT_NAMES = [
+  'xX_SlayerXx','Noob_Destroyer','ProGamer99','ShadowFang','BloodMoon',
+  'ChaosAgent','NightWolf','IronFist','CrimsonBlade','VoidWalker',
+  'ToxicShot','StormRider','DarkStar','PixelWarrior','FrostBite',
+  'AngryGamer','LuckyShot','GhostSniper','BattleAxe','ThunderBolt',
+  'SpeedDemon','RedAlert','MegaChad','CoolDude42','BrainRot'
+];
+const BOT_CHARS  = ['pumpkin','zaid','rich','ender','arthur','fofo','daniel'];
+const BOT_COLORS = ['#ff3b5c','#2fd47f','#4d8bff','#c77dff','#ffb13b','#3bd6ff','#ff7ad6','#9dff3b'];
+
+const BOT_MAX            = 10;   // max active bots
+const BOT_REAL_THRESHOLD = 5;    // disable bots when this many real players are connected
+const BOT_SPEED          = 175;  // units/s — slower than real players (240)
+const BOT_FIRE_MIN       = 1100; // ms between shots — min (kinda bad)
+const BOT_FIRE_MAX       = 2600; // ms between shots — max
+const BOT_ACCURACY       = 0.28; // max hit probability per shot
+const BOT_HIT_RANGE      = 600;  // max range at which bot can hit
+
+let botIdCounter = 0;
+const bots = {};
+
+function pickRand(arr) { return arr[(Math.random() * arr.length) | 0]; }
+
+function rndSpawnPos() {
+  const margin = 400;
+  return {
+    x: Math.round(margin + Math.random() * (WORLD_W - margin * 2)),
+    y: Math.round(margin + Math.random() * (WORLD_H - margin * 2))
+  };
+}
+
+function countRealPlayers() {
+  return Object.values(players).filter(p => !p.isBot).length;
+}
+
+// Shared damage application used by both real-player shots and bot shots
+function applyPlayerDamage(targetId, amount, killerId, killerName) {
+  const target = players[targetId];
+  if (!target || !target.alive) return false;
+  if (target.immuneUntil && Date.now() < target.immuneUntil) return false;
+  target.hp = Math.max(0, target.hp - amount);
+  io.emit('healthUpdate', { id: targetId, hp: target.hp, fromId: killerId });
+  if (target.hp <= 0 && target.alive) {
+    target.alive = false;
+    const killer = players[killerId];
+    if (killer) { killer.elims = (killer.elims || 0) + 1; killer.points = (killer.points || 0) + 100; }
+    io.emit('playerKilled', {
+      killerId, killerName: killerName || (killer ? killer.name : 'Unknown'),
+      victimId: targetId, victimName: target.name
+    });
+    if (target.isBot) {
+      target.deadUntil = Date.now() + 3500 + Math.random() * 2000; // 3.5–5.5s respawn
+    }
+    return true;
+  }
+  return false;
+}
+
+function createBot() {
+  const id  = 'bot_' + (++botIdCounter);
+  const pos = rndSpawnPos();
+  const suffix = 1 + ((Math.random() * 99) | 0);
+  const bot = {
+    id, isBot: true,
+    name:  pickRand(BOT_NAMES) + suffix,
+    char:  pickRand(BOT_CHARS),
+    color: pickRand(BOT_COLORS),
+    x: pos.x, y: pos.y,
+    aim: Math.random() * Math.PI * 2,
+    hp: 100, alive: true, deadUntil: 0,
+    level: 1 + ((Math.random() * 3) | 0),
+    xp: 0, points: 0, elims: 0,
+    anim: 'idle', frame: 0, facing: 1, moving: false,
+    fofoUltActive: false, invis: false, spawnImmune: false,
+    // private AI fields (prefixed _ — not used by clients)
+    _lastShot:    Date.now() + Math.random() * 2000,
+    _shotInterval: BOT_FIRE_MIN + Math.random() * (BOT_FIRE_MAX - BOT_FIRE_MIN),
+    _wanderAngle: Math.random() * Math.PI * 2,
+    _wanderTimer: Math.random() * 2,
+  };
+  bots[id] = bot;
+  players[id] = bot;
+  return id;
+}
+
+function removeBot(id) {
+  delete bots[id];
+  delete players[id];
+  io.emit('playerLeft', id);
+}
+
+function manageBots() {
+  const real = countRealPlayers();
+  if (real >= BOT_REAL_THRESHOLD) {
+    Object.keys(bots).forEach(removeBot);
+    return;
+  }
+  const botIds = Object.keys(bots);
+  if (botIds.length < BOT_MAX) {
+    for (let i = botIds.length; i < BOT_MAX; i++) createBot();
+    io.emit('stateUpdate', players);
+  }
+}
+
+function botTick() {
+  const now = Date.now();
+  const DT  = 0.1;
+  const realAlive = Object.values(players).filter(p => !p.isBot && p.alive);
+
+  for (const botId in bots) {
+    const bot = bots[botId];
+
+    // ── Respawn ──
+    if (!bot.alive) {
+      if (now >= bot.deadUntil) {
+        const pos = rndSpawnPos();
+        bot.x = pos.x; bot.y = pos.y;
+        bot.hp = 100; bot.alive = true;
+        bot.level = 1 + ((Math.random() * 3) | 0);
+        io.emit('playerMoved', {
+          id: botId, x: Math.round(bot.x), y: Math.round(bot.y),
+          aim: bot.aim, anim: 'idle', frame: 0, facing: bot.facing,
+          moving: false, level: bot.level, points: bot.points,
+          fofoUltActive: false, invis: false, spawnImmune: true, alive: true
+        });
+      }
+      continue;
+    }
+
+    // ── Find nearest real player ──
+    let nearest = null, nearDist = Infinity;
+    for (const p of realAlive) {
+      const d = Math.hypot(p.x - bot.x, p.y - bot.y);
+      if (d < nearDist) { nearDist = d; nearest = p; }
+    }
+
+    // ── Movement (wander toward player with inaccuracy) ──
+    bot._wanderTimer -= DT;
+    if (bot._wanderTimer <= 0) {
+      bot._wanderTimer = 1.5 + Math.random() * 2;
+      if (nearest) {
+        const baseAng = Math.atan2(nearest.y - bot.y, nearest.x - bot.x);
+        bot._wanderAngle = baseAng + (Math.random() - 0.5) * 1.0;
+      } else {
+        bot._wanderAngle = Math.random() * Math.PI * 2;
+      }
+    }
+    const spd = BOT_SPEED * DT;
+    bot.x = Math.max(50, Math.min(WORLD_W - 50, bot.x + Math.cos(bot._wanderAngle) * spd));
+    bot.y = Math.max(50, Math.min(WORLD_H - 50, bot.y + Math.sin(bot._wanderAngle) * spd));
+    if (nearest) {
+      bot.aim    = Math.atan2(nearest.y - bot.y, nearest.x - bot.x);
+      bot.facing = Math.cos(bot.aim) < 0 ? -1 : 1;
+    }
+    bot.anim  = 'walk';
+    bot.frame = Math.floor(now / 260) % 2;
+
+    // ── Shooting ──
+    if (nearest && now - bot._lastShot > bot._shotInterval) {
+      bot._lastShot = now;
+      bot.anim = 'shoot';
+      const inaccuracy   = (Math.random() - 0.5) * 0.9;
+      const shotAngle    = bot.aim + inaccuracy;
+      io.emit('enemyShoot', {
+        owner: botId,
+        id:    'bs_' + Math.random().toString(36).slice(2, 7),
+        x: Math.round(bot.x), y: Math.round(bot.y),
+        a: +shotAngle.toFixed(3), spd: 500, dmg: 10, radius: 5
+      });
+      // Probabilistic hit (kinda bad)
+      if (nearest.alive && nearDist < BOT_HIT_RANGE) {
+        const hitChance = (1 - nearDist / BOT_HIT_RANGE) * BOT_ACCURACY;
+        if (Math.random() < hitChance) {
+          applyPlayerDamage(nearest.id, 10, botId, bot.name);
+        }
+      }
+    }
+
+    // ── Broadcast position ──
+    io.emit('playerMoved', {
+      id: botId,
+      x: Math.round(bot.x), y: Math.round(bot.y),
+      aim: +bot.aim.toFixed(2),
+      anim: bot.anim, frame: bot.frame,
+      facing: bot.facing, moving: true,
+      level: bot.level, points: bot.points,
+      fofoUltActive: false, invis: false, spawnImmune: false
+    });
+  }
+}
+setInterval(botTick, 100);
+
+// Init bots after a short delay
+setTimeout(manageBots, 1500);
+
 io.on('connection', (socket) => {
   console.log(`Player connected: ${socket.id}`);
 
   socket.on('join', (data) => {
-    players[socket.id] = { id: socket.id, name: data.name, color: data.color, char: data.char, x: data.x, y: data.y, aim: 0, hp: 100, level: 1, points: 0, elims: 0, anim: 'idle', frame: 0, facing: 1, moving: false, alive: true, fofoUltActive: false, invis: false };
+    players[socket.id] = { id: socket.id, name: data.name, color: data.color, char: data.char,
+      x: data.x, y: data.y, aim: 0, hp: 100, level: 1, points: 0, elims: 0,
+      anim: 'idle', frame: 0, facing: 1, moving: false, alive: true,
+      fofoUltActive: false, invis: false };
     socket.emit('init_id', socket.id);
     socket.emit('boxesInit', xpBoxes);
     socket.emit('medkitsInit', medkits);
     socket.emit('tetoUpdate', { x: Math.round(teto.x), y: Math.round(teto.y), hp: teto.hp, state: teto.state, alive: teto.alive });
-    io.emit('stateUpdate', players);
+    io.emit('stateUpdate', players); // includes any existing bots
+    manageBots(); // may remove bots if too many real players
   });
 
   socket.on('move', (d) => {
@@ -227,16 +429,8 @@ io.on('connection', (socket) => {
   socket.on('shoot', (shotData) => { socket.broadcast.emit('enemyShoot', { owner: socket.id, ...shotData }); });
 
   socket.on('damage', (data) => {
-    const target = players[data.targetId]; const attacker = players[socket.id];
-    if (target && target.alive && !(target.immuneUntil && Date.now() < target.immuneUntil)) {
-      target.hp = Math.max(0, target.hp - data.amount);
-      io.emit('healthUpdate', { id: data.targetId, hp: target.hp, fromId: socket.id });
-      if (target.hp <= 0 && target.alive) {
-        target.alive = false;
-        if (attacker) { attacker.elims += 1; attacker.points += 100; }
-        io.emit('playerKilled', { killerId: socket.id, killerName: attacker ? attacker.name : 'Someone', victimId: data.targetId, victimName: target.name });
-      }
-    }
+    const attacker = players[socket.id];
+    applyPlayerDamage(data.targetId, data.amount, socket.id, attacker ? attacker.name : 'Someone');
   });
 
   socket.on('respawn', (data) => {
@@ -324,6 +518,8 @@ io.on('connection', (socket) => {
     console.log(`Player disconnected: ${socket.id}`);
     delete players[socket.id];
     io.emit('playerLeft', socket.id);
+    // Possibly re-enable bots when real player count drops
+    setTimeout(manageBots, 500);
   });
 });
 
