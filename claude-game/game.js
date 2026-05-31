@@ -2816,7 +2816,7 @@
     const pos = randomSpawnPos();
     const id = 'bot_' + (++botIdSeq);
     const bot = {
-      id, name: BOT_NAMES[(botIdSeq - 1) % BOT_NAMES.length],
+      id, name: BOT_NAMES[(Math.random() * BOT_NAMES.length) | 0],
       color: CHARACTERS[char].color, char,
       x: pos.x, y: pos.y, rx: pos.x, ry: pos.y,
       aim: Math.random() * Math.PI * 2, facing: 1,
