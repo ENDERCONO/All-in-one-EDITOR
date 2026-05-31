@@ -630,20 +630,22 @@
     socket.on('healthUpdate', (data) => {
       if (data.id === myId) {
         if (data.fromId === 'teto') {
-          // Server-authoritative teto damage — sync directly and show effects
           if (!debugMode && data.hp < me.hp && Date.now() >= (me.immuneUntil || 0)) {
-            const diff = me.hp - data.hp;
             me.hp = Math.max(0, data.hp);
             me.lastCombat = Date.now(); me.lastHurtTime = Date.now();
-            play('hit', 0.4);
-            addScreenShake(3, 0.15);
+            play('hit', 0.4); addScreenShake(3, 0.15);
             spawnParticles(me.x, me.y, '#ff8c42', 6, 150, 0.3);
           }
-        } else if (data.fromId && data.hp < me.hp) {
-          // Player bullet damage — apply locally (server authoritative)
-          hurtMe(me.hp - data.hp, data.fromId);
+        } else if (data.fromId && !debugMode && Date.now() >= (me.immuneUntil || 0)) {
+          // Use server HP directly — avoids delta double-counting with local bot damage.
+          // Only apply if server says HP is LOWER than our current local HP.
+          if (data.hp < me.hp) {
+            me.hp = Math.max(0, data.hp);
+            me.lastCombat = Date.now(); me.lastHurtTime = Date.now();
+            play('hit', 0.5); addScreenShake(3, 0.15);
+            spawnParticles(me.x, me.y, '#ff3b5c', 6, 150, 0.3);
+          }
         } else if (!data.fromId && data.hp > me.hp) {
-          // Healing (medkit) — sync up
           me.hp = Math.min(effMaxHp(), data.hp);
         }
       } else if (others[data.id]) {
@@ -809,7 +811,7 @@
   function hurtMe(amount, fromId) {
     if (!me.alive) return;
     if (debugMode) return;
-    if (Date.now() < (me.immuneUntil || 0)) return; // spawn / post-respawn immunity
+    if (Date.now() < (me.immuneUntil || 0)) return;
     if (me.char === 'daniel' && me.danielUltActive) return;
     const reduced = amount * (1 - Math.min(0.6, me.mods.damageResist || 0));
     me.hp = Math.max(0, me.hp - reduced);
@@ -817,11 +819,38 @@
     play('hit', 0.5);
     addScreenShake(3, 0.15);
     spawnParticles(me.x, me.y, '#ff3b5c', 6, 150, 0.3);
-    // Sync HP to server (so others see correct HP and death is handled correctly)
+    // Sync HP to server immediately for bot hits (prevents stale-HP phantom damage from server)
+    const isBot = fromId && typeof fromId === 'string' && fromId.startsWith('bot_');
     const now2 = Date.now();
-    if (socket && now2 - lastHpSync > 200) {
+    if (socket && now2 - lastHpSync > (isBot ? 50 : 200)) {
       lastHpSync = now2;
       socket.emit('hpSync', { hp: Math.ceil(me.hp) });
+    }
+    // Bot kill: server never sends playerKilled for bots, so handle death locally
+    if (isBot && me.hp <= 0) {
+      if (me.char === 'daniel' && me.rbdBar > 0) {
+        me.rbdBar--;
+        const pos = me.rbdPosHistory.length > 0 ? me.rbdPosHistory[0] : { x: me.x, y: me.y };
+        me.x = pos.x; me.y = pos.y; me.hp = effMaxHp();
+        playTerr('RBDsfx.wav', 1.0, me.x, me.y);
+        addScreenShake(12, 0.8);
+        spawnParticles(me.x, me.y, '#2ecc71', 50, 400, 1.5);
+        toast('RETURN BY DEATH! ' + me.rbdBar + ' charges left');
+        rbdFlash.active = true; rbdFlash.phase = 'in'; rbdFlash.alpha = 0; rbdFlash.timer = 0;
+        if (socket) socket.emit('hpSync', { hp: Math.ceil(me.hp) });
+      } else {
+        me.alive = false;
+        me.deadUntil = Date.now() + RESPAWN_MS;
+        me.deathTime = Date.now();
+        if (me.fofoUltActive) { me.fofoUltActive = false; me.fofoLastEndTime = Date.now(); if (socket) socket.emit('fofoUltEnd'); stopForsakenMusic(); }
+        if (draftOpen) { draftOpen = false; if (cardLayer) { cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; } }
+        play('death', 0.6);
+        spawnParticles(me.x, me.y, '#ff3b5c', 20, 250, 0.8);
+        musicState.deathFadeTimer = 2.0;
+        musicState.deathFadeFrom = musicState.chaseVol;
+        showDeathPicker();
+        if (socket) socket.emit('hpSync', { hp: 0 });
+      }
     }
   }
 
@@ -1266,12 +1295,12 @@
     for (const bot of bots) { if (!bot.killed) all.push({ name: bot.name + ' [BOT]', level: bot.level, points: bot.points, elims: bot.elims, color: bot.color, isMe: false }); }
     all.sort((a, b) => (b.points - a.points) || (b.level - a.level));
     el.innerHTML = all.slice(0, 10).map((p, i) =>
-      `<div style="display:flex;align-items:center;gap:5px;padding:2px 0;${i > 0 ? 'border-top:1px solid rgba(255,255,255,0.04)' : ''}">
-        <span style="color:#8a8a94;min-width:14px">${i + 1}</span>
-        <span style="width:8px;height:8px;border-radius:50%;background:${p.color};display:inline-block;flex-shrink:0"></span>
-        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${p.isMe ? 'color:#fff;font-weight:600' : 'color:#d0d0d8'}">${p.name}</span>
-        <span style="color:#8a8a94">Lv${p.level}</span>
-        <span style="color:#c77dff;min-width:36px;text-align:right">${p.points}</span>
+      `<div style="display:flex;align-items:center;gap:4px;padding:3px 0;${i > 0 ? 'border-top:1px solid rgba(255,255,255,0.04)' : ''}">
+        <span style="color:#555;min-width:12px;font-size:9px">${i + 1}</span>
+        <span style="width:7px;height:7px;border-radius:50%;background:${p.color};display:inline-block;flex-shrink:0"></span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;${p.isMe ? 'color:#fff;font-weight:700' : 'color:#c8c8d4'}">${p.name}</span>
+        <span style="color:#4d8bff;font-size:9px">Lv${p.level}</span>
+        <span style="color:#c77dff;font-size:10px;font-weight:600;min-width:38px;text-align:right">${p.points}<span style="font-size:8px;color:#8a5aaa">pts</span></span>
       </div>`
     ).join('');
   }
@@ -1332,9 +1361,9 @@
       me.heroLightningTimer = 0; me.enderSlowTimer = 0; me.pullTimer = 0;
       if (draftOpen) { draftOpen = false; if (cardLayer) { cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; } }
       me.mods = { dmg: 0, fireRate: 0, speed: 0, multishot: 0, pierce: 0, lifesteal: 0, thorns: 0, bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0, maxHp: 0, regenRate: 0, regenDelay: 0, critChance: 0, onKillHeal: 0, killShield: 0, dashHeal: 0, dashCdReduce: 0, damageResist: 0, homingStr: 0 };
-      me.x = 400 + Math.random() * (WORLD_W - 800); me.y = 400 + Math.random() * (WORLD_H - 800); me.lastCombat = Date.now();
-      me.immuneUntil = Date.now() + 5000; // 5s spawn immunity
-      if (socket) socket.emit('respawn', { x: me.x, y: me.y, char: me.char, color: me.color });
+      const rsp = randomSpawnPos(); me.x = rsp.x; me.y = rsp.y; me.lastCombat = Date.now();
+      me.immuneUntil = Date.now() + 5000;
+      if (socket) { socket.emit('respawn', { x: me.x, y: me.y, char: me.char, color: me.color }); socket.emit('hpSync', { hp: MAX_HP }); lastHpSync = Date.now(); }
     }
 
     // Screen shake decay
@@ -1736,6 +1765,8 @@
           if (d2(b.x, b.y, hitBot.x, hitBot.y) < (PLAYER_R + brad) ** 2) {
             hitBot.hp -= b.dmg; hitBot.lastCombat = Date.now();
             spawnParticles(b.x, b.y, '#ffb13b', 3, 80, 0.25);
+            const sbot = bots.find(b2 => b2.id === b.owner);
+            if (sbot) { sbot.points += Math.round(b.dmg); botGainXp(sbot, b.dmg * XP_PER_DMG); }
             if (hitBot.hp <= 0) {
               hitBot.alive = false; hitBot.hp = 0;
               hitBot.deathTime = Date.now(); hitBot.deadUntil = Date.now() + RESPAWN_MS;
@@ -2794,6 +2825,7 @@
       isBot: true, lastBotFire: 0, lastCombat: 0,
       botFireCd: BOT_FIRE_CD + Math.random() * 250,
       wanderAngle: Math.random() * Math.PI * 2, wanderTimer: 0,
+      retargetTimer: 0, _tgt: null,
       ultCharge: 0, ultReady: false,
       mods: { dmg:0, fireRate:0, speed:0, multishot:0, pierce:0, lifesteal:0, thorns:0,
               bulletSpeed:0, explosive:0, ricochet:0, bigBullet:0, spreadShot:0, rapidBurst:0,
@@ -2853,23 +2885,37 @@
 
       bot.spawnImmune = now < bot.immuneUntil;
 
-      // Find nearest target (me, other real players, or other bots)
-      let tgtX = me.x, tgtY = me.y;
-      let tgtDist = me.alive ? Math.hypot(bot.x - me.x, bot.y - me.y) : Infinity;
-
-      for (const id in others) {
-        const o = others[id]; if (!o.alive) continue;
-        const ox = o.rx !== undefined ? o.rx : o.x, oy = o.ry !== undefined ? o.ry : o.y;
-        const d = Math.hypot(bot.x - ox, bot.y - oy);
-        if (d < tgtDist) { tgtDist = d; tgtX = ox; tgtY = oy; }
+      // Retarget every 1.5-3s — pick randomly from ALL in-sight entities (no player priority)
+      bot.retargetTimer -= dt;
+      const tgtRef = bot._tgt;
+      const tgtStillValid = tgtRef && (tgtRef.isMe ? me.alive : (tgtRef.botRef ? tgtRef.botRef.alive : true));
+      if (bot.retargetTimer <= 0 || !tgtStillValid) {
+        bot.retargetTimer = 1.5 + Math.random() * 1.5;
+        const cands = [];
+        if (me.alive && Math.hypot(bot.x - me.x, bot.y - me.y) < BOT_SIGHT_R)
+          cands.push({ isMe: true, botRef: null });
+        for (const id in others) {
+          const o = others[id]; if (!o.alive) continue;
+          const ox = o.rx !== undefined ? o.rx : o.x, oy = o.ry !== undefined ? o.ry : o.y;
+          if (Math.hypot(bot.x - ox, bot.y - oy) < BOT_SIGHT_R) cands.push({ isMe: false, botRef: null, ox, oy });
+        }
+        for (const b2 of bots) {
+          if (b2 === bot || !b2.alive) continue;
+          if (Math.hypot(bot.x - b2.x, bot.y - b2.y) < BOT_SIGHT_R) cands.push({ isMe: false, botRef: b2 });
+        }
+        bot._tgt = cands.length > 0 ? cands[(Math.random() * cands.length) | 0] : null;
       }
-      for (const b2 of bots) {
-        if (b2 === bot || !b2.alive) continue;
-        const d = Math.hypot(bot.x - b2.x, bot.y - b2.y);
-        if (d < tgtDist) { tgtDist = d; tgtX = b2.x; tgtY = b2.y; }
-      }
 
-      const inSight = tgtDist < BOT_SIGHT_R;
+      // Resolve current target position
+      let tgtX, tgtY, tgtDist;
+      const t2 = bot._tgt;
+      if (t2) {
+        if (t2.isMe) { tgtX = me.x; tgtY = me.y; }
+        else if (t2.botRef) { tgtX = t2.botRef.x; tgtY = t2.botRef.y; }
+        else { tgtX = t2.ox; tgtY = t2.oy; }
+      } else { tgtX = WORLD_W / 2; tgtY = WORLD_H / 2; }
+      tgtDist = Math.hypot(bot.x - tgtX, bot.y - tgtY);
+      const inSight = bot._tgt !== null && tgtDist < BOT_SIGHT_R * 1.15;
       let dx = 0, dy = 0;
 
       if (inSight && tgtDist > PLAYER_R * 3) {
