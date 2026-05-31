@@ -32,7 +32,26 @@
   const BOT_COUNT    = 7;
   const BOT_SIGHT_R  = 560;
   const BOT_FIRE_CD  = 380;
-  const BOT_NAMES    = ['Zaid','Pumpkin','Rich','Yuna','BoomerMan','Young','Man','Diddy','Epstein','Mr.','Freaky','GPT','Skibidi','Tikitiki','Bludy','Pillar','Chaser','Nigglet','Epstindih','Dih','Puh','Arthur'];
+  const BOT_NAMES    = [
+    'Zaid','Zaid23','ZaidYT','ZaidPro','Zaid_irl',
+    'Pumpkin','Pumpkin69','PumpkinGang','Pumpkin_Jr',
+    'Rich','Rich$$$','RichBoy','Rich_Deluxe','RichMan2',
+    'Yuna','YunaXO','Yuna_irl','YunaGG',
+    'BoomerMan','BoomerMan2','BoomerDad','OldBoomer',
+    'YoungGun','YoungBlood','Young99','YoungMan',
+    'GPT4','GPT-o','ChatGPT','GPT3','GPTmax',
+    'Skibidi','SkibidiOhio','Skibidi69','SkibidiRizz',
+    'Tikitiki','Tikitiki2','TikiGang','Tiki_Jr',
+    'Bludy','BluddyHell','Bludy99','BluudMan',
+    'Pillar','PillarChaser','Pillar99','ThePillar',
+    'Chaser','ChaserXL','ChaserPro','Chase_R',
+    'MrFreaky','Freaky','FreakyFriday','Freaky_V2',
+    'MrBeast','Mr_Man','MrFunny','Mr_Nobody',
+    'Arthur','ArthurLore','Arthur_V2','ArthurXD',
+    'Diddy','DiddyParty','DiddyMan','Diddy99',
+    'Epstein','EpsteinJr','Epstein_II','EpsteinFC',
+    'PuhPuh','PuhMan','DihDih','DihFC','Man_irl',
+  ];
 
   function xpForLevel(l) {
     return Math.round(LEVEL_BASE * Math.pow(LEVEL_GROW, l - 1));
