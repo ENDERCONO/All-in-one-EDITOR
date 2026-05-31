@@ -1763,17 +1763,17 @@
           const hitBot = bots[bi3];
           if (!hitBot.alive || hitBot.id === b.owner) continue;
           if (d2(b.x, b.y, hitBot.x, hitBot.y) < (PLAYER_R + brad) ** 2) {
-            hitBot.hp -= b.dmg; hitBot.lastCombat = Date.now();
+            hitBot.hp = Math.max(0, hitBot.hp - b.dmg); hitBot.lastCombat = Date.now();
             spawnParticles(b.x, b.y, '#ffb13b', 3, 80, 0.25);
             const sbot = bots.find(b2 => b2.id === b.owner);
-            if (sbot) { sbot.points += Math.round(b.dmg); botGainXp(sbot, b.dmg * XP_PER_DMG); }
             if (hitBot.hp <= 0) {
               hitBot.alive = false; hitBot.hp = 0;
               hitBot.deathTime = Date.now(); hitBot.deadUntil = Date.now() + RESPAWN_MS;
               spawnParticles(hitBot.x, hitBot.y, hitBot.color || '#ff3b5c', 16, 220, 0.7);
-              // Award the killer bot XP
-              const killerBot = bots.find(b2 => b2.id === b.owner);
-              if (killerBot) { killerBot.elims++; killerBot.points += 100; botGainXp(killerBot, XP_PER_KILL); }
+              // Kill XP/points only after confirmed death
+              if (sbot) { sbot.elims++; sbot.points += 100 + Math.round(b.dmg); botGainXp(sbot, XP_PER_KILL + b.dmg * XP_PER_DMG); }
+            } else {
+              if (sbot) { sbot.points += Math.round(b.dmg); botGainXp(sbot, b.dmg * XP_PER_DMG); }
             }
             botHit = true; break;
           }
@@ -1856,8 +1856,8 @@
             const bot = bots[bi2]; if (!bot.alive) continue;
             if (d2(b.x, b.y, bot.x, bot.y) < (PLAYER_R + brad) ** 2) {
               const dmgAmt = Math.round(b.dmg);
-              bot.hp -= dmgAmt; bot.lastCombat = Date.now();
-              gainUltCharge(dmgAmt); gainXp(dmgAmt * XP_PER_DMG); botGainXp(bot, dmgAmt * XP_PER_DMG);
+              bot.hp = Math.max(0, bot.hp - dmgAmt); bot.lastCombat = Date.now();
+              gainUltCharge(dmgAmt); gainXp(dmgAmt * XP_PER_DMG);
               if (me.mods.lifesteal > 0) me.hp = Math.min(effMaxHp(), me.hp + me.mods.lifesteal);
               spawnParticles(b.x, b.y, '#ffb13b', 5, 120, 0.3); play('hitEnemy', 0.4);
               if ((b.explosive || 0) > 0) spawnExplosion(b.x, b.y, b.explosive, b.dmg);
@@ -1866,9 +1866,14 @@
                 me.elims++; me.points += 100;
                 me.hp = Math.min(effMaxHp(), me.hp + 50);
                 gainXp(XP_PER_KILL);
+                // XP/points awarded on kill only, AFTER death confirmed
+                botGainXp(bot, dmgAmt * XP_PER_DMG);
                 toast(bot.name + ' bot down! +100 pts');
                 spawnParticles(bot.x, bot.y, bot.color || '#ff3b5c', 22, 260, 0.8);
                 play('death', 0.5);
+              } else {
+                // Bot survived — award XP for the hit now
+                botGainXp(bot, dmgAmt * XP_PER_DMG);
               }
               hit = true; break;
             }
@@ -2799,9 +2804,20 @@
 
   /* ---------------- SPAWN HELPER ---------------- */
   function randomSpawnPos() {
-    // Power distribution: values cluster near center, can still reach 38% of world radius
+    // Player spawns: spread over 38% of world radius, biased toward center
     const maxR = Math.min(WORLD_W, WORLD_H) * 0.38;
     const r = Math.pow(Math.random(), 1.8) * maxR;
+    const angle = Math.random() * Math.PI * 2;
+    return {
+      x: clamp(WORLD_W / 2 + Math.cos(angle) * r, PLAYER_R * 4, WORLD_W - PLAYER_R * 4),
+      y: clamp(WORLD_H / 2 + Math.sin(angle) * r, PLAYER_R * 4, WORLD_H - PLAYER_R * 4)
+    };
+  }
+
+  function botSpawnPos() {
+    // Bots spawn tightly near center so they're within sight range of each other
+    const maxR = BOT_SIGHT_R * 0.65;
+    const r = Math.sqrt(Math.random()) * maxR;
     const angle = Math.random() * Math.PI * 2;
     return {
       x: clamp(WORLD_W / 2 + Math.cos(angle) * r, PLAYER_R * 4, WORLD_W - PLAYER_R * 4),
@@ -2813,7 +2829,7 @@
   function spawnBot() {
     const charKeys = Object.keys(CHARACTERS);
     const char = charKeys[(Math.random() * charKeys.length) | 0];
-    const pos = randomSpawnPos();
+    const pos = botSpawnPos();
     const id = 'bot_' + (++botIdSeq);
     const bot = {
       id, name: BOT_NAMES[(Math.random() * BOT_NAMES.length) | 0],
@@ -2869,7 +2885,7 @@
       if (!bot.alive) {
         if (!shouldRespawn) { bot.killed = true; continue; }
         if (now >= bot.deadUntil) {
-          const pos = randomSpawnPos();
+          const pos = botSpawnPos();
           bot.x = pos.x; bot.y = pos.y; bot.rx = pos.x; bot.ry = pos.y;
           bot.hp = MAX_HP; bot.alive = true;
           bot.ultCharge = 0; bot.ultReady = false;
@@ -2891,19 +2907,23 @@
       const tgtStillValid = tgtRef && (tgtRef.isMe ? me.alive : (tgtRef.botRef ? tgtRef.botRef.alive : true));
       if (bot.retargetTimer <= 0 || !tgtStillValid) {
         bot.retargetTimer = 1.5 + Math.random() * 1.5;
-        const cands = [];
+        const botCands = [], playerCands = [];
         if (me.alive && Math.hypot(bot.x - me.x, bot.y - me.y) < BOT_SIGHT_R)
-          cands.push({ isMe: true, botRef: null });
+          playerCands.push({ isMe: true, botRef: null });
         for (const id in others) {
           const o = others[id]; if (!o.alive) continue;
           const ox = o.rx !== undefined ? o.rx : o.x, oy = o.ry !== undefined ? o.ry : o.y;
-          if (Math.hypot(bot.x - ox, bot.y - oy) < BOT_SIGHT_R) cands.push({ isMe: false, botRef: null, ox, oy });
+          if (Math.hypot(bot.x - ox, bot.y - oy) < BOT_SIGHT_R) playerCands.push({ isMe: false, botRef: null, ox, oy });
         }
         for (const b2 of bots) {
           if (b2 === bot || !b2.alive) continue;
-          if (Math.hypot(bot.x - b2.x, bot.y - b2.y) < BOT_SIGHT_R) cands.push({ isMe: false, botRef: b2 });
+          if (Math.hypot(bot.x - b2.x, bot.y - b2.y) < BOT_SIGHT_R) botCands.push({ isMe: false, botRef: b2 });
         }
-        bot._tgt = cands.length > 0 ? cands[(Math.random() * cands.length) | 0] : null;
+        // Strongly prefer fighting other bots (treat them as equal players); only attack human if no bots in sight
+        const pool = botCands.length > 0
+          ? (Math.random() < 0.78 ? botCands : (playerCands.length > 0 ? playerCands : botCands))
+          : playerCands;
+        bot._tgt = pool.length > 0 ? pool[(Math.random() * pool.length) | 0] : null;
       }
 
       // Resolve current target position
@@ -2936,14 +2956,21 @@
       const spd = SPEED * 0.82;
       const moving = (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01);
       if (moving) {
+        const preX = bot.x, preY = bot.y;
         bot.x = clamp(bot.x + dx * spd * dt, PLAYER_R, WORLD_W - PLAYER_R);
         bot.y = clamp(bot.y + dy * spd * dt, PLAYER_R, WORLD_H - PLAYER_R);
-        const preX = bot.x, preY = bot.y;
+        // Two passes for corner cases
         resolveObstacleCollision(bot, PLAYER_R);
-        // If pushed back by a wall, change wander direction to steer around it
-        if (Math.abs(bot.x - preX) > 0.5 || Math.abs(bot.y - preY) > 0.5) {
-          bot.wanderAngle += Math.PI * (0.6 + Math.random() * 0.8);
-          bot.wanderTimer = 0.4 + Math.random() * 0.8;
+        resolveObstacleCollision(bot, PLAYER_R);
+        bot.x = clamp(bot.x, PLAYER_R, WORLD_W - PLAYER_R);
+        bot.y = clamp(bot.y, PLAYER_R, WORLD_H - PLAYER_R);
+        // If wall blocked movement, steer around it
+        const blocked = Math.hypot(bot.x - preX, bot.y - preY) < Math.hypot(dx, dy) * spd * dt * 0.3;
+        if (blocked) {
+          bot.wanderAngle += Math.PI * (0.5 + Math.random() * 1.0);
+          bot.wanderTimer = 0.6 + Math.random() * 1.0;
+          // Also nudge aim slightly to slide along wall surface
+          bot.aim += (Math.random() - 0.5) * 0.5;
         }
       }
       bot.rx = bot.x; bot.ry = bot.y;
