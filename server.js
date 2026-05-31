@@ -212,16 +212,29 @@ setInterval(tetoTick, 100);
    BOT SYSTEM
    =================================================================== */
 const BOT_NAMES = [
-  'xX_SlayerXx','Noob_Destroyer','ProGamer99','ShadowFang','BloodMoon',
-  'ChaosAgent','NightWolf','IronFist','CrimsonBlade','VoidWalker',
-  'ToxicShot','StormRider','DarkStar','PixelWarrior','FrostBite',
-  'AngryGamer','LuckyShot','GhostSniper','BattleAxe','ThunderBolt',
-  'SpeedDemon','RedAlert','MegaChad','CoolDude42','BrainRot'
+  'Zaid','Zaid23','ZaidYT','ZaidPro','Zaid_irl',
+  'Pumpkin','Pumpkin69','PumpkinGang','Pumpkin_Jr',
+  'Rich','Rich$$$','RichBoy','Rich_Deluxe','RichMan2',
+  'Yuna','YunaXO','Yuna_irl','YunaGG',
+  'BoomerMan','BoomerMan2','BoomerDad','OldBoomer',
+  'YoungGun','YoungBlood','Young99','YoungMan',
+  'GPT4','GPT-o','ChatGPT','GPT3','GPTmax',
+  'Skibidi','SkibidiOhio','Skibidi69','SkibidiRizz',
+  'Tikitiki','Tikitiki2','TikiGang','Tiki_Jr',
+  'Bludy','BluddyHell','Bludy99','BluudMan',
+  'Pillar','PillarChaser','Pillar99','ThePillar',
+  'Chaser','ChaserXL','ChaserPro','Chase_R',
+  'MrFreaky','Freaky','FreakyFriday','Freaky_V2',
+  'MrBeast','Mr_Man','MrFunny','Mr_Nobody',
+  'Arthur','ArthurLore','Arthur_V2','ArthurXD',
+  'Diddy','DiddyParty','DiddyMan','Diddy99',
+  'Epstein','EpsteinJr','Epstein_II','EpsteinFC',
+  'PuhPuh','PuhMan','DihDih','DihFC','Man_irl',
 ];
 const BOT_CHARS  = ['pumpkin','zaid','rich','ender','arthur','fofo','daniel'];
 const BOT_COLORS = ['#ff3b5c','#2fd47f','#4d8bff','#c77dff','#ffb13b','#3bd6ff','#ff7ad6','#9dff3b'];
 
-const BOT_MAX            = 10;   // max active bots
+const BOT_MAX            = 7;    // max active bots
 const BOT_REAL_THRESHOLD = 5;    // disable bots when this many real players are connected
 const BOT_SPEED          = 175;  // units/s — slower than real players (240)
 const BOT_FIRE_MIN       = 1100; // ms between shots — min (kinda bad)
@@ -235,10 +248,14 @@ const bots = {};
 function pickRand(arr) { return arr[(Math.random() * arr.length) | 0]; }
 
 function rndSpawnPos() {
-  const margin = 400;
+  // Spawn near center so bots are within sight range of each other
+  const cx = WORLD_W / 2, cy = WORLD_H / 2;
+  const maxR = 700;
+  const angle = Math.random() * Math.PI * 2;
+  const r = Math.sqrt(Math.random()) * maxR;
   return {
-    x: Math.round(margin + Math.random() * (WORLD_W - margin * 2)),
-    y: Math.round(margin + Math.random() * (WORLD_H - margin * 2))
+    x: Math.round(Math.max(300, Math.min(WORLD_W - 300, cx + Math.cos(angle) * r))),
+    y: Math.round(Math.max(300, Math.min(WORLD_H - 300, cy + Math.sin(angle) * r)))
   };
 }
 
@@ -272,10 +289,9 @@ function applyPlayerDamage(targetId, amount, killerId, killerName) {
 function createBot() {
   const id  = 'bot_' + (++botIdCounter);
   const pos = rndSpawnPos();
-  const suffix = 1 + ((Math.random() * 99) | 0);
   const bot = {
     id, isBot: true,
-    name:  pickRand(BOT_NAMES) + suffix,
+    name:  pickRand(BOT_NAMES),
     char:  pickRand(BOT_CHARS),
     color: pickRand(BOT_COLORS),
     x: pos.x, y: pos.y,
@@ -318,7 +334,6 @@ function manageBots() {
 function botTick() {
   const now = Date.now();
   const DT  = 0.1;
-  const realAlive = Object.values(players).filter(p => !p.isBot && p.alive);
 
   for (const botId in bots) {
     const bot = bots[botId];
@@ -340,20 +355,22 @@ function botTick() {
       continue;
     }
 
-    // ── Find nearest real player ──
-    let nearest = null, nearDist = Infinity;
-    for (const p of realAlive) {
+    // ── Find nearest target — any alive entity (real players AND other bots) ──
+    let nearest = null, nearestId = null, nearDist = Infinity;
+    for (const id in players) {
+      const p = players[id];
+      if (!p.alive || id === botId) continue;
       const d = Math.hypot(p.x - bot.x, p.y - bot.y);
-      if (d < nearDist) { nearDist = d; nearest = p; }
+      if (d < nearDist) { nearDist = d; nearest = p; nearestId = id; }
     }
 
-    // ── Movement (wander toward player with inaccuracy) ──
+    // ── Movement (wander toward target with some inaccuracy) ──
     bot._wanderTimer -= DT;
     if (bot._wanderTimer <= 0) {
       bot._wanderTimer = 1.5 + Math.random() * 2;
       if (nearest) {
         const baseAng = Math.atan2(nearest.y - bot.y, nearest.x - bot.x);
-        bot._wanderAngle = baseAng + (Math.random() - 0.5) * 1.0;
+        bot._wanderAngle = baseAng + (Math.random() - 0.5) * 0.8;
       } else {
         bot._wanderAngle = Math.random() * Math.PI * 2;
       }
@@ -369,22 +386,22 @@ function botTick() {
     bot.frame = Math.floor(now / 260) % 2;
 
     // ── Shooting ──
-    if (nearest && now - bot._lastShot > bot._shotInterval) {
+    if (nearest && nearestId && now - bot._lastShot > bot._shotInterval) {
       bot._lastShot = now;
       bot.anim = 'shoot';
-      const inaccuracy   = (Math.random() - 0.5) * 0.9;
-      const shotAngle    = bot.aim + inaccuracy;
+      const inaccuracy = (Math.random() - 0.5) * 0.9;
+      const shotAngle  = bot.aim + inaccuracy;
       io.emit('enemyShoot', {
         owner: botId,
         id:    'bs_' + Math.random().toString(36).slice(2, 7),
         x: Math.round(bot.x), y: Math.round(bot.y),
         a: +shotAngle.toFixed(3), spd: 500, dmg: 10, radius: 5
       });
-      // Probabilistic hit (kinda bad)
+      // Probabilistic hit applied server-side for all targets (bots and players alike)
       if (nearest.alive && nearDist < BOT_HIT_RANGE) {
         const hitChance = (1 - nearDist / BOT_HIT_RANGE) * BOT_ACCURACY;
         if (Math.random() < hitChance) {
-          applyPlayerDamage(nearest.id, 10, botId, bot.name);
+          applyPlayerDamage(nearestId, 10, botId, bot.name);
         }
       }
     }

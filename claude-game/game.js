@@ -28,31 +28,6 @@
   const TILE = 64;             // world-unit tile size
   const ULT_CHARGE_MAX = 1000; // damage dealt → ult ready
 
-  /* ---------------- BOT CONSTANTS ---------------- */
-  const BOT_COUNT    = 7;
-  const BOT_SIGHT_R  = 560;
-  const BOT_FIRE_CD  = 380;
-  const BOT_NAMES    = [
-    'Zaid','Zaid23','ZaidYT','ZaidPro','Zaid_irl',
-    'Pumpkin','Pumpkin69','PumpkinGang','Pumpkin_Jr',
-    'Rich','Rich$$$','RichBoy','Rich_Deluxe','RichMan2',
-    'Yuna','YunaXO','Yuna_irl','YunaGG',
-    'BoomerMan','BoomerMan2','BoomerDad','OldBoomer',
-    'YoungGun','YoungBlood','Young99','YoungMan',
-    'GPT4','GPT-o','ChatGPT','GPT3','GPTmax',
-    'Skibidi','SkibidiOhio','Skibidi69','SkibidiRizz',
-    'Tikitiki','Tikitiki2','TikiGang','Tiki_Jr',
-    'Bludy','BluddyHell','Bludy99','BluudMan',
-    'Pillar','PillarChaser','Pillar99','ThePillar',
-    'Chaser','ChaserXL','ChaserPro','Chase_R',
-    'MrFreaky','Freaky','FreakyFriday','Freaky_V2',
-    'MrBeast','Mr_Man','MrFunny','Mr_Nobody',
-    'Arthur','ArthurLore','Arthur_V2','ArthurXD',
-    'Diddy','DiddyParty','DiddyMan','Diddy99',
-    'Epstein','EpsteinJr','Epstein_II','EpsteinFC',
-    'PuhPuh','PuhMan','DihDih','DihFC','Man_irl',
-  ];
-
   function xpForLevel(l) {
     return Math.round(LEVEL_BASE * Math.pow(LEVEL_GROW, l - 1));
   }
@@ -224,8 +199,6 @@
   const fofoUltPlayers = new Set(); // ids of others running fofo ult
   
   let others = {};
-  let bots = [];
-  let botIdSeq = 0;
   const tetoState = { x: 0, y: 0, rx: 0, ry: 0, hp: TETO_MAX_HP, alive: false, state: 'roam', jumpAlpha: 1, jumpTimer: 0 };
   const bullets = [];
   const particles = [];
@@ -1062,32 +1035,25 @@
     const correctAns = parseInt(enderPopEl.dataset.answer, 10);
     const mathOk    = mathInput === correctAns;
 
-    // Fuzzy name match: 70% of target's chars must appear in input (keeps spaces, case-insensitive)
-    function fuzzyMatch(input, target) {
-      const t = target.toLowerCase().trim();
-      const i = input.toLowerCase().trim();
-      if (t === '') return true; // all-symbol name: accept anything
-      if (t === i) return true;  // exact
-      let matched = 0;
-      const pool = i.split('');
-      for (const ch of t) {
-        const idx = pool.indexOf(ch);
-        if (idx !== -1) { matched++; pool.splice(idx, 1); }
-      }
-      return matched / t.length >= 0.7;
+    // Normalize name: lowercase, strip everything except letters + digits
+    function normEnder(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, ''); }
+    function enderScore(input, name) {
+      const inp = normEnder(input), tgt = normEnder(name);
+      if (inp.length < 2 || tgt === '') return 0;
+      // Substring match in either direction → perfect score
+      if (tgt.includes(inp) || inp.includes(tgt)) return 1.0;
+      // Fuzzy: fraction of input chars that appear in target
+      let m = 0; const pool = tgt.split('');
+      for (const c of inp) { const i = pool.indexOf(c); if (i !== -1) { m++; pool.splice(i, 1); } }
+      return m / inp.length;
     }
 
     let targetId = null, bestScore = 0;
     for (const id in others) {
       const o = others[id]; if (!o.alive) continue;
-      const pname = (o.name || '').toLowerCase().trim();
-      if (pname === '') { targetId = id; break; } // all-symbol name
-      const t = pname;
-      const inp = nameRaw.toLowerCase().trim();
-      let matched = 0; const pool = inp.split('');
-      for (const ch of t) { const idx = pool.indexOf(ch); if (idx !== -1) { matched++; pool.splice(idx, 1); } }
-      const score = t.length > 0 ? matched / t.length : 0;
-      if (score >= 0.7 && score > bestScore) { bestScore = score; targetId = id; }
+      if (!normEnder(o.name || '')) { targetId = id; break; } // all-symbol name
+      const score = enderScore(nameRaw, o.name || '');
+      if (score >= 0.65 && score > bestScore) { bestScore = score; targetId = id; }
     }
     closeEnder();
     if (mathOk && targetId) {
@@ -1292,7 +1258,6 @@
     const el = document.getElementById('caLbRows'); if (!el) return;
     const all = [{ name: me.name || 'You', level: me.level, points: me.points, elims: me.elims, color: me.color, isMe: true }];
     for (const id in others) { const o = others[id]; all.push({ name: o.name || '???', level: o.level || 1, points: o.points || 0, elims: o.elims || 0, color: o.color || '#aaa', isMe: false }); }
-    for (const bot of bots) { if (!bot.killed) all.push({ name: bot.name + ' [BOT]', level: bot.level, points: bot.points, elims: bot.elims, color: bot.color, isMe: false }); }
     all.sort((a, b) => (b.points - a.points) || (b.level - a.level));
     el.innerHTML = all.slice(0, 10).map((p, i) =>
       `<div style="display:flex;align-items:center;gap:4px;padding:3px 0;${i > 0 ? 'border-top:1px solid rgba(255,255,255,0.04)' : ''}">
@@ -1495,17 +1460,15 @@
           me.fofoGooTimer = 0.4;
           pushAE({ type: 'fofo_goo', x: me.x, y: me.y, r: 30, born: t, maxAge: 5000, owner: myId });
         }
-        // charge bar from nearby enemies (includes bots)
+        // charge bar from nearby enemies
         let nearCount = 0;
         for (const id in others) { const o = others[id]; if (!o.alive) continue; if (Math.hypot((o.rx||o.x)-me.x, (o.ry||o.y)-me.y) < 400) nearCount++; }
-        for (const bot of bots) { if (bot.alive && Math.hypot(bot.x-me.x, bot.y-me.y) < 400) nearCount++; }
-        me.fofoChargeBar = Math.min(10, me.fofoChargeBar + Math.min(nearCount, 2) * 5 * dt);
+        me.fofoChargeBar = Math.min(10, me.fofoChargeBar + nearCount * 5 * dt);
         if (me.fofoChargeBar >= 10) {
           me.fofoChargeBar = 0;
-          // teleport to nearest enemy — check real players and bots
+          // teleport to nearest enemy
           let nearest = null, nearD = Infinity;
-          for (const id in others) { const o = others[id]; if (!o.alive) continue; const d = Math.hypot((o.rx||o.x)-me.x, (o.ry||o.y)-me.y); if (d < nearD) { nearD = d; nearest = { id: id, ox: o.rx||o.x, oy: o.ry||o.y, isBot: false }; } }
-          for (const bot of bots) { if (!bot.alive) continue; const d = Math.hypot(bot.x-me.x, bot.y-me.y); if (d < nearD) { nearD = d; nearest = { id: bot.id, ox: bot.x, oy: bot.y, isBot: true, botRef: bot }; } }
+          for (const id in others) { const o = others[id]; if (!o.alive) continue; const d = Math.hypot((o.rx||o.x)-me.x, (o.ry||o.y)-me.y); if (d < nearD) { nearD = d; nearest = { id, ox: o.rx||o.x, oy: o.ry||o.y }; } }
           if (nearest) {
             me.x = clamp(nearest.ox + (Math.random()-0.5)*60, PLAYER_R, WORLD_W-PLAYER_R);
             me.y = clamp(nearest.oy + (Math.random()-0.5)*60, PLAYER_R, WORLD_H-PLAYER_R);
@@ -1513,16 +1476,7 @@
             addScreenShake(8, 0.5);
             spawnParticles(me.x, me.y, '#9b59b6', 30, 300, 0.8);
             pushAE({ type: 'fofo_blast', x: me.x, y: me.y, r: TILE, born: t, maxAge: 600 });
-            if (nearest.isBot && nearest.botRef) {
-              nearest.botRef.hp -= 30; nearest.botRef.lastCombat = Date.now();
-              gainUltCharge(30); gainXp(30 * XP_PER_DMG);
-              if (nearest.botRef.hp <= 0) {
-                nearest.botRef.alive = false; nearest.botRef.hp = 0;
-                nearest.botRef.deathTime = Date.now(); nearest.botRef.deadUntil = Date.now() + RESPAWN_MS;
-                me.elims++; me.points += 100; gainXp(XP_PER_KILL);
-                toast(nearest.botRef.name + ' bot down! +100 pts');
-              }
-            } else if (socket) { socket.emit('damage', { targetId: nearest.id, amount: 30 }); }
+            if (socket) socket.emit('damage', { targetId: nearest.id, amount: 30 });
           }
         }
         // FOFO music volume
@@ -1751,34 +1705,7 @@
         if (me.mods.thorns > 0 && b.owner) {
           if (socket) socket.emit('damage', { targetId: b.owner, amount: Math.round(b.dmg * me.mods.thorns) });
         }
-        // Bot bullets apply damage locally — no server for bots
-        if (b.owner && b.owner.startsWith('bot_')) hurtMe(b.dmg, b.owner);
         bullets.splice(i, 1); continue;
-      }
-
-      // Bot-vs-bot bullet damage (bot bullets hitting other bots)
-      if (b.owner && b.owner.startsWith('bot_')) {
-        let botHit = false;
-        for (let bi3 = 0; bi3 < bots.length; bi3++) {
-          const hitBot = bots[bi3];
-          if (!hitBot.alive || hitBot.id === b.owner) continue;
-          if (d2(b.x, b.y, hitBot.x, hitBot.y) < (PLAYER_R + brad) ** 2) {
-            hitBot.hp = Math.max(0, hitBot.hp - b.dmg); hitBot.lastCombat = Date.now();
-            spawnParticles(b.x, b.y, '#ffb13b', 3, 80, 0.25);
-            const sbot = bots.find(b2 => b2.id === b.owner);
-            if (hitBot.hp <= 0) {
-              hitBot.alive = false; hitBot.hp = 0;
-              hitBot.deathTime = Date.now(); hitBot.deadUntil = Date.now() + RESPAWN_MS;
-              spawnParticles(hitBot.x, hitBot.y, hitBot.color || '#ff3b5c', 16, 220, 0.7);
-              // Kill XP/points only after confirmed death
-              if (sbot) { sbot.elims++; sbot.points += 100 + Math.round(b.dmg); botGainXp(sbot, XP_PER_KILL + b.dmg * XP_PER_DMG); }
-            } else {
-              if (sbot) { sbot.points += Math.round(b.dmg); botGainXp(sbot, b.dmg * XP_PER_DMG); }
-            }
-            botHit = true; break;
-          }
-        }
-        if (botHit) { bullets.splice(i, 1); continue; }
       }
 
       // Check XP box hits (owner bullets only, before player check)
@@ -1848,35 +1775,6 @@
             
             if ((b.explosive || 0) > 0) spawnExplosion(b.x, b.y, b.explosive, b.dmg);
             hit = true; break;
-          }
-        }
-        // Hit detection against local bots
-        if (!hit) {
-          for (let bi2 = 0; bi2 < bots.length; bi2++) {
-            const bot = bots[bi2]; if (!bot.alive) continue;
-            if (d2(b.x, b.y, bot.x, bot.y) < (PLAYER_R + brad) ** 2) {
-              const dmgAmt = Math.round(b.dmg);
-              bot.hp = Math.max(0, bot.hp - dmgAmt); bot.lastCombat = Date.now();
-              gainUltCharge(dmgAmt); gainXp(dmgAmt * XP_PER_DMG);
-              if (me.mods.lifesteal > 0) me.hp = Math.min(effMaxHp(), me.hp + me.mods.lifesteal);
-              spawnParticles(b.x, b.y, '#ffb13b', 5, 120, 0.3); play('hitEnemy', 0.4);
-              if ((b.explosive || 0) > 0) spawnExplosion(b.x, b.y, b.explosive, b.dmg);
-              if (bot.hp <= 0) {
-                bot.alive = false; bot.hp = 0; bot.deathTime = Date.now(); bot.deadUntil = Date.now() + RESPAWN_MS;
-                me.elims++; me.points += 100;
-                me.hp = Math.min(effMaxHp(), me.hp + 50);
-                gainXp(XP_PER_KILL);
-                // XP/points awarded on kill only, AFTER death confirmed
-                botGainXp(bot, dmgAmt * XP_PER_DMG);
-                toast(bot.name + ' bot down! +100 pts');
-                spawnParticles(bot.x, bot.y, bot.color || '#ff3b5c', 22, 260, 0.8);
-                play('death', 0.5);
-              } else {
-                // Bot survived — award XP for the hit now
-                botGainXp(bot, dmgAmt * XP_PER_DMG);
-              }
-              hit = true; break;
-            }
           }
         }
         if (hit) { if ((b.pierce || 0) > 0) { b.pierce--; } else { bullets.splice(i, 1); } }
@@ -1957,8 +1855,7 @@
       if (t - walls[wi].born > WALL_MAX_AGE) walls.splice(wi, 1);
     }
 
-    tickBots(dt, t);
-    if (countEl) countEl.textContent = 1 + Object.keys(others).length + bots.filter(b => b.alive).length;
+    if (countEl) countEl.textContent = 1 + Object.keys(others).length;
     updateHud(); updateLeaderboard();
   }
 
@@ -2169,7 +2066,6 @@
     }
 
     for (const id in others) drawPlayer(others[id], false);
-    for (const bot of bots) drawPlayer(bot, false);
     drawPlayer(me, true);
 
     // Brawl-Stars ult preview (only for local player, only when ult ready)
@@ -2365,11 +2261,10 @@
           ctx.restore();
         }
       }
-      const markerTargets = [];
-      for (const id in others) { const o = others[id]; if (o && o.x !== undefined) markerTargets.push({ x: o.x, y: o.y, color: o.color || '#ff3b5c' }); }
-      for (const bot of bots) { if (bot.alive) markerTargets.push({ x: bot.x, y: bot.y, color: bot.color || '#ff3b5c' }); }
-      for (const m of markerTargets) {
-        const sx = m.x - camera.x, sy = m.y - camera.y;
+      for (const id in others) {
+        const o = others[id];
+        if (!o || o.x === undefined || o.y === undefined) continue;
+        const sx = o.x - camera.x, sy = o.y - camera.y;
         if (sx > 0 && sx < VIEW_W && sy > 0 && sy < VIEW_H) continue;
         const ang = Math.atan2(sy - cy, sx - cx);
         const ex = cx + Math.cos(ang) * (VIEW_W / 2 - PAD);
@@ -2377,7 +2272,7 @@
         ctx.save();
         ctx.translate(ex, ey);
         ctx.rotate(ang + Math.PI / 2);
-        ctx.fillStyle = m.color;
+        ctx.fillStyle = o.color || '#ff3b5c';
         ctx.beginPath();
         ctx.moveTo(0, -10);
         ctx.lineTo(5, 5);
@@ -2814,205 +2709,6 @@
     };
   }
 
-  function botSpawnPos() {
-    // Bots spawn tightly near center so they're within sight range of each other
-    const maxR = BOT_SIGHT_R * 0.65;
-    const r = Math.sqrt(Math.random()) * maxR;
-    const angle = Math.random() * Math.PI * 2;
-    return {
-      x: clamp(WORLD_W / 2 + Math.cos(angle) * r, PLAYER_R * 4, WORLD_W - PLAYER_R * 4),
-      y: clamp(WORLD_H / 2 + Math.sin(angle) * r, PLAYER_R * 4, WORLD_H - PLAYER_R * 4)
-    };
-  }
-
-  /* ---------------- BOT SYSTEM ---------------- */
-  function spawnBot() {
-    const charKeys = Object.keys(CHARACTERS);
-    const char = charKeys[(Math.random() * charKeys.length) | 0];
-    const pos = botSpawnPos();
-    const id = 'bot_' + (++botIdSeq);
-    const bot = {
-      id, name: BOT_NAMES[(Math.random() * BOT_NAMES.length) | 0],
-      color: CHARACTERS[char].color, char,
-      x: pos.x, y: pos.y, rx: pos.x, ry: pos.y,
-      aim: Math.random() * Math.PI * 2, facing: 1,
-      hp: MAX_HP, alive: true, deadUntil: 0, deathTime: 0,
-      level: 1, xp: 0, anim: 'idle', frame: 0, frameT: 0, moving: false,
-      isBot: true, lastBotFire: 0, lastCombat: 0,
-      botFireCd: BOT_FIRE_CD + Math.random() * 250,
-      wanderAngle: Math.random() * Math.PI * 2, wanderTimer: 0,
-      retargetTimer: 0, _tgt: null,
-      ultCharge: 0, ultReady: false,
-      mods: { dmg:0, fireRate:0, speed:0, multishot:0, pierce:0, lifesteal:0, thorns:0,
-              bulletSpeed:0, explosive:0, ricochet:0, bigBullet:0, spreadShot:0, rapidBurst:0,
-              maxHp:0, regenRate:0, regenDelay:0, critChance:0, onKillHeal:0, killShield:0,
-              dashHeal:0, dashCdReduce:0, damageResist:0, homingStr:0 },
-      abilities: [], points: 0, elims: 0,
-      immuneUntil: Date.now() + IMMUNE_MS, spawnImmune: true, killed: false
-    };
-    bots.push(bot);
-    return bot;
-  }
-
-  function botGainXp(bot, n) {
-    bot.xp += n; bot.points += Math.round(n);
-    let need = xpForLevel(bot.level);
-    while (bot.xp >= need) {
-      bot.xp -= need; bot.level++; need = xpForLevel(bot.level);
-      const picks = rollCards(3, bot.level);
-      const chosen = picks[(Math.random() * picks.length) | 0];
-      if (chosen) { chosen.apply(bot); bot.abilities.push(chosen.id); }
-    }
-  }
-
-  function tickBots(dt, t) {
-    if (!started) return;
-    const now = Date.now();
-    const realPlayers = 1 + Object.keys(others).length;
-    const shouldRespawn = realPlayers < 5;
-
-    // Top up bots when < 5 real players
-    const activeBots = bots.filter(b => !b.killed);
-    if (shouldRespawn && activeBots.length < BOT_COUNT) {
-      const toAdd = BOT_COUNT - activeBots.length;
-      for (let i = 0; i < toAdd; i++) spawnBot();
-    }
-
-    for (let bi = bots.length - 1; bi >= 0; bi--) {
-      const bot = bots[bi];
-      if (bot.killed) { bots.splice(bi, 1); continue; }
-
-      if (!bot.alive) {
-        if (!shouldRespawn) { bot.killed = true; continue; }
-        if (now >= bot.deadUntil) {
-          const pos = botSpawnPos();
-          bot.x = pos.x; bot.y = pos.y; bot.rx = pos.x; bot.ry = pos.y;
-          bot.hp = MAX_HP; bot.alive = true;
-          bot.ultCharge = 0; bot.ultReady = false;
-          bot.immuneUntil = now + IMMUNE_MS; bot.spawnImmune = true;
-          bot.level = 1; bot.xp = 0; bot.abilities = [];
-          bot.mods = { dmg:0, fireRate:0, speed:0, multishot:0, pierce:0, lifesteal:0, thorns:0,
-                       bulletSpeed:0, explosive:0, ricochet:0, bigBullet:0, spreadShot:0, rapidBurst:0,
-                       maxHp:0, regenRate:0, regenDelay:0, critChance:0, onKillHeal:0, killShield:0,
-                       dashHeal:0, dashCdReduce:0, damageResist:0, homingStr:0 };
-        }
-        continue;
-      }
-
-      bot.spawnImmune = now < bot.immuneUntil;
-
-      // Retarget every 1.5-3s — pick randomly from ALL in-sight entities (no player priority)
-      bot.retargetTimer -= dt;
-      const tgtRef = bot._tgt;
-      const tgtStillValid = tgtRef && (tgtRef.isMe ? me.alive : (tgtRef.botRef ? tgtRef.botRef.alive : true));
-      if (bot.retargetTimer <= 0 || !tgtStillValid) {
-        bot.retargetTimer = 1.5 + Math.random() * 1.5;
-        const botCands = [], playerCands = [];
-        if (me.alive && Math.hypot(bot.x - me.x, bot.y - me.y) < BOT_SIGHT_R)
-          playerCands.push({ isMe: true, botRef: null });
-        for (const id in others) {
-          const o = others[id]; if (!o.alive) continue;
-          const ox = o.rx !== undefined ? o.rx : o.x, oy = o.ry !== undefined ? o.ry : o.y;
-          if (Math.hypot(bot.x - ox, bot.y - oy) < BOT_SIGHT_R) playerCands.push({ isMe: false, botRef: null, ox, oy });
-        }
-        for (const b2 of bots) {
-          if (b2 === bot || !b2.alive) continue;
-          if (Math.hypot(bot.x - b2.x, bot.y - b2.y) < BOT_SIGHT_R) botCands.push({ isMe: false, botRef: b2 });
-        }
-        // Strongly prefer fighting other bots (treat them as equal players); only attack human if no bots in sight
-        const pool = botCands.length > 0
-          ? (Math.random() < 0.78 ? botCands : (playerCands.length > 0 ? playerCands : botCands))
-          : playerCands;
-        bot._tgt = pool.length > 0 ? pool[(Math.random() * pool.length) | 0] : null;
-      }
-
-      // Resolve current target position
-      let tgtX, tgtY, tgtDist;
-      const t2 = bot._tgt;
-      if (t2) {
-        if (t2.isMe) { tgtX = me.x; tgtY = me.y; }
-        else if (t2.botRef) { tgtX = t2.botRef.x; tgtY = t2.botRef.y; }
-        else { tgtX = t2.ox; tgtY = t2.oy; }
-      } else { tgtX = WORLD_W / 2; tgtY = WORLD_H / 2; }
-      tgtDist = Math.hypot(bot.x - tgtX, bot.y - tgtY);
-      const inSight = bot._tgt !== null && tgtDist < BOT_SIGHT_R * 1.15;
-      let dx = 0, dy = 0;
-
-      if (inSight && tgtDist > PLAYER_R * 3) {
-        const dl = tgtDist;
-        dx = (tgtX - bot.x) / dl; dy = (tgtY - bot.y) / dl;
-        bot.aim = Math.atan2(tgtY - bot.y, tgtX - bot.x);
-      } else if (!inSight) {
-        bot.wanderTimer -= dt;
-        if (bot.wanderTimer <= 0) {
-          bot.wanderAngle += (Math.random() - 0.5) * Math.PI * 1.2;
-          bot.wanderTimer = 1.0 + Math.random() * 2.0;
-        }
-        dx = Math.cos(bot.wanderAngle); dy = Math.sin(bot.wanderAngle);
-        bot.aim = bot.wanderAngle;
-      }
-
-      // Move
-      const spd = SPEED * 0.82;
-      const moving = (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01);
-      if (moving) {
-        const preX = bot.x, preY = bot.y;
-        bot.x = clamp(bot.x + dx * spd * dt, PLAYER_R, WORLD_W - PLAYER_R);
-        bot.y = clamp(bot.y + dy * spd * dt, PLAYER_R, WORLD_H - PLAYER_R);
-        // Two passes for corner cases
-        resolveObstacleCollision(bot, PLAYER_R);
-        resolveObstacleCollision(bot, PLAYER_R);
-        bot.x = clamp(bot.x, PLAYER_R, WORLD_W - PLAYER_R);
-        bot.y = clamp(bot.y, PLAYER_R, WORLD_H - PLAYER_R);
-        // If wall blocked movement, steer around it
-        const blocked = Math.hypot(bot.x - preX, bot.y - preY) < Math.hypot(dx, dy) * spd * dt * 0.3;
-        if (blocked) {
-          bot.wanderAngle += Math.PI * (0.5 + Math.random() * 1.0);
-          bot.wanderTimer = 0.6 + Math.random() * 1.0;
-          // Also nudge aim slightly to slide along wall surface
-          bot.aim += (Math.random() - 0.5) * 0.5;
-        }
-      }
-      bot.rx = bot.x; bot.ry = bot.y;
-      bot.facing = Math.cos(bot.aim) < 0 ? -1 : 1;
-      bot.moving = moving;
-
-      // Animate
-      bot.frameT += dt;
-      if (bot.frameT > 0.2) { bot.frameT = 0; bot.frame = bot.frame ? 0 : 1; }
-      if (inSight) { bot.anim = moving ? (now - bot.lastBotFire < 220 ? 'walkshoot' : 'walk') : (now - bot.lastBotFire < 220 ? 'shoot' : 'idle'); }
-      else { bot.anim = moving ? 'walk' : 'idle'; }
-
-      // Shoot when in sight and not immune
-      const fireCd = bot.botFireCd * Math.max(0.4, 1 - (bot.mods.fireRate || 0));
-      if (inSight && now > bot.immuneUntil && now - bot.lastBotFire > fireCd) {
-        bot.lastBotFire = now;
-        const bspd = BULLET_SPEED * 0.88;
-        const bdmg = BULLET_DMG * (1 + (bot.mods.dmg || 0));
-        const aimJitter = (Math.random() - 0.5) * 0.18;
-        bullets.push({
-          id: 'bb_' + now + '_' + bi, owner: bot.id,
-          x: bot.x + Math.cos(bot.aim) * (PLAYER_R + 3),
-          y: bot.y + Math.sin(bot.aim) * (PLAYER_R + 3),
-          vx: Math.cos(bot.aim + aimJitter) * bspd,
-          vy: Math.sin(bot.aim + aimJitter) * bspd,
-          dmg: bdmg, born: now, pierce: 0, explosive: 0, ricochet: 0, radius: BULLET_R
-        });
-      }
-
-      // Regen
-      if (now - (bot.lastCombat || 0) > REGEN_DELAY && bot.hp < MAX_HP) {
-        bot.hp = Math.min(MAX_HP, bot.hp + REGEN_RATE * dt);
-      }
-
-      // Passive ult charge build (cosmetic)
-      if (!bot.ultReady) {
-        bot.ultCharge = Math.min(ULT_CHARGE_MAX, (bot.ultCharge || 0) + 15 * dt);
-        if (bot.ultCharge >= ULT_CHARGE_MAX) bot.ultReady = true;
-      }
-    }
-  }
-
   /* ---------------- LIFECYCLE ---------------- */
   let selectedChar = 'pumpkin';
   async function doStart() {
@@ -3028,10 +2724,7 @@
     try { localStorage.setItem('caName', n); localStorage.setItem('caChar', selectedChar); } catch (e) {}
     started = true; if (gate) gate.style.display = 'none';
     const sp0 = randomSpawnPos(); me.x = sp0.x; me.y = sp0.y; me.lastCombat = Date.now();
-    // Spawn bots if fewer than 5 real players
-    bots = []; botIdSeq = 0;
-    if (1 + Object.keys(others).length < 5) { for (let _b = 0; _b < BOT_COUNT; _b++) spawnBot(); }
-    
+
     // Start both music tracks at silence — browser allows audio after user gesture here
     if (!musicState.normalAudio) {
       startNormalTrack((Math.random() * NORMAL_TRACKS.length) | 0);
