@@ -131,8 +131,8 @@
     if (!root) return;
     const aw = document.body.clientWidth  || window.innerWidth;
     const ah = document.body.clientHeight || window.innerHeight;
-    // Cap at 1.0 so the UI never gets bigger than designed — scales down on small screens only
-    const scale = Math.min(1.0, aw / VIEW_W, ah / VIEW_H);
+    // Allow up to 1.2× on larger monitors; scales down on small screens
+    const scale = Math.min(1.2, aw / VIEW_W, ah / VIEW_H);
     root.style.transform       = scale < 0.999 ? `scale(${scale.toFixed(6)})` : '';
     root.style.transformOrigin = 'center center';
   }
@@ -207,8 +207,8 @@
   let fogCanvas = null, fogCtx = null;
   let visPath = null; // current-frame visibility polygon for enemy culling
   let firstPersonMode = false;
-  const FPS_RAYS = 400, FPS_FOV = Math.PI * 0.62, FPS_MAX_DIST = 1050;
-  const FPS_STRIP = Math.ceil(VIEW_W / FPS_RAYS);
+  const FPS_RAYS = 480, FPS_FOV = Math.PI * 0.82, FPS_MAX_DIST = 1100;
+  const FPS_STRIP = Math.max(1, Math.ceil(VIEW_W / FPS_RAYS));
   const tetoState = { x: 0, y: 0, rx: 0, ry: 0, hp: TETO_MAX_HP, alive: false, state: 'roam', jumpAlpha: 1, jumpTimer: 0 };
   const bullets = [];
   const particles = [];
@@ -2091,8 +2091,8 @@
       ctx.translate(-camera.x % assets.floor.width, -camera.y % assets.floor.height);
       ctx.fillStyle = pat; ctx.fillRect(0, 0, VIEW_W + assets.floor.width, VIEW_H + assets.floor.height); ctx.restore();
     } else {
-      ctx.fillStyle = '#0c0c10'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-      ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.lineWidth = 1;
+      ctx.fillStyle = '#141416'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      ctx.strokeStyle = 'rgba(255,255,255,0.03)'; ctx.lineWidth = 1;
       const gs = 60; for (let x = -(camera.x % gs); x <= VIEW_W; x += gs) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, VIEW_H); ctx.stroke(); }
       for (let y = -(camera.y % gs); y <= VIEW_H; y += gs) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(VIEW_W, y); ctx.stroke(); }
     }
@@ -2101,10 +2101,10 @@
     for (const o of obstacles) {
       const sx = o.x - camera.x, sy = o.y - camera.y; if (sx > VIEW_W || sy > VIEW_H || sx + o.w < 0 || sy + o.h < 0) continue;
       if (o.type === 'small') {
-        ctx.fillStyle = '#1e1a14'; ctx.fillRect(sx, sy, o.w, o.h); ctx.strokeStyle = 'rgba(160,120,60,0.6)'; ctx.lineWidth = 1.5; ctx.strokeRect(sx, sy, o.w, o.h); ctx.strokeStyle = 'rgba(160,120,60,0.25)'; ctx.lineWidth = 1;
+        ctx.fillStyle = '#202022'; ctx.fillRect(sx, sy, o.w, o.h); ctx.strokeStyle = 'rgba(170,170,175,0.45)'; ctx.lineWidth = 1.5; ctx.strokeRect(sx, sy, o.w, o.h); ctx.strokeStyle = 'rgba(180,180,185,0.15)'; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + o.w, sy + o.h); ctx.stroke(); ctx.beginPath(); ctx.moveTo(sx + o.w, sy); ctx.lineTo(sx, sy + o.h); ctx.stroke();
       } else {
-        ctx.fillStyle = '#1b1b22'; ctx.fillRect(sx, sy, o.w, o.h); ctx.strokeStyle = 'rgba(120,120,140,0.5)'; ctx.lineWidth = 2; ctx.strokeRect(sx, sy, o.w, o.h); ctx.fillStyle = 'rgba(255,255,255,0.03)'; ctx.fillRect(sx + 4, sy + 4, o.w - 8, 8);
+        ctx.fillStyle = '#282830'; ctx.fillRect(sx, sy, o.w, o.h); ctx.strokeStyle = 'rgba(160,160,170,0.55)'; ctx.lineWidth = 2; ctx.strokeRect(sx, sy, o.w, o.h); ctx.fillStyle = 'rgba(255,255,255,0.04)'; ctx.fillRect(sx + 4, sy + 4, o.w - 8, 8);
       }
     }
     for (const p of particles) { const sx = p.x - camera.x, sy = p.y - camera.y; if (sx < -20 || sx > VIEW_W + 20 || sy < -20 || sy > VIEW_H + 20) continue; ctx.globalAlpha = p.life / p.maxLife; ctx.beginPath(); ctx.arc(sx, sy, p.r * (p.life / p.maxLife), 0, Math.PI * 2); ctx.fillStyle = p.color; ctx.fill(); }
@@ -2407,6 +2407,17 @@
     if (!others) return;
     const cx = VIEW_W / 2, cy = VIEW_H / 2, PAD = 40;
     try {
+      // Helper: clamp a direction angle to the rectangular screen edge (not an ellipse)
+      const clampEdge = (ang, padX, padY) => {
+        const rdx = Math.cos(ang), rdy = Math.sin(ang);
+        let t = Infinity;
+        if (rdx > 0.0001) t = Math.min(t, (VIEW_W - padX - cx) / rdx);
+        else if (rdx < -0.0001) t = Math.min(t, (padX - cx) / rdx);
+        if (rdy > 0.0001) t = Math.min(t, (VIEW_H - padY - cy) / rdy);
+        else if (rdy < -0.0001) t = Math.min(t, (padY - cy) / rdy);
+        return { ex: cx + rdx * t, ey: cy + rdy * t };
+      };
+
       // ── Fogged-enemy markers: enemies visible on screen but hidden in darkness ──
       if (visPath) {
         const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
@@ -2418,8 +2429,7 @@
           if (ctx.isPointInPath(visPath, sx, sy)) continue; // visible — no marker needed
           // Enemy is on-screen but in darkness: show pulsing directional marker
           const ang = Math.atan2(sy - cy, sx - cx);
-          const ex = cx + Math.cos(ang) * (VIEW_W / 2 - PAD);
-          const ey = cy + Math.sin(ang) * (VIEW_H / 2 - PAD);
+          const { ex, ey } = clampEdge(ang, PAD, PAD);
           ctx.save();
           ctx.globalAlpha = 0.55 + 0.4 * pulse;
           ctx.translate(ex, ey);
@@ -2438,8 +2448,7 @@
         const tsx = tetoState.rx - camera.x, tsy = tetoState.ry - camera.y;
         if (tsx < 0 || tsx > VIEW_W || tsy < 0 || tsy > VIEW_H) {
           const ang = Math.atan2(tsy - cy, tsx - cx);
-          const ex = cx + Math.cos(ang) * (VIEW_W / 2 - PAD + 8);
-          const ey = cy + Math.sin(ang) * (VIEW_H / 2 - PAD + 8);
+          const { ex, ey } = clampEdge(ang, PAD - 8, PAD - 8);
           ctx.save();
           ctx.translate(ex, ey);
           ctx.rotate(ang + Math.PI / 2);
@@ -2459,8 +2468,7 @@
         const sx = o.x - camera.x, sy = o.y - camera.y;
         if (sx > 0 && sx < VIEW_W && sy > 0 && sy < VIEW_H) continue;
         const ang = Math.atan2(sy - cy, sx - cx);
-        const ex = cx + Math.cos(ang) * (VIEW_W / 2 - PAD);
-        const ey = cy + Math.sin(ang) * (VIEW_H / 2 - PAD);
+        const { ex, ey } = clampEdge(ang, PAD, PAD);
         ctx.save();
         ctx.translate(ex, ey);
         ctx.rotate(ang + Math.PI / 2);
@@ -2607,33 +2615,36 @@
   /* ---------------- FIRST PERSON RAYCASTER ---------------- */
   function drawFirstPerson() {
     ctx.save();
-    // Sky gradient
+
+    // ── Ceiling (dark gray) ──
     const skyG = ctx.createLinearGradient(0, 0, 0, VIEW_H / 2);
-    skyG.addColorStop(0, '#05050f'); skyG.addColorStop(1, '#10102a');
+    skyG.addColorStop(0, '#0e0e12'); skyG.addColorStop(1, '#1a1a1e');
     ctx.fillStyle = skyG; ctx.fillRect(0, 0, VIEW_W, VIEW_H / 2);
-    // Floor gradient
+
+    // ── Floor (slightly different gray) ──
     const flrG = ctx.createLinearGradient(0, VIEW_H / 2, 0, VIEW_H);
-    flrG.addColorStop(0, '#191908'); flrG.addColorStop(1, '#0a0a04');
+    flrG.addColorStop(0, '#18181c'); flrG.addColorStop(1, '#0f0f12');
     ctx.fillStyle = flrG; ctx.fillRect(0, VIEW_H / 2, VIEW_W, VIEW_H / 2);
 
     // Filter nearby obstacles
     const nearObs = obstacles.filter(o => {
-      const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
-      return Math.hypot(cx - me.x, cy - me.y) < FPS_MAX_DIST + Math.max(o.w, o.h);
+      const ocx = o.x + o.w / 2, ocy = o.y + o.h / 2;
+      return Math.hypot(ocx - me.x, ocy - me.y) < FPS_MAX_DIST + Math.max(o.w, o.h);
     });
 
     const zbuf = new Float32Array(VIEW_W).fill(FPS_MAX_DIST);
+    const FOG_START = 180, FOG_COLOR = [14, 14, 18]; // fog matches ceiling/floor
 
     for (let i = 0; i < FPS_RAYS; i++) {
       const angle = me.aim - FPS_FOV / 2 + (i / (FPS_RAYS - 1)) * FPS_FOV;
-      const dx = Math.cos(angle), dy = Math.sin(angle);
+      const rdx = Math.cos(angle), rdy = Math.sin(angle);
       let minT = FPS_MAX_DIST, isVert = false, isSmall = false;
 
       for (const o of nearObs) {
-        const tx1 = dx === 0 ? -1e9 : (o.x - me.x) / dx;
-        const tx2 = dx === 0 ?  1e9 : (o.x + o.w - me.x) / dx;
-        const ty1 = dy === 0 ? -1e9 : (o.y - me.y) / dy;
-        const ty2 = dy === 0 ?  1e9 : (o.y + o.h - me.y) / dy;
+        const tx1 = rdx === 0 ? -1e9 : (o.x - me.x) / rdx;
+        const tx2 = rdx === 0 ?  1e9 : (o.x + o.w - me.x) / rdx;
+        const ty1 = rdy === 0 ? -1e9 : (o.y - me.y) / rdy;
+        const ty2 = rdy === 0 ?  1e9 : (o.y + o.h - me.y) / rdy;
         const tminX = Math.min(tx1, tx2), tmaxX = Math.max(tx1, tx2);
         const tminY = Math.min(ty1, ty2), tmaxY = Math.max(ty1, ty2);
         const tmin = Math.max(tminX, tminY), tmax = Math.min(tmaxX, tmaxY);
@@ -2642,22 +2653,32 @@
         }
       }
 
-      const x0 = i * FPS_STRIP;
-      for (let px = x0; px < Math.min(x0 + FPS_STRIP, VIEW_W); px++) zbuf[px] = minT;
+      const x0 = Math.round(i * VIEW_W / FPS_RAYS);
+      const x1 = Math.round((i + 1) * VIEW_W / FPS_RAYS);
+      for (let px = x0; px < x1 && px < VIEW_W; px++) zbuf[px] = minT;
 
       if (minT < FPS_MAX_DIST) {
         const perp = minT * Math.cos(angle - me.aim);
-        const wh = Math.round(Math.min(VIEW_H * 3, (VIEW_H * 240) / Math.max(1, perp)));
+        const wh = Math.round(Math.min(VIEW_H * 3.5, (VIEW_H * 260) / Math.max(1, perp)));
         const wt = Math.round((VIEW_H - wh) / 2);
-        const fade = Math.max(0.05, 1 - perp / FPS_MAX_DIST);
-        let rB = isSmall ? 55 : 62, gB = isSmall ? 48 : 60, bB = isSmall ? 40 : 76;
-        if (isVert) { rB += 18; gB += 18; bB += 22; }
-        ctx.fillStyle = `rgb(${Math.round(rB*fade)},${Math.round(gB*fade)},${Math.round(bB*fade)})`;
-        ctx.fillRect(x0, wt, FPS_STRIP, wh);
+
+        // Wall base brightness: gray, lighter vertical faces for depth cue
+        let baseV = isSmall ? 72 : 92;
+        if (isVert) baseV += 28;
+
+        // Distance fade + fog blend
+        const fade = Math.max(0, 1 - perp / FPS_MAX_DIST);
+        const fogFrac = Math.min(1, Math.max(0, (perp - FOG_START) / (FPS_MAX_DIST - FOG_START)));
+        const wr = Math.round(lerp(FOG_COLOR[0], baseV * fade, 1 - fogFrac));
+        const wg = Math.round(lerp(FOG_COLOR[1], baseV * fade, 1 - fogFrac));
+        const wb = Math.round(lerp(FOG_COLOR[2], (baseV + 4) * fade, 1 - fogFrac));
+
+        ctx.fillStyle = `rgb(${wr},${wg},${wb})`;
+        ctx.fillRect(x0, wt, x1 - x0 + 1, wh);
       }
     }
 
-    // Sprite billboard rendering for other players
+    // ── Sprite billboard rendering — other players as PNG billboards ──
     const sprites = [];
     for (const id in others) {
       const o = others[id]; if (!o.alive) continue;
@@ -2667,61 +2688,145 @@
       let rel = Math.atan2(oy - me.y, ox - me.x) - me.aim;
       while (rel > Math.PI) rel -= Math.PI * 2;
       while (rel < -Math.PI) rel += Math.PI * 2;
-      if (Math.abs(rel) > FPS_FOV / 2 + 0.15) continue;
-      sprites.push({ ox, oy, dist, rel, color: o.color || '#ff3b5c', name: o.name || '?', hp: o.hp || 100 });
+      if (Math.abs(rel) > FPS_FOV / 2 + 0.18) continue;
+      sprites.push({ o, ox, oy, dist, rel });
     }
     sprites.sort((a, b) => b.dist - a.dist);
+
     for (const s of sprites) {
       const perp = s.dist * Math.cos(s.rel);
-      const sh = Math.round(Math.min(VIEW_H * 2.5, (VIEW_H * 180) / Math.max(1, perp)));
-      const sw = Math.round(sh * 0.55);
+      const sh = Math.round(Math.min(VIEW_H * 2.8, (VIEW_H * 200) / Math.max(1, perp)));
+      const sw = sh;
       const scx = Math.round((s.rel / (FPS_FOV / 2) + 1) / 2 * VIEW_W);
-      const sx = scx - sw / 2, st = Math.round((VIEW_H - sh) / 2);
+      const ssx = scx - sw / 2, sst = Math.round((VIEW_H - sh) / 2);
+
       // Depth cull
       let blocked = 0;
-      for (let px = Math.max(0, sx); px < Math.min(VIEW_W, sx + sw); px++) if (zbuf[px] < s.dist) blocked++;
-      const vis = Math.max(0, 1 - blocked / Math.max(1, sw));
-      if (vis < 0.1) continue;
-      ctx.save(); ctx.globalAlpha = vis * Math.max(0.1, 1 - s.dist / FPS_MAX_DIST);
-      const hpF = Math.max(0, (s.hp || 100) / 100);
-      ctx.fillStyle = s.color;
-      ctx.fillRect(sx, st + sh * 0.2, sw, sh * 0.55);
-      ctx.beginPath(); ctx.arc(scx, st + sh * 0.12, sw * 0.28, 0, Math.PI * 2); ctx.fill();
-      if (sh > 25) {
-        ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(sx, st - 7, sw, 4);
-        ctx.fillStyle = hpF > 0.5 ? '#2fd47f' : '#ff3b5c'; ctx.fillRect(sx, st - 7, sw * hpF, 4);
-        if (sh > 55) {
-          ctx.font = `${Math.max(9, Math.round(sh * 0.11))}px JetBrains Mono,monospace`;
+      const pxL = Math.max(0, Math.floor(ssx)), pxR = Math.min(VIEW_W, Math.ceil(ssx + sw));
+      for (let px = pxL; px < pxR; px++) if (zbuf[px] < s.dist) blocked++;
+      const vis = Math.max(0, 1 - blocked / Math.max(1, pxR - pxL));
+      if (vis < 0.08) continue;
+
+      const fogFrac = Math.min(1, Math.max(0, (perp - FOG_START) / (FPS_MAX_DIST - FOG_START)));
+      ctx.save();
+      ctx.globalAlpha = vis * Math.max(0.08, 1 - fogFrac * 0.9);
+      ctx.beginPath(); ctx.rect(ssx, sst, sw, sh); ctx.clip(); // clip to billboard bounds
+
+      const img = getSprite(s.o);
+      if (img && img.complete && img.naturalWidth > 0) {
+        // Draw PNG sprite billboard (flip horizontally if facing left)
+        const facing = s.o.facing || 1;
+        if (facing < 0) {
+          ctx.save();
+          ctx.translate(scx, sst + sh / 2);
+          ctx.scale(-1, 1);
+          ctx.drawImage(img, -sw / 2, -sh / 2, sw, sh);
+          ctx.restore();
+        } else {
+          ctx.drawImage(img, ssx, sst, sw, sh);
+        }
+      } else {
+        // Fallback: colored silhouette
+        ctx.fillStyle = s.o.color || '#ff3b5c';
+        ctx.fillRect(ssx, sst + sh * 0.2, sw, sh * 0.55);
+        ctx.beginPath(); ctx.arc(scx, sst + sh * 0.12, sw * 0.28, 0, Math.PI * 2); ctx.fill();
+      }
+
+      // HP bar above sprite
+      if (sh > 28) {
+        const hpF = Math.max(0, ((s.o.hp || 100) / 100));
+        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(ssx, sst - 8, sw, 5);
+        ctx.fillStyle = hpF > 0.5 ? '#2fd47f' : '#ff3b5c'; ctx.fillRect(ssx, sst - 8, sw * hpF, 5);
+        if (sh > 60) {
+          ctx.font = `${Math.max(9, Math.round(sh * 0.10))}px JetBrains Mono,monospace`;
           ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
-          ctx.fillText(s.name, scx, st - 11);
+          ctx.fillText(s.o.name || '?', scx, sst - 12);
         }
       }
       ctx.restore();
     }
 
-    // Crosshair
+    // ── Bullet billboards ──
+    for (const b of bullets) {
+      const dist = Math.hypot(b.x - me.x, b.y - me.y);
+      if (dist > FPS_MAX_DIST * 0.65 || dist < 4) continue;
+      let rel = Math.atan2(b.y - me.y, b.x - me.x) - me.aim;
+      while (rel > Math.PI) rel -= Math.PI * 2;
+      while (rel < -Math.PI) rel += Math.PI * 2;
+      if (Math.abs(rel) > FPS_FOV / 2 + 0.08) continue;
+      const perp = dist * Math.cos(rel);
+      if (perp <= 1) continue;
+      const bscx = Math.round((rel / (FPS_FOV / 2) + 1) / 2 * VIEW_W);
+      const bscy = Math.round(VIEW_H / 2);
+      const bs = Math.max(3, Math.round((VIEW_H * 18) / Math.max(1, perp)));
+      const zpx = Math.max(0, Math.min(VIEW_W - 1, bscx));
+      if (zbuf[zpx] < dist) continue; // behind wall
+      ctx.save();
+      ctx.globalAlpha = Math.max(0.25, 0.95 - dist / (FPS_MAX_DIST * 0.55));
+      const isOwn = b.owner === myId;
+      ctx.fillStyle = isOwn ? '#ffffcc' : '#ff8888';
+      ctx.shadowColor = isOwn ? '#ffff44' : '#ff3333'; ctx.shadowBlur = 14;
+      ctx.beginPath(); ctx.arc(bscx, bscy, bs, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
+
+    // ── Crosshair ──
     ctx.save();
-    ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 1.5;
     const hx = VIEW_W / 2, hy = VIEW_H / 2;
     ctx.beginPath();
-    ctx.moveTo(hx - 14, hy); ctx.lineTo(hx - 5, hy);
-    ctx.moveTo(hx + 5, hy);  ctx.lineTo(hx + 14, hy);
-    ctx.moveTo(hx, hy - 14); ctx.lineTo(hx, hy - 5);
-    ctx.moveTo(hx, hy + 5);  ctx.lineTo(hx, hy + 14);
+    ctx.moveTo(hx - 16, hy); ctx.lineTo(hx - 6, hy);
+    ctx.moveTo(hx + 6, hy);  ctx.lineTo(hx + 16, hy);
+    ctx.moveTo(hx, hy - 16); ctx.lineTo(hx, hy - 6);
+    ctx.moveTo(hx, hy + 6);  ctx.lineTo(hx, hy + 16);
     ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.beginPath(); ctx.arc(hx, hy, 1.5, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
 
-    // FPS HUD overlay (mini health bar at bottom)
+    // ── Flashlight vignette — dark edges, cone of light forward ──
+    const vigGrad = ctx.createRadialGradient(
+      VIEW_W / 2, VIEW_H * 0.52,  VIEW_H * 0.12,
+      VIEW_W / 2, VIEW_H * 0.52,  VIEW_W * 0.76
+    );
+    vigGrad.addColorStop(0,    'rgba(0,0,0,0)');
+    vigGrad.addColorStop(0.48, 'rgba(0,0,0,0.22)');
+    vigGrad.addColorStop(0.75, 'rgba(0,0,0,0.68)');
+    vigGrad.addColorStop(1,    'rgba(0,0,0,0.92)');
+    ctx.fillStyle = vigGrad;
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+
+    // ── FPS canvas HUD (bottom strip) ──
     ctx.save();
-    const hpFrac = Math.max(0, me.hp / (100 + (me.mods.maxHp || 0)));
-    const barW = 200, barH = 8, barX = (VIEW_W - barW) / 2, barY = VIEW_H - 28;
-    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(barX - 2, barY - 2, barW + 4, barH + 4);
+    const emx = effMaxHp();
+    const hpFrac = Math.max(0, me.hp / emx);
+    const ultFrac = me.ultReady ? 1 : (me.ultCharge / ULT_CHARGE_MAX);
+
+    // Background strip
+    ctx.fillStyle = 'rgba(0,0,0,0.62)';
+    ctx.fillRect(0, VIEW_H - 42, VIEW_W, 42);
+
+    // HP bar (left area)
+    const hpBarX = 18, hpBarY = VIEW_H - 28, hpBarW = 180, hpBarH = 9;
+    ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(hpBarX, hpBarY, hpBarW, hpBarH);
     ctx.fillStyle = hpFrac > 0.5 ? '#2fd47f' : hpFrac > 0.25 ? '#ffb13b' : '#ff3b5c';
-    ctx.fillRect(barX, barY, barW * hpFrac, barH);
-    ctx.font = 'bold 10px JetBrains Mono,monospace'; ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
-    ctx.fillText(Math.ceil(me.hp) + ' HP  |  Lv' + me.level + '  |  ' + me.elims + ' elim' + (me.elims !== 1 ? 's' : ''), VIEW_W / 2, VIEW_H - 10);
+    ctx.fillRect(hpBarX, hpBarY, hpBarW * hpFrac, hpBarH);
+    ctx.font = 'bold 10px JetBrains Mono,monospace'; ctx.fillStyle = '#ccc'; ctx.textAlign = 'left';
+    ctx.fillText('HP  ' + Math.ceil(me.hp) + ' / ' + emx, hpBarX, VIEW_H - 32);
+
+    // ULT bar (right area)
+    const ultBarW = 140, ultBarX = VIEW_W - ultBarW - 18;
+    const ultBarY = VIEW_H - 28, ultBarH = 9;
+    ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(ultBarX, ultBarY, ultBarW, ultBarH);
+    ctx.fillStyle = me.ultReady ? '#c77dff' : '#4d5fff';
+    ctx.fillRect(ultBarX, ultBarY, ultBarW * ultFrac, ultBarH);
+    ctx.textAlign = 'right'; ctx.fillStyle = me.ultReady ? '#c77dff' : '#888';
+    ctx.fillText(me.ultReady ? '✦ ULT READY' : 'ULT  ' + Math.round(me.ultCharge) + '/' + ULT_CHARGE_MAX, VIEW_W - 18, VIEW_H - 32);
+
+    // Center info
+    ctx.textAlign = 'center'; ctx.fillStyle = '#777';
+    ctx.fillText('Lv' + me.level + '  ·  ' + me.elims + ' elim' + (me.elims !== 1 ? 's' : ''), VIEW_W / 2, VIEW_H - 32);
     ctx.restore();
 
     ctx.restore();
@@ -2860,6 +2965,16 @@
         firstPersonMode = !firstPersonMode;
         if (!firstPersonMode && document.pointerLockElement === canvas) document.exitPointerLock();
         _fpsUpdate();
+        // Fade out DOM HUD panels in FPS mode — canvas draws its own HUD
+        const _rail = document.querySelector('.ca-rail');
+        const _ult  = document.querySelector('.ca-ult');
+        const _help = document.querySelector('.ca-help-bar');
+        const _lb   = document.getElementById('caLeaderboard');
+        const _tr   = 'opacity .25s, pointer-events 0s';
+        if (_rail) { _rail.style.transition = _tr; _rail.style.opacity = firstPersonMode ? '0' : ''; _rail.style.pointerEvents = firstPersonMode ? 'none' : ''; }
+        if (_ult)  { _ult.style.transition  = _tr; _ult.style.opacity  = firstPersonMode ? '0' : ''; _ult.style.pointerEvents  = firstPersonMode ? 'none' : ''; }
+        if (_help) { _help.style.transition = _tr; _help.style.opacity = firstPersonMode ? '0' : ''; }
+        if (_lb)   { _lb.style.opacity = firstPersonMode ? '0.35' : ''; }
         toast(firstPersonMode ? 'First Person: ON  (click canvas to lock mouse)' : 'First Person: OFF');
       };
       fpsRow.appendChild(fpsLab); fpsRow.appendChild(fpsBtn);

@@ -20,20 +20,21 @@
     display:flex; align-items:center; justify-content:center;
   }
 
-  /* root container — always 900×600 logical pixels; JS scales it, flex keeps it centered */
+  /* root container — always 900×600 logical pixels; JS scales it up to 1.2×, flex keeps it centered */
   #caRoot{ position:relative; width:900px; height:600px; flex-shrink:0; overflow:hidden; }
 
   #caCanvas{
-    display:block; width:900px; height:600px; background:#0c0c10;
+    display:block; width:900px; height:600px; background:#0f0f12;
     border:1px solid var(--border); border-radius:10px;
-    box-shadow:0 20px 60px rgba(0,0,0,.5); touch-action:none;
+    box-shadow:0 24px 72px rgba(0,0,0,.65); touch-action:none;
   }
 
   /* ===== Left HUD rail — always in game ===== */
   .ca-rail{
     position:absolute; top:14px; left:14px; z-index:20;
-    display:flex; flex-direction:column; gap:7px;
-    width:182px; pointer-events:none; font-family:'JetBrains Mono',monospace;
+    display:flex; flex-direction:column; gap:6px;
+    width:174px; pointer-events:none; font-family:'JetBrains Mono',monospace;
+    transition: opacity .25s;
   }
   .ca-block{
     background:rgba(14,14,18,.88); border:1px solid var(--border);
@@ -57,9 +58,10 @@
     z-index:20; pointer-events:none;
     display:flex; flex-direction:column; align-items:center; gap:8px;
     font-family:'JetBrains Mono',monospace;
+    transition: opacity .25s;
   }
   .ca-ult-track{
-    width:14px; height:190px; background:#1c1c24; border:1px solid var(--border);
+    width:14px; height:200px; background:#1c1c24; border:1px solid var(--border);
     border-radius:8px; overflow:hidden; display:flex; align-items:flex-end;
   }
   #caUltFill{ width:100%; height:0%; background:linear-gradient(0deg,var(--ult),#e9c6ff); transition:height .15s linear; }
@@ -83,9 +85,10 @@
 
   /* ===== Bottom help hint ===== */
   .ca-help-bar{
-    position:absolute; bottom:10px; left:14px; z-index:20;
-    font-family:'JetBrains Mono',monospace; font-size:9px; color:#44444e;
-    line-height:1.9; pointer-events:none;
+    position:absolute; bottom:8px; left:50%; transform:translateX(-50%); z-index:20;
+    font-family:'JetBrains Mono',monospace; font-size:9px; color:#3a3a46;
+    line-height:1.9; pointer-events:none; white-space:nowrap;
+    transition: opacity .25s;
   }
   .ca-help-bar kbd{
     background:var(--surface-2); border:1px solid var(--border); border-radius:3px;
@@ -94,7 +97,7 @@
 
   /* ===== Toast ===== */
   .ca-toast{
-    position:absolute; bottom:18px; left:50%; transform:translateX(-50%); z-index:28;
+    position:absolute; bottom:52px; left:50%; transform:translateX(-50%); z-index:28;
     background:rgba(16,16,20,.94); border:1px solid var(--border); border-radius:999px;
     padding:7px 20px; font-size:11px; color:var(--text);
     opacity:0; transition:opacity .3s; pointer-events:none; white-space:nowrap;
