@@ -20,6 +20,12 @@
     display:flex; align-items:center; justify-content:center;
   }
 
+  /* All in-game HUD is drawn on canvas — hide the old HTML elements */
+  .ca-rail, .ca-ult, .ca-hud, .ca-help-bar, #caLeaderboard { display: none !important; }
+  /* Keep settings button visible but more subtle */
+  #caSettingsBtn { bottom: 8px !important; right: 8px !important; opacity: 0.55; font-size: 10px !important; padding: 5px 12px !important; }
+  #caSettingsBtn:hover { opacity: 1; }
+
   /* root container — always 900×600 logical pixels; JS scales it up to 1.2×, flex keeps it centered */
   #caRoot{ position:relative; width:900px; height:600px; flex-shrink:0; overflow:hidden; }
 

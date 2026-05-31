@@ -27,6 +27,8 @@
   const TETO_DRAW_SCALE = 0.7;
   const TILE = 64;             // world-unit tile size
   const ULT_CHARGE_MAX = 1000; // damage dealt → ult ready
+  const MAX_AMMO = 30;         // default magazine size
+  const RELOAD_TIME = 1.5;     // seconds
 
   function xpForLevel(l) {
     return Math.round(LEVEL_BASE * Math.pow(LEVEL_GROW, l - 1));
@@ -146,6 +148,7 @@
   /* ---------------- STATE ---------------- */
   const me = {
     id: '', name: '', color: myColor, x: WORLD_W / 2, y: WORLD_H / 2, aim: 0, pitch: 0,
+    ammo: MAX_AMMO, reloading: false, reloadTimer: 0,
     hp: MAX_HP, elims: 0, alive: true, deadUntil: 0,
     level: 1, xp: 0, levelQueue: 0,
     lastCombat: 0, lastHurtTime: 0, stepTimer: 0, immuneUntil: 0, deathTime: 0,
@@ -172,7 +175,8 @@
       maxHp: 0, regenRate: 0, regenDelay: 0,
       critChance: 0, onKillHeal: 0, killShield: 0, dashHeal: 0, dashCdReduce: 0,
       damageResist: 0, homingStr: 0,
-      poison: 0, shrapnel: 0, ghost: 0, knockback: 0, overcharge: 0, adrenaline: 0
+      poison: 0, shrapnel: 0, ghost: 0, knockback: 0, overcharge: 0, adrenaline: 0,
+      magSize: 0, reloadSpeed: 0, noReload: 0
     },
     abilities: [],
     points: 0
@@ -757,13 +761,30 @@
       }
       if (data.type === 'rich_poor' && data.targetId === myId) {
         const newLevel = Math.max(1, Math.floor(me.level / 2));
-        const lost = me.level - newLevel;
-        me.abilities = me.abilities.slice(0, Math.max(0, me.abilities.length - lost));
+        const lost = Math.max(0, me.level - newLevel);
+        const keptIds = me.abilities.slice(0, Math.max(0, me.abilities.length - lost));
+
+        // Properly revert stolen ability mods: reset to zero then re-apply only kept abilities
+        const savedHp = me.hp;
+        me.mods = { dmg:0, fireRate:0, speed:0, multishot:0, pierce:0, lifesteal:0, thorns:0,
+          bulletSpeed:0, explosive:0, ricochet:0, bigBullet:0, spreadShot:0, rapidBurst:0,
+          maxHp:0, regenRate:0, regenDelay:0, critChance:0, onKillHeal:0, killShield:0,
+          dashHeal:0, dashCdReduce:0, damageResist:0, homingStr:0,
+          poison:0, shrapnel:0, ghost:0, knockback:0, overcharge:0, adrenaline:0 };
+        for (const aid of keptIds) {
+          const ab = ABILITIES.find(a => a.id === aid);
+          if (ab) ab.apply(me);
+        }
+        me.hp = Math.min(savedHp, effMaxHp()); // respect new maxHp cap, keep existing HP otherwise
+        me.abilities = keptIds;
         me.level = newLevel; me.xp = 0;
+        me.levelQueue = 0; // clear any queued level-ups that are now invalid
+        if (draftOpen) { draftOpen = false; if (cardLayer) { cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; } }
+
         addScreenShake(10, 0.7);
         spawnParticles(me.x, me.y, '#ff3b5c', 30, 300, 0.8);
         playTerr('NPC_Killed_1.wav', 0.9);
-        toast('Rich stole your progress! Level: ' + newLevel);
+        toast('Rich stole your levels! Dropped to Lv' + newLevel);
       }
     });
 
@@ -907,6 +928,22 @@
   }
   function effBulletSpeed() { return BULLET_SPEED * (1 + me.mods.bulletSpeed); }
   function effBulletRadius() { return BULLET_R * (1 + (me.mods.bigBullet || 0) * 0.5); }
+  function effMaxAmmo()    { return MAX_AMMO + (me.mods.magSize || 0); }
+  function effReloadTime() { return Math.max(0.3, RELOAD_TIME * (1 - Math.min(0.75, me.mods.reloadSpeed || 0))); }
+  function ammoPerShot()   {
+    let c = 1;
+    if ((me.mods.spreadShot || 0) > 0) c += 1;   // shotgun: +1 ammo cost per shot
+    if ((me.mods.multishot  || 0) > 0) c += (me.mods.multishot || 0); // each extra bullet costs 1
+    return c;
+  }
+  function startReload() {
+    if (!me.alive || me.reloading) return;
+    if ((me.mods.noReload || 0) > 0) { toast('Bottomless Mag — no reload needed!'); return; }
+    if (me.ammo >= effMaxAmmo()) return;
+    me.reloading = true;
+    me.reloadTimer = effReloadTime();
+    playTerr('Item_1.wav', 0.8);
+  }
   function effMaxHp() { return MAX_HP + (me.mods.maxHp || 0); }
 
   function spawnBullet(angle, spd, dmg, ref, pierce, opts) {
@@ -924,7 +961,11 @@
   }
 
   function fire() {
-    const t = Date.now(); if (!me.alive || t - lastFire < effFireCd()) return; lastFire = t;
+    const t = Date.now(); if (!me.alive || t - lastFire < effFireCd()) return;
+    if (me.reloading) return; // can't fire while reloading
+    const noRel = (me.mods.noReload || 0) > 0;
+    if (!noRel && me.ammo <= 0) { startReload(); return; }
+    lastFire = t;
     // Arthur shooting ends invisibility
     if (me.char === 'arthur' && me.arthurInvis) { me.arthurInvis = false; }
     me.lastCombat = t; me.anim = 'shoot'; me.frame = 0; me.frameT = 0;
@@ -963,6 +1004,11 @@
           setTimeout(() => { if (me.alive) spawnBullet(me.aim + (Math.random() - 0.5) * 0.08, spd, dmg * 0.6, false, pierce, opts); }, b * 80);
         }
       }
+    }
+    // Deduct ammo
+    if (!noRel) {
+      me.ammo = Math.max(0, me.ammo - ammoPerShot());
+      if (me.ammo <= 0) startReload();
     }
     play('shoot', 0.35);
   }
@@ -1286,7 +1332,15 @@
   // ── Combo: Poison + Explosion ──
   { id: 'toxboom', name: 'Toxic Detonation',    rarity: 'legendary', desc: 'COMBO: Poison bullets that also explode',   apply: m => { m.mods.poison = Math.max(m.mods.poison||0, 8); m.mods.explosive = Math.max(m.mods.explosive||0, 40); } },
   // ── Combo: Ghost + Spread ──
-  { id: 'phasebar',name: 'Phase Barrage',       rarity: 'legendary', desc: 'COMBO: 3 wall-phasing spread bullets',      apply: m => { m.mods.ghost = (m.mods.ghost||0) + 1; m.mods.multishot = (m.mods.multishot||0) + 1; m.mods.pierce += 3; } }
+  { id: 'phasebar',name: 'Phase Barrage',       rarity: 'legendary', desc: 'COMBO: 3 wall-phasing spread bullets',      apply: m => { m.mods.ghost = (m.mods.ghost||0) + 1; m.mods.multishot = (m.mods.multishot||0) + 1; m.mods.pierce += 3; } },
+  // ── Magazine / Reload ──
+  { id: 'mag1',   name: 'Extended Mag',   rarity: 'common',    desc: '+10 max ammo (instantly refills)',     apply: m => { m.mods.magSize = (m.mods.magSize||0) + 10; m.ammo = Math.min((m.ammo||MAX_AMMO) + 10, MAX_AMMO + (m.mods.magSize||0)); } },
+  { id: 'mag2',   name: 'War Mag',        rarity: 'rare',      desc: '+20 max ammo (instantly refills)',     apply: m => { m.mods.magSize = (m.mods.magSize||0) + 20; m.ammo = Math.min((m.ammo||MAX_AMMO) + 20, MAX_AMMO + (m.mods.magSize||0)); } },
+  { id: 'mag3',   name: 'Drum Magazine',  rarity: 'epic',      desc: '+35 max ammo (instantly refills)',     apply: m => { m.mods.magSize = (m.mods.magSize||0) + 35; m.ammo = Math.min((m.ammo||MAX_AMMO) + 35, MAX_AMMO + (m.mods.magSize||0)); } },
+  { id: 'rl1',    name: 'Quick Reload',   rarity: 'common',    desc: 'Reload 25% faster',                    apply: m => { m.mods.reloadSpeed = (m.mods.reloadSpeed||0) + 0.25; } },
+  { id: 'rl2',    name: 'Speed Loader',   rarity: 'rare',      desc: 'Reload 40% faster',                    apply: m => { m.mods.reloadSpeed = (m.mods.reloadSpeed||0) + 0.40; } },
+  { id: 'rl3',    name: 'Tactical Reload',rarity: 'epic',      desc: 'Reload 60% faster',                    apply: m => { m.mods.reloadSpeed = (m.mods.reloadSpeed||0) + 0.60; } },
+  { id: 'norel',  name: 'Bottomless Mag', rarity: 'legendary', desc: 'Infinite ammo — never reload',         apply: m => { m.mods.noReload = (m.mods.noReload||0) + 1; } }
   ];
 
   function rollCards(n, lvlOverride) {
@@ -1410,7 +1464,7 @@
       if (k === bindings.dash) dash();
       if (k === bindings.wall) placeWall();
       if (k === (bindings.ult || ' ') || k === ' ') { e.preventDefault(); fireUlt(); }
-      if (k === 'r' && me.char === 'arthur') toggleArthurInvis();
+      if (k === 'r') { if (me.char === 'arthur') toggleArthurInvis(); else startReload(); }
       if (k === 'k') toggleSettingsPanel();
       if (k === 'escape' && settingsPanelEl && settingsPanelEl.style.display !== 'none') toggleSettingsPanel();
       if (['arrowup','arrowdown','arrowleft','arrowright'].includes(k)) e.preventDefault();
@@ -1451,6 +1505,7 @@
       me.heroLightningTimer = 0; me.enderSlowTimer = 0; me.pullTimer = 0; me.pitch = 0;
       if (draftOpen) { draftOpen = false; if (cardLayer) { cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; } }
       me.mods = { dmg: 0, fireRate: 0, speed: 0, multishot: 0, pierce: 0, lifesteal: 0, thorns: 0, bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0, maxHp: 0, regenRate: 0, regenDelay: 0, critChance: 0, onKillHeal: 0, killShield: 0, dashHeal: 0, dashCdReduce: 0, damageResist: 0, homingStr: 0, poison: 0, shrapnel: 0, ghost: 0, knockback: 0, overcharge: 0, adrenaline: 0 };
+      me.ammo = MAX_AMMO; me.reloading = false; me.reloadTimer = 0;
       const rsp = randomSpawnPos(); me.x = rsp.x; me.y = rsp.y; me.lastCombat = Date.now();
       me.immuneUntil = Date.now() + 5000;
       if (socket) { socket.emit('respawn', { x: me.x, y: me.y, char: me.char, color: me.color }); socket.emit('hpSync', { hp: MAX_HP }); lastHpSync = Date.now(); }
@@ -1528,6 +1583,16 @@
         }
       } else {
         me.stepTimer = 0;
+      }
+
+      // ── Reload timer ──
+      if (me.reloading) {
+        me.reloadTimer -= dt;
+        if (me.reloadTimer <= 0) {
+          me.reloading = false;
+          me.ammo = effMaxAmmo();
+          play('shield', 0.6);
+        }
       }
 
       // ── Teto area proximity (damage is server-side; client shows visual warning) ──
@@ -1957,21 +2022,20 @@
       }
       if (ae.type === 'rich_tornado' && ae.owner !== myId) {
         const pullR = TILE * 3;
-        if (dist < pullR + PLAYER_R) {
-          const pull = 320;
-          me.x = clamp(me.x - (dx/dist)*pull*dt, PLAYER_R, WORLD_W-PLAYER_R);
-          me.y = clamp(me.y - (dy/dist)*pull*dt, PLAYER_R, WORLD_H-PLAYER_R);
+        if (dist < pullR + PLAYER_R && dist > 0.5) { // dist > 0.5 prevents NaN from /dist when at origin
+          const pull = 320, sd = Math.max(1, dist);
+          me.x = clamp(me.x - (dx/sd)*pull*dt, PLAYER_R, WORLD_W-PLAYER_R);
+          me.y = clamp(me.y - (dy/sd)*pull*dt, PLAYER_R, WORLD_H-PLAYER_R);
         }
       }
       if (ae.type === 'arthur_blender') {
         const frac = Math.min(1, age / ae.maxAge);
         const curR = (TILE*3 + TILE * frac);
         ae.curR = curR;
-        // Pull everyone including me (but not the owner shooting themselves)
-        if (ae.owner !== myId && dist < curR + PLAYER_R) {
-          const pull = 420; // strong gravity, server also nudges every 100ms
-          me.x = clamp(me.x - (dx/dist)*pull*dt, PLAYER_R, WORLD_W-PLAYER_R);
-          me.y = clamp(me.y - (dy/dist)*pull*dt, PLAYER_R, WORLD_H-PLAYER_R);
+        if (ae.owner !== myId && dist < curR + PLAYER_R && dist > 0.5) {
+          const pull = 420, sd = Math.max(1, dist);
+          me.x = clamp(me.x - (dx/sd)*pull*dt, PLAYER_R, WORLD_W-PLAYER_R);
+          me.y = clamp(me.y - (dy/sd)*pull*dt, PLAYER_R, WORLD_H-PLAYER_R);
         }
         // on expire: 60 dmg
         if (age >= ae.maxAge - 20 && !ae.finalized) {
@@ -2269,14 +2333,158 @@
   }
 
   function drawCanvasHud() {
-    if (!debugMode) return; // only draw in debug mode
+    if (!started) return;
     ctx.save();
-    ctx.font = 'bold 11px JetBrains Mono, monospace';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(0,200,80,0.18)';
-    ctx.fillRect(VIEW_W/2 - 60, 6, 120, 20);
-    ctx.fillStyle = '#00ff88';
-    ctx.fillText('⚙ DEBUG MODE', VIEW_W/2, 20);
+    ctx.textBaseline = 'alphabetic';
+
+    // ── helpers ──────────────────────────────────────────────────────────────
+    const rrect = (x, y, w, h, r) => {
+      ctx.beginPath();
+      ctx.moveTo(x+r, y); ctx.arcTo(x+w,y, x+w,y+h, r); ctx.arcTo(x+w,y+h, x,y+h, r);
+      ctx.arcTo(x,y+h, x,y, r); ctx.arcTo(x,y, x+w,y, r); ctx.closePath();
+    };
+    // Draw a compact labelled bar block; returns block height+gap
+    const BAR_BG = 'rgba(12,12,16,0.90)', BAR_TRACK = '#1c1c26', BAR_BORDER = 'rgba(255,255,255,0.07)';
+    function drawBlock(x, y, w, label, value, frac, fillCol, noBar) {
+      const bh = noBar ? 24 : 30, br = 6;
+      ctx.fillStyle = BAR_BG; rrect(x,y,w,bh,br); ctx.fill();
+      ctx.strokeStyle = BAR_BORDER; ctx.lineWidth = 1; rrect(x,y,w,bh,br); ctx.stroke();
+      ctx.font = '9px JetBrains Mono,monospace';
+      ctx.textAlign = 'left'; ctx.fillStyle = '#666'; ctx.fillText(label, x+7, y+(noBar?15:12));
+      ctx.textAlign = 'right'; ctx.fillStyle = fillCol || '#ececef';
+      ctx.fillText(value, x+w-7, y+(noBar?15:12));
+      if (!noBar) {
+        ctx.fillStyle = BAR_TRACK; ctx.fillRect(x+7, y+18, w-14, 5);
+        ctx.fillStyle = fillCol || '#ececef';
+        ctx.fillRect(x+7, y+18, (w-14) * Math.max(0,Math.min(1,frac||0)), 5);
+      }
+      return bh + 4;
+    }
+
+    // ── LEFT PANEL ───────────────────────────────────────────────────────────
+    const LX = 14, LW = 180;
+    let ly = 14;
+
+    // HP
+    const hpF = Math.max(0, me.hp / effMaxHp());
+    ly += drawBlock(LX, ly, LW, 'HEALTH', Math.ceil(me.hp)+' / '+effMaxHp(), hpF,
+      hpF > 0.5 ? '#2fd47f' : hpF > 0.25 ? '#ffb13b' : '#ff3b5c');
+
+    // XP / Level
+    const xpF = Math.min(1, me.xp / Math.max(1, xpForLevel(me.level)));
+    ly += drawBlock(LX, ly, LW, 'LEVEL '+me.level, Math.round(me.xp)+' / '+xpForLevel(me.level)+' XP', xpF, '#c77dff');
+
+    // Dash
+    const edc = effDashCd(), dashRem = Math.max(0, edc-(Date.now()-lastDash));
+    ly += drawBlock(LX, ly, LW, 'DASH  [E]', dashRem > 0 ? (dashRem/1000).toFixed(1)+'s' : 'READY',
+      1-dashRem/edc, '#4d8bff');
+
+    // Wall
+    const wallRem = Math.max(0, WALL_CD-(Date.now()-lastWall));
+    ly += drawBlock(LX, ly, LW, 'WALL  [Q]', wallRem > 0 ? (wallRem/1000).toFixed(1)+'s' : 'READY',
+      1-wallRem/WALL_CD, '#4d8bff');
+
+    // Ammo / Reload
+    const noRl = (me.mods.noReload||0) > 0;
+    if (noRl) {
+      ly += drawBlock(LX, ly, LW, 'AMMO  [∞]', '∞ / ∞', 1, '#2fd47f');
+    } else if (me.reloading) {
+      const rFrac = 1 - me.reloadTimer / effReloadTime();
+      ly += drawBlock(LX, ly, LW, 'RELOADING [R]',
+        me.reloadTimer.toFixed(1)+'s', rFrac, '#ffb13b');
+    } else {
+      const amF = me.ammo / effMaxAmmo();
+      ly += drawBlock(LX, ly, LW, 'AMMO  [R]',
+        me.ammo+' / '+effMaxAmmo(), amF,
+        amF < 0.25 ? '#ff3b5c' : amF < 0.5 ? '#ffb13b' : '#ececef');
+    }
+
+    // Character secondary
+    let secLab = '', secVal = '', secF = -1, secCol = '#c77dff';
+    switch (me.char) {
+      case 'daniel': secLab='RETURN BY DEATH'; secVal=me.rbdBar+'/3'; secF=me.rbdBar/3; secCol='#2ecc71'; break;
+      case 'arthur': secLab='INVISIBILITY [R]'; secVal=me.arthurInvis?'ACTIVE':Math.round(me.arthurInvisBar)+'/150'; secF=me.arthurInvisBar/150; secCol='#ff6ec7'; break;
+      case 'fofo':
+        if (me.fofoUltActive){secLab='FORSAKEN';secVal=me.fofoUltTimer.toFixed(1)+'s';secF=me.fofoUltTimer/40;secCol='#9b59b6';}
+        else{const cd=Math.max(0,40-(Date.now()-me.fofoLastEndTime)/1000);secLab='FORSAKEN CD';secVal=cd>0?cd.toFixed(0)+'s':'READY';secF=cd>0?1-cd/40:1;secCol='#9b59b6';}
+        break;
+      case 'ender': if(me.enderSlowTimer>0){secLab='ENDER SLOWED';secVal=me.enderSlowTimer.toFixed(1)+'s';secF=me.enderSlowTimer/5;secCol='#a259ff';}else{secLab='+10% XP GAIN';secF=-1;}break;
+      case 'zaid': secLab='+10% SPEED'; break;
+      case 'rich': secLab='+15% BULLET DMG'; break;
+      default: secLab='2ND ABILITY'; break;
+    }
+    ly += drawBlock(LX, ly, LW, secLab, secVal, secF, secCol, secF < 0);
+
+    // ── RIGHT ULT BAR ────────────────────────────────────────────────────────
+    const UX = VIEW_W - 48, UY = VIEW_H/2 - 105, UW = 16, UH = 210;
+    ctx.fillStyle = BAR_BG; rrect(UX-10, UY-22, UW+20, UH+52, 8); ctx.fill();
+    ctx.strokeStyle = BAR_BORDER; ctx.lineWidth = 1; rrect(UX-10, UY-22, UW+20, UH+52, 8); ctx.stroke();
+    ctx.fillStyle = BAR_TRACK; rrect(UX, UY, UW, UH, 5); ctx.fill();
+    const ultF = me.ultReady ? 1 : me.ultCharge/ULT_CHARGE_MAX;
+    const ultFillH = Math.round(UH * ultF);
+    if (ultFillH > 0) {
+      ctx.save(); ctx.beginPath(); rrect(UX,UY,UW,UH,5); ctx.clip();
+      ctx.fillStyle = me.ultReady ? '#c77dff' : '#4d5fff';
+      ctx.fillRect(UX, UY+UH-ultFillH, UW, ultFillH);
+      ctx.restore();
+    }
+    ctx.font = 'bold 9px JetBrains Mono,monospace'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#666'; ctx.fillText('ULT', UX+UW/2, UY-9);
+    ctx.font = '8px JetBrains Mono,monospace';
+    ctx.fillStyle = me.ultReady ? '#c77dff' : '#555';
+    ctx.fillText(me.ultReady ? '✦ READY' : Math.round(me.ultCharge)+'/'+ULT_CHARGE_MAX, UX+UW/2, UY+UH+12);
+    if (me.ultReady) { ctx.fillStyle = '#888'; ctx.fillText('[SPC]', UX+UW/2, UY+UH+23); }
+
+    // ── TOP-CENTER STATUS PILL ───────────────────────────────────────────────
+    const dotOk = dotEl && dotEl.classList.contains('ok');
+    const netTxt = (netEl ? netEl.textContent : 'connecting…') + '  ·  ' + (1+Object.keys(others).length) + ' players';
+    ctx.font = '10px JetBrains Mono,monospace'; ctx.textAlign = 'center';
+    const pillW = ctx.measureText(netTxt).width + 28;
+    ctx.fillStyle = 'rgba(12,12,16,0.88)'; rrect(VIEW_W/2-pillW/2, 9, pillW, 22, 11); ctx.fill();
+    ctx.strokeStyle = BAR_BORDER; ctx.lineWidth = 1; rrect(VIEW_W/2-pillW/2, 9, pillW, 22, 11); ctx.stroke();
+    ctx.fillStyle = dotOk ? '#2fd47f' : '#ff3b5c';
+    ctx.fillText('●  '+netTxt, VIEW_W/2, 24);
+
+    // ── LEADERBOARD (top-right) ──────────────────────────────────────────────
+    {
+      const LBX = VIEW_W-208, LBY = 14, LBW = 194;
+      const all = [{name:me.name||'You',level:me.level,points:me.points,elims:me.elims,color:me.color,isMe:true}];
+      for (const id in others){const o=others[id];all.push({name:o.name||'???',level:o.level||1,points:o.points||0,elims:o.elims||0,color:o.color||'#aaa',isMe:false});}
+      all.sort((a,b)=>(b.points-a.points)||(b.level-a.level));
+      const rows = all.slice(0,8);
+      const LBH = 16 + rows.length*18 + 5;
+      ctx.fillStyle = BAR_BG; rrect(LBX,LBY,LBW,LBH,8); ctx.fill();
+      ctx.strokeStyle = BAR_BORDER; ctx.lineWidth = 1; rrect(LBX,LBY,LBW,LBH,8); ctx.stroke();
+      ctx.font = '8px JetBrains Mono,monospace'; ctx.fillStyle = '#444'; ctx.textAlign = 'left';
+      ctx.fillText('LEADERBOARD', LBX+8, LBY+12);
+      rows.forEach((p,i) => {
+        const ry = LBY+16+i*18;
+        if(i>0){ctx.strokeStyle='rgba(255,255,255,0.04)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(LBX+5,ry);ctx.lineTo(LBX+LBW-5,ry);ctx.stroke();}
+        ctx.fillStyle='#3a3a44'; ctx.font='8px JetBrains Mono,monospace'; ctx.textAlign='left';
+        ctx.fillText((i+1)+'', LBX+7, ry+13);
+        ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(LBX+20,ry+8,4,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle=p.isMe?'#fff':'#b8b8c4';
+        ctx.font=(p.isMe?'bold ':'')+'10px JetBrains Mono,monospace'; ctx.textAlign='left';
+        ctx.fillText((p.name||'???').slice(0,9), LBX+28, ry+13);
+        ctx.fillStyle='#4d8bff'; ctx.font='8px JetBrains Mono,monospace'; ctx.textAlign='right';
+        ctx.fillText('Lv'+p.level, LBX+LBW-52, ry+13);
+        ctx.fillStyle='#c77dff'; ctx.font='bold 9px JetBrains Mono,monospace'; ctx.textAlign='right';
+        ctx.fillText(p.points+'pts', LBX+LBW-5, ry+13);
+      });
+    }
+
+    // ── DEBUG badge ──────────────────────────────────────────────────────────
+    if (debugMode) {
+      ctx.fillStyle='rgba(0,200,80,0.18)'; ctx.fillRect(VIEW_W/2-56,6,112,20);
+      ctx.font='bold 11px JetBrains Mono,monospace'; ctx.textAlign='center';
+      ctx.fillStyle='#00ff88'; ctx.fillText('⚙ DEBUG MODE', VIEW_W/2, 20);
+    }
+
+    // ── SETTINGS HINT (bottom-right) ─────────────────────────────────────────
+    ctx.font='9px JetBrains Mono,monospace'; ctx.textAlign='right';
+    ctx.fillStyle='rgba(255,255,255,0.14)';
+    ctx.fillText('[K] Settings', VIEW_W-10, VIEW_H-8);
+
     ctx.restore();
   }
 
