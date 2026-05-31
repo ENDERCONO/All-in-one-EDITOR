@@ -133,7 +133,7 @@
     const ah = document.body.clientHeight || window.innerHeight;
     // Allow up to 1.2× on larger monitors; scales down on small screens
     const scale = Math.min(1.2, aw / VIEW_W, ah / VIEW_H);
-    root.style.transform       = scale < 0.999 ? `scale(${scale.toFixed(6)})` : '';
+    root.style.transform       = `scale(${scale.toFixed(6)})`;
     root.style.transformOrigin = 'center center';
   }
   window.addEventListener('resize', applyGameScale);
@@ -145,7 +145,7 @@
 
   /* ---------------- STATE ---------------- */
   const me = {
-    id: '', name: '', color: myColor, x: WORLD_W / 2, y: WORLD_H / 2, aim: 0,
+    id: '', name: '', color: myColor, x: WORLD_W / 2, y: WORLD_H / 2, aim: 0, pitch: 0,
     hp: MAX_HP, elims: 0, alive: true, deadUntil: 0,
     level: 1, xp: 0, levelQueue: 0,
     lastCombat: 0, lastHurtTime: 0, stepTimer: 0, immuneUntil: 0, deathTime: 0,
@@ -207,8 +207,9 @@
   let fogCanvas = null, fogCtx = null;
   let visPath = null; // current-frame visibility polygon for enemy culling
   let firstPersonMode = false;
-  const FPS_RAYS = 480, FPS_FOV = Math.PI * 0.82, FPS_MAX_DIST = 1100;
+  const FPS_RAYS = 480, FPS_FOV = Math.PI * 0.82, FPS_MAX_DIST = 2200;
   const FPS_STRIP = Math.max(1, Math.ceil(VIEW_W / FPS_RAYS));
+  const FPS_HALF_TAN = Math.tan(FPS_FOV / 2); // precomputed for perspective-correct projection
   const tetoState = { x: 0, y: 0, rx: 0, ry: 0, hp: TETO_MAX_HP, alive: false, state: 'roam', jumpAlpha: 1, jumpTimer: 0 };
   const bullets = [];
   const particles = [];
@@ -1315,7 +1316,7 @@
     cardLayer.innerHTML = ''; cardLayer.style.display = 'flex';
     picks.forEach((ab, i) => {
       const card = document.createElement('div'); card.className = 'ca-card'; card.style.setProperty('--rar', RARITY_COLORS[ab.rarity]);
-      card.innerHTML = `<div class="ca-card-rar">${ab.rarity.toUpperCase()}</div><div class="ca-card-art"></div><div class="ca-card-name">${ab.name}</div><div class="ca-card-desc">${ab.desc}</div>`;
+      card.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px"><div class="ca-card-rar">${ab.rarity.toUpperCase()}</div><div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(255,255,255,0.35);background:rgba(255,255,255,0.07);border-radius:4px;padding:1px 6px">${i + 1}</div></div><div class="ca-card-art"></div><div class="ca-card-name">${ab.name}</div><div class="ca-card-desc">${ab.desc}</div>`;
       card.style.transform = 'scale(0)'; cardLayer.appendChild(card);
       setTimeout(() => { card.style.transition = 'transform .28s cubic-bezier(.34,1.56,.64,1)'; card.style.transform = 'scale(1)'; }, 60 + i * 90);
       card.addEventListener('mouseenter', () => { card.style.transform = 'scale(1.1)'; play(HOVER_SFX[(Math.random() * HOVER_SFX.length) | 0], 0.4); });
@@ -1375,10 +1376,13 @@
   function bindInput() {
     canvas.addEventListener('mousemove', e => {
       onMove(e);
-      // FPS pointer-lock: rotate aim with mouse delta
-      if (firstPersonMode && document.pointerLockElement === canvas) {
-        me.aim += e.movementX * 0.0022;
+      // FPS look: use movementX delta — works with AND without pointer lock
+      if (firstPersonMode && started) {
+        const sens = document.pointerLockElement === canvas ? 0.0022 : 0.003;
+        me.aim += (e.movementX || 0) * sens;
         me.facing = Math.cos(me.aim) < 0 ? -1 : 1;
+        // vertical look pitch (clamped, doesn't affect bullet physics)
+        me.pitch = clamp((me.pitch || 0) + (e.movementY || 0) * sens * 0.55, -0.8, 0.8);
       }
     });
     canvas.addEventListener('click', () => {
@@ -1396,6 +1400,13 @@
       if (activeTag === 'input' || activeTag === 'textarea') return;
       const k = e.key.toLowerCase(); keys[k] = true;
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys['shift'] = true;
+      // 1/2/3 — pick card from draft
+      if ((k === '1' || k === '2' || k === '3') && draftOpen && cardLayer) {
+        const idx = parseInt(k) - 1;
+        const cards = Array.from(cardLayer.children);
+        if (cards[idx]) cards[idx].click();
+        e.preventDefault();
+      }
       if (k === bindings.dash) dash();
       if (k === bindings.wall) placeWall();
       if (k === (bindings.ult || ' ') || k === ' ') { e.preventDefault(); fireUlt(); }
@@ -1436,7 +1447,7 @@
       me.level = 1; me.xp = 0; me.levelQueue = 0; me.abilities = []; lastWall = -99999;
       me.fofoUltActive = false; me.danielUltActive = false; me.arthurInvis = false; me.arthurInvisBar = 0;
       me.rbdBar = 0; me.rbdPosHistory = [];
-      me.heroLightningTimer = 0; me.enderSlowTimer = 0; me.pullTimer = 0;
+      me.heroLightningTimer = 0; me.enderSlowTimer = 0; me.pullTimer = 0; me.pitch = 0;
       if (draftOpen) { draftOpen = false; if (cardLayer) { cardLayer.style.display = 'none'; cardLayer.innerHTML = ''; } }
       me.mods = { dmg: 0, fireRate: 0, speed: 0, multishot: 0, pierce: 0, lifesteal: 0, thorns: 0, bulletSpeed: 0, explosive: 0, ricochet: 0, bigBullet: 0, spreadShot: 0, rapidBurst: 0, maxHp: 0, regenRate: 0, regenDelay: 0, critChance: 0, onKillHeal: 0, killShield: 0, dashHeal: 0, dashCdReduce: 0, damageResist: 0, homingStr: 0, poison: 0, shrapnel: 0, ghost: 0, knockback: 0, overcharge: 0, adrenaline: 0 };
       const rsp = randomSpawnPos(); me.x = rsp.x; me.y = rsp.y; me.lastCombat = Date.now();
@@ -1467,19 +1478,24 @@
     if (me.alive) {
       if (IS_MOBILE && shootJoy.active && shootJoy.firing) {
         me.aim = Math.atan2(shootJoy.dy, shootJoy.dx);
-      } else if (!(firstPersonMode && document.pointerLockElement === canvas)) {
-        // 2D aim from mouse position (or FPS fallback without pointer lock: mouse X = horizontal angle)
-        if (firstPersonMode) {
-          const relX = (mouse.x - VIEW_W / 2) / (VIEW_W / 2);
-          me.aim += relX * 0.015; // gentle rotation based on mouse position from center
-        } else {
-          me.aim = Math.atan2((mouse.y + camera.y) - me.y, (mouse.x + camera.x) - me.x);
-        }
+      } else if (!firstPersonMode) {
+        // 2D: always aim at the mouse cursor in world space
+        me.aim = Math.atan2((mouse.y + camera.y) - me.y, (mouse.x + camera.x) - me.x);
       }
+      // FPS aim/pitch is driven entirely by mousemove events — never updated per-frame here
       me.facing = Math.cos(me.aim) < 0 ? -1 : 1;
       let dx = 0, dy = 0;
       if (IS_MOBILE && joy.active) { dx = joy.dx; dy = joy.dy; }
-      else {
+      else if (firstPersonMode) {
+        // Aim-relative movement: W=forward, S=back, A=strafe left, D=strafe right
+        let fwd = 0, strafe = 0;
+        if (keys[bindings.up]    || keys['arrowup'])    fwd    += 1;
+        if (keys[bindings.down]  || keys['arrowdown'])  fwd    -= 1;
+        if (keys[bindings.left]  || keys['arrowleft'])  strafe -= 1;
+        if (keys[bindings.right] || keys['arrowright']) strafe += 1;
+        dx = Math.cos(me.aim) * fwd - Math.sin(me.aim) * strafe;
+        dy = Math.sin(me.aim) * fwd + Math.cos(me.aim) * strafe;
+      } else {
         if (keys[bindings.up]    || keys['arrowup'])    dy -= 1;
         if (keys[bindings.down]  || keys['arrowdown'])  dy += 1;
         if (keys[bindings.left]  || keys['arrowleft'])  dx -= 1;
@@ -2616,15 +2632,20 @@
   function drawFirstPerson() {
     ctx.save();
 
-    // ── Ceiling (dark gray) ──
-    const skyG = ctx.createLinearGradient(0, 0, 0, VIEW_H / 2);
-    skyG.addColorStop(0, '#0e0e12'); skyG.addColorStop(1, '#1a1a1e');
-    ctx.fillStyle = skyG; ctx.fillRect(0, 0, VIEW_W, VIEW_H / 2);
+    // Pitch shifts the horizon; clamp so we don't expose canvas background
+    const _pitch = (me.pitch || 0);
+    const _pitchPx = Math.round(_pitch * VIEW_H * 0.38);
+    const _horizY = VIEW_H / 2 + _pitchPx;
 
-    // ── Floor (slightly different gray) ──
-    const flrG = ctx.createLinearGradient(0, VIEW_H / 2, 0, VIEW_H);
+    // ── Ceiling (medium gray-blue, brighter than before) ──
+    const skyG = ctx.createLinearGradient(0, 0, 0, _horizY);
+    skyG.addColorStop(0, '#2a2e3c'); skyG.addColorStop(1, '#323644');
+    ctx.fillStyle = skyG; ctx.fillRect(0, 0, VIEW_W, Math.max(0, _horizY));
+
+    // ── Floor (different dark gray) ──
+    const flrG = ctx.createLinearGradient(0, _horizY, 0, VIEW_H);
     flrG.addColorStop(0, '#18181c'); flrG.addColorStop(1, '#0f0f12');
-    ctx.fillStyle = flrG; ctx.fillRect(0, VIEW_H / 2, VIEW_W, VIEW_H / 2);
+    ctx.fillStyle = flrG; ctx.fillRect(0, Math.max(0, _horizY), VIEW_W, VIEW_H - Math.max(0, _horizY));
 
     // Filter nearby obstacles
     const nearObs = obstacles.filter(o => {
@@ -2633,10 +2654,14 @@
     });
 
     const zbuf = new Float32Array(VIEW_W).fill(FPS_MAX_DIST);
-    const FOG_START = 180, FOG_COLOR = [14, 14, 18]; // fog matches ceiling/floor
+    const FOG_START = 400, FOG_COLOR = [14, 14, 20];
+    const pitch = (me.pitch || 0);          // vertical look, -0.8..+0.8
+    const pitchOff = Math.round(pitch * VIEW_H * 0.38); // pixel offset for horizon
 
     for (let i = 0; i < FPS_RAYS; i++) {
-      const angle = me.aim - FPS_FOV / 2 + (i / (FPS_RAYS - 1)) * FPS_FOV;
+      // Perspective-correct (tan-mapped) angle — eliminates fish-eye
+      const relX = (2 * i / FPS_RAYS) - 1; // -1 (left) → +1 (right)
+      const angle = me.aim + Math.atan(relX * FPS_HALF_TAN);
       const rdx = Math.cos(angle), rdy = Math.sin(angle);
       let minT = FPS_MAX_DIST, isVert = false, isSmall = false;
 
@@ -2660,13 +2685,13 @@
       if (minT < FPS_MAX_DIST) {
         const perp = minT * Math.cos(angle - me.aim);
         const wh = Math.round(Math.min(VIEW_H * 3.5, (VIEW_H * 260) / Math.max(1, perp)));
-        const wt = Math.round((VIEW_H - wh) / 2);
+        const horizon = VIEW_H / 2 + pitchOff;
+        const wt = Math.round(horizon - wh / 2);
 
-        // Wall base brightness: gray, lighter vertical faces for depth cue
-        let baseV = isSmall ? 72 : 92;
-        if (isVert) baseV += 28;
+        // Gray walls: brighter vertical faces, dimmer horizontal
+        let baseV = isSmall ? 72 : 95;
+        if (isVert) baseV += 26;
 
-        // Distance fade + fog blend
         const fade = Math.max(0, 1 - perp / FPS_MAX_DIST);
         const fogFrac = Math.min(1, Math.max(0, (perp - FOG_START) / (FPS_MAX_DIST - FOG_START)));
         const wr = Math.round(lerp(FOG_COLOR[0], baseV * fade, 1 - fogFrac));
@@ -2695,10 +2720,14 @@
 
     for (const s of sprites) {
       const perp = s.dist * Math.cos(s.rel);
-      const sh = Math.round(Math.min(VIEW_H * 2.8, (VIEW_H * 200) / Math.max(1, perp)));
+      // Players are 0.5× the wall scale height
+      const sh = Math.round(Math.min(VIEW_H * 1.4, (VIEW_H * 260 * 0.5) / Math.max(1, perp)));
       const sw = sh;
-      const scx = Math.round((s.rel / (FPS_FOV / 2) + 1) / 2 * VIEW_W);
-      const ssx = scx - sw / 2, sst = Math.round((VIEW_H - sh) / 2);
+      // Perspective-correct screen X using tan-mapping
+      const scx = Math.round(VIEW_W / 2 * (1 + Math.tan(s.rel) / FPS_HALF_TAN));
+      const ssx = scx - sw / 2;
+      // Apply vertical pitch offset
+      const sst = Math.round((VIEW_H - sh) / 2 + pitchOff);
 
       // Depth cull
       let blocked = 0;
@@ -2732,18 +2761,70 @@
         ctx.beginPath(); ctx.arc(scx, sst + sh * 0.12, sw * 0.28, 0, Math.PI * 2); ctx.fill();
       }
 
-      // HP bar above sprite
-      if (sh > 28) {
-        const hpF = Math.max(0, ((s.o.hp || 100) / 100));
-        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(ssx, sst - 8, sw, 5);
-        ctx.fillStyle = hpF > 0.5 ? '#2fd47f' : '#ff3b5c'; ctx.fillRect(ssx, sst - 8, sw * hpF, 5);
-        if (sh > 60) {
-          ctx.font = `${Math.max(9, Math.round(sh * 0.10))}px JetBrains Mono,monospace`;
-          ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
-          ctx.fillText(s.o.name || '?', scx, sst - 12);
-        }
+      // HP bar + name — visible as soon as the billboard has any meaningful size
+      if (sh > 18) {
+        const hpF = Math.max(0, ((s.o.hp || 100) / effMaxHp()));
+        const barH = Math.max(4, Math.round(sh * 0.04));
+        const barY = sst - barH - 2;
+        ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(ssx, barY, sw, barH);
+        ctx.fillStyle = hpF > 0.5 ? '#2fd47f' : hpF > 0.25 ? '#ffb13b' : '#ff3b5c';
+        ctx.fillRect(ssx, barY, sw * hpF, barH);
+        // Name label
+        const fSz = Math.max(8, Math.round(sh * 0.09));
+        ctx.font = `bold ${fSz}px JetBrains Mono,monospace`;
+        ctx.fillStyle = '#fff'; ctx.shadowColor = '#000'; ctx.shadowBlur = 4;
+        ctx.textAlign = 'center';
+        ctx.fillText((s.o.name || '?') + '  Lv' + (s.o.level || 1), scx, barY - 3);
+        ctx.shadowBlur = 0;
       }
       ctx.restore();
+    }
+
+    // ── Teto boss billboard ──
+    if (tetoState.alive && tetoState.rx !== undefined) {
+      const tx = tetoState.rx, ty = tetoState.ry;
+      const tDist = Math.hypot(tx - me.x, ty - me.y);
+      if (tDist < FPS_MAX_DIST && tDist > 8) {
+        let tRel = Math.atan2(ty - me.y, tx - me.x) - me.aim;
+        while (tRel > Math.PI) tRel -= Math.PI * 2;
+        while (tRel < -Math.PI) tRel += Math.PI * 2;
+        if (Math.abs(tRel) <= FPS_FOV / 2 + 0.25) {
+          const tPerp = tDist * Math.cos(tRel);
+          // Teto is large — scale billboard proportionally to its TETO_R
+          const tsh = Math.round(Math.min(VIEW_H * 3.5, (VIEW_H * 320) / Math.max(1, tPerp)));
+          const tsw = tsh;
+          const tscx = Math.round(VIEW_W / 2 * (1 + Math.tan(tRel) / FPS_HALF_TAN));
+          const tsx = tscx - tsw / 2, tst = Math.round((VIEW_H - tsh) / 2 + pitchOff);
+          let tBlocked = 0;
+          const tpxL = Math.max(0, Math.floor(tsx)), tpxR = Math.min(VIEW_W, Math.ceil(tsx + tsw));
+          for (let px = tpxL; px < tpxR; px++) if (zbuf[px] < tDist) tBlocked++;
+          const tVis = Math.max(0, 1 - tBlocked / Math.max(1, tpxR - tpxL));
+          if (tVis >= 0.05) {
+            const tFogFrac = Math.min(1, Math.max(0, (tPerp - FOG_START) / (FPS_MAX_DIST - FOG_START)));
+            ctx.save();
+            ctx.globalAlpha = tetoState.jumpAlpha * tVis * Math.max(0.1, 1 - tFogFrac * 0.8);
+            ctx.beginPath(); ctx.rect(tsx, tst, tsw, tsh); ctx.clip();
+            if (assets.teto && assets.teto.complete && assets.teto.naturalWidth > 0) {
+              ctx.drawImage(assets.teto, tsx, tst, tsw, tsh);
+            } else {
+              ctx.fillStyle = '#ff8c42'; ctx.shadowColor = '#ff8c42'; ctx.shadowBlur = 30;
+              ctx.beginPath(); ctx.arc(tscx, tst + tsh * 0.5, tsw * 0.45, 0, Math.PI * 2); ctx.fill();
+              ctx.shadowBlur = 0;
+            }
+            // HP bar
+            const tHpF = Math.max(0, tetoState.hp / TETO_MAX_HP);
+            ctx.globalAlpha = tVis * 0.95;
+            ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(tsx, tst - 10, tsw, 7);
+            ctx.fillStyle = tHpF > 0.5 ? '#2fd47f' : tHpF > 0.25 ? '#ffb13b' : '#ff3b5c';
+            ctx.fillRect(tsx, tst - 10, tsw * tHpF, 7);
+            if (tsh > 80) {
+              ctx.font = 'bold 12px JetBrains Mono,monospace'; ctx.textAlign = 'center';
+              ctx.fillStyle = '#ff8c42'; ctx.fillText('TETO  ' + Math.ceil(tetoState.hp).toLocaleString() + ' HP', tscx, tst - 14);
+            }
+            ctx.restore();
+          }
+        }
+      }
     }
 
     // ── Bullet billboards ──
@@ -2756,9 +2837,9 @@
       if (Math.abs(rel) > FPS_FOV / 2 + 0.08) continue;
       const perp = dist * Math.cos(rel);
       if (perp <= 1) continue;
-      const bscx = Math.round((rel / (FPS_FOV / 2) + 1) / 2 * VIEW_W);
-      const bscy = Math.round(VIEW_H / 2);
-      const bs = Math.max(3, Math.round((VIEW_H * 18) / Math.max(1, perp)));
+      const bscx = Math.round(VIEW_W / 2 * (1 + Math.tan(rel) / FPS_HALF_TAN));
+      const bscy = Math.round(VIEW_H / 2 + pitchOff);
+      const bs = Math.max(2, Math.round((VIEW_H * 6) / Math.max(1, perp)));
       const zpx = Math.max(0, Math.min(VIEW_W - 1, bscx));
       if (zbuf[zpx] < dist) continue; // behind wall
       ctx.save();
@@ -2771,10 +2852,65 @@
       ctx.restore();
     }
 
-    // ── Crosshair ──
+    // ── XP box billboards (brown squares, shorter than walls) ──
+    const _fpsItemHelper = (wx, wy, renderFn) => {
+      const d = Math.hypot(wx - me.x, wy - me.y);
+      if (d > FPS_MAX_DIST * 0.6 || d < 4) return;
+      let rel = Math.atan2(wy - me.y, wx - me.x) - me.aim;
+      while (rel > Math.PI) rel -= Math.PI * 2;
+      while (rel < -Math.PI) rel += Math.PI * 2;
+      if (Math.abs(rel) > FPS_FOV / 2 + 0.1) return;
+      const perp = d * Math.cos(rel); if (perp <= 1) return;
+      const scx2 = Math.round(VIEW_W / 2 * (1 + Math.tan(rel) / FPS_HALF_TAN));
+      const zpx2 = Math.max(0, Math.min(VIEW_W - 1, scx2));
+      if (zbuf[zpx2] < d) return;
+      const sz = Math.round((VIEW_H * 260 * 0.85) / Math.max(1, perp)); // shorter than walls but large enough to spot
+      const fogF = Math.min(1, Math.max(0, (perp - FOG_START) / (FPS_MAX_DIST * 0.6 - FOG_START)));
+      const alpha = Math.max(0.1, 1 - fogF * 0.9);
+      // vertically centered slightly below horizon (item resting on floor)
+      const itemY = Math.round(VIEW_H / 2 + pitchOff + sz * 0.15);
+      renderFn(scx2, itemY, sz, alpha, perp);
+    };
+
+    for (const box of xpBoxes) {
+      _fpsItemHelper(box.x, box.y, (scx2, itemY, sz, alpha) => {
+        ctx.save(); ctx.globalAlpha = alpha;
+        // Brown XP box
+        ctx.fillStyle = '#6b3a1f'; ctx.strokeStyle = box.color || '#ff8c00'; ctx.lineWidth = 2;
+        ctx.shadowColor = box.color || '#ff8c00'; ctx.shadowBlur = 8;
+        ctx.fillRect(scx2 - sz/2, itemY - sz/2, sz, sz);
+        ctx.strokeRect(scx2 - sz/2, itemY - sz/2, sz, sz);
+        ctx.shadowBlur = 0;
+        if (sz > 20) {
+          ctx.font = `bold ${Math.max(8, Math.round(sz * 0.28))}px JetBrains Mono,monospace`;
+          ctx.fillStyle = box.color || '#ffb13b'; ctx.textAlign = 'center';
+          ctx.fillText('XP', scx2, itemY + sz * 0.12);
+        }
+        ctx.restore();
+      });
+    }
+
+    // ── Medkit billboards (2D flat plane / cross icon) ──
+    for (const mk of medkits) {
+      _fpsItemHelper(mk.x, mk.y, (scx2, itemY, sz, alpha) => {
+        ctx.save(); ctx.globalAlpha = alpha;
+        const s = sz * 0.6;
+        if (assets.medkit && assets.medkit.complete && assets.medkit.naturalWidth > 0) {
+          ctx.drawImage(assets.medkit, scx2 - s/2, itemY - s/2, s, s);
+        } else {
+          ctx.fillStyle = '#2fd47f'; ctx.shadowColor = '#2fd47f'; ctx.shadowBlur = 12;
+          ctx.fillRect(scx2 - s*0.45, itemY - s*0.12, s * 0.9, s * 0.24);
+          ctx.fillRect(scx2 - s*0.12, itemY - s*0.45, s * 0.24, s * 0.9);
+          ctx.shadowBlur = 0;
+        }
+        ctx.restore();
+      });
+    }
+
+    // ── Crosshair (tracks with pitch) ──
     ctx.save();
     ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 1.5;
-    const hx = VIEW_W / 2, hy = VIEW_H / 2;
+    const hx = VIEW_W / 2, hy = VIEW_H / 2 + pitchOff;
     ctx.beginPath();
     ctx.moveTo(hx - 16, hy); ctx.lineTo(hx - 6, hy);
     ctx.moveTo(hx + 6, hy);  ctx.lineTo(hx + 16, hy);
