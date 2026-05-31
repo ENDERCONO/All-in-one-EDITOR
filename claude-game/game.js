@@ -205,6 +205,9 @@
   let _shotCount = 0;       // for overcharge tracking
   let fogCanvas = null, fogCtx = null;
   let visPath = null; // current-frame visibility polygon for enemy culling
+  let firstPersonMode = false;
+  const FPS_RAYS = 400, FPS_FOV = Math.PI * 0.62, FPS_MAX_DIST = 1050;
+  const FPS_STRIP = Math.ceil(VIEW_W / FPS_RAYS);
   const tetoState = { x: 0, y: 0, rx: 0, ry: 0, hp: TETO_MAX_HP, alive: false, state: 'roam', jumpAlpha: 1, jumpTimer: 0 };
   const bullets = [];
   const particles = [];
@@ -283,25 +286,47 @@
     } catch (e) {}
   }
 
+  // Pooled one-shot audio to prevent memory leaks from rapid fire sounds
+  const _sndPool = {}; // { [src]: Audio[] }
+  const _SND_POOL_MAX = 4;
+  function _pooledPlay(src, vol) {
+    if (!_sndPool[src]) _sndPool[src] = [];
+    const pool = _sndPool[src];
+    let a = pool.find(x => x.paused || x.ended);
+    if (!a) {
+      if (pool.length < _SND_POOL_MAX) { a = new Audio(src); pool.push(a); }
+      else { a = pool[0]; try { a.pause(); } catch(e){} }
+    }
+    a.currentTime = 0; a.volume = Math.max(0, Math.min(1, vol));
+    a.play().catch(() => {});
+  }
+
   // Play a file from TerrariaSfx folder with optional spatial attenuation
   function playTerr(filename, baseVol, wx, wy) {
     const sv = (wx !== undefined) ? spatialVol(wx, wy) : 1;
     const v = Math.min(1, (baseVol || 0.6) * sv * musicState.soundVol);
     if (v < 0.02) return;
-    try {
-      const a = new Audio(PATH_BASE + 'claude-game/TerrariaSfx/' + filename);
-      a.volume = v; a.play().catch(() => {});
-    } catch (e) {}
+    try { _pooledPlay(PATH_BASE + 'claude-game/TerrariaSfx/' + filename, v); } catch (e) {}
   }
 
   function playWalkSfx() {
-    const arr = isSprinting() ? RUN_SFX : WALK_SFX;
+    // Reuse pre-loaded audio objects — never create new Audio() here (memory leak prevention)
+    const arr = isSprinting() ? runAudios : walkAudios;
+    if (!arr.length) return;
     try {
-      const src = PATH_BASE + arr[(Math.random() * arr.length) | 0];
-      const c = new Audio(src);
-      c.volume = Math.min(1, 0.38 * musicState.soundVol);
-      c.playbackRate = 0.92 + Math.random() * 0.18;
-      c.play().catch(() => {});
+      // Find a free (paused or ended) slot; skip this step if all are busy
+      const start = (Math.random() * arr.length) | 0;
+      for (let i = 0; i < arr.length; i++) {
+        const a = arr[(start + i) % arr.length];
+        if (!a || a.readyState < 2) continue;
+        if (a.paused || a.ended || a.currentTime === 0) {
+          a.currentTime = 0;
+          a.volume = Math.min(1, 0.38 * musicState.soundVol);
+          a.playbackRate = 0.92 + Math.random() * 0.18;
+          a.play().catch(() => {});
+          return;
+        }
+      }
     } catch (e) {}
   }
 
@@ -319,13 +344,13 @@
     const sv = spatialVol(tetoState.rx, tetoState.ry);
     const v = Math.min(1, (vol || 0.75) * sv * musicState.soundVol);
     if (v < 0.02) return;
-    try { const a = new Audio(PATH_BASE + 'claude-game/teto/tetosound.ogg'); a.volume = v; a.play().catch(() => {}); } catch (e) {}
+    try { _pooledPlay(PATH_BASE + 'claude-game/teto/tetosound.ogg', v); } catch (e) {}
   }
   function playTetoHurt() {
     const sv = spatialVol(tetoState.rx, tetoState.ry);
     const v = Math.min(1, 0.55 * sv * musicState.soundVol);
     if (v < 0.02) return;
-    try { const a = new Audio(PATH_BASE + 'claude-game/teto/tetohurt.ogg'); a.volume = v; a.play().catch(() => {}); } catch (e) {}
+    try { _pooledPlay(PATH_BASE + 'claude-game/teto/tetohurt.ogg', v); } catch (e) {}
   }
 
   function distPtSeg(px, py, ax, ay, bx, by) {
@@ -360,31 +385,39 @@
   }
 
   function startChaseTrack(idx) {
-    if (musicState.chaseAudio) { try { musicState.chaseAudio.pause(); } catch(e){} musicState.chaseAudio.onended = null; }
+    if (musicState.chaseAudio) { try { musicState.chaseAudio.pause(); } catch(e){} musicState.chaseAudio.onended = null; musicState.chaseAudio.src = ''; }
     musicState.chaseTrackIdx = idx;
     const a = new Audio(encTrack(PATH_BASE + CHASE_TRACKS[idx]));
     a.volume = 0;
-    // Always pick a DIFFERENT random track on end (no looping same track)
-    a.onended = function () {
+    a.onended = () => {
+      if (musicState.chaseAudio !== a) return;
       let next = idx;
       while (next === idx && CHASE_TRACKS.length > 1) next = (Math.random() * CHASE_TRACKS.length) | 0;
       startChaseTrack(next);
     };
-    a.play().catch(() => {});
+    a.play().catch(() => {
+      // Autoplay blocked — retry once after user interaction
+      const retry = () => { a.play().catch(() => {}); document.removeEventListener('click', retry); };
+      document.addEventListener('click', retry, { once: true });
+    });
     musicState.chaseAudio = a;
   }
 
   function startNormalTrack(idx) {
-    if (musicState.normalAudio) { try { musicState.normalAudio.pause(); } catch(e){} musicState.normalAudio.onended = null; }
+    if (musicState.normalAudio) { try { musicState.normalAudio.pause(); } catch(e){} musicState.normalAudio.onended = null; musicState.normalAudio.src = ''; }
     musicState.normalTrackIdx = idx;
     const a = new Audio(encTrack(PATH_BASE + NORMAL_TRACKS[idx]));
     a.volume = 0;
-    a.onended = function () {
+    a.onended = () => {
+      if (musicState.normalAudio !== a) return;
       let next = idx;
       while (next === idx && NORMAL_TRACKS.length > 1) next = (Math.random() * NORMAL_TRACKS.length) | 0;
       startNormalTrack(next);
     };
-    a.play().catch(() => {});
+    a.play().catch(() => {
+      const retry = () => { a.play().catch(() => {}); document.removeEventListener('click', retry); };
+      document.addEventListener('click', retry, { once: true });
+    });
     musicState.normalAudio = a;
   }
 
@@ -1339,7 +1372,19 @@
   function gameVisible() { const main = canvas.closest('main[data-mode]'); return !main || !main.hidden; }
 
   function bindInput() {
-    canvas.addEventListener('mousemove', onMove);
+    canvas.addEventListener('mousemove', e => {
+      onMove(e);
+      // FPS pointer-lock: rotate aim with mouse delta
+      if (firstPersonMode && document.pointerLockElement === canvas) {
+        me.aim += e.movementX * 0.0022;
+        me.facing = Math.cos(me.aim) < 0 ? -1 : 1;
+      }
+    });
+    canvas.addEventListener('click', () => {
+      if (firstPersonMode && started && document.pointerLockElement !== canvas) {
+        canvas.requestPointerLock().catch(() => {});
+      }
+    });
     canvas.addEventListener('mousedown', e => { if (e.button === 0) { mouse.down = true; fire(); } });
     window.addEventListener('mouseup', e => { if (e.button === 0) mouse.down = false; });
     canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -1369,9 +1414,13 @@
 
   /* ---------------- SIMULATION ENGINE ---------------- */
   let lastTick = performance.now();
-  function tick(now) { 
+  function tick(now) {
     const dt = Math.min(0.05, (now - lastTick) / 1000); lastTick = now;
-    if (started) { update(dt); draw(); } requestAnimationFrame(tick); 
+    if (started) {
+      try { update(dt); } catch (e) { console.error('[Arena] update err:', e); }
+      try { draw();   } catch (e) { console.error('[Arena] draw err:',   e); }
+    }
+    requestAnimationFrame(tick);
   }
 
   function update(dt) {
@@ -1417,8 +1466,14 @@
     if (me.alive) {
       if (IS_MOBILE && shootJoy.active && shootJoy.firing) {
         me.aim = Math.atan2(shootJoy.dy, shootJoy.dx);
-      } else {
-        me.aim = Math.atan2((mouse.y + camera.y) - me.y, (mouse.x + camera.x) - me.x);
+      } else if (!(firstPersonMode && document.pointerLockElement === canvas)) {
+        // 2D aim from mouse position (or FPS fallback without pointer lock: mouse X = horizontal angle)
+        if (firstPersonMode) {
+          const relX = (mouse.x - VIEW_W / 2) / (VIEW_W / 2);
+          me.aim += relX * 0.015; // gentle rotation based on mouse position from center
+        } else {
+          me.aim = Math.atan2((mouse.y + camera.y) - me.y, (mouse.x + camera.x) - me.x);
+        }
       }
       me.facing = Math.cos(me.aim) < 0 ? -1 : 1;
       let dx = 0, dy = 0;
@@ -2019,6 +2074,15 @@
   /* ---------------- RENDER ---------------- */
   function draw() {
     ctx.clearRect(0, 0, VIEW_W, VIEW_H);
+    // First-person mode: replace world render with raycaster
+    if (firstPersonMode && started && me.alive) {
+      ctx.save(); ctx.translate(screenShake.x, screenShake.y);
+      drawFirstPerson();
+      ctx.restore();
+      if (started) drawCanvasHud();
+      if (IS_MOBILE) drawMobileOverlay();
+      return;
+    }
     ctx.save();
     ctx.translate(screenShake.x, screenShake.y);
     if (assets.floor) {
@@ -2513,6 +2577,129 @@
   ctx.restore();
 }
 
+  /* ---------------- FIRST PERSON RAYCASTER ---------------- */
+  function drawFirstPerson() {
+    ctx.save();
+    // Sky gradient
+    const skyG = ctx.createLinearGradient(0, 0, 0, VIEW_H / 2);
+    skyG.addColorStop(0, '#05050f'); skyG.addColorStop(1, '#10102a');
+    ctx.fillStyle = skyG; ctx.fillRect(0, 0, VIEW_W, VIEW_H / 2);
+    // Floor gradient
+    const flrG = ctx.createLinearGradient(0, VIEW_H / 2, 0, VIEW_H);
+    flrG.addColorStop(0, '#191908'); flrG.addColorStop(1, '#0a0a04');
+    ctx.fillStyle = flrG; ctx.fillRect(0, VIEW_H / 2, VIEW_W, VIEW_H / 2);
+
+    // Filter nearby obstacles
+    const nearObs = obstacles.filter(o => {
+      const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+      return Math.hypot(cx - me.x, cy - me.y) < FPS_MAX_DIST + Math.max(o.w, o.h);
+    });
+
+    const zbuf = new Float32Array(VIEW_W).fill(FPS_MAX_DIST);
+
+    for (let i = 0; i < FPS_RAYS; i++) {
+      const angle = me.aim - FPS_FOV / 2 + (i / (FPS_RAYS - 1)) * FPS_FOV;
+      const dx = Math.cos(angle), dy = Math.sin(angle);
+      let minT = FPS_MAX_DIST, isVert = false, isSmall = false;
+
+      for (const o of nearObs) {
+        const tx1 = dx === 0 ? -1e9 : (o.x - me.x) / dx;
+        const tx2 = dx === 0 ?  1e9 : (o.x + o.w - me.x) / dx;
+        const ty1 = dy === 0 ? -1e9 : (o.y - me.y) / dy;
+        const ty2 = dy === 0 ?  1e9 : (o.y + o.h - me.y) / dy;
+        const tminX = Math.min(tx1, tx2), tmaxX = Math.max(tx1, tx2);
+        const tminY = Math.min(ty1, ty2), tmaxY = Math.max(ty1, ty2);
+        const tmin = Math.max(tminX, tminY), tmax = Math.min(tmaxX, tmaxY);
+        if (tmax >= 0 && tmin <= tmax && tmin > 0 && tmin < minT) {
+          minT = tmin; isVert = tminX > tminY; isSmall = o.type === 'small';
+        }
+      }
+
+      const x0 = i * FPS_STRIP;
+      for (let px = x0; px < Math.min(x0 + FPS_STRIP, VIEW_W); px++) zbuf[px] = minT;
+
+      if (minT < FPS_MAX_DIST) {
+        const perp = minT * Math.cos(angle - me.aim);
+        const wh = Math.round(Math.min(VIEW_H * 3, (VIEW_H * 240) / Math.max(1, perp)));
+        const wt = Math.round((VIEW_H - wh) / 2);
+        const fade = Math.max(0.05, 1 - perp / FPS_MAX_DIST);
+        let rB = isSmall ? 55 : 62, gB = isSmall ? 48 : 60, bB = isSmall ? 40 : 76;
+        if (isVert) { rB += 18; gB += 18; bB += 22; }
+        ctx.fillStyle = `rgb(${Math.round(rB*fade)},${Math.round(gB*fade)},${Math.round(bB*fade)})`;
+        ctx.fillRect(x0, wt, FPS_STRIP, wh);
+      }
+    }
+
+    // Sprite billboard rendering for other players
+    const sprites = [];
+    for (const id in others) {
+      const o = others[id]; if (!o.alive) continue;
+      const ox = o.rx !== undefined ? o.rx : o.x, oy = o.ry !== undefined ? o.ry : o.y;
+      const dist = Math.hypot(ox - me.x, oy - me.y);
+      if (dist > FPS_MAX_DIST || dist < 8) continue;
+      let rel = Math.atan2(oy - me.y, ox - me.x) - me.aim;
+      while (rel > Math.PI) rel -= Math.PI * 2;
+      while (rel < -Math.PI) rel += Math.PI * 2;
+      if (Math.abs(rel) > FPS_FOV / 2 + 0.15) continue;
+      sprites.push({ ox, oy, dist, rel, color: o.color || '#ff3b5c', name: o.name || '?', hp: o.hp || 100 });
+    }
+    sprites.sort((a, b) => b.dist - a.dist);
+    for (const s of sprites) {
+      const perp = s.dist * Math.cos(s.rel);
+      const sh = Math.round(Math.min(VIEW_H * 2.5, (VIEW_H * 180) / Math.max(1, perp)));
+      const sw = Math.round(sh * 0.55);
+      const scx = Math.round((s.rel / (FPS_FOV / 2) + 1) / 2 * VIEW_W);
+      const sx = scx - sw / 2, st = Math.round((VIEW_H - sh) / 2);
+      // Depth cull
+      let blocked = 0;
+      for (let px = Math.max(0, sx); px < Math.min(VIEW_W, sx + sw); px++) if (zbuf[px] < s.dist) blocked++;
+      const vis = Math.max(0, 1 - blocked / Math.max(1, sw));
+      if (vis < 0.1) continue;
+      ctx.save(); ctx.globalAlpha = vis * Math.max(0.1, 1 - s.dist / FPS_MAX_DIST);
+      const hpF = Math.max(0, (s.hp || 100) / 100);
+      ctx.fillStyle = s.color;
+      ctx.fillRect(sx, st + sh * 0.2, sw, sh * 0.55);
+      ctx.beginPath(); ctx.arc(scx, st + sh * 0.12, sw * 0.28, 0, Math.PI * 2); ctx.fill();
+      if (sh > 25) {
+        ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(sx, st - 7, sw, 4);
+        ctx.fillStyle = hpF > 0.5 ? '#2fd47f' : '#ff3b5c'; ctx.fillRect(sx, st - 7, sw * hpF, 4);
+        if (sh > 55) {
+          ctx.font = `${Math.max(9, Math.round(sh * 0.11))}px JetBrains Mono,monospace`;
+          ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
+          ctx.fillText(s.name, scx, st - 11);
+        }
+      }
+      ctx.restore();
+    }
+
+    // Crosshair
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1.5;
+    const hx = VIEW_W / 2, hy = VIEW_H / 2;
+    ctx.beginPath();
+    ctx.moveTo(hx - 14, hy); ctx.lineTo(hx - 5, hy);
+    ctx.moveTo(hx + 5, hy);  ctx.lineTo(hx + 14, hy);
+    ctx.moveTo(hx, hy - 14); ctx.lineTo(hx, hy - 5);
+    ctx.moveTo(hx, hy + 5);  ctx.lineTo(hx, hy + 14);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.beginPath(); ctx.arc(hx, hy, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+
+    // FPS HUD overlay (mini health bar at bottom)
+    ctx.save();
+    const hpFrac = Math.max(0, me.hp / (100 + (me.mods.maxHp || 0)));
+    const barW = 200, barH = 8, barX = (VIEW_W - barW) / 2, barY = VIEW_H - 28;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(barX - 2, barY - 2, barW + 4, barH + 4);
+    ctx.fillStyle = hpFrac > 0.5 ? '#2fd47f' : hpFrac > 0.25 ? '#ffb13b' : '#ff3b5c';
+    ctx.fillRect(barX, barY, barW * hpFrac, barH);
+    ctx.font = 'bold 10px JetBrains Mono,monospace'; ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
+    ctx.fillText(Math.ceil(me.hp) + ' HP  |  Lv' + me.level + '  |  ' + me.elims + ' elim' + (me.elims !== 1 ? 's' : ''), VIEW_W / 2, VIEW_H - 10);
+    ctx.restore();
+
+    ctx.restore();
+  }
+
   /* ---------------- FOG OF WAR ---------------- */
   function drawFogOfWar() {
     if (!fogCanvas || !started) { visPath = null; return; }
@@ -2629,6 +2816,27 @@
         '</div>';
       el.querySelector('#caSetMSlider').oninput = function () { musicState.musicVol = +this.value / 100; el.querySelector('#caSetMVol').textContent = this.value + '%'; };
       el.querySelector('#caSetSSlider').oninput = function () { musicState.soundVol = +this.value / 100; el.querySelector('#caSetSVol').textContent = this.value + '%'; };
+      // FPS mode toggle
+      const fpsRow = document.createElement('div');
+      fpsRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-top:16px;padding-top:14px;border-top:1px solid #2a2a32;';
+      const fpsLab = document.createElement('span');
+      fpsLab.style.cssText = 'font-size:11px;color:#d0d0d8;';
+      fpsLab.textContent = 'First Person Mode';
+      const fpsBtn = document.createElement('button');
+      fpsBtn.id = 'caFpsToggle';
+      const _fpsUpdate = () => {
+        fpsBtn.textContent = firstPersonMode ? 'ON' : 'OFF';
+        fpsBtn.style.cssText = 'background:' + (firstPersonMode ? 'rgba(199,125,255,0.18)' : '#1b1b20') + ';border:1px solid ' + (firstPersonMode ? '#c77dff' : '#2a2a32') + ';color:' + (firstPersonMode ? '#c77dff' : '#8a8a94') + ';padding:5px 16px;border-radius:7px;font-family:inherit;font-size:11px;cursor:pointer;';
+      };
+      _fpsUpdate();
+      fpsBtn.onclick = () => {
+        firstPersonMode = !firstPersonMode;
+        if (!firstPersonMode && document.pointerLockElement === canvas) document.exitPointerLock();
+        _fpsUpdate();
+        toast(firstPersonMode ? 'First Person: ON  (click canvas to lock mouse)' : 'First Person: OFF');
+      };
+      fpsRow.appendChild(fpsLab); fpsRow.appendChild(fpsBtn);
+      content.appendChild(fpsRow);
     }
 
     function renderControls() {
