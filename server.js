@@ -8,6 +8,14 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+// SharedArrayBuffer (required by love.js WASM) needs COOP + COEP headers
+// applied to the Balatro page and its assets.
+app.use('/claude-game/Balatro', (req, res, next) => {
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+  next();
+});
+
 // Serve .wasm with the correct MIME type so WebAssembly loads in browser
 app.use(express.static(__dirname, {
   setHeaders(res, filePath) {
