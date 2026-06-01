@@ -11,238 +11,207 @@
       background: #0a0a0f;
       font-family: 'Courier New', Courier, monospace;
       color: #c8b87a;
+      display: flex; align-items: center; justify-content: center;
     }
 
-    /* ── Canvas (love.js renders here) ── */
+    /* ── Canvas (love.js renders here, hidden until ready) ── */
     #canvas {
-      display: none;          /* shown only after love.js succeeds */
+      display: none;
       position: fixed; inset: 0;
       width: 100%; height: 100%;
       image-rendering: pixelated;
     }
 
-    /* ── Overlay ── */
+    /* ── Main overlay ── */
     #overlay {
-      position: fixed; inset: 0;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
-      text-align: center;
-      padding: 24px;
+      text-align: center; padding: 24px;
       transition: opacity 0.5s;
-      overflow-y: auto;
+      overflow-y: auto; max-height: 100vh;
     }
     #overlay.hidden { opacity: 0; pointer-events: none; }
 
     .logo {
-      font-size: clamp(36px, 8vw, 72px);
-      font-weight: 900;
-      letter-spacing: clamp(6px, 1.5vw, 14px);
+      font-size: clamp(40px, 8vw, 72px);
+      font-weight: 900; letter-spacing: clamp(6px, 1.5vw, 14px);
       color: #f5d060;
       text-shadow: 0 0 60px rgba(245,208,96,.5), 0 0 20px rgba(245,208,96,.3);
       margin-bottom: 6px;
-      user-select: none;
     }
     .sub {
-      font-size: 11px; letter-spacing: 3px;
-      color: #6a5a30; margin-bottom: 40px;
-      text-transform: uppercase;
+      font-size: 11px; letter-spacing: 3px; text-transform: uppercase;
+      color: #6a5a30; margin-bottom: 44px;
     }
-
-    /* ── Progress bar (shown while love.js loads) ── */
-    #progress-wrap { display: none; margin-bottom: 32px; width: 280px; }
-    #progress-wrap.show { display: block; }
-    .bar-bg { height: 3px; background: #1e1a0a; border-radius: 2px; overflow: hidden; }
-    #bar { height: 100%; width: 0%; background: #f5d060; transition: width .25s; }
-    #status { font-size: 11px; color: #5a5030; margin-top: 8px; min-height: 16px; }
 
     /* ── Cards ── */
     .cards {
-      display: flex; flex-wrap: wrap;
-      gap: 14px; justify-content: center;
-      max-width: 700px;
+      display: flex; flex-wrap: wrap; gap: 14px;
+      justify-content: center; max-width: 740px;
     }
     .card {
       background: rgba(245,208,96,.05);
       border: 1px solid rgba(245,208,96,.15);
-      border-radius: 10px;
-      padding: 20px 22px;
-      width: 200px;
-      text-align: left;
+      border-radius: 10px; padding: 22px 22px 18px;
+      width: 210px; text-align: left;
       transition: border-color .15s, background .15s;
     }
-    .card:hover { border-color: rgba(245,208,96,.35); background: rgba(245,208,96,.09); }
     .card-icon { font-size: 22px; margin-bottom: 10px; }
-    .card-title { font-size: 12px; color: #f5d060; font-weight: bold; margin-bottom: 6px; letter-spacing: 1px; }
-    .card-body { font-size: 11px; color: #7a6a40; line-height: 1.65; }
+    .card-title {
+      font-size: 11px; font-weight: bold; letter-spacing: 1.5px;
+      color: #f5d060; margin-bottom: 8px;
+    }
+    .card-body { font-size: 11px; color: #7a6a40; line-height: 1.7; }
 
     /* ── Buttons ── */
     .btn {
       display: inline-block; margin-top: 10px;
-      background: rgba(245,208,96,.12);
-      border: 1px solid rgba(245,208,96,.30);
-      color: #f5d060;
-      padding: 9px 20px; border-radius: 6px;
+      background: rgba(245,208,96,.10);
+      border: 1px solid rgba(245,208,96,.28);
+      color: #f5d060; padding: 9px 18px; border-radius: 6px;
       font-family: inherit; font-size: 11px;
       text-decoration: none; cursor: pointer;
-      transition: background .15s;
+      transition: background .15s; white-space: nowrap;
     }
     .btn:hover { background: rgba(245,208,96,.22); }
     .btn.primary {
-      background: rgba(245,208,96,.22);
-      border-color: rgba(245,208,96,.55);
+      background: rgba(245,208,96,.18);
+      border-color: rgba(245,208,96,.5);
     }
-    .btn.primary:hover { background: rgba(245,208,96,.35); }
+    .btn.primary:hover { background: rgba(245,208,96,.30); }
+    .btn:disabled { opacity: .4; cursor: default; }
 
-    /* ── Setup steps (collapsed by default) ── */
-    #setup-detail { display: none; margin-top: 28px; max-width: 640px; text-align: left; }
-    #setup-detail.show { display: block; }
-    #setup-detail h3 { color: #f5d060; font-size: 12px; letter-spacing: 1px; margin-bottom: 14px; }
-    .step {
-      display: flex; gap: 14px; align-items: flex-start;
-      margin-bottom: 16px; font-size: 11px; color: #7a6a40; line-height: 1.7;
+    /* ── Progress (love.js loading) ── */
+    #prog-wrap { display: none; margin-bottom: 32px; }
+    #prog-wrap.show { display: block; }
+    .bar-bg { width: 280px; height: 3px; background: #1e1a0a; border-radius: 2px; overflow: hidden; }
+    #bar { height: 100%; width: 0%; background: #f5d060; transition: width .25s; }
+    #status { font-size: 11px; color: #5a5030; margin-top: 8px; }
+
+    /* ── Feedback / error ── */
+    #feedback {
+      margin-top: 14px; font-size: 11px;
+      min-height: 18px; transition: color .2s;
     }
-    .step-num {
-      flex-shrink: 0; width: 22px; height: 22px;
-      background: rgba(245,208,96,.15); border: 1px solid rgba(245,208,96,.3);
-      border-radius: 50%; display: flex; align-items: center; justify-content: center;
-      font-size: 10px; color: #f5d060; font-weight: bold;
+    #feedback.ok  { color: #5fba6f; }
+    #feedback.err { color: #c06050; }
+
+    /* ── Love.js guide ── */
+    #ljs-guide {
+      display: none; margin-top: 28px;
+      background: rgba(245,208,96,.04);
+      border: 1px solid rgba(245,208,96,.14);
+      border-radius: 10px; padding: 22px 24px;
+      max-width: 580px; text-align: left;
+      font-size: 11px; color: #7a6a40; line-height: 1.8;
     }
-    code {
-      background: rgba(0,0,0,.5); border-radius: 3px;
-      padding: 1px 5px; color: #e8d5a3; font-family: inherit;
-    }
+    #ljs-guide.show { display: block; }
+    #ljs-guide h3 { color: #f5d060; font-size: 12px; letter-spacing: 1px; margin-bottom: 12px; }
+    #ljs-guide ol { margin-left: 18px; }
+    #ljs-guide li { margin-bottom: 6px; }
+    code { background: rgba(0,0,0,.5); border-radius: 3px; padding: 1px 5px; color: #e8d5a3; font-family: inherit; }
     a { color: #f5d060; }
-
-    #error-msg { display: none; color: #c06050; font-size: 11px; margin-top: 10px; }
+    .note { font-size: 10px; color: #4a4020; margin-top: 10px; }
   </style>
 </head>
 <body>
-
   <canvas id="canvas" oncontextmenu="return false;"></canvas>
 
   <div id="overlay">
     <div class="logo">BALATRO</div>
     <div class="sub">Poker is a life skill</div>
 
-    <!-- Progress bar — only visible when love.js is loading -->
-    <div id="progress-wrap">
+    <!-- Progress bar (love.js only) -->
+    <div id="prog-wrap">
       <div class="bar-bg"><div id="bar"></div></div>
-      <div id="status">Starting…</div>
+      <div id="status">Loading…</div>
     </div>
 
-    <!-- Main action cards -->
-    <div class="cards" id="main-cards">
+    <div class="cards" id="cards">
 
+      <!-- ★ LAUNCH NATIVE — works immediately on localhost ★ -->
       <div class="card">
-        <div class="card-icon">🖥</div>
-        <div class="card-title">PLAY — WINDOWS</div>
+        <div class="card-icon">🚀</div>
+        <div class="card-title">LAUNCH — NATIVE</div>
         <div class="card-body">
-          Native version. Best performance, full game.
+          Opens Balatro on your PC via the local server.
+          Best option — instant, full quality.
           <br><br>
-          <a class="btn primary" href="Balatro.exe" download="Balatro.exe">⬇ Download .exe</a>
+          <button class="btn primary" id="btn-launch">▶ Launch Balatro</button>
         </div>
       </div>
 
+      <!-- DOWNLOAD EXE -->
+      <div class="card">
+        <div class="card-icon">⬇</div>
+        <div class="card-title">DOWNLOAD — WINDOWS</div>
+        <div class="card-body">
+          Save the .exe and run it directly.
+          <br><br>
+          <a class="btn" href="Balatro.exe" download="Balatro.exe">⬇ Balatro.exe</a>
+        </div>
+      </div>
+
+      <!-- BROWSER PLAY (love.js) -->
       <div class="card">
         <div class="card-icon">🌐</div>
         <div class="card-title">PLAY — BROWSER</div>
         <div class="card-body">
-          Runs via love.js (WebAssembly). Requires one-time setup.
+          Runs via love.js (WebAssembly). Needs setup first.
           <br><br>
-          <button class="btn" id="btn-play-web">▶ Play in browser</button>
+          <button class="btn" id="btn-web">▶ Play in browser</button>
           <br>
-          <button class="btn" style="margin-top:6px;font-size:10px;opacity:.7" id="btn-setup">Setup guide ↓</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-icon">📦</div>
-        <div class="card-title">PACKAGE GAME</div>
-        <div class="card-body">
-          Creates <code>game.love</code> from the Lua source files. Run this first.
-          <br><br>
-          <a class="btn" href="package-game.bat" download="package-game.bat">⬇ package-game.bat</a>
-          <br>
-          <span style="font-size:10px;color:#5a5030;display:block;margin-top:6px">Double-click to run</span>
+          <button class="btn" id="btn-ljs-guide" style="margin-top:6px;opacity:.65;font-size:10px">love.js setup ↓</button>
         </div>
       </div>
 
     </div>
 
-    <!-- Expandable setup guide -->
-    <div id="setup-detail">
-      <h3>⚙ ONE-TIME SETUP — BROWSER VERSION</h3>
+    <div id="feedback"></div>
 
-      <div class="step">
-        <div class="step-num">1</div>
-        <div>
-          <strong style="color:#c8b87a">Package the game</strong><br>
-          Download and double-click <code>package-game.bat</code> (button above).<br>
-          This creates <code>game.love</code> in this folder (~5 MB).
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-num">2</div>
-        <div>
-          <strong style="color:#c8b87a">Get love.js runtime</strong><br>
-          Go to <a href="https://github.com/Davidobot/love.js" target="_blank" rel="noopener">github.com/Davidobot/love.js</a>
-          → click the green <strong>Code</strong> button → <strong>Download ZIP</strong>.<br>
-          Extract the ZIP. Inside you will find a folder called <code>dist/</code>
-          (or the files <code>love.js</code> and <code>love.wasm</code> directly).<br>
-          Copy <strong>both</strong> files into a new folder:
-          <code>Balatro\love.js\</code>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-num">3</div>
-        <div>
-          <strong style="color:#c8b87a">Reload this page</strong><br>
-          Click <em>Play in browser</em> above — the game will start loading.
-          First load takes ~15 s (downloads assets).
-        </div>
-      </div>
-
-      <div style="font-size:10px;color:#4a4020;margin-top:8px;line-height:1.6">
-        Folder layout when done:<br>
-        <code>Balatro/game.love</code> &nbsp;·&nbsp;
-        <code>Balatro/love.js/love.js</code> &nbsp;·&nbsp;
-        <code>Balatro/love.js/love.wasm</code>
-      </div>
+    <!-- Love.js setup guide -->
+    <div id="ljs-guide">
+      <h3>⚙ How to get real love.js files</h3>
+      <p style="margin-bottom:12px">The files you placed are wrong (22 bytes each). Real compiled files are ~10 MB each.</p>
+      <ol>
+        <li>
+          Go to <a href="https://github.com/Davidobot/love.js/releases" target="_blank" rel="noopener">github.com/Davidobot/love.js → Releases</a>
+          (NOT "Code → Download ZIP" — that gives you source, not compiled files)
+        </li>
+        <li>
+          Click the latest release → under <strong>Assets</strong> download the zip (e.g. <code>love.js-0.1.0.zip</code>)
+        </li>
+        <li>
+          Open that zip — look for <code>love.js</code> (~500 KB) and <code>love.wasm</code> (~10 MB)
+        </li>
+        <li>
+          Replace the tiny files in <code>Balatro\love.js\</code> with these real ones
+        </li>
+        <li>Reload and click <em>Play in browser</em></li>
+      </ol>
+      <p class="note">
+        If there are no release assets on the Releases page, the project hasn't published pre-built binaries yet.
+        In that case, the <strong>Launch Native</strong> button above is the only working option.
+      </p>
     </div>
-
-    <div id="error-msg"></div>
   </div>
 
   <script>
   (function () {
     'use strict';
 
-    const overlay      = document.getElementById('overlay');
-    const canvas       = document.getElementById('canvas');
-    const progressWrap = document.getElementById('progress-wrap');
-    const barEl        = document.getElementById('bar');
-    const statusEl     = document.getElementById('status');
-    const setupDetail  = document.getElementById('setup-detail');
-    const mainCards    = document.getElementById('main-cards');
-    const errorEl      = document.getElementById('error-msg');
+    const overlay   = document.getElementById('overlay');
+    const canvas    = document.getElementById('canvas');
+    const progWrap  = document.getElementById('prog-wrap');
+    const barEl     = document.getElementById('bar');
+    const statusEl  = document.getElementById('status');
+    const feedEl    = document.getElementById('feedback');
+    const ljsGuide  = document.getElementById('ljs-guide');
+    const cards     = document.getElementById('cards');
 
-    /* ── UI helpers ── */
-    function setStatus(msg, pct) {
-      statusEl.textContent = msg;
-      if (pct !== undefined) barEl.style.width = Math.min(100, pct) + '%';
-    }
-    function showError(msg) {
-      errorEl.textContent = msg;
-      errorEl.style.display = '';
-      progressWrap.classList.remove('show');
-    }
-    function startLoading() {
-      mainCards.style.display = 'none';
-      setupDetail.classList.remove('show');
-      progressWrap.classList.add('show');
-      errorEl.style.display = 'none';
+    function feedback(msg, cls) {
+      feedEl.textContent = msg;
+      feedEl.className = cls || '';
     }
     function hideOverlay() {
       canvas.style.display = 'block';
@@ -250,90 +219,90 @@
       setTimeout(() => { overlay.style.display = 'none'; }, 600);
     }
 
-    /* ── Toggle setup guide ── */
-    document.getElementById('btn-setup').addEventListener('click', function () {
-      const showing = setupDetail.classList.toggle('show');
-      this.textContent = showing ? 'Setup guide ↑' : 'Setup guide ↓';
+    /* ── Launch native (via server API) ── */
+    document.getElementById('btn-launch').addEventListener('click', function () {
+      this.disabled = true;
+      feedback('Sending launch request…');
+      fetch('/api/launch-balatro')
+        .then(r => r.json())
+        .then(d => {
+          if (d.ok) feedback('✓ Balatro launched! Check your taskbar.', 'ok');
+          else feedback('✗ Server error: ' + d.error, 'err');
+        })
+        .catch(() => {
+          feedback('✗ Could not reach server. Is it running on localhost?', 'err');
+        })
+        .finally(() => { this.disabled = false; });
     });
 
-    /* ── Play in browser ── */
-    document.getElementById('btn-play-web').addEventListener('click', function () {
-      if (!window.WebAssembly) {
-        showError('WebAssembly is not supported in your browser.');
-        return;
-      }
-      startLoading();
-      setStatus('Checking game bundle…', 5);
+    /* ── Toggle love.js guide ── */
+    document.getElementById('btn-ljs-guide').addEventListener('click', function () {
+      const show = ljsGuide.classList.toggle('show');
+      this.textContent = show ? 'love.js setup ↑' : 'love.js setup ↓';
+    });
 
-      // 1) Verify game.love exists
+    /* ── Play in browser (love.js) ── */
+    document.getElementById('btn-web').addEventListener('click', function () {
+      if (!window.WebAssembly) { feedback('✗ WebAssembly not supported in this browser.', 'err'); return; }
+      cards.style.display = 'none';
+      ljsGuide.classList.remove('show');
+      feedEl.textContent = '';
+      progWrap.classList.add('show');
+      statusEl.textContent = 'Checking game bundle…';
+      barEl.style.width = '5%';
+
       fetch('game.love', { method: 'HEAD' })
-        .then(r => {
-          if (!r.ok) throw new Error('game.love');
-          setStatus('Loading love.js runtime…', 15);
-          // 2) Try to inject love.js
-          loadLoveRuntime();
+        .then(r => { if (!r.ok) throw new Error('game.love'); return true; })
+        .then(() => {
+          statusEl.textContent = 'Loading love.js…'; barEl.style.width = '15%';
+          launchLoveJS();
         })
         .catch(err => {
-          mainCards.style.display = '';
-          progressWrap.classList.remove('show');
-          showError(
+          cards.style.display = '';
+          progWrap.classList.remove('show');
+          feedback(
             err.message === 'game.love'
-              ? '✗  game.love not found — download and run package-game.bat first.'
-              : '✗  Network error: ' + err.message
+              ? '✗ game.love missing — it should be auto-created by the server.'
+              : '✗ ' + err.message,
+            'err'
           );
         });
     });
 
-    /* ── love.js bootstrap ── */
-    function loadLoveRuntime() {
+    function launchLoveJS() {
       window.Module = {
         arguments: ['game.love'],
         canvas: canvas,
         print: console.log,
         printErr: console.warn,
-
-        setStatus: function (text) {
+        setStatus(text) {
           if (!text) { hideOverlay(); return; }
           const m = text.match(/\((\d+)\/(\d+)\)/);
           if (m) {
-            setStatus('Loading… ' + m[1] + ' / ' + m[2],
-              15 + Math.round(+m[1] / +m[2] * 80));
+            statusEl.textContent = 'Loading… ' + m[1] + '/' + m[2];
+            barEl.style.width = (15 + (+m[1] / +m[2]) * 80) + '%';
           } else {
-            setStatus(text, 50);
+            statusEl.textContent = text;
           }
         },
-
         totalDependencies: 0,
-        monitorRunDependencies: function (left) {
+        monitorRunDependencies(left) {
           this.totalDependencies = Math.max(this.totalDependencies, left);
-          if (left === 0) { Module.setStatus(''); }
-          else {
-            Module.setStatus('Loading (' +
-              (this.totalDependencies - left) + '/' + this.totalDependencies + ')');
-          }
+          if (!left) Module.setStatus('');
+          else Module.setStatus('Loading (' + (this.totalDependencies - left) + '/' + this.totalDependencies + ')');
         }
       };
 
-      window.addEventListener('error', function (e) {
-        mainCards.style.display = '';
-        progressWrap.classList.remove('show');
-        showError('Runtime error: ' + e.message);
-      }, { once: true });
-
       const s = document.createElement('script');
       s.src = 'love.js/love.js';
-      s.onerror = function () {
-        mainCards.style.display = '';
-        progressWrap.classList.remove('show');
-        showError(
-          '✗  love.js/love.js not found. ' +
-          'Download the love.js repo ZIP from GitHub and place ' +
-          'love.js + love.wasm inside the Balatro/love.js/ folder.'
-        );
+      s.onerror = () => {
+        cards.style.display = '';
+        progWrap.classList.remove('show');
+        feedback('✗ love.js/love.js not found or files are invalid. See the setup guide below.', 'err');
+        ljsGuide.classList.add('show');
       };
       document.body.appendChild(s);
     }
-
   })();
   </script>
 </body>

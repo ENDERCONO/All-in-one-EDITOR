@@ -1,12 +1,30 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const { spawn } = require('child_process');
+const path    = require('path');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-app.use(express.static(__dirname));
+// Serve .wasm with the correct MIME type so WebAssembly loads in browser
+app.use(express.static(__dirname, {
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.wasm')) res.setHeader('Content-Type', 'application/wasm');
+  }
+}));
+
+// Launch Balatro natively on the host machine (only works on localhost)
+app.get('/api/launch-balatro', (req, res) => {
+  const exe = path.join(__dirname, 'claude-game', 'Balatro', 'Balatro.exe');
+  try {
+    spawn(exe, [], { detached: true, stdio: 'ignore' }).unref();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
 
 const WORLD_W = 900 * 8, WORLD_H = 600 * 8;
 const PLAYER_R_OBS = 18; // collision radius for obstacle resolution
