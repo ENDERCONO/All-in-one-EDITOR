@@ -1,4 +1,8 @@
 {
+  "scripts": {
+    "postinstall": "node scripts/setup-lovejs.js",
+    "start": "node server.js"
+  },
   "dependencies": {
     "express": "^5.2.1",
     "socket.io": "^4.8.3"
