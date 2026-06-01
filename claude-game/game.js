@@ -135,7 +135,8 @@
     const aw = window.innerWidth;
     const ah = window.innerHeight;
     const scale = Math.min(aw / VIEW_W, ah / VIEW_H);
-    const dpr   = window.devicePixelRatio || 1;
+    // Ensure minimum 2× pixel density so the game is always crisp
+    const dpr   = Math.max(2, window.devicePixelRatio || 1);
     const totalScale = scale * dpr;
     const cssW = Math.floor(VIEW_W * scale);
     const cssH = Math.floor(VIEW_H * scale);
@@ -2462,6 +2463,58 @@
     }
     ly += drawBlock(LX, ly, LW, secLab, secVal, secF, secCol, secF < 0);
 
+    // ── RADAR MINIMAP (below HUD blocks, always shows all players) ───────────
+    {
+      const RAD_R = 44;                         // pixel radius of the radar disc
+      const RAD_CX = LX + RAD_R + 1;           // horizontal centre
+      const RAD_CY = ly + 12 + RAD_R;          // vertical centre (12px gap after blocks)
+      const WORLD_RADAR_R = 3200;              // world-unit radius shown in radar
+
+      // Background disc
+      ctx.save();
+      ctx.fillStyle = 'rgba(8,8,12,0.86)';
+      ctx.beginPath(); ctx.arc(RAD_CX, RAD_CY, RAD_R, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(RAD_CX, RAD_CY, RAD_R, 0, Math.PI*2); ctx.stroke();
+      // Inner range ring
+      ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(RAD_CX, RAD_CY, RAD_R * 0.55, 0, Math.PI*2); ctx.stroke();
+      // Label
+      ctx.font = '7px JetBrains Mono,monospace'; ctx.textAlign = 'center';
+      ctx.fillStyle = '#383846'; ctx.fillText('RADAR', RAD_CX, RAD_CY + RAD_R + 10);
+
+      // Clip to disc so dots don't bleed outside
+      ctx.beginPath(); ctx.arc(RAD_CX, RAD_CY, RAD_R - 1, 0, Math.PI*2); ctx.clip();
+
+      // World → radar conversion
+      const toRad = (wx, wy) => ({
+        rx: RAD_CX + (wx - me.x) / WORLD_RADAR_R * RAD_R,
+        ry: RAD_CY + (wy - me.y) / WORLD_RADAR_R * RAD_R
+      });
+
+      // Other players — always visible regardless of fog
+      for (const id in others) {
+        const o = others[id]; if (!o || !o.alive) continue;
+        const { rx, ry } = toRad(o.rx !== undefined ? o.rx : o.x, o.ry !== undefined ? o.ry : o.y);
+        ctx.fillStyle = o.color || '#ff3b5c';
+        ctx.beginPath(); ctx.arc(rx, ry, 3, 0, Math.PI*2); ctx.fill();
+      }
+      // Teto boss (orange triangle)
+      if (tetoState.alive) {
+        const { rx, ry } = toRad(tetoState.rx !== undefined ? tetoState.rx : tetoState.x,
+                                  tetoState.ry !== undefined ? tetoState.ry : tetoState.y);
+        ctx.fillStyle = '#ff8c42'; ctx.shadowColor = '#ff8c42'; ctx.shadowBlur = 6;
+        ctx.beginPath(); ctx.moveTo(rx, ry-5); ctx.lineTo(rx+4, ry+3); ctx.lineTo(rx-4, ry+3); ctx.closePath(); ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+      // Local player — bright white dot at center
+      ctx.fillStyle = '#ffffff'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 5;
+      ctx.beginPath(); ctx.arc(RAD_CX, RAD_CY, 3.5, 0, Math.PI*2); ctx.fill();
+      ctx.shadowBlur = 0;
+
+      ctx.restore();
+    }
+
     // ── RIGHT ULT BAR ────────────────────────────────────────────────────────
     const UX = VIEW_W - 48, UY = VIEW_H/2 - 105, UW = 16, UH = 210;
     ctx.fillStyle = BAR_BG; rrect(UX-10, UY-22, UW+20, UH+52, 8); ctx.fill();
@@ -2491,9 +2544,9 @@
     ctx.fillStyle = _netOk ? '#2fd47f' : '#ff3b5c';
     ctx.fillText('●  '+netTxt, VIEW_W/2, 24);
 
-    // ── LEADERBOARD (top-right) ──────────────────────────────────────────────
+    // ── LEADERBOARD (top-right, ends 6px left of ULT container at VIEW_W-58) ────
     {
-      const LBX = VIEW_W-208, LBY = 14, LBW = 194;
+      const LBX = VIEW_W-252, LBY = 14, LBW = 188;
       const all = [{name:me.name||'You',level:me.level,points:me.points,elims:me.elims,color:me.color,isMe:true}];
       for (const id in others){const o=others[id];all.push({name:o.name||'???',level:o.level||1,points:o.points||0,elims:o.elims||0,color:o.color||'#aaa',isMe:false});}
       all.sort((a,b)=>(b.points-a.points)||(b.level-a.level));
@@ -2685,84 +2738,57 @@
     if (!others) return;
     const cx = VIEW_W / 2, cy = VIEW_H / 2, PAD = 40;
     try {
-      // Helper: clamp a direction angle to the rectangular screen edge (not an ellipse)
       const clampEdge = (ang, padX, padY) => {
         const rdx = Math.cos(ang), rdy = Math.sin(ang);
         let t = Infinity;
-        if (rdx > 0.0001) t = Math.min(t, (VIEW_W - padX - cx) / rdx);
+        if (rdx > 0.0001)  t = Math.min(t, (VIEW_W - padX - cx) / rdx);
         else if (rdx < -0.0001) t = Math.min(t, (padX - cx) / rdx);
-        if (rdy > 0.0001) t = Math.min(t, (VIEW_H - padY - cy) / rdy);
+        if (rdy > 0.0001)  t = Math.min(t, (VIEW_H - padY - cy) / rdy);
         else if (rdy < -0.0001) t = Math.min(t, (padY - cy) / rdy);
         return { ex: cx + rdx * t, ey: cy + rdy * t };
       };
 
-      // ── Fogged-enemy markers: enemies visible on screen but hidden in darkness ──
-      if (visPath) {
-        const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
-        for (const id in others) {
-          const o = others[id];
-          if (!o || !o.alive || o.x === undefined) continue;
-          const sx = o.x - camera.x, sy = o.y - camera.y;
-          if (sx < 0 || sx > VIEW_W || sy < 0 || sy > VIEW_H) continue; // off-screen handled below
-          if (ctx.isPointInPath(visPath, sx, sy)) continue; // visible — no marker needed
-          // Enemy is on-screen but in darkness: show pulsing directional marker
-          const ang = Math.atan2(sy - cy, sx - cx);
-          const { ex, ey } = clampEdge(ang, PAD, PAD);
-          ctx.save();
-          ctx.globalAlpha = 0.55 + 0.4 * pulse;
-          ctx.translate(ex, ey);
-          // Dark pill background
-          ctx.fillStyle = 'rgba(0,0,0,0.72)';
-          ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-          ctx.lineWidth = 1;
-          ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-          ctx.rotate(ang + Math.PI / 2);
-          ctx.fillStyle = o.color || '#ff3b5c';
-          ctx.shadowColor = o.color || '#ff3b5c'; ctx.shadowBlur = 6;
-          ctx.beginPath();
-          ctx.moveTo(0, -7); ctx.lineTo(4, 4); ctx.lineTo(-4, 4);
-          ctx.closePath(); ctx.fill();
-          ctx.shadowBlur = 0;
-          ctx.restore();
-        }
-      }
-      // Teto offscreen indicator
+      const pulse = 0.55 + 0.4 * Math.sin(Date.now() / 320);
+
+      // Teto — always show arrow, even off-screen
       if (tetoState.alive) {
         const tsx = tetoState.rx - camera.x, tsy = tetoState.ry - camera.y;
         if (tsx < 0 || tsx > VIEW_W || tsy < 0 || tsy > VIEW_H) {
           const ang = Math.atan2(tsy - cy, tsx - cx);
           const { ex, ey } = clampEdge(ang, PAD - 8, PAD - 8);
-          ctx.save();
-          ctx.translate(ex, ey);
+          ctx.save(); ctx.translate(ex, ey);
           ctx.rotate(ang + Math.PI / 2);
           ctx.fillStyle = '#ff8c42'; ctx.shadowColor = '#ff8c42'; ctx.shadowBlur = 10;
           ctx.beginPath(); ctx.moveTo(0, -14); ctx.lineTo(8, 8); ctx.lineTo(-8, 8); ctx.fill();
           ctx.shadowBlur = 0;
-          ctx.font = 'bold 9px JetBrains Mono, monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
+          ctx.font = 'bold 9px JetBrains Mono,monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
           ctx.fillText('TETO', 0, 20);
           ctx.restore();
         }
       }
+
+      // All players — arrow when off-screen OR hidden by fog of war
       for (const id in others) {
         const o = others[id];
-        // Don't show off-screen indicators for bots — they're always present as AI
-        if (!o || o.x === undefined || o.y === undefined) continue;
-        if (id.startsWith('bot_')) continue;
+        if (!o || !o.alive || o.x === undefined || o.y === undefined) continue;
         const sx = o.x - camera.x, sy = o.y - camera.y;
-        if (sx > 0 && sx < VIEW_W && sy > 0 && sy < VIEW_H) continue;
+        const onScreen = (sx > 0 && sx < VIEW_W && sy > 0 && sy < VIEW_H);
+        // Visible = on screen AND in lit area (or no fog active)
+        const isVisible = onScreen && (!visPath || ctx.isPointInPath(visPath, sx, sy));
+        if (isVisible) continue; // fully visible sprite — no arrow needed
+
         const ang = Math.atan2(sy - cy, sx - cx);
         const { ex, ey } = clampEdge(ang, PAD, PAD);
         ctx.save();
+        ctx.globalAlpha = onScreen ? pulse : 1; // pulse when fogged but on-screen
         ctx.translate(ex, ey);
-        // Dark pill background — makes it unambiguous this is a UI element
-        ctx.fillStyle = 'rgba(0,0,0,0.72)';
-        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.38)';
         ctx.lineWidth = 1;
         ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-        // Coloured arrow pointing toward the off-screen player
         ctx.rotate(ang + Math.PI / 2);
         ctx.fillStyle = o.color || '#ff3b5c';
-        ctx.shadowColor = o.color || '#ff3b5c'; ctx.shadowBlur = 6;
+        ctx.shadowColor = o.color || '#ff3b5c'; ctx.shadowBlur = 7;
         ctx.beginPath();
         ctx.moveTo(0, -8); ctx.lineTo(5, 4); ctx.lineTo(-5, 4);
         ctx.closePath(); ctx.fill();
@@ -2770,7 +2796,7 @@
         ctx.restore();
       }
     } catch (e) {
-      console.warn("Radar drawing skipped:", e);
+      console.warn('Marker drawing skipped:', e);
     }
   }
 
