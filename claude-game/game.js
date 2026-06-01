@@ -127,16 +127,15 @@
   let socket = null;
   let lastNetUpdate = 0;
   let debugMode = false; // unlocked with code "Gemini"
-  // Resize canvas buffer to match the physical display pixels (no CSS transform upscaling).
-  // The root container is sized to the letterboxed area; canvas CSS fills the root.
+  // Resize canvas buffer to match physical display pixels (scale × DPR).
+  // No CSS transform upscaling — the root is letterboxed and canvas CSS fills it.
   function applyGameScale() {
     const root = document.getElementById('caRoot');
     if (!root) return;
     const aw = window.innerWidth;
     const ah = window.innerHeight;
     const scale = Math.min(aw / VIEW_W, ah / VIEW_H);
-    // Ensure minimum 2× pixel density so the game is always crisp
-    const dpr   = Math.max(2, window.devicePixelRatio || 1);
+    const dpr   = window.devicePixelRatio || 1;   // actual device ratio — no artificial inflate
     const totalScale = scale * dpr;
     const cssW = Math.floor(VIEW_W * scale);
     const cssH = Math.floor(VIEW_H * scale);
@@ -159,6 +158,14 @@
         fogCanvas.height = bh;
       }
       if (fogCtx) fogCtx.setTransform(totalScale, 0, 0, totalScale, 0, 0);
+    }
+    // Bloom canvas at 1/4 physical resolution — cheap source for the glow pass
+    if (bloomCanvas) {
+      const blw = Math.max(1, bw >> 2), blh = Math.max(1, bh >> 2);
+      if (bloomCanvas.width !== blw || bloomCanvas.height !== blh) {
+        bloomCanvas.width  = blw;
+        bloomCanvas.height = blh;
+      }
     }
   }
   window.addEventListener('resize', applyGameScale);
@@ -232,6 +239,7 @@
   let adrenalineTimer = 0;  // seconds remaining on speed boost
   let _shotCount = 0;       // for overcharge tracking
   let fogCanvas = null, fogCtx = null;
+  let bloomCanvas = null, bloomCtx = null;
   let visPath = null; // current-frame visibility polygon for enemy culling
   let firstPersonMode = false;
   const FPS_RAYS = 480, FPS_FOV = Math.PI * 0.58, FPS_MAX_DIST = 2200;
@@ -2211,6 +2219,7 @@
       ctx.restore();
       if (started) drawCanvasHud();
       if (IS_MOBILE) drawMobileOverlay();
+      applyBloom();
       return;
     }
     ctx.save();
@@ -2378,6 +2387,24 @@
       ctx.restore();
     }
     ctx.restore(); // end screen shake translate
+    applyBloom();
+  }
+
+  // Bloom: downscale current frame → 1/4 canvas, composite back blurred with 'lighter' blend.
+  // The downscale naturally averages pixels (soft blur), ctx.filter adds extra spread.
+  function applyBloom() {
+    if (!bloomCanvas || !bloomCtx || !started) return;
+    // Capture current frame at 1/4 resolution
+    bloomCtx.clearRect(0, 0, bloomCanvas.width, bloomCanvas.height);
+    bloomCtx.drawImage(canvas, 0, 0, bloomCanvas.width, bloomCanvas.height);
+    // Composite back at full size with additive blend + extra blur
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.18;
+    ctx.filter = 'blur(6px)';
+    ctx.drawImage(bloomCanvas, 0, 0, VIEW_W, VIEW_H);
+    ctx.filter = 'none';
+    ctx.restore();
   }
 
   function drawCanvasHud() {
@@ -4037,14 +4064,21 @@
     // Size canvas buffer to physical display pixels (scale × devicePixelRatio)
     applyGameScale();
 
-    // Fog canvas — created after applyGameScale so we can copy canvas buffer dimensions
+    // Fog canvas — same size/transform as main canvas (must match applyGameScale exactly)
     fogCanvas = document.createElement('canvas');
     fogCanvas.width  = canvas.width;
     fogCanvas.height = canvas.height;
     fogCtx = fogCanvas.getContext('2d');
-    const _initDpr   = window.devicePixelRatio || 1;
-    const _initScale = Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H);
-    fogCtx.setTransform(_initScale * _initDpr, 0, 0, _initScale * _initDpr, 0, 0);
+    {
+      const _s = Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H);
+      const _d = window.devicePixelRatio || 1; // no Math.max — matches applyGameScale
+      fogCtx.setTransform(_s * _d, 0, 0, _s * _d, 0, 0);
+    }
+    // Bloom canvas at 1/4 physical resolution
+    bloomCanvas = document.createElement('canvas');
+    bloomCanvas.width  = Math.max(1, canvas.width  >> 2);
+    bloomCanvas.height = Math.max(1, canvas.height >> 2);
+    bloomCtx = bloomCanvas.getContext('2d');
     obstacles = buildObstacles(); loadCharAssets();
     try { const sc = localStorage.getItem('caChar'); if (sc && CHARACTERS[sc]) selectedChar = sc; } catch (e) {}
 
