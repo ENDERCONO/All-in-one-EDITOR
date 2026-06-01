@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Balatro — Web</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100vh;
+      background: #0a0a0f;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden;
+      font-family: 'Courier New', Courier, monospace;
+    }
+    #canvas {
+      display: block;
+      /* love.js sets width/height via JS; let it fill the viewport */
+      image-rendering: pixelated;
+    }
+    /* ── Overlay shown while loading or on setup error ── */
+    #overlay {
+      position: fixed; inset: 0; z-index: 99;
+      background: #0a0a0f;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      text-align: center; padding: 32px;
+      transition: opacity 0.4s;
+    }
+    #overlay.fade { opacity: 0; pointer-events: none; }
+    .logo {
+      font-size: 58px; font-weight: 900;
+      letter-spacing: 10px;
+      color: #f5d060;
+      text-shadow: 0 0 40px rgba(245,208,96,0.45);
+      margin-bottom: 8px;
+    }
+    .tagline {
+      font-size: 11px; letter-spacing: 3px;
+      color: #6a5a30; margin-bottom: 48px;
+      text-transform: uppercase;
+    }
+    .bar-wrap {
+      width: 300px; height: 3px;
+      background: #1e1a0a; border-radius: 2px;
+      overflow: hidden; margin-bottom: 14px;
+    }
+    #bar { height: 100%; background: #f5d060; width: 0%; transition: width 0.25s; }
+    #status { font-size: 11px; color: #5a5030; min-height: 16px; }
+
+    /* ── Setup notice (when love.js / game.love are missing) ── */
+    #notice {
+      display: none;
+      margin-top: 36px;
+      background: rgba(245,208,96,0.05);
+      border: 1px solid rgba(245,208,96,0.18);
+      border-radius: 10px;
+      padding: 24px 28px;
+      max-width: 500px;
+      text-align: left;
+      font-size: 12px;
+      line-height: 1.8;
+      color: #8a7a50;
+    }
+    #notice h3 { color: #f5d060; font-size: 13px; margin-bottom: 10px; }
+    #notice code {
+      background: rgba(0,0,0,0.5); border-radius: 4px;
+      padding: 1px 6px; color: #e8d5a3;
+    }
+    #notice a { color: #f5d060; }
+    #notice ol { margin: 10px 0 16px 18px; }
+    #notice li { margin-bottom: 4px; }
+    .dl-btn {
+      display: inline-block; margin-top: 4px;
+      background: rgba(245,208,96,0.10);
+      border: 1px solid rgba(245,208,96,0.30);
+      color: #f5d060; padding: 8px 20px; border-radius: 6px;
+      font-family: inherit; font-size: 11px;
+      text-decoration: none; cursor: pointer;
+      transition: background 0.15s;
+    }
+    .dl-btn:hover { background: rgba(245,208,96,0.20); }
+  </style>
+</head>
+<body>
+
+  <!-- love.js renders into this canvas -->
+  <canvas id="canvas" oncontextmenu="return false;"></canvas>
+
+  <!-- Loading / setup overlay -->
+  <div id="overlay">
+    <div class="logo">BALATRO</div>
+    <div class="tagline">Poker is a life skill</div>
+    <div class="bar-wrap"><div id="bar"></div></div>
+    <div id="status">Checking…</div>
+
+    <div id="notice">
+      <h3>⚙ One-time setup needed</h3>
+      <p>Running Balatro in the browser requires two things:</p>
+      <ol>
+        <li>
+          Download the <a href="https://github.com/Davidobot/love.js/releases" target="_blank" rel="noopener">love.js runtime</a>
+          and extract the contents into <code>Balatro/love.js/</code><br>
+          (you need <code>love.js</code> and <code>love.wasm</code> in that folder)
+        </li>
+        <li>
+          Run <code>package-game.ps1</code> (right-click → Run with PowerShell) to create <code>game.love</code>
+        </li>
+        <li>Refresh this page.</li>
+      </ol>
+      <p>Or play the Windows native version:</p>
+      <a class="dl-btn" href="Balatro.exe" download="Balatro.exe">⬇ Balatro.exe (Windows)</a>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    'use strict';
+
+    const overlay  = document.getElementById('overlay');
+    const bar      = document.getElementById('bar');
+    const statusEl = document.getElementById('status');
+    const notice   = document.getElementById('notice');
+
+    function setStatus(msg, pct) {
+      statusEl.textContent = msg;
+      if (pct !== undefined) bar.style.width = Math.min(100, pct) + '%';
+    }
+    function hideOverlay() {
+      overlay.classList.add('fade');
+      setTimeout(() => { overlay.style.display = 'none'; }, 450);
+    }
+    function showNotice(reason) {
+      setStatus(reason, 0);
+      notice.style.display = '';
+    }
+
+    // Guard: need WebAssembly
+    if (!window.WebAssembly) {
+      showNotice('WebAssembly not supported in this browser.');
+      return;
+    }
+
+    setStatus('Checking game bundle…', 8);
+
+    // Check game.love exists before pulling in love.js (saves a big download on error)
+    fetch('game.love', { method: 'HEAD' })
+      .then(r => {
+        if (!r.ok) throw new Error('not found');
+        setStatus('Loading love.js runtime…', 20);
+        initLove();
+      })
+      .catch(() => {
+        showNotice('game.love not found — run package-game.ps1 first.');
+      });
+
+    function initLove() {
+      // Emscripten Module config consumed by love.js
+      window.Module = {
+        arguments: ['game.love'],
+        canvas: document.getElementById('canvas'),
+        print: console.log,
+        printErr: console.warn,
+
+        setStatus: function (text) {
+          if (!text) {
+            // Empty string = all deps done → start game
+            hideOverlay();
+            return;
+          }
+          // Emscripten progress format: "Loading (1/4)"
+          const m = text.match(/\((\d+)\/(\d+)\)/);
+          if (m) {
+            const pct = 20 + Math.round((+m[1] / +m[2]) * 75);
+            setStatus('Loading assets… ' + m[1] + ' / ' + m[2], pct);
+          } else {
+            setStatus(text, 50);
+          }
+        },
+
+        totalDependencies: 0,
+        monitorRunDependencies: function (left) {
+          this.totalDependencies = Math.max(this.totalDependencies, left);
+          if (left === 0) {
+            Module.setStatus('');
+          } else {
+            Module.setStatus('Preparing… (' +
+              (this.totalDependencies - left) + '/' + this.totalDependencies + ')');
+          }
+        }
+      };
+
+      window.addEventListener('error', function (e) {
+        showNotice('Runtime error: ' + e.message +
+          ' — open DevTools (F12) for details.');
+      });
+
+      // Dynamically inject love.js so we can catch a load failure gracefully
+      const s = document.createElement('script');
+      s.src = 'love.js/love.js';
+      s.onerror = function () {
+        showNotice('love.js/love.js not found — place love.js runtime files in Balatro/love.js/');
+      };
+      document.body.appendChild(s);
+    }
+  })();
+  </script>
+</body>
+</html>

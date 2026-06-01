@@ -5140,6 +5140,16 @@
 
   /* ============ CLAUDE ARENA GAME ============ */
   main[data-mode="claudegame"] { display: flex; }
+
+  /* ============ BALATRO GAME ============ */
+  main[data-mode="balatro"] {
+    display: flex; padding: 0;
+    background: #0a0a0f;
+    overflow: hidden;
+  }
+  main[data-mode="balatro"] iframe {
+    width: 100%; height: 100%; border: none; display: block;
+  }
   .ca-embed-shell {
     position: relative; width: 100%; display: flex; align-items: center; justify-content: center;
     min-height: 78vh;
@@ -5278,6 +5288,10 @@
       <button class="sb-tab" data-tab="codes" title="Codes — enter a secret code">
         <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
         <span class="sb-label">Codes</span>
+      </button>
+      <button class="sb-tab" data-tab="balatro" title="Balatro — roguelike poker card game">
+        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="10" height="14" rx="2"/><path d="M8 7h2M8 10h4"/><rect x="10" y="7" width="10" height="14" rx="2" fill="none"/></svg></span>
+        <span class="sb-label">Balatro</span>
       </button>
     </nav>
 
@@ -7173,6 +7187,18 @@
         <div class="codes-feedback" id="codeFeedback"></div>
       </div>
     </div>
+  </main>
+
+  <!-- ================= BALATRO (embedded via iframe → love.js) ================= -->
+  <main data-mode="balatro" hidden>
+    <!--
+      The iframe src is set lazily in JS when the tab is first opened.
+      game files live in claude-game/Balatro/  (Lua sources + assets)
+      love.js runtime goes in claude-game/Balatro/love.js/
+      Run package-game.ps1 once to create claude-game/Balatro/game.love
+    -->
+    <iframe id="balatroFrame" src="" title="Balatro"
+            allow="autoplay; fullscreen" allowfullscreen></iframe>
   </main>
 
   <!-- ================= CLAUDE ARENA (embedded game) ================= -->
@@ -19668,6 +19694,19 @@ Takes:  {
     }
   }
 
+  /* ---------- launch Balatro in the iframe ---------- */
+  function launchBalatro() {
+    const frame = document.getElementById('balatroFrame');
+    if (frame && !frame.src) {
+      // Lazy-load: only start the iframe when the user first opens the tab
+      frame.src = 'claude-game/Balatro/index.html';
+    }
+  }
+
+  // Also trigger iframe load when the Balatro sidebar tab is clicked directly
+  document.querySelector('.sb-tab[data-tab="balatro"]')
+    ?.addEventListener('click', launchBalatro);
+
   /* ---------- CODE REDEMPTION ---------- */
   const codeInput = document.getElementById('codeInput');
   const codeGo = document.getElementById('codeGo');
@@ -19680,6 +19719,14 @@ Takes:  {
       codeFb.innerHTML = 'Code accepted — launching Claude Arena… '
         + '<a href="' + CLAUDE_SUBLINK + '" target="_blank" rel="noopener" '
         + 'style="color:var(--b);text-decoration:underline;">open full-screen ↗</a>';
+      codeFb.className = 'codes-feedback ok';
+    },
+    'balatro': () => {
+      switchToTab('balatro');
+      launchBalatro();
+      codeFb.innerHTML = 'Launching Balatro… '
+        + '<a href="claude-game/Balatro/index.html" target="_blank" rel="noopener" '
+        + 'style="color:#f5d060;text-decoration:underline;">open full-screen ↗</a>';
       codeFb.className = 'codes-feedback ok';
     },
   };

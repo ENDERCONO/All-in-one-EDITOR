@@ -3349,72 +3349,23 @@
     ctx.restore();
   }
 
-  /* ---------------- FOG OF WAR ---------------- */
+  /* ---------------- VIGNETTE (replaces ray-cast fog) ---------------- */
+  // Smooth radial gradient — no hard obstacle shadows, no ray-casting overhead.
+  // visPath is set to null so all on-screen players are rendered (no culling).
   function drawFogOfWar() {
-    if (!fogCanvas || !started) { visPath = null; return; }
-    if (!me.alive) { visPath = null; return; } // show everything when dead/spectating
+    visPath = null;
+    if (!started || !me.alive) return;
     const mx = me.x - camera.x, my = me.y - camera.y;
-    const maxR = Math.hypot(VIEW_W, VIEW_H) + 60;
-
-    // Visible obstacles (in or near viewport)
-    const visObs = obstacles.filter(o => {
-      const sx = o.x - camera.x, sy = o.y - camera.y;
-      return sx < VIEW_W + 200 && sx + o.w > -200 && sy < VIEW_H + 200 && sy + o.h > -200;
-    });
-
-    // Collect ray angles: 3 per obstacle corner + boundary sweep
-    const angles = [];
-    for (const o of visObs) {
-      for (const [cx, cy] of [[o.x,o.y],[o.x+o.w,o.y],[o.x,o.y+o.h],[o.x+o.w,o.y+o.h]]) {
-        const a = Math.atan2(cy - me.y, cx - me.x);
-        angles.push(a - 0.0002, a, a + 0.0002);
-      }
-    }
-    for (let i = 0; i < 64; i++) angles.push(-Math.PI + i / 64 * Math.PI * 2);
-    angles.sort((a, b) => a - b);
-
-    // Cast ray for each angle, find nearest obstacle
-    const pts = [];
-    for (const angle of angles) {
-      const dx = Math.cos(angle), dy = Math.sin(angle);
-      let minT = maxR;
-      for (const o of visObs) {
-        const tx1 = dx === 0 ? -1e9 : (o.x - me.x) / dx;
-        const tx2 = dx === 0 ?  1e9 : (o.x + o.w - me.x) / dx;
-        const ty1 = dy === 0 ? -1e9 : (o.y - me.y) / dy;
-        const ty2 = dy === 0 ?  1e9 : (o.y + o.h - me.y) / dy;
-        const tmin = Math.max(Math.min(tx1, tx2), Math.min(ty1, ty2));
-        const tmax = Math.min(Math.max(tx1, tx2), Math.max(ty1, ty2));
-        if (tmax >= 0 && tmin <= tmax && tmin >= 0 && tmin < minT) minT = tmin;
-      }
-      pts.push([mx + dx * minT, my + dy * minT]);
-    }
-
-    // Build visibility Path2D (used for enemy culling in drawPlayer)
-    const vp = new Path2D();
-    vp.moveTo(pts[0][0], pts[0][1]);
-    for (let i = 1; i < pts.length; i++) vp.lineTo(pts[i][0], pts[i][1]);
-    vp.closePath();
-    visPath = vp;
-
-    // Draw dark fog on offscreen canvas — lighter shade so terrain still readable
-    fogCtx.clearRect(0, 0, VIEW_W, VIEW_H);
-    fogCtx.fillStyle = 'rgba(0,0,0,0.55)';
-    fogCtx.fillRect(0, 0, VIEW_W, VIEW_H);
-    // Punch out the visible polygon
-    fogCtx.globalCompositeOperation = 'destination-out';
-    fogCtx.fillStyle = 'rgba(255,255,255,1)';
-    fogCtx.fill(vp);
-    // Soft vignette fade at edges of visibility radius
-    const fadeR1 = Math.min(VIEW_W, VIEW_H) * 0.35, fadeR2 = Math.min(VIEW_W, VIEW_H) * 0.55;
-    const grad = fogCtx.createRadialGradient(mx, my, fadeR1, mx, my, fadeR2);
-    grad.addColorStop(0, 'rgba(255,255,255,0)');
-    grad.addColorStop(1, 'rgba(255,255,255,0.42)');
-    fogCtx.fillStyle = grad;
-    fogCtx.fillRect(0, 0, VIEW_W, VIEW_H);
-    fogCtx.globalCompositeOperation = 'source-over';
-
-    ctx.drawImage(fogCanvas, 0, 0, VIEW_W, VIEW_H);
+    const inner = Math.min(VIEW_W, VIEW_H) * 0.28;
+    const outer = Math.hypot(VIEW_W, VIEW_H) * 0.62;
+    const grad = ctx.createRadialGradient(mx, my, inner, mx, my, outer);
+    grad.addColorStop(0,   'rgba(0,0,0,0)');
+    grad.addColorStop(0.6, 'rgba(0,0,0,0.18)');
+    grad.addColorStop(1,   'rgba(0,0,0,0.54)');
+    ctx.save();
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    ctx.restore();
   }
 
   /* ---------------- SETTINGS PANEL ---------------- */

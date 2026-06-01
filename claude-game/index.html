@@ -23,6 +23,11 @@
   /* Root container — JS sizes this dynamically to fit the viewport */
   #caRoot{ position:relative; flex-shrink:0; overflow:hidden; }
 
+  /* Force-hide legacy DOM HUD elements — canvas draws all in-game UI now.
+     These rules fire even if old cached HTML still has those elements. */
+  .ca-rail, .ca-ult, .ca-hud, .ca-help-bar,
+  #caLeaderboard, #caSettingsBtn { display: none !important; }
+
   /* Canvas has no fixed CSS size — JS sets it to the letterboxed display size */
   #caCanvas{
     display:block; background:#0f0f12;
