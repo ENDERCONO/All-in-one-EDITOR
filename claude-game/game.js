@@ -2151,63 +2151,7 @@
   }
 
   /* ---------------- HUD ---------------- */
-  function updateHud() {
-    const d = dom;
-    if (d.hp) {
-      const emx = effMaxHp(); const f = Math.max(0, me.hp / emx); d.hpFill.style.width = (f * 100) + '%';
-      d.hpFill.style.background = f > 0.5 ? '#2fd47f' : f > 0.25 ? '#ffb13b' : '#ff3b5c'; d.hpText.textContent = Math.ceil(me.hp) + ' / ' + emx;
-    }
-    if (d.lvl) { d.lvl.textContent = 'LV ' + me.level; d.xpFill.style.width = Math.min(100, (me.xp / xpForLevel(me.level)) * 100) + '%'; }
-    if (d.dashFill) { const edc = effDashCd(); const cd = Math.max(0, edc - (Date.now() - lastDash)); d.dashFill.style.width = ((1 - cd / edc) * 100) + '%'; d.dashTxt.textContent = cd > 0 ? (cd / 1000).toFixed(1) + 's' : 'READY'; }
-    if (d.wallFill) { const cd = Math.max(0, WALL_CD - (Date.now() - lastWall)); d.wallFill.style.width = ((1 - cd / WALL_CD) * 100) + '%'; d.wallTxt.textContent = cd > 0 ? (cd / 1000).toFixed(1) + 's' : 'READY'; }
-    // Secondary ability block — label + value + optional bar
-    if (d.secondaryLab) {
-      let lab = '2nd Ability', val = '', barPct = -1, barColor = 'var(--ult)';
-      switch (me.char) {
-        case 'daniel':
-          lab = 'Return by Death'; val = me.rbdBar + ' / 3';
-          barPct = me.rbdBar / 3; barColor = '#2ecc71'; break;
-        case 'arthur':
-          lab = 'Invisibility Bar';
-          val = me.arthurInvis ? 'ACTIVE' : Math.round(me.arthurInvisBar) + '/150';
-          barPct = me.arthurInvisBar / 150; barColor = '#ff6ec7'; break;
-        case 'fofo':
-          if (me.fofoUltActive) {
-            lab = 'Forsaken Timer'; val = me.fofoUltTimer.toFixed(1) + 's';
-            barPct = me.fofoUltTimer / 40; barColor = '#9b59b6';
-          } else {
-            lab = 'Forsaken CD';
-            const fofoCD = Math.max(0, 40 - (Date.now() - me.fofoLastEndTime) / 1000);
-            val = fofoCD > 0 ? fofoCD.toFixed(0) + 's cd' : 'READY';
-            barPct = fofoCD > 0 ? 1 - fofoCD / 40 : 1; barColor = '#9b59b6';
-          } break;
-        case 'ender':
-          if (me.enderSlowTimer > 0) { lab = 'Ender Slowed'; val = me.enderSlowTimer.toFixed(1) + 's'; barPct = me.enderSlowTimer / 5; barColor = '#a259ff'; }
-          else { lab = '+10% XP Gain'; val = ''; } break;
-        case 'zaid': lab = '+10% Speed'; val = ''; break;
-        case 'rich': lab = '+15% Bullet DMG'; val = ''; break;
-        default: lab = '2nd Ability'; val = ''; break;
-      }
-      d.secondaryLab.textContent = lab;
-      if (d.shieldTxt) d.shieldTxt.textContent = val;
-      if (d.secondaryBarWrap && d.secondaryBar) {
-        if (barPct >= 0) {
-          d.secondaryBarWrap.style.display = '';
-          d.secondaryBar.style.width = Math.min(100, barPct * 100) + '%';
-          d.secondaryBar.style.background = barColor;
-        } else {
-          d.secondaryBarWrap.style.display = 'none';
-        }
-      }
-    }
-    if (d.ultFill) {
-      const f = me.ultReady ? 1 : me.ultCharge / ULT_CHARGE_MAX;
-      d.ultFill.style.height = (f * 100) + '%';
-      d.ultFill.style.background = me.ultReady ? '#c77dff' : '#4d8bff';
-      const ultName = CHARACTERS[me.char] ? CHARACTERS[me.char].ultName : 'ULT';
-      d.ultTxt.textContent = me.ultReady ? '✦ ' + ultName + ' READY (Space)' : Math.round(me.ultCharge) + '/' + ULT_CHARGE_MAX + ' dmg';
-    }
-  }
+  function updateHud() { /* DOM HUD removed — canvas draws everything */ }
 
   /* ---------------- RENDER ---------------- */
   function draw() {
@@ -2217,9 +2161,9 @@
       ctx.save(); ctx.translate(screenShake.x, screenShake.y);
       drawFirstPerson();
       ctx.restore();
+      applyBloom(); // world bloom before HUD
       if (started) drawCanvasHud();
       if (IS_MOBILE) drawMobileOverlay();
-      applyBloom();
       return;
     }
     ctx.save();
@@ -2376,9 +2320,7 @@
     drawFofoVignette();
     drawFogOfWar();
     drawOffscreenMarkers();
-    if (started) drawCanvasHud();
-    if (IS_MOBILE) drawMobileOverlay();
-    // Daniel RBD black flash — drawn last, on top of everything
+    // Daniel RBD black flash — drawn last inside the shake block
     if (rbdFlash.active && rbdFlash.alpha > 0) {
       ctx.save();
       ctx.globalAlpha = rbdFlash.alpha;
@@ -2387,23 +2329,22 @@
       ctx.restore();
     }
     ctx.restore(); // end screen shake translate
+    // Bloom applied to the game world BEFORE the HUD — prevents HUD from being doubled by bloom
     applyBloom();
+    if (started) drawCanvasHud();
+    if (IS_MOBILE) drawMobileOverlay();
   }
 
-  // Bloom: downscale current frame → 1/4 canvas, composite back blurred with 'lighter' blend.
-  // The downscale naturally averages pixels (soft blur), ctx.filter adds extra spread.
+  // Bloom: downscale to 1/4 canvas (natural averaging = free blur), composite back with lighter blend.
+  // No ctx.filter — that's software-rasterized on many drivers and kills performance.
   function applyBloom() {
     if (!bloomCanvas || !bloomCtx || !started) return;
-    // Capture current frame at 1/4 resolution
     bloomCtx.clearRect(0, 0, bloomCanvas.width, bloomCanvas.height);
     bloomCtx.drawImage(canvas, 0, 0, bloomCanvas.width, bloomCanvas.height);
-    // Composite back at full size with additive blend + extra blur
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.18;
-    ctx.filter = 'blur(6px)';
+    ctx.globalAlpha = 0.22;
     ctx.drawImage(bloomCanvas, 0, 0, VIEW_W, VIEW_H);
-    ctx.filter = 'none';
     ctx.restore();
   }
 
@@ -2418,84 +2359,14 @@
       ctx.moveTo(x+r, y); ctx.arcTo(x+w,y, x+w,y+h, r); ctx.arcTo(x+w,y+h, x,y+h, r);
       ctx.arcTo(x,y+h, x,y, r); ctx.arcTo(x,y, x+w,y, r); ctx.closePath();
     };
-    // Draw a compact labelled bar block; returns block height+gap
     const BAR_BG = 'rgba(12,12,16,0.90)', BAR_TRACK = '#1c1c26', BAR_BORDER = 'rgba(255,255,255,0.07)';
-    function drawBlock(x, y, w, label, value, frac, fillCol, noBar) {
-      const bh = noBar ? 24 : 30, br = 6;
-      ctx.fillStyle = BAR_BG; rrect(x,y,w,bh,br); ctx.fill();
-      ctx.strokeStyle = BAR_BORDER; ctx.lineWidth = 1; rrect(x,y,w,bh,br); ctx.stroke();
-      ctx.font = '9px JetBrains Mono,monospace';
-      ctx.textAlign = 'left'; ctx.fillStyle = '#666'; ctx.fillText(label, x+7, y+(noBar?15:12));
-      ctx.textAlign = 'right'; ctx.fillStyle = fillCol || '#ececef';
-      ctx.fillText(value, x+w-7, y+(noBar?15:12));
-      if (!noBar) {
-        ctx.fillStyle = BAR_TRACK; ctx.fillRect(x+7, y+18, w-14, 5);
-        ctx.fillStyle = fillCol || '#ececef';
-        ctx.fillRect(x+7, y+18, (w-14) * Math.max(0,Math.min(1,frac||0)), 5);
-      }
-      return bh + 4;
-    }
 
-    // ── LEFT PANEL ───────────────────────────────────────────────────────────
-    const LX = 14, LW = 180;
-    let ly = 14;
-
-    // HP
-    const hpF = Math.max(0, me.hp / effMaxHp());
-    ly += drawBlock(LX, ly, LW, 'HEALTH', Math.ceil(me.hp)+' / '+effMaxHp(), hpF,
-      hpF > 0.5 ? '#2fd47f' : hpF > 0.25 ? '#ffb13b' : '#ff3b5c');
-
-    // XP / Level
-    const xpF = Math.min(1, me.xp / Math.max(1, xpForLevel(me.level)));
-    ly += drawBlock(LX, ly, LW, 'LEVEL '+me.level, Math.round(me.xp)+' / '+xpForLevel(me.level)+' XP', xpF, '#c77dff');
-
-    // Dash
-    const edc = effDashCd(), dashRem = Math.max(0, edc-(Date.now()-lastDash));
-    ly += drawBlock(LX, ly, LW, 'DASH  [E]', dashRem > 0 ? (dashRem/1000).toFixed(1)+'s' : 'READY',
-      1-dashRem/edc, '#4d8bff');
-
-    // Wall
-    const wallRem = Math.max(0, WALL_CD-(Date.now()-lastWall));
-    ly += drawBlock(LX, ly, LW, 'WALL  [Q]', wallRem > 0 ? (wallRem/1000).toFixed(1)+'s' : 'READY',
-      1-wallRem/WALL_CD, '#4d8bff');
-
-    // Ammo / Reload
-    const noRl = (me.mods.noReload||0) > 0;
-    if (noRl) {
-      ly += drawBlock(LX, ly, LW, 'AMMO  [∞]', '∞ / ∞', 1, '#2fd47f');
-    } else if (me.reloading) {
-      const rFrac = 1 - me.reloadTimer / effReloadTime();
-      ly += drawBlock(LX, ly, LW, 'RELOADING [R]',
-        me.reloadTimer.toFixed(1)+'s', rFrac, '#ffb13b');
-    } else {
-      const amF = me.ammo / effMaxAmmo();
-      ly += drawBlock(LX, ly, LW, 'AMMO  [R]',
-        me.ammo+' / '+effMaxAmmo(), amF,
-        amF < 0.25 ? '#ff3b5c' : amF < 0.5 ? '#ffb13b' : '#ececef');
-    }
-
-    // Character secondary
-    let secLab = '', secVal = '', secF = -1, secCol = '#c77dff';
-    switch (me.char) {
-      case 'daniel': secLab='RETURN BY DEATH'; secVal=me.rbdBar+'/3'; secF=me.rbdBar/3; secCol='#2ecc71'; break;
-      case 'arthur': secLab='INVISIBILITY [R]'; secVal=me.arthurInvis?'ACTIVE':Math.round(me.arthurInvisBar)+'/150'; secF=me.arthurInvisBar/150; secCol='#ff6ec7'; break;
-      case 'fofo':
-        if (me.fofoUltActive){secLab='FORSAKEN';secVal=me.fofoUltTimer.toFixed(1)+'s';secF=me.fofoUltTimer/40;secCol='#9b59b6';}
-        else{const cd=Math.max(0,40-(Date.now()-me.fofoLastEndTime)/1000);secLab='FORSAKEN CD';secVal=cd>0?cd.toFixed(0)+'s':'READY';secF=cd>0?1-cd/40:1;secCol='#9b59b6';}
-        break;
-      case 'ender': if(me.enderSlowTimer>0){secLab='ENDER SLOWED';secVal=me.enderSlowTimer.toFixed(1)+'s';secF=me.enderSlowTimer/5;secCol='#a259ff';}else{secLab='+10% XP GAIN';secF=-1;}break;
-      case 'zaid': secLab='+10% SPEED'; break;
-      case 'rich': secLab='+15% BULLET DMG'; break;
-      default: secLab='2ND ABILITY'; break;
-    }
-    ly += drawBlock(LX, ly, LW, secLab, secVal, secF, secCol, secF < 0);
-
-    // ── RADAR MINIMAP (below HUD blocks, always shows all players) ───────────
+    // ── RADAR MINIMAP (bottom-left, always shows all players) ────────────────
     {
-      const RAD_R = 44;                         // pixel radius of the radar disc
-      const RAD_CX = LX + RAD_R + 1;           // horizontal centre
-      const RAD_CY = ly + 12 + RAD_R;          // vertical centre (12px gap after blocks)
-      const WORLD_RADAR_R = 3200;              // world-unit radius shown in radar
+      const RAD_R = 44;
+      const RAD_CX = 14 + RAD_R + 1;           // 14px margin from left
+      const RAD_CY = VIEW_H - RAD_R - 26;       // margin from bottom (label clears edge)
+      const WORLD_RADAR_R = 3200;
 
       // Background disc
       ctx.save();
@@ -2506,10 +2377,6 @@
       // Inner range ring
       ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.arc(RAD_CX, RAD_CY, RAD_R * 0.55, 0, Math.PI*2); ctx.stroke();
-      // Label
-      ctx.font = '7px JetBrains Mono,monospace'; ctx.textAlign = 'center';
-      ctx.fillStyle = '#383846'; ctx.fillText('RADAR', RAD_CX, RAD_CY + RAD_R + 10);
-
       // Clip to disc so dots don't bleed outside
       ctx.beginPath(); ctx.arc(RAD_CX, RAD_CY, RAD_R - 1, 0, Math.PI*2); ctx.clip();
 
