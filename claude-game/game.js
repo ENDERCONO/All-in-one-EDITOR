@@ -127,16 +127,38 @@
   let socket = null;
   let lastNetUpdate = 0;
   let debugMode = false; // unlocked with code "Gemini"
-  // Scale to fill the available space, flex centers it
+  // Resize canvas buffer to match the physical display pixels (no CSS transform upscaling).
+  // The root container is sized to the letterboxed area; canvas CSS fills the root.
   function applyGameScale() {
     const root = document.getElementById('caRoot');
     if (!root) return;
-    const aw = document.body.clientWidth  || window.innerWidth;
-    const ah = document.body.clientHeight || window.innerHeight;
-    // Allow up to 1.2× on larger monitors; scales down on small screens
-    const scale = Math.min(1.2, aw / VIEW_W, ah / VIEW_H);
-    root.style.transform       = `scale(${scale.toFixed(6)})`;
-    root.style.transformOrigin = 'center center';
+    const aw = window.innerWidth;
+    const ah = window.innerHeight;
+    const scale = Math.min(aw / VIEW_W, ah / VIEW_H);
+    const dpr   = window.devicePixelRatio || 1;
+    const totalScale = scale * dpr;
+    const cssW = Math.floor(VIEW_W * scale);
+    const cssH = Math.floor(VIEW_H * scale);
+    root.style.width  = cssW + 'px';
+    root.style.height = cssH + 'px';
+    root.style.transform = '';
+    if (!canvas) return;
+    canvas.style.width  = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    const bw = Math.round(VIEW_W * totalScale);
+    const bh = Math.round(VIEW_H * totalScale);
+    if (canvas.width !== bw || canvas.height !== bh) {
+      canvas.width  = bw;
+      canvas.height = bh;
+    }
+    if (ctx) ctx.setTransform(totalScale, 0, 0, totalScale, 0, 0);
+    if (fogCanvas) {
+      if (fogCanvas.width !== bw || fogCanvas.height !== bh) {
+        fogCanvas.width  = bw;
+        fogCanvas.height = bh;
+      }
+      if (fogCtx) fogCtx.setTransform(totalScale, 0, 0, totalScale, 0, 0);
+    }
   }
   window.addEventListener('resize', applyGameScale);
 
@@ -581,11 +603,17 @@
 
   /* ---------------- TOAST ---------------- */
   let toastTimer = null;
-  function toast(m) { 
+  function toast(m) {
     if (!toastEl) return; toastEl.textContent = m; toastEl.classList.add('show');
-    clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1800); 
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1800);
   }
-  function setNet(t, c) { if (netEl) { netEl.textContent = t; } if (dotEl) { dotEl.className = 'ca-status-dot' + (c ? ' ' + c : ''); } }
+  // Connection state stored in JS vars (DOM elements for these were removed)
+  let _netText = 'connecting…', _netOk = false;
+  function setNet(t, c) {
+    _netText = t; _netOk = (c === 'ok');
+    if (netEl) { netEl.textContent = t; }
+    if (dotEl) { dotEl.className = 'ca-status-dot' + (c ? ' ' + c : ''); }
+  }
 
   /* ---------------- NETWORK CONTROLLER ---------------- */
   function setupSockets() {
@@ -1439,12 +1467,31 @@
         me.pitch = clamp((me.pitch || 0) - (e.movementY || 0) * sens * 0.55, -Math.PI / 2, Math.PI / 2);
       }
     });
-    canvas.addEventListener('click', () => {
+    canvas.addEventListener('click', e => {
       if (firstPersonMode && started && document.pointerLockElement !== canvas) {
         canvas.requestPointerLock().catch(() => {});
+        return;
+      }
+      if (started && !firstPersonMode) {
+        const s = rectScale();
+        const cx = (e.clientX - s.left) * s.sx;
+        const cy = (e.clientY - s.top) * s.sy;
+        // Settings pill click zone (bottom-right corner)
+        if (cx > VIEW_W - 120 && cy > VIEW_H - 28) toggleSettingsPanel();
       }
     });
-    canvas.addEventListener('mousedown', e => { if (e.button === 0) { mouse.down = true; fire(); } });
+    canvas.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      mouse.down = true;
+      // Don't fire when clicking the settings pill zone (bottom-right corner)
+      if (started && !firstPersonMode) {
+        const s = rectScale();
+        const cx = (e.clientX - s.left) * s.sx;
+        const cy = (e.clientY - s.top) * s.sy;
+        if (cx > VIEW_W - 120 && cy > VIEW_H - 28) { mouse.down = false; return; }
+      }
+      fire();
+    });
     window.addEventListener('mouseup', e => { if (e.button === 0) mouse.down = false; });
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     window.addEventListener('keydown', e => {
@@ -2091,7 +2138,7 @@
     // ── Adrenaline decay ──
     if (adrenalineTimer > 0) { adrenalineTimer -= dt; if (adrenalineTimer < 0) adrenalineTimer = 0; }
     if (countEl) countEl.textContent = 1 + Object.keys(others).length;
-    updateHud(); updateLeaderboard();
+    updateHud();
   }
 
   /* ---------------- HUD ---------------- */
@@ -2436,13 +2483,12 @@
     if (me.ultReady) { ctx.fillStyle = '#888'; ctx.fillText('[SPC]', UX+UW/2, UY+UH+23); }
 
     // ── TOP-CENTER STATUS PILL ───────────────────────────────────────────────
-    const dotOk = dotEl && dotEl.classList.contains('ok');
-    const netTxt = (netEl ? netEl.textContent : 'connecting…') + '  ·  ' + (1+Object.keys(others).length) + ' players';
+    const netTxt = _netText + '  ·  ' + (1+Object.keys(others).length) + ' players';
     ctx.font = '10px JetBrains Mono,monospace'; ctx.textAlign = 'center';
     const pillW = ctx.measureText(netTxt).width + 28;
     ctx.fillStyle = 'rgba(12,12,16,0.88)'; rrect(VIEW_W/2-pillW/2, 9, pillW, 22, 11); ctx.fill();
     ctx.strokeStyle = BAR_BORDER; ctx.lineWidth = 1; rrect(VIEW_W/2-pillW/2, 9, pillW, 22, 11); ctx.stroke();
-    ctx.fillStyle = dotOk ? '#2fd47f' : '#ff3b5c';
+    ctx.fillStyle = _netOk ? '#2fd47f' : '#ff3b5c';
     ctx.fillText('●  '+netTxt, VIEW_W/2, 24);
 
     // ── LEADERBOARD (top-right) ──────────────────────────────────────────────
@@ -2480,10 +2526,17 @@
       ctx.fillStyle='#00ff88'; ctx.fillText('⚙ DEBUG MODE', VIEW_W/2, 20);
     }
 
-    // ── SETTINGS HINT (bottom-right) ─────────────────────────────────────────
-    ctx.font='9px JetBrains Mono,monospace'; ctx.textAlign='right';
-    ctx.fillStyle='rgba(255,255,255,0.14)';
-    ctx.fillText('[K] Settings', VIEW_W-10, VIEW_H-8);
+    // ── SETTINGS PILL (bottom-right, clickable via canvas click handler) ────────
+    {
+      const stxt = '⚙  Settings';
+      ctx.font = '9px JetBrains Mono,monospace';
+      const sw = ctx.measureText(stxt).width + 20, sh = 18;
+      const sx2 = VIEW_W - sw - 6, sy2 = VIEW_H - sh - 5;
+      ctx.fillStyle = 'rgba(14,14,18,0.82)'; rrect(sx2, sy2, sw, sh, 5); ctx.fill();
+      ctx.strokeStyle = 'rgba(199,125,255,0.30)'; ctx.lineWidth = 1; rrect(sx2, sy2, sw, sh, 5); ctx.stroke();
+      ctx.fillStyle = 'rgba(199,125,255,0.70)'; ctx.textAlign = 'center';
+      ctx.fillText(stxt, sx2 + sw / 2, sy2 + 12);
+    }
 
     ctx.restore();
   }
@@ -3509,16 +3562,6 @@
         firstPersonMode = !firstPersonMode;
         if (!firstPersonMode && document.pointerLockElement === canvas) document.exitPointerLock();
         _fpsUpdate();
-        // Fade out DOM HUD panels in FPS mode — canvas draws its own HUD
-        const _rail = document.querySelector('.ca-rail');
-        const _ult  = document.querySelector('.ca-ult');
-        const _help = document.querySelector('.ca-help-bar');
-        const _lb   = document.getElementById('caLeaderboard');
-        const _tr   = 'opacity .25s, pointer-events 0s';
-        if (_rail) { _rail.style.transition = _tr; _rail.style.opacity = firstPersonMode ? '0' : ''; _rail.style.pointerEvents = firstPersonMode ? 'none' : ''; }
-        if (_ult)  { _ult.style.transition  = _tr; _ult.style.opacity  = firstPersonMode ? '0' : ''; _ult.style.pointerEvents  = firstPersonMode ? 'none' : ''; }
-        if (_help) { _help.style.transition = _tr; _help.style.opacity = firstPersonMode ? '0' : ''; }
-        if (_lb)   { _lb.style.opacity = firstPersonMode ? '0.35' : ''; }
         toast(firstPersonMode ? 'First Person: ON  (click canvas to lock mouse)' : 'First Person: OFF');
       };
       fpsRow.appendChild(fpsLab); fpsRow.appendChild(fpsBtn);
@@ -3659,39 +3702,6 @@
       renderControls();
     }, true);
 
-    // Always build the settings button via JS so it's guaranteed to exist
-    const oldBtn = root.querySelector('#caSettingsBtn');
-    if (oldBtn) oldBtn.remove(); // remove any stale HTML version
-    const caRootEl = root.querySelector('#caRoot');
-    if (caRootEl) {
-      const sb = document.createElement('button');
-      sb.id = 'caSettingsBtn';
-      sb.innerHTML = '&#9881; Settings';
-      sb.style.cssText = [
-        'position:absolute',
-        'bottom:50px',
-        'right:18px',
-        'z-index:35',         // above gate overlay (30) so always clickable
-        'pointer-events:auto',
-        'background:rgba(14,14,18,.92)',
-        'border:1px solid #3a3a44',
-        'color:#c77dff',
-        'cursor:pointer',
-        'padding:7px 16px',
-        'border-radius:8px',
-        'font-family:"JetBrains Mono",monospace',
-        'font-size:11px',
-        'font-weight:600',
-        'letter-spacing:.08em',
-        'white-space:nowrap',
-        'transition:border-color .15s,background .15s',
-        'box-shadow:0 2px 12px rgba(0,0,0,.5)'
-      ].join(';');
-      sb.addEventListener('mouseenter', () => { sb.style.borderColor='#c77dff'; sb.style.background='rgba(30,10,42,.95)'; });
-      sb.addEventListener('mouseleave', () => { sb.style.borderColor='#3a3a44'; sb.style.background='rgba(14,14,18,.92)'; });
-      sb.addEventListener('click', toggleSettingsPanel);
-      caRootEl.appendChild(sb);
-    }
   }
 
   function toggleSettingsPanel() {
@@ -3995,26 +4005,20 @@
     if (opts.pathBase) PATH_BASE = opts.pathBase;
     if (inited) return; inited = true;
 
-    applyGameScale(); // fill viewport immediately
-
+    // cacheDom first so canvas/ctx exist before applyGameScale sizes the buffer
     const root = opts.mount ? document.querySelector(opts.mount) : document; cacheDom(root);
 
-    // High-DPI canvas: render at device pixel ratio for sharp text/lines on retina screens
-    const _dpr = window.devicePixelRatio || 1;
-    if (_dpr > 1 && canvas) {
-      canvas.width  = VIEW_W * _dpr;
-      canvas.height = VIEW_H * _dpr;
-      // CSS size stays 900×600; the transform in applyGameScale handles display scaling
-      ctx = canvas.getContext('2d');
-      ctx.scale(_dpr, _dpr);
-    }
+    // Size canvas buffer to physical display pixels (scale × devicePixelRatio)
+    applyGameScale();
 
-    // Fog canvas matches main canvas resolution
+    // Fog canvas — created after applyGameScale so we can copy canvas buffer dimensions
     fogCanvas = document.createElement('canvas');
-    fogCanvas.width  = VIEW_W * _dpr;
-    fogCanvas.height = VIEW_H * _dpr;
+    fogCanvas.width  = canvas.width;
+    fogCanvas.height = canvas.height;
     fogCtx = fogCanvas.getContext('2d');
-    if (_dpr > 1) fogCtx.scale(_dpr, _dpr);
+    const _initDpr   = window.devicePixelRatio || 1;
+    const _initScale = Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H);
+    fogCtx.setTransform(_initScale * _initDpr, 0, 0, _initScale * _initDpr, 0, 0);
     obstacles = buildObstacles(); loadCharAssets();
     try { const sc = localStorage.getItem('caChar'); if (sc && CHARACTERS[sc]) selectedChar = sc; } catch (e) {}
 
@@ -4032,7 +4036,7 @@
     if (joinBtn) joinBtn.addEventListener('click', doStart);
     if (nameInput) { nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') doStart(); }); try { nameInput.value = localStorage.getItem('caName') || ''; } catch (e) {} }
     try { const sb = JSON.parse(localStorage.getItem('caBindings')); if (sb) Object.assign(bindings, sb); } catch (ex) {}
-    buildLeaderboard(root); buildSettingsPanel(root); buildEnderPop(root); buildDeathPicker(root); requestAnimationFrame(tick);
+    buildSettingsPanel(root); buildEnderPop(root); buildDeathPicker(root); requestAnimationFrame(tick);
   };
   
   ClaudeArena.show = function () { const ni = document.querySelector('#caName'); if (ni) setTimeout(() => ni.focus(), 80); };

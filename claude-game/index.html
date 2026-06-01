@@ -20,85 +20,14 @@
     display:flex; align-items:center; justify-content:center;
   }
 
-  /* All in-game HUD is drawn on canvas — hide the old HTML elements */
-  .ca-rail, .ca-ult, .ca-hud, .ca-help-bar, #caLeaderboard { display: none !important; }
-  /* Keep settings button visible but more subtle */
-  #caSettingsBtn { bottom: 8px !important; right: 8px !important; opacity: 0.55; font-size: 10px !important; padding: 5px 12px !important; }
-  #caSettingsBtn:hover { opacity: 1; }
+  /* Root container — JS sizes this dynamically to fit the viewport */
+  #caRoot{ position:relative; flex-shrink:0; overflow:hidden; }
 
-  /* root container — always 900×600 logical pixels; JS scales it up to 1.2×, flex keeps it centered */
-  #caRoot{ position:relative; width:900px; height:600px; flex-shrink:0; overflow:hidden; }
-
+  /* Canvas has no fixed CSS size — JS sets it to the letterboxed display size */
   #caCanvas{
-    display:block; width:900px; height:600px; background:#0f0f12;
+    display:block; background:#0f0f12;
     border:1px solid var(--border); border-radius:10px;
     box-shadow:0 24px 72px rgba(0,0,0,.65); touch-action:none;
-  }
-
-  /* ===== Left HUD rail — always in game ===== */
-  .ca-rail{
-    position:absolute; top:14px; left:14px; z-index:20;
-    display:flex; flex-direction:column; gap:6px;
-    width:174px; pointer-events:none; font-family:'JetBrains Mono',monospace;
-    transition: opacity .25s;
-  }
-  .ca-block{
-    background:rgba(14,14,18,.88); border:1px solid var(--border);
-    border-radius:9px; padding:8px 10px;
-  }
-  .ca-block .lab{
-    font-size:9px; letter-spacing:.11em; color:var(--text-dim); text-transform:uppercase;
-    margin-bottom:5px; display:flex; justify-content:space-between; align-items:center;
-  }
-  .ca-bar{ height:7px; background:#1c1c24; border-radius:5px; overflow:hidden; }
-  .ca-bar > span{ display:block; height:100%; width:0%; border-radius:5px; transition:width .12s linear; }
-  #caHpFill   { background:var(--g); }
-  #caXpFill   { background:var(--ult); }
-  #caDashFill { background:var(--b); }
-  #caWallFill { background:var(--b); }
-  #caSecondaryBar { background:var(--ult); }
-
-  /* ===== Right ULT charge bar ===== */
-  .ca-ult{
-    position:absolute; top:50%; right:16px; transform:translateY(-50%);
-    z-index:20; pointer-events:none;
-    display:flex; flex-direction:column; align-items:center; gap:8px;
-    font-family:'JetBrains Mono',monospace;
-    transition: opacity .25s;
-  }
-  .ca-ult-track{
-    width:14px; height:200px; background:#1c1c24; border:1px solid var(--border);
-    border-radius:8px; overflow:hidden; display:flex; align-items:flex-end;
-  }
-  #caUltFill{ width:100%; height:0%; background:linear-gradient(0deg,var(--ult),#e9c6ff); transition:height .15s linear; }
-  .ca-ult-lab{ font-size:9px; letter-spacing:.1em; color:var(--text-dim); text-transform:uppercase; }
-  #caUltTxt  { font-size:10px; color:var(--ult); text-align:center; width:76px; line-height:1.4; }
-
-  /* ===== Top connection pill ===== */
-  .ca-hud{
-    position:absolute; top:14px; left:50%; transform:translateX(-50%); z-index:20;
-    pointer-events:none; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-dim);
-    background:rgba(16,16,20,.80); border:1px solid var(--border); border-radius:999px;
-    padding:5px 14px; display:flex; gap:14px; align-items:center; letter-spacing:.04em;
-  }
-  .ca-hud b{ color:var(--text); }
-  .ca-status-dot{
-    width:6px; height:6px; border-radius:50%; background:var(--text-dim);
-    display:inline-block; margin-right:4px;
-  }
-  .ca-status-dot.ok { background:var(--g); box-shadow:0 0 6px var(--g); }
-  .ca-status-dot.err{ background:var(--r); }
-
-  /* ===== Bottom help hint ===== */
-  .ca-help-bar{
-    position:absolute; bottom:8px; left:50%; transform:translateX(-50%); z-index:20;
-    font-family:'JetBrains Mono',monospace; font-size:9px; color:#3a3a46;
-    line-height:1.9; pointer-events:none; white-space:nowrap;
-    transition: opacity .25s;
-  }
-  .ca-help-bar kbd{
-    background:var(--surface-2); border:1px solid var(--border); border-radius:3px;
-    padding:1px 4px; font-size:8px; color:#666; font-family:inherit;
   }
 
   /* ===== Toast ===== */
@@ -171,67 +100,8 @@
 </head>
 <body>
 <div id="caRoot">
-  <!-- Game canvas -->
-  <canvas id="caCanvas" width="900" height="600"></canvas>
-
-  <!-- Top connection status pill -->
-  <div class="ca-hud">
-    <span><span class="ca-status-dot" id="caDot"></span><span id="caNet">connecting…</span></span>
-    <span>players <b id="caCount">0</b></span>
-  </div>
-
-  <!-- Left HUD rail (health, xp, cooldowns, character secondary) -->
-  <div class="ca-rail">
-    <div class="ca-block" id="caHpBar">
-      <div class="lab"><span>Health</span><span id="caHpText">100 / 100</span></div>
-      <div class="ca-bar"><span id="caHpFill"></span></div>
-    </div>
-    <div class="ca-block">
-      <div class="lab"><span id="caLvl">LV 1</span><span style="font-size:9px;color:var(--text-dim)">XP</span></div>
-      <div class="ca-bar"><span id="caXpFill"></span></div>
-    </div>
-    <div class="ca-block">
-      <div class="lab">
-        <span>Dash <span style="opacity:.55;font-size:8px">[E]</span></span>
-        <span id="caDashTxt" style="color:var(--b)">READY</span>
-      </div>
-      <div class="ca-bar"><span id="caDashFill"></span></div>
-    </div>
-    <div class="ca-block">
-      <div class="lab">
-        <span>Wall <span style="opacity:.55;font-size:8px">[Q]</span></span>
-        <span id="caWallTxt" style="color:var(--b)">READY</span>
-      </div>
-      <div class="ca-bar"><span id="caWallFill"></span></div>
-    </div>
-    <!-- Character passive / secondary info -->
-    <div class="ca-block" id="caSecondaryBlock">
-      <div class="lab">
-        <span id="caSecondaryLab" style="font-size:9px">2nd Ability</span>
-        <span id="caShieldTxt" style="color:var(--ult);font-size:9px"></span>
-      </div>
-      <div class="ca-bar" id="caSecondaryBarWrap" style="display:none">
-        <span id="caSecondaryBar"></span>
-      </div>
-    </div>
-  </div>
-
-  <!-- Right ULT bar -->
-  <div class="ca-ult">
-    <div class="ca-ult-lab">ULT</div>
-    <div class="ca-ult-track"><div id="caUltFill"></div></div>
-    <div id="caUltTxt">0/1000</div>
-  </div>
-
-  <!-- Bottom help line -->
-  <div class="ca-help-bar">
-    <kbd>WASD</kbd> move &nbsp;
-    <kbd>E</kbd> dash &nbsp;
-    <kbd>Q</kbd> wall &nbsp;
-    <kbd>Space</kbd> ult &nbsp;
-    <kbd>R</kbd> Arthur invis &nbsp;
-    <kbd>K</kbd> settings
-  </div>
+  <!-- Game canvas — all HUD drawn here by game.js -->
+  <canvas id="caCanvas"></canvas>
 
   <!-- Card draft overlay -->
   <div class="ca-cards" id="caCards"></div>
@@ -256,7 +126,7 @@
     </div>
   </div>
 
-  <!-- NOTE: Settings button is injected by game.js (buildSettingsPanel) -->
+  <!-- Settings panel injected by game.js (buildSettingsPanel) -->
 </div>
 
 <script src="game.js"></script>
