@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: all-in-one-editor
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node start.js

@@ -27,28 +27,28 @@ if (isReal(JS_DEST) && isReal(WASM_DEST)) {
 fs.mkdirSync(DEST_DIR, { recursive: true });
 
 // Candidate sources — tried in order, first valid pair wins.
-// Includes GitHub Pages deployments (which host compiled build artifacts)
-// and raw-file paths for repos that commit their dist/ folder.
+// Raw GitHub paths pointing at compiled artifacts committed to the repos.
 const SOURCES = [
   {
-    label: 'GitHub Pages — Davidobot/love.js',
-    js:   'https://davidobot.github.io/love.js/love.js',
-    wasm: 'https://davidobot.github.io/love.js/love.wasm',
+    label: 'Davidobot/love.js — src/release',
+    js:   'https://raw.githubusercontent.com/Davidobot/love.js/master/src/release/love.js',
+    wasm: 'https://raw.githubusercontent.com/Davidobot/love.js/master/src/release/love.wasm',
   },
   {
-    label: 'raw main branch dist/',
-    js:   'https://raw.githubusercontent.com/Davidobot/love.js/master/dist/love.js',
-    wasm: 'https://raw.githubusercontent.com/Davidobot/love.js/master/dist/love.wasm',
+    label: '2dengine/love.js — 11.5',
+    js:   'https://raw.githubusercontent.com/2dengine/love.js/main/11.5/love.js',
+    wasm: 'https://raw.githubusercontent.com/2dengine/love.js/main/11.5/love.wasm',
   },
   {
-    label: 'raw main branch root',
-    js:   'https://raw.githubusercontent.com/Davidobot/love.js/master/love.js',
-    wasm: 'https://raw.githubusercontent.com/Davidobot/love.js/master/love.wasm',
+    label: 'Davidobot/love.js — src/compat',
+    js:   'https://raw.githubusercontent.com/Davidobot/love.js/master/src/compat/love.js',
+    wasm: 'https://raw.githubusercontent.com/Davidobot/love.js/master/src/compat/love.wasm',
   },
   {
-    label: 'GitHub releases API — latest asset',
+    label: 'GitHub releases API — Davidobot/love.js',
     js:   '__releases_api__',
     wasm: '__releases_api__',
+    repo: 'Davidobot/love.js',
   },
 ];
 
@@ -57,8 +57,7 @@ const SOURCES = [
     console.log(`[love.js setup] Trying: ${src.label}`);
     try {
       if (src.js === '__releases_api__') {
-        // Query GitHub releases API for binary assets
-        const releases = await fetchJSON('https://api.github.com/repos/Davidobot/love.js/releases');
+        const releases = await fetchJSON(`https://api.github.com/repos/${src.repo}/releases`);
         let found = false;
         for (const rel of releases) {
           const jsA   = (rel.assets||[]).find(a => /love\.js$/i.test(a.name));
