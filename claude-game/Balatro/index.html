@@ -155,10 +155,24 @@
         }
       };
 
-      setStatus('Loading love.js runtime…'); setBar(8);
+      // Animate the status text while the JS file downloads (can take 5–15s)
+      const loadMsgs = [
+        'Downloading love.js runtime… (388 KB)',
+        'Downloading love.js runtime… this may take a moment',
+        'Almost there… waiting for runtime',
+      ];
+      let msgIdx = 0;
+      const msgTimer = setInterval(() => {
+        msgIdx = (msgIdx + 1) % loadMsgs.length;
+        setStatus(loadMsgs[msgIdx]);
+      }, 4000);
+
+      setStatus(loadMsgs[0]); setBar(8);
       const s = document.createElement('script');
       s.src = 'love.js/love.js';
+      s.onload  = () => clearInterval(msgTimer); // Module.setStatus takes over
       s.onerror = () => {
+        clearInterval(msgTimer);
         btnPlay.disabled = false;
         setStatus('Click to start');
         setFeedback('Failed to load love.js runtime. Make sure love.js/love.js is present on the server.', 'err');
