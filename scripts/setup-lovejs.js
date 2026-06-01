@@ -27,12 +27,12 @@ if (isReal(JS_DEST) && isReal(WASM_DEST)) {
 fs.mkdirSync(DEST_DIR, { recursive: true });
 
 // Candidate sources — tried in order, first valid pair wins.
-// Raw GitHub paths pointing at compiled artifacts committed to the repos.
+// Prefer compat (single-threaded) build — no SharedArrayBuffer/COOP/COEP required.
 const SOURCES = [
   {
-    label: 'Davidobot/love.js — src/release',
-    js:   'https://raw.githubusercontent.com/Davidobot/love.js/master/src/release/love.js',
-    wasm: 'https://raw.githubusercontent.com/Davidobot/love.js/master/src/release/love.wasm',
+    label: 'Davidobot/love.js — src/compat (single-threaded)',
+    js:   'https://raw.githubusercontent.com/Davidobot/love.js/master/src/compat/love.js',
+    wasm: 'https://raw.githubusercontent.com/Davidobot/love.js/master/src/compat/love.wasm',
   },
   {
     label: '2dengine/love.js — 11.5',
@@ -40,9 +40,9 @@ const SOURCES = [
     wasm: 'https://raw.githubusercontent.com/2dengine/love.js/main/11.5/love.wasm',
   },
   {
-    label: 'Davidobot/love.js — src/compat',
-    js:   'https://raw.githubusercontent.com/Davidobot/love.js/master/src/compat/love.js',
-    wasm: 'https://raw.githubusercontent.com/Davidobot/love.js/master/src/compat/love.wasm',
+    label: 'Davidobot/love.js — src/release',
+    js:   'https://raw.githubusercontent.com/Davidobot/love.js/master/src/release/love.js',
+    wasm: 'https://raw.githubusercontent.com/Davidobot/love.js/master/src/release/love.wasm',
   },
   {
     label: 'GitHub releases API — Davidobot/love.js',
