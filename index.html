@@ -19958,8 +19958,7 @@ Takes:  {
   }
 
   window.fnCopy = function() {
-    navigator.clipboard.writeText(fnNames.join("
-")).then(function() {
+    navigator.clipboard.writeText(fnNames.join("\n")).then(function() {
       var el = document.getElementById("fn-copied");
       el.style.opacity = "1";
       setTimeout(function() { el.style.opacity = "0"; }, 1800);
