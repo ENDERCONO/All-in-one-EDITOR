@@ -6293,6 +6293,76 @@
 
     <div class="converter-grid">
 
+      <!-- BULK CONVERTER — many files → any format, individual or ZIP download -->
+      <section class="convert-card" style="grid-column: 1 / -1">
+        <h3>Bulk Converter</h3>
+        <p class="desc">Drop a whole batch of files, pick one target format, convert them all at once. Defaults to <strong>MP3&nbsp;→&nbsp;WAV</strong>, but you can convert <em>anything&nbsp;→&nbsp;anything</em> (audio · video · image). Download each result individually or grab everything as a single ZIP. Runs entirely in your browser via <a href="https://ffmpegwasm.netlify.app/" target="_blank" rel="noopener" style="color:var(--text-dim); text-decoration:underline">ffmpeg.wasm</a>.</p>
+
+        <div class="convert-drop" id="bulkUpload">
+          <div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+            </svg>
+            <div class="t">Drop files — or click to browse (multiple OK)</div>
+            <div class="s">mp3 · wav · mp4 · mov · flac · png · whatever — mix &amp; match</div>
+            <input type="file" id="bulkFile" multiple style="display:none">
+          </div>
+        </div>
+
+        <div class="convert-settings" id="bulkSettings" hidden>
+          <div class="export-slider">
+            <div class="slabel"><span>Convert all to</span></div>
+            <select id="bulkFormat" class="color-input" style="font-family:'JetBrains Mono', monospace; font-size:11px;">
+              <optgroup label="Audio">
+                <option value="wav" selected>WAV (PCM) — default</option>
+                <option value="mp3">MP3</option>
+                <option value="ogg">OGG (Vorbis)</option>
+                <option value="opus">OPUS</option>
+                <option value="flac">FLAC (lossless)</option>
+                <option value="aac">AAC</option>
+                <option value="m4a">M4A</option>
+              </optgroup>
+              <optgroup label="Video">
+                <option value="mp4">MP4 (H.264 + AAC)</option>
+                <option value="webm">WEBM (VP9 + Opus)</option>
+                <option value="mov">MOV (H.264)</option>
+                <option value="mkv">MKV (H.264)</option>
+                <option value="avi">AVI (MPEG-4)</option>
+                <option value="gif">GIF — animated</option>
+              </optgroup>
+              <optgroup label="Image (single frame from video)">
+                <option value="png">PNG</option>
+                <option value="jpg">JPG</option>
+                <option value="webp">WEBP</option>
+                <option value="bmp">BMP</option>
+              </optgroup>
+              <optgroup label="Custom (best-effort, may fail)">
+                <option value="__custom__">Type any extension…</option>
+              </optgroup>
+            </select>
+          </div>
+
+          <div class="export-slider" id="bulkCustomRow" hidden>
+            <div class="slabel"><span>Custom extension</span></div>
+            <input type="text" id="bulkCustomExt" class="color-input" placeholder="e.g. ogg, m4a, mkv…" style="font-family:'JetBrains Mono', monospace; font-size:11px;">
+          </div>
+
+          <button class="apply-btn" id="bulkConvert">Convert all →</button>
+        </div>
+
+        <div class="progress-row" id="bulkProgressRow" hidden>
+          <div class="progress-bar"><div class="progress-fill" id="bulkFill"></div></div>
+          <div class="progress-text" id="bulkText">0%</div>
+        </div>
+
+        <div id="bulkList" hidden style="margin-top:14px; border:1px solid var(--border); border-radius:10px; overflow:hidden;"></div>
+
+        <div class="export-buttons" id="bulkActions" hidden style="justify-content:flex-start; flex-wrap:wrap; gap:8px; margin-top:12px">
+          <button class="dl-btn" id="bulkZip">Download all as ZIP <span class="tag" id="bulkZipSize">—</span></button>
+          <button class="dl-btn" id="bulkClear">Clear list</button>
+        </div>
+      </section>
+
       <!-- MP4 → MP3 -->
       <section class="convert-card">
         <h3>MP4 → MP3</h3>
@@ -14567,6 +14637,268 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
       uniLog.style.display = 'none';
       uniToggleLog.textContent = 'Show log';
     }
+  });
+})();
+
+/* ============================================================
+   BULK CONVERTER — many files → one target format
+   Reuses the shared ffmpeg.wasm singleton. Defaults MP3 → WAV but
+   handles anything → anything. Per-file individual download + ZIP-all
+   (JSZip lazy-loaded on first ZIP request).
+   ============================================================ */
+(function setupBulkConverter() {
+  const bulkUpload   = document.getElementById('bulkUpload');
+  const bulkFile     = document.getElementById('bulkFile');
+  const bulkSettings = document.getElementById('bulkSettings');
+  const bulkFormat   = document.getElementById('bulkFormat');
+  const bulkCustomRow= document.getElementById('bulkCustomRow');
+  const bulkCustomExt= document.getElementById('bulkCustomExt');
+  const bulkConvert  = document.getElementById('bulkConvert');
+  const bulkProgRow  = document.getElementById('bulkProgressRow');
+  const bulkFill     = document.getElementById('bulkFill');
+  const bulkText     = document.getElementById('bulkText');
+  const bulkList     = document.getElementById('bulkList');
+  const bulkActions  = document.getElementById('bulkActions');
+  const bulkZip      = document.getElementById('bulkZip');
+  const bulkZipSize  = document.getElementById('bulkZipSize');
+  const bulkClear    = document.getElementById('bulkClear');
+
+  if (!bulkUpload) return;
+
+  // Each item: { id, file, status:'queued'|'done'|'error', outBlob, outName, error }
+  let items = [];
+  let nextId = 1;
+  let jszipLoading = null;
+
+  // ---- helpers ----
+  function fmtBytes(n) {
+    return (typeof formatBytes === 'function') ? formatBytes(n)
+      : (n > 1e6 ? (n/1e6).toFixed(1)+' MB' : (n/1e3).toFixed(0)+' KB');
+  }
+  function notify(msg) { if (typeof toast === 'function') toast(msg); }
+
+  function targetExt() {
+    const fmt = bulkFormat.value;
+    if (fmt === '__custom__') return (bulkCustomExt.value || 'bin').trim().toLowerCase().replace(/^\./, '');
+    return fmt;
+  }
+
+  // Same arg mapping as the Universal Converter, kept local & self-contained.
+  function ffArgs(inputName, outputName, ext) {
+    const args = ['-y', '-i', inputName];
+    let mime = 'application/octet-stream';
+    switch (ext) {
+      case 'mp4':  args.push('-c:v','libx264','-preset','ultrafast','-crf','23','-c:a','aac','-b:a','128k','-pix_fmt','yuv420p','-movflags','+faststart'); mime='video/mp4'; break;
+      case 'webm': args.push('-c:v','libvpx-vp9','-deadline','realtime','-cpu-used','8','-c:a','libopus'); mime='video/webm'; break;
+      case 'mov':  args.push('-c:v','libx264','-preset','ultrafast','-c:a','aac'); mime='video/quicktime'; break;
+      case 'mkv':  args.push('-c:v','libx264','-preset','ultrafast','-c:a','aac'); mime='video/x-matroska'; break;
+      case 'avi':  args.push('-c:v','mpeg4','-c:a','libmp3lame'); mime='video/x-msvideo'; break;
+      case 'gif':  args.push('-vf','fps=12,scale=480:-2:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse'); mime='image/gif'; break;
+      case 'mp3':  args.push('-vn','-c:a','libmp3lame','-b:a','192k'); mime='audio/mpeg'; break;
+      case 'wav':  args.push('-vn','-c:a','pcm_s16le'); mime='audio/wav'; break;
+      case 'ogg':  args.push('-vn','-c:a','libvorbis'); mime='audio/ogg'; break;
+      case 'opus': args.push('-vn','-c:a','libopus'); mime='audio/opus'; break;
+      case 'flac': args.push('-vn','-c:a','flac'); mime='audio/flac'; break;
+      case 'aac':  args.push('-vn','-c:a','aac','-b:a','192k'); mime='audio/aac'; break;
+      case 'm4a':  args.push('-vn','-c:a','aac','-b:a','192k'); mime='audio/mp4'; break;
+      case 'png': case 'jpg': case 'jpeg': case 'webp': case 'bmp':
+        args.push('-vframes','1'); mime = 'image/' + (ext === 'jpg' ? 'jpeg' : ext); break;
+      default: break; // best-effort for custom exts
+    }
+    args.push(outputName);
+    return { args, mime };
+  }
+
+  // ---- file intake ----
+  function addFiles(fileList) {
+    const arr = Array.from(fileList || []);
+    if (!arr.length) return;
+    for (const f of arr) items.push({ id: nextId++, file: f, status: 'queued', outBlob: null, outName: null, error: null });
+    bulkSettings.hidden = false;
+    // Smart default: if everything dropped is audio, keep WAV; if all video, suggest mp4; all image -> png
+    if (items.every(it => it.file.type.startsWith('image/'))) { if (bulkFormat.value === 'wav') bulkFormat.value = 'png'; }
+    else if (items.every(it => it.file.type.startsWith('video/'))) { if (bulkFormat.value === 'wav') bulkFormat.value = 'mp4'; }
+    bulkCustomRow.hidden = (bulkFormat.value !== '__custom__');
+    render();
+  }
+
+  bulkUpload.addEventListener('click', (e) => { if (e.target.tagName !== 'INPUT') bulkFile.click(); });
+  bulkFile.addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
+  bulkUpload.addEventListener('dragover', e => { e.preventDefault(); bulkUpload.classList.add('drag'); });
+  bulkUpload.addEventListener('dragleave', () => bulkUpload.classList.remove('drag'));
+  bulkUpload.addEventListener('drop', e => { e.preventDefault(); bulkUpload.classList.remove('drag'); addFiles(e.dataTransfer.files); });
+
+  bulkFormat.addEventListener('change', () => { bulkCustomRow.hidden = (bulkFormat.value !== '__custom__'); });
+
+  // ---- render the list ----
+  function render() {
+    if (!items.length) { bulkList.hidden = true; bulkActions.hidden = true; bulkSettings.hidden = true; return; }
+    bulkList.hidden = false;
+    const anyDone = items.some(it => it.status === 'done');
+    bulkActions.hidden = !anyDone;
+
+    bulkList.innerHTML = items.map((it, idx) => {
+      const border = idx < items.length - 1 ? 'border-bottom:1px solid var(--border);' : '';
+      const safe = it.file.name.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+      let right;
+      if (it.status === 'done') {
+        right = "<button class='dl-btn bulk-dl' data-id='" + it.id + "' style='min-width:auto;padding:5px 12px;'>Download <span class='tag'>" + fmtBytes(it.outBlob.size) + "</span></button>";
+      } else if (it.status === 'error') {
+        right = "<span style='font-family:JetBrains Mono,monospace;font-size:10px;color:var(--r);'>failed</span>";
+      } else {
+        right = "<span style='font-family:JetBrains Mono,monospace;font-size:10px;color:var(--text-faint);'>queued</span>";
+      }
+      const sub = it.status === 'done'
+        ? ("→ " + (it.outName || '').replace(/^.*\./,'').toUpperCase())
+        : (it.status === 'error' ? (it.error || 'error').slice(0,60) : fmtBytes(it.file.size));
+      return "<div style='display:flex;align-items:center;gap:10px;padding:11px 16px;" + border + "'>"
+        + "<svg viewBox='0 0 24 24' width='15' height='15' fill='none' stroke='var(--text-faint)' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' style='flex-shrink:0'><path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/><polyline points='14 2 14 8 20 8'/></svg>"
+        + "<span style='flex:1;min-width:0;font-size:13px;color:var(--text);word-break:break-all;font-family:JetBrains Mono,monospace;'>" + safe
+        + "<span style='display:block;font-size:10px;color:var(--text-faint);margin-top:2px;'>" + sub + "</span></span>"
+        + right + "</div>";
+    }).join("");
+
+    bulkList.querySelectorAll('.bulk-dl').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const it = items.find(x => x.id === +btn.dataset.id);
+        if (it && it.outBlob) downloadBlob(it.outBlob, it.outName);
+      });
+    });
+  }
+
+  function downloadBlob(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  // ---- convert all ----
+  bulkConvert.addEventListener('click', async () => {
+    const queued = items.filter(it => it.status !== 'done');
+    if (!queued.length) { notify('Nothing left to convert'); return; }
+
+    const ext = targetExt();
+    if (bulkFormat.value === '__custom__' && !ext) { notify('Type a custom extension'); return; }
+
+    bulkConvert.disabled = true;
+    bulkProgRow.hidden = false;
+    bulkFill.style.width = '0%';
+    bulkText.textContent = 'Loading engine…';
+
+    let ff;
+    try {
+      ff = await window.loadSharedFFmpeg((pct, msg) => {
+        bulkFill.style.width = Math.max(3, Math.round(pct * 0.15)) + '%';
+        if (msg) bulkText.textContent = msg;
+      });
+    } catch (e) {
+      bulkText.textContent = 'Engine failed to load';
+      notify('Could not load the conversion engine');
+      bulkConvert.disabled = false;
+      return;
+    }
+
+    // Silence shared per-frame callbacks (we track at the file level).
+    window._sharedFFmpegProgressCb = null;
+    window._sharedFFmpegLogCb = null;
+
+    const fetchFile = (window.FFmpegUtil && window.FFmpegUtil.fetchFile) || (async (f) => new Uint8Array(await f.arrayBuffer()));
+    const total = queued.length;
+    let done = 0;
+
+    for (const it of queued) {
+      const base = (it.file.name.replace(/\.[^.]+$/, '') || 'output');
+      const inExt = (it.file.name.match(/\.[^.]+$/) || ['.bin'])[0];
+      const inputName = 'bulk_in_' + it.id + inExt;
+      const outputName = 'bulk_out_' + it.id + '.' + ext;
+      bulkText.textContent = 'Converting ' + (done + 1) + '/' + total + ' · ' + it.file.name;
+
+      try {
+        const data = await fetchFile(it.file);
+        await ff.writeFile(inputName, data);
+        const { args, mime } = ffArgs(inputName, outputName, ext);
+        const code = await ff.exec(args);
+        if (code !== 0 && code !== undefined) throw new Error('ffmpeg exit ' + code);
+        const out = await ff.readFile(outputName);
+        it.outBlob = new Blob([out.buffer], { type: mime });
+        it.outName = base + '.' + ext;
+        it.status = 'done';
+        try { await ff.deleteFile(inputName); } catch (e) {}
+        try { await ff.deleteFile(outputName); } catch (e) {}
+      } catch (err) {
+        it.status = 'error';
+        it.error = (err && err.message) ? err.message : String(err);
+        try { await ff.deleteFile(inputName); } catch (e) {}
+      }
+      done++;
+      bulkFill.style.width = (15 + Math.round((done / total) * 85)) + '%';
+      render();
+    }
+
+    bulkFill.style.width = '100%';
+    const ok = items.filter(it => it.status === 'done').length;
+    const failed = items.filter(it => it.status === 'error').length;
+    bulkText.textContent = 'Done · ' + ok + ' converted' + (failed ? ' · ' + failed + ' failed' : '');
+    notify('Bulk convert finished — ' + ok + ' file' + (ok !== 1 ? 's' : '') + ' ready');
+    bulkConvert.disabled = false;
+    render();
+  });
+
+  // ---- ZIP all ----
+  function loadJSZip() {
+    if (window.JSZip) return Promise.resolve(window.JSZip);
+    if (jszipLoading) return jszipLoading;
+    jszipLoading = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://unpkg.com/jszip@3.10.1/dist/jszip.min.js';
+      s.onload = () => window.JSZip ? resolve(window.JSZip) : reject(new Error('JSZip missing'));
+      s.onerror = () => reject(new Error('Failed to load JSZip'));
+      document.head.appendChild(s);
+    });
+    return jszipLoading;
+  }
+
+  bulkZip.addEventListener('click', async () => {
+    const ready = items.filter(it => it.status === 'done' && it.outBlob);
+    if (!ready.length) { notify('No converted files yet'); return; }
+    bulkZip.disabled = true;
+    const orig = bulkZip.firstChild ? bulkZip.firstChild.textContent : 'Download all as ZIP ';
+    if (bulkZip.firstChild) bulkZip.firstChild.textContent = 'Zipping… ';
+    try {
+      const JSZip = await loadJSZip();
+      const zip = new JSZip();
+      const seen = {};
+      for (const it of ready) {
+        let name = it.outName;
+        if (seen[name]) {
+          const n = ++seen[it.outName];
+          name = it.outName.replace(/(\.[^.]+)$/, '_' + n + '$1');
+        } else {
+          seen[name] = 1;
+        }
+        zip.file(name, it.outBlob);
+      }
+      const blob = await zip.generateAsync({ type: 'blob' }, () => {});
+      bulkZipSize.textContent = fmtBytes(blob.size);
+      downloadBlob(blob, 'converted_' + ready.length + '_files.zip');
+      notify('ZIP ready — ' + ready.length + ' files');
+    } catch (e) {
+      notify('ZIP failed: ' + (e.message || e));
+    } finally {
+      bulkZip.disabled = false;
+      if (bulkZip.firstChild) bulkZip.firstChild.textContent = orig;
+    }
+  });
+
+  bulkClear.addEventListener('click', () => {
+    items = [];
+    bulkProgRow.hidden = true;
+    bulkZipSize.textContent = '—';
+    render();
   });
 })();
 
