@@ -5327,6 +5327,10 @@
         <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="10" height="14" rx="2"/><path d="M8 7h2M8 10h4"/><rect x="10" y="7" width="10" height="14" rx="2" fill="none"/></svg></span>
         <span class="sb-label">Balatro</span>
       </button>
+      <button class="sb-tab" data-tab="textcase" title="Text Case — convert text to upper or lower case">
+        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" stroke="none"><text x="1" y="17" font-size="12" font-weight="700" font-family="'JetBrains Mono',monospace,sans-serif">Aa</text></svg></span>
+        <span class="sb-label">Text Case</span>
+      </button>
     </nav>
 
     <!-- Bottom of sidebar: theme toggles -->
@@ -7321,6 +7325,41 @@
         </div>
         <div id="fn-list" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;"></div>
         <div id="fn-copied" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--g);margin-top:10px;opacity:0;transition:opacity 0.3s;">&#10003; Copied to clipboard</div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ================= TEXT CASE ================= -->
+  <main data-mode="textcase" hidden>
+    <div style="max-width:720px; margin:0 auto; padding:40px 0 60px;">
+      <div style="margin-bottom:32px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;letter-spacing:0.16em;text-transform:uppercase;color:var(--text-faint);margin-bottom:10px;">Utility</div>
+        <h1 style="font-family:'Instrument Serif',serif;font-weight:400;font-size:clamp(32px,5vw,52px);line-height:1;letter-spacing:-0.02em;"><em style="font-style:italic;background:linear-gradient(100deg,var(--r),var(--g) 40%,var(--b) 75%,var(--a));-webkit-background-clip:text;background-clip:text;color:transparent;">Text</em> Case</h1>
+        <p style="color:var(--text-dim);font-size:14px;max-width:420px;margin-top:10px;">Paste text and instantly convert it to upper or lower case — output copies with one click.</p>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-bottom:24px;">
+        <button id="tc-upper-btn" class="mini-btn" style="color:var(--text);border-color:var(--border-hover);" onclick="tcSetMode('upper')">UPPER CASE</button>
+        <button id="tc-lower-btn" class="mini-btn" onclick="tcSetMode('lower')">lower case</button>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <label style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-faint);display:block;margin-bottom:8px;">Input</label>
+        <textarea id="tc-input" placeholder="Paste or type your text here…"
+          style="width:100%;min-height:140px;resize:vertical;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;padding:14px 16px;outline:none;transition:border-color 0.15s;"
+          oninput="tcConvert()" onfocus="this.style.borderColor='var(--border-hover)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+      </div>
+
+      <div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <label style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-faint);">Output</label>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span id="tc-copied" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--g);opacity:0;transition:opacity 0.3s;">&#10003; Copied</span>
+            <button class="mini-btn" id="tc-copy-btn" onclick="tcCopy()">Copy</button>
+          </div>
+        </div>
+        <textarea id="tc-output" readonly placeholder="Converted text will appear here…"
+          style="width:100%;min-height:140px;resize:vertical;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;padding:14px 16px;outline:none;cursor:default;"></textarea>
       </div>
     </div>
   </main>
@@ -20303,6 +20342,38 @@ Takes:  {
   drop && drop.addEventListener("dragover", function(e) { e.preventDefault(); drop.style.background = "var(--surface-2)"; drop.style.borderColor = "var(--accent)"; });
   drop && drop.addEventListener("dragleave", function() { drop.style.background = "var(--surface)"; drop.style.borderColor = "var(--border-hover)"; });
   drop && drop.addEventListener("drop", function(e) { e.preventDefault(); drop.style.background = "var(--surface)"; drop.style.borderColor = "var(--border-hover)"; fnAdd(e.dataTransfer.files); });
+})();
+
+/* ===== TEXT CASE ===== */
+(function() {
+  var tcMode = 'upper';
+
+  window.tcSetMode = function(mode) {
+    tcMode = mode;
+    var u = document.getElementById('tc-upper-btn');
+    var l = document.getElementById('tc-lower-btn');
+    if (u) { u.style.color = mode === 'upper' ? 'var(--text)' : ''; u.style.borderColor = mode === 'upper' ? 'var(--border-hover)' : ''; }
+    if (l) { l.style.color = mode === 'lower' ? 'var(--text)' : ''; l.style.borderColor = mode === 'lower' ? 'var(--border-hover)' : ''; }
+    tcConvert();
+  };
+
+  window.tcConvert = function() {
+    var inp = document.getElementById('tc-input');
+    var out = document.getElementById('tc-output');
+    if (!inp || !out) return;
+    out.value = tcMode === 'upper' ? inp.value.toUpperCase() : inp.value.toLowerCase();
+  };
+
+  window.tcCopy = function() {
+    var out = document.getElementById('tc-output');
+    if (!out || !out.value) return;
+    navigator.clipboard.writeText(out.value).then(function() {
+      var el = document.getElementById('tc-copied');
+      if (!el) return;
+      el.style.opacity = '1';
+      setTimeout(function() { el.style.opacity = '0'; }, 1800);
+    });
+  };
 })();
 </script>
 
