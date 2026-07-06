@@ -13063,9 +13063,15 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
     });
 
     const coreBase = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+    const ffBase = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd';
+    // Everything must be re-hosted on blob: URLs — the library spawns a Web
+    // Worker, and workers / importScripts refuse cross-origin CDN URLs.
+    // Passing the unpkg URLs directly (the old code) always failed.
+    const { toBlobURL } = window.FFmpegUtil;
     await ff.load({
-      coreURL: `${coreBase}/ffmpeg-core.js`,
-      wasmURL: `${coreBase}/ffmpeg-core.wasm`,
+      classWorkerURL: await toBlobURL(`${ffBase}/814.ffmpeg.js`, 'text/javascript'),
+      coreURL: await toBlobURL(`${coreBase}/ffmpeg-core.js`, 'text/javascript'),
+      wasmURL: await toBlobURL(`${coreBase}/ffmpeg-core.wasm`, 'application/wasm'),
     });
 
     if (onLoadProgress) onLoadProgress(100, 'Engine ready');
@@ -13215,6 +13221,30 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
+  // ---- server-side conversion (native ffmpeg via server.js — the fast path) ----
+  async function serverConvertFile(file, ext, onFrac, onMsg) {
+    const res = await fetch('/api/convert/start?name=' + encodeURIComponent(file.name) + '&target=' + encodeURIComponent(ext), {
+      method: 'POST',
+      body: file,
+    });
+    const start = await res.json();
+    if (start.error) throw new Error(start.error);
+    let misses = 0;
+    while (true) {
+      await new Promise(r => setTimeout(r, 400));
+      let p;
+      try { p = await (await fetch('/api/convert/progress/' + start.id)).json(); misses = 0; }
+      catch (e) { if (++misses > 20) throw new Error('Lost contact with the server'); continue; }
+      if (p.state === 'error' || (p.error && p.state !== 'done')) throw new Error(p.error || 'Conversion failed');
+      if (p.state === 'setup' && onMsg) onMsg('One-time setup: fetching ffmpeg… ' + (p.setupPct || 0) + '%');
+      if (p.state === 'done') break;
+      if (onFrac && p.pct) onFrac(Math.min(0.99, p.pct / 100));
+    }
+    const fileRes = await fetch('/api/convert/file/' + start.id);
+    if (!fileRes.ok) throw new Error('Could not fetch converted file');
+    return await fileRes.blob();
+  }
+
   // ---- convert all ----
   bulkConvert.addEventListener('click', async () => {
     const queued = items.filter(it => it.status !== 'done');
@@ -13226,24 +13256,36 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
     bulkConvert.disabled = true;
     bulkProgRow.hidden = false;
     bulkFill.style.width = '0%';
-    bulkText.textContent = 'Loading engine…';
 
-    let ff;
+    // Prefer this site's own server (native ffmpeg — many times faster than
+    // wasm and no CDN needed). Fall back to in-browser ffmpeg.wasm when the
+    // page is opened without the server (e.g. straight from the file).
+    let useServer = false;
+    bulkText.textContent = 'Starting…';
     try {
-      ff = await window.loadSharedFFmpeg((pct, msg) => {
-        bulkFill.style.width = Math.max(3, Math.round(pct * 0.15)) + '%';
-        if (msg) bulkText.textContent = msg;
-      });
-    } catch (e) {
-      bulkText.textContent = 'Engine failed to load';
-      notify('Could not load the conversion engine');
-      bulkConvert.disabled = false;
-      return;
-    }
+      const ping = await (await fetch('/api/dl/ping')).json();
+      useServer = !!(ping && ping.ok);
+    } catch (e) {}
 
-    // Silence shared per-frame callbacks (we track at the file level).
-    window._sharedFFmpegProgressCb = null;
-    window._sharedFFmpegLogCb = null;
+    let ff = null;
+    if (!useServer) {
+      bulkText.textContent = 'Loading engine…';
+      try {
+        ff = await window.loadSharedFFmpeg((pct, msg) => {
+          bulkFill.style.width = Math.max(3, Math.round(pct * 0.15)) + '%';
+          if (msg) bulkText.textContent = msg;
+        });
+      } catch (e) {
+        console.error('[converter] wasm engine failed:', e);
+        bulkText.textContent = 'Engine failed to load';
+        notify('Could not load the conversion engine — check your internet, or run "npm start" and use http://localhost:3000');
+        bulkConvert.disabled = false;
+        return;
+      }
+      // Silence shared per-frame callbacks (we track at the file level).
+      window._sharedFFmpegProgressCb = null;
+      window._sharedFFmpegLogCb = null;
+    }
 
     const fetchFile = (window.FFmpegUtil && window.FFmpegUtil.fetchFile) || (async (f) => new Uint8Array(await f.arrayBuffer()));
     const total = queued.length;
@@ -13257,24 +13299,35 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
       bulkText.textContent = 'Converting ' + (done + 1) + '/' + total + ' · ' + it.file.name;
 
       try {
-        const data = await fetchFile(it.file);
-        await ff.writeFile(inputName, data);
-        const { args, mime } = ffArgs(inputName, outputName, ext);
-        const code = await ff.exec(args);
-        if (code !== 0 && code !== undefined) throw new Error('ffmpeg exit ' + code);
-        const out = await ff.readFile(outputName);
-        it.outBlob = new Blob([out.buffer], { type: mime });
-        it.outName = base + '.' + ext;
-        it.status = 'done';
-        try { await ff.deleteFile(inputName); } catch (e) {}
-        try { await ff.deleteFile(outputName); } catch (e) {}
+        if (useServer) {
+          const { mime } = ffArgs(inputName, outputName, ext);
+          const blob = await serverConvertFile(it.file, ext, frac => {
+            bulkFill.style.width = Math.round(((done + frac) / total) * 100) + '%';
+            bulkText.textContent = 'Converting ' + (done + 1) + '/' + total + ' · ' + it.file.name + ' · ' + Math.round(frac * 100) + '%';
+          }, msg => { bulkText.textContent = msg; });
+          it.outBlob = blob.type && blob.type !== 'application/octet-stream' ? blob : new Blob([blob], { type: mime });
+          it.outName = base + '.' + ext;
+          it.status = 'done';
+        } else {
+          const data = await fetchFile(it.file);
+          await ff.writeFile(inputName, data);
+          const { args, mime } = ffArgs(inputName, outputName, ext);
+          const code = await ff.exec(args);
+          if (code !== 0 && code !== undefined) throw new Error('ffmpeg exit ' + code);
+          const out = await ff.readFile(outputName);
+          it.outBlob = new Blob([out.buffer], { type: mime });
+          it.outName = base + '.' + ext;
+          it.status = 'done';
+          try { await ff.deleteFile(inputName); } catch (e) {}
+          try { await ff.deleteFile(outputName); } catch (e) {}
+        }
       } catch (err) {
         it.status = 'error';
         it.error = (err && err.message) ? err.message : String(err);
-        try { await ff.deleteFile(inputName); } catch (e) {}
+        if (ff) { try { await ff.deleteFile(inputName); } catch (e) {} }
       }
       done++;
-      bulkFill.style.width = (15 + Math.round((done / total) * 85)) + '%';
+      bulkFill.style.width = (useServer ? Math.round((done / total) * 100) : 15 + Math.round((done / total) * 85)) + '%';
       render();
     }
 

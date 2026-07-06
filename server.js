@@ -923,11 +923,145 @@ app.get('/api/dl/file/:id', (req, res) => {
   res.download(job.file, path.basename(job.file), () => cleanupDlJob(job));
 });
 
+/* ===================================================================
+   FILE CONVERTER — native ffmpeg backend for the Universal Converter.
+   The browser POSTs the raw file; we convert with the same ffmpeg the
+   downloader uses (native = many times faster than ffmpeg.wasm).
+   =================================================================== */
+const CV_DIR = path.join(os.tmpdir(), 'aio-editor-convert');
+const FFPROBE_LOCAL = path.join(BIN_DIR, IS_WIN ? 'ffprobe.exe' : 'ffprobe');
+function ffprobePath() {
+  if (fs.existsSync(FFPROBE_LOCAL)) return FFPROBE_LOCAL;
+  if (hasCmd('ffprobe')) return 'ffprobe';
+  return null;
+}
+
+// Codec args per target extension (mirrors the browser-side mapping)
+function cvArgs(inPath, outPath, ext) {
+  const a = ['-y', '-i', inPath];
+  switch (ext) {
+    case 'mp4':  a.push('-c:v','libx264','-preset','fast','-crf','21','-c:a','aac','-b:a','160k','-pix_fmt','yuv420p','-movflags','+faststart'); break;
+    case 'webm': a.push('-c:v','libvpx-vp9','-deadline','good','-cpu-used','4','-c:a','libopus'); break;
+    case 'mov':  a.push('-c:v','libx264','-preset','fast','-c:a','aac'); break;
+    case 'mkv':  a.push('-c:v','libx264','-preset','fast','-c:a','aac'); break;
+    case 'avi':  a.push('-c:v','mpeg4','-c:a','libmp3lame'); break;
+    case 'gif':  a.push('-vf','fps=12,scale=480:-2:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse'); break;
+    case 'mp3':  a.push('-vn','-c:a','libmp3lame','-b:a','192k'); break;
+    case 'wav':  a.push('-vn','-c:a','pcm_s16le'); break;
+    case 'ogg':  a.push('-vn','-c:a','libvorbis'); break;
+    case 'opus': a.push('-vn','-c:a','libopus'); break;
+    case 'flac': a.push('-vn','-c:a','flac'); break;
+    case 'aac':  a.push('-vn','-c:a','aac','-b:a','192k'); break;
+    case 'm4a':  a.push('-vn','-c:a','aac','-b:a','192k'); break;
+    case 'png': case 'jpg': case 'jpeg': case 'webp': case 'bmp':
+      a.push('-vframes','1'); break;
+    default: break; // best-effort: let ffmpeg guess from the extension
+  }
+  a.push(outPath);
+  return a;
+}
+
+const cvJobs = new Map();
+let cvSeq = 0;
+
+function cleanupCvJob(job) {
+  cvJobs.delete(job.id);
+  try { if (job.proc) job.proc.kill(); } catch (e) {}
+  fs.rm(job.dir, { recursive: true, force: true }, () => {});
+}
+
+async function runCvJob(job, inPath, target) {
+  await ensureDlTools(); // makes sure ffmpeg exists (auto-fetch on very first use)
+  job.state = 'converting';
+  // Probe duration so we can report % progress (0 = unknown, e.g. images)
+  let duration = 0;
+  const probe = ffprobePath();
+  if (probe) {
+    try {
+      duration = parseFloat(execFileSync(probe,
+        ['-v','error','-show_entries','format=duration','-of','default=nw=1:nk=1', inPath],
+        { windowsHide: true }).toString()) || 0;
+    } catch (e) {}
+  }
+  const base = path.basename(inPath).replace(/^in_/, '').replace(/\.[^.]+$/, '') || 'output';
+  const outPath = path.join(job.dir, base + '.' + target);
+  const args = cvArgs(inPath, outPath, target);
+  args.splice(1, 0, '-progress', 'pipe:1', '-nostats'); // after -y
+
+  await new Promise((resolve, reject) => {
+    const proc = spawn(ffmpegPath(), args, { windowsHide: true });
+    job.proc = proc;
+    let errBuf = '';
+    proc.stdout.on('data', chunk => {
+      const m = chunk.toString().match(/out_time_ms=(\d+)/g);
+      if (m && duration > 0) {
+        const us = parseInt(m[m.length - 1].slice(12), 10);
+        job.pct = Math.min(99, Math.round((us / 1e6) / duration * 100));
+      }
+    });
+    proc.stderr.on('data', d => { errBuf += d; if (errBuf.length > 8000) errBuf = errBuf.slice(-8000); });
+    proc.on('error', reject);
+    proc.on('close', code => {
+      job.proc = null;
+      if (code === 0) return resolve();
+      const lines = errBuf.split(/\r?\n/).filter(l => l.trim() && !/^\s*(frame=|size=)/.test(l));
+      reject(new Error((lines[lines.length - 1] || 'ffmpeg exited with code ' + code).slice(0, 300)));
+    });
+  });
+
+  if (!fs.existsSync(outPath)) throw new Error('Conversion produced no file');
+  job.file = outPath;
+  job.pct = 100;
+  job.state = 'done';
+}
+
+app.post('/api/convert/start', (req, res) => {
+  const name = path.basename(String(req.query.name || 'input.bin')).replace(/[\\/:*?"<>|]/g, '_');
+  const target = String(req.query.target || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8);
+  if (!target) return res.status(400).json({ error: 'No target format' });
+  const id = 'c' + (++cvSeq) + Math.random().toString(36).slice(2, 8);
+  const job = {
+    id, state: 'setup', pct: 0, file: null, error: null, proc: null,
+    dir: path.join(CV_DIR, id), createdAt: Date.now(),
+  };
+  cvJobs.set(id, job);
+  fs.mkdirSync(job.dir, { recursive: true });
+  const inPath = path.join(job.dir, 'in_' + name);
+  const ws = fs.createWriteStream(inPath);
+  req.pipe(ws);
+  ws.on('error', e => { job.state = 'error'; job.error = String(e.message || e); res.status(500).json({ error: job.error }); });
+  ws.on('finish', () => {
+    res.json({ id });
+    runCvJob(job, inPath, target).catch(e => {
+      job.state = 'error';
+      job.error = String(e && e.message || e).slice(0, 300);
+      console.error('[converter]', job.error);
+    });
+  });
+});
+
+app.get('/api/convert/progress/:id', (req, res) => {
+  const job = cvJobs.get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Unknown job' });
+  const out = { state: job.state, pct: job.pct, error: job.error, filename: job.file ? path.basename(job.file) : null };
+  if (job.state === 'setup') { out.setupPhase = dlSetup.phase; out.setupPct = dlSetup.pct; }
+  res.json(out);
+});
+
+app.get('/api/convert/file/:id', (req, res) => {
+  const job = cvJobs.get(req.params.id);
+  if (!job || !job.file) return res.status(404).send('Not ready');
+  res.download(job.file, path.basename(job.file), () => cleanupCvJob(job));
+});
+
 // Janitor: kill abandoned jobs after 30 minutes
 setInterval(() => {
   const now = Date.now();
   for (const job of dlJobs.values()) {
     if (now - job.createdAt > 30 * 60 * 1000) cleanupDlJob(job);
+  }
+  for (const job of cvJobs.values()) {
+    if (now - job.createdAt > 30 * 60 * 1000) cleanupCvJob(job);
   }
 }, 5 * 60 * 1000);
 
