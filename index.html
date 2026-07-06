@@ -12929,6 +12929,14 @@ window.resolveApiBase = function() {
   return window._apiBasePromise;
 };
 
+// If the page was double-clicked from disk but the local server is running,
+// hop straight to the served version — same origin, everything just works.
+if (location.protocol === 'file:') {
+  window.resolveApiBase().then(base => {
+    if (base) location.replace(base + '/');
+  });
+}
+
 /* ============================================================
    VIDEO DOWNLOADER — YouTube / TikTok / Instagram / 1000+ sites.
    Talks to this site's own server (server.js), which runs yt-dlp
