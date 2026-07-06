@@ -12899,6 +12899,37 @@ updatePanelForSelection();
 if (typeof setActiveTrack === 'function') setActiveTrack(0);
 
 /* ============================================================
+   API BASE RESOLVER — finds this site's backend (server.js) no
+   matter how the page was opened: served by it (same origin),
+   or double-clicked from disk (file://) with the server running
+   separately at http://localhost:3000. Result is cached.
+   ============================================================ */
+window._apiBasePromise = null;
+window.resolveApiBase = function() {
+  if (!window._apiBasePromise) {
+    window._apiBasePromise = (async () => {
+      const cands = [];
+      if (/^https?:$/.test(location.protocol)) cands.push('');
+      for (const c of ['http://localhost:3000', 'http://127.0.0.1:3000']) {
+        if (location.origin !== c) cands.push(c);
+      }
+      for (const base of cands) {
+        try {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 1500);
+          const r = await fetch(base + '/api/dl/ping', { signal: ctrl.signal });
+          clearTimeout(t);
+          const j = await r.json();
+          if (j && j.ok) return base;
+        } catch (e) {}
+      }
+      return null; // no backend reachable
+    })();
+  }
+  return window._apiBasePromise;
+};
+
+/* ============================================================
    VIDEO DOWNLOADER — YouTube / TikTok / Instagram / 1000+ sites.
    Talks to this site's own server (server.js), which runs yt-dlp
    on the host machine. No third-party downloader services.
@@ -12949,17 +12980,16 @@ if (typeof setActiveTrack === 'function') setActiveTrack(0);
     setStatus('');
     setProgress(0, 'Contacting server…');
     try {
-      // Is the built-in server running? (opening index.html directly via
-      // file:// or a plain static host has no backend)
-      let ping = null;
-      try { ping = await (await fetch('/api/dl/ping')).json(); } catch (e) {}
-      if (!ping || !ping.ok) {
-        throw new Error('The downloader needs the built-in server. Open a terminal in the site folder, run "npm start", then use the site at http://localhost:3000');
+      // Find the built-in server — same origin, or localhost:3000 when the
+      // page was opened straight from disk (file://)
+      const apiBase = await window.resolveApiBase();
+      if (apiBase === null) {
+        throw new Error('The downloader needs the built-in server. Double-click START-SERVER.bat in the site folder (or run "npm start"), then try again.');
       }
 
       const kind = document.querySelector('input[name="vdlKind"]:checked').value;
       const quality = kind === 'audio' ? ab.value : vq.value;
-      const startRes = await (await fetch('/api/dl/start?url=' + encodeURIComponent(url) + '&kind=' + kind + '&quality=' + encodeURIComponent(quality))).json();
+      const startRes = await (await fetch(apiBase + '/api/dl/start?url=' + encodeURIComponent(url) + '&kind=' + kind + '&quality=' + encodeURIComponent(quality))).json();
       if (startRes.error) throw new Error(startRes.error);
       const jobId = startRes.id;
 
@@ -12968,7 +12998,7 @@ if (typeof setActiveTrack === 'function') setActiveTrack(0);
       while (true) {
         await new Promise(r => setTimeout(r, 500));
         let p;
-        try { p = await (await fetch('/api/dl/progress/' + jobId)).json(); misses = 0; }
+        try { p = await (await fetch(apiBase + '/api/dl/progress/' + jobId)).json(); misses = 0; }
         catch (e) {
           if (++misses > 20) throw new Error('Lost contact with the server');
           continue;
@@ -12989,7 +13019,7 @@ if (typeof setActiveTrack === 'function') setActiveTrack(0);
           setProgress(100, 'Done — saving file');
           // Navigate to the file endpoint; the server streams it as an attachment
           const a = document.createElement('a');
-          a.href = '/api/dl/file/' + jobId;
+          a.href = apiBase + '/api/dl/file/' + jobId;
           a.download = p.filename || 'download';
           document.body.appendChild(a);
           a.click();
@@ -13222,8 +13252,8 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
   }
 
   // ---- server-side conversion (native ffmpeg via server.js — the fast path) ----
-  async function serverConvertFile(file, ext, onFrac, onMsg) {
-    const res = await fetch('/api/convert/start?name=' + encodeURIComponent(file.name) + '&target=' + encodeURIComponent(ext), {
+  async function serverConvertFile(apiBase, file, ext, onFrac, onMsg) {
+    const res = await fetch(apiBase + '/api/convert/start?name=' + encodeURIComponent(file.name) + '&target=' + encodeURIComponent(ext), {
       method: 'POST',
       body: file,
     });
@@ -13233,14 +13263,14 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
     while (true) {
       await new Promise(r => setTimeout(r, 400));
       let p;
-      try { p = await (await fetch('/api/convert/progress/' + start.id)).json(); misses = 0; }
+      try { p = await (await fetch(apiBase + '/api/convert/progress/' + start.id)).json(); misses = 0; }
       catch (e) { if (++misses > 20) throw new Error('Lost contact with the server'); continue; }
       if (p.state === 'error' || (p.error && p.state !== 'done')) throw new Error(p.error || 'Conversion failed');
       if (p.state === 'setup' && onMsg) onMsg('One-time setup: fetching ffmpeg… ' + (p.setupPct || 0) + '%');
       if (p.state === 'done') break;
       if (onFrac && p.pct) onFrac(Math.min(0.99, p.pct / 100));
     }
-    const fileRes = await fetch('/api/convert/file/' + start.id);
+    const fileRes = await fetch(apiBase + '/api/convert/file/' + start.id);
     if (!fileRes.ok) throw new Error('Could not fetch converted file');
     return await fileRes.blob();
   }
@@ -13258,17 +13288,23 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
     bulkFill.style.width = '0%';
 
     // Prefer this site's own server (native ffmpeg — many times faster than
-    // wasm and no CDN needed). Fall back to in-browser ffmpeg.wasm when the
-    // page is opened without the server (e.g. straight from the file).
-    let useServer = false;
+    // wasm and no CDN needed). Works even when the page was opened straight
+    // from disk, as long as the server is running (START-SERVER.bat).
     bulkText.textContent = 'Starting…';
-    try {
-      const ping = await (await fetch('/api/dl/ping')).json();
-      useServer = !!(ping && ping.ok);
-    } catch (e) {}
+    const apiBase = await window.resolveApiBase();
+    const useServer = apiBase !== null;
 
     let ff = null;
     if (!useServer) {
+      // No server found → in-browser ffmpeg.wasm fallback. Note: on file://
+      // pages browsers block the wasm engine's workers, so the server is
+      // required there.
+      if (location.protocol === 'file:') {
+        bulkText.textContent = 'Server not running';
+        notify('Start the server first: double-click START-SERVER.bat in the site folder (or run "npm start"), then hit Convert again.');
+        bulkConvert.disabled = false;
+        return;
+      }
       bulkText.textContent = 'Loading engine…';
       try {
         ff = await window.loadSharedFFmpeg((pct, msg) => {
@@ -13278,7 +13314,7 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
       } catch (e) {
         console.error('[converter] wasm engine failed:', e);
         bulkText.textContent = 'Engine failed to load';
-        notify('Could not load the conversion engine — check your internet, or run "npm start" and use http://localhost:3000');
+        notify('Could not load the conversion engine — double-click START-SERVER.bat in the site folder (or run "npm start"), then try again.');
         bulkConvert.disabled = false;
         return;
       }
@@ -13301,7 +13337,7 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
       try {
         if (useServer) {
           const { mime } = ffArgs(inputName, outputName, ext);
-          const blob = await serverConvertFile(it.file, ext, frac => {
+          const blob = await serverConvertFile(apiBase, it.file, ext, frac => {
             bulkFill.style.width = Math.round(((done + frac) / total) * 100) + '%';
             bulkText.textContent = 'Converting ' + (done + 1) + '/' + total + ' · ' + it.file.name + ' · ' + Math.round(frac * 100) + '%';
           }, msg => { bulkText.textContent = msg; });

@@ -8,6 +8,17 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+// Allow the API to be called from pages opened straight from disk (file://)
+// or other origins — the converter/downloader probe http://localhost:3000
+// when the page isn't served by this server.
+app.use('/api', (req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 // Serve .wasm with the correct MIME type so WebAssembly loads in browser
 app.use(express.static(__dirname, {
   setHeaders(res, filePath) {
