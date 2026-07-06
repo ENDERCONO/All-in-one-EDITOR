@@ -199,6 +199,46 @@
   .sidebar.expanded .sb-group.open .sb-sub { display: flex; }
   .sb-sub .sb-tab { height: 32px; padding: 6px 8px; font-size: 10px; gap: 8px; }
   .sb-sub .sb-icon { width: 18px; }
+  /* While a search query is active, matching groups are forced open */
+  .sidebar.expanded .sb-group.search-open .sb-sub { display: flex; }
+  /* ── Smart tab search ── */
+  .sb-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 0 10px;
+    height: 34px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-2);
+    cursor: text;
+    flex-shrink: 0;
+    transition: border-color 0.15s;
+  }
+  .sb-search:focus-within { border-color: var(--border-hover); }
+  .sb-search-icon { color: var(--text-faint); flex-shrink: 0; display: grid; place-items: center; }
+  .sb-search input {
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    width: 100%;
+    min-width: 0;
+  }
+  .sb-search input::placeholder { color: var(--text-faint); }
+  .sidebar:not(.expanded) .sb-search { justify-content: center; padding: 0; cursor: pointer; }
+  .sidebar:not(.expanded) .sb-search input { display: none; }
+  .sb-search-empty {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-faint);
+    text-align: center;
+    padding-top: 8px;
+  }
+  .sidebar:not(.expanded) .sb-search-empty { display: none; }
   @media (max-width: 720px) {
     .sidebar { width: 48px; padding: 8px 6px; }
     .sidebar.expanded { width: 180px; }
@@ -5296,6 +5336,14 @@
     <button class="sidebar-toggle" id="sidebarToggle" title="Show / hide sidebar (Tab to toggle)">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
     </button>
+
+    <!-- Smart tab search — fuzzy + synonyms, filters the list live (Ctrl+K) -->
+    <div class="sb-search" id="sbSearch" title="Search tabs (Ctrl+K)">
+      <span class="sb-search-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></svg></span>
+      <input type="text" id="sbSearchInput" placeholder="Search tabs…" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="sb-search-empty" id="sbSearchEmpty" hidden>No matches</div>
+
     <nav class="sidebar-tabs" role="tablist">
 
       <!-- ===== IMAGES ===== -->
@@ -6384,8 +6432,8 @@
 
       <!-- BULK CONVERTER — many files → any format, individual or ZIP download -->
       <section class="convert-card" style="grid-column: 1 / -1">
-        <h3>Bulk Converter</h3>
-        <p class="desc">Drop a whole batch of files, pick one target format, convert them all at once. Defaults to <strong>MP3&nbsp;→&nbsp;WAV</strong>, but you can convert <em>anything&nbsp;→&nbsp;anything</em> (audio · video · image). Download each result individually or grab everything as a single ZIP. Runs entirely in your browser via <a href="https://ffmpegwasm.netlify.app/" target="_blank" rel="noopener" style="color:var(--text-dim); text-decoration:underline">ffmpeg.wasm</a>.</p>
+        <h3>Universal Converter</h3>
+        <p class="desc">Drop one file or a whole batch, pick a target format, convert. <strong>Anything → anything</strong> — MP3 ↔ MP4 ↔ WAV ↔ OGG ↔ FLAC ↔ GIF and more (audio · video · image): pull MP3 audio out of a video, turn a clip into an animated GIF, convert WAV to OGG… Download each result individually or grab everything as a single ZIP. Runs entirely in your browser via <a href="https://ffmpegwasm.netlify.app/" target="_blank" rel="noopener" style="color:var(--text-dim); text-decoration:underline">ffmpeg.wasm</a>.</p>
 
         <div class="convert-drop" id="bulkUpload">
           <div>
@@ -6452,57 +6500,8 @@
         </div>
       </section>
 
-      <!-- MP4 → MP3 -->
-      <section class="convert-card">
-        <h3>MP4 → MP3</h3>
-        <p class="desc">Extract the audio track and encode it as MP3.</p>
-
-        <div class="convert-drop" id="m2mUpload">
-          <div>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
-            </svg>
-            <div class="t">Drop a video — or click to browse</div>
-            <div class="s">MP4 · MOV · WEBM · MKV (any audio-containing video)</div>
-            <input type="file" accept="video/*,audio/*" id="m2mFile" style="display:none">
-          </div>
-        </div>
-
-        <div class="convert-info" id="m2mInfo" hidden>—</div>
-
-        <div class="convert-settings" id="m2mSettings" hidden>
-          <div class="export-slider">
-            <div class="slabel">
-              <span>MP3 bitrate</span>
-              <span class="val" id="m2mBrVal">192 kbps</span>
-            </div>
-            <input type="range" id="m2mBr" min="64" max="320" value="192" step="32">
-          </div>
-          <div class="export-slider">
-            <div class="slabel"><span>Channels</span></div>
-            <div class="channel-toggle">
-              <input type="radio" name="m2mCh" id="m2mStereo" value="stereo" checked>
-              <label for="m2mStereo">Stereo</label>
-              <input type="radio" name="m2mCh" id="m2mMono" value="mono">
-              <label for="m2mMono">Mono</label>
-            </div>
-          </div>
-          <button class="apply-btn" id="m2mConvert">Convert →</button>
-        </div>
-
-        <div class="progress-row" id="m2mProgressRow" hidden>
-          <div class="progress-bar"><div class="progress-fill" id="m2mFill"></div></div>
-          <div class="progress-text" id="m2mText">0%</div>
-        </div>
-
-        <div class="export-buttons" id="m2mResult" hidden style="justify-content:flex-start; flex-wrap:wrap; gap:8px">
-          <button class="dl-btn" id="m2mDownload">Download MP3 <span class="tag" id="m2mSize">—</span></button>
-          <button class="dl-btn" id="m2mDownloadWav">Download WAV <span class="tag" id="m2mWavSize">—</span></button>
-        </div>
-      </section>
-
       <!-- VIDEO DOWNLOADER — this site's own server (yt-dlp), no third-party sites -->
-      <section class="convert-card">
+      <section class="convert-card" style="grid-column: 1 / -1">
         <h3>Video Downloader</h3>
         <p class="desc"><strong>YouTube · TikTok · Instagram</strong> — and 1000+ other sites. Paste a link, pick a format, hit Download. Runs on this site's <strong>own built-in server</strong>: no third-party downloader pages, no ads, downloads as fast as your connection allows. The first ever download sets up the tools automatically (one-time).</p>
 
@@ -6548,157 +6547,6 @@
           <div class="progress-text" id="vdlText">0%</div>
         </div>
         <div id="vdlStatus" hidden style="margin-top:10px; font-family:'JetBrains Mono', monospace; font-size:11px; line-height:1.5; color:var(--text-dim); word-break:break-word;"></div>
-      </section>
-      <!-- MP4 → GIF -->
-      <section class="convert-card">
-        <h3>MP4 → GIF</h3>
-        <p class="desc">Turn a video clip into a looping animated GIF.</p>
-
-        <div class="convert-drop" id="v2gUpload">
-          <div>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="23 7 16 12 23 17 23 7"/>
-              <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
-            </svg>
-            <div class="t">Drop a video — or click to browse</div>
-            <div class="s">MP4 · WEBM · MOV</div>
-            <input type="file" accept="video/*" id="v2gFile" style="display:none">
-          </div>
-        </div>
-
-        <video id="v2gVideo" class="convert-hidden-video" muted playsinline></video>
-        <canvas id="v2gPreview" class="gif-preview" hidden></canvas>
-        <div class="convert-info" id="v2gInfo" hidden>—</div>
-
-        <div class="convert-settings" id="v2gSettings" hidden>
-          <div class="export-slider">
-            <div class="slabel">
-              <span>Start → end (seconds)</span>
-              <span class="val" id="v2gRangeVal">0.0 – 5.0s</span>
-            </div>
-            <div class="slider-row">
-              <input type="number" class="num-input" id="v2gStart" min="0" step="0.1" value="0">
-              <input type="number" class="num-input" id="v2gEnd" min="0" step="0.1" value="5">
-            </div>
-          </div>
-          <div class="export-slider">
-            <div class="slabel">
-              <span>Frame rate</span>
-              <span class="val" id="v2gFpsVal">10 fps</span>
-            </div>
-            <input type="range" id="v2gFps" min="2" max="30" value="10" step="1">
-          </div>
-          <div class="export-slider">
-            <div class="slabel">
-              <span>Output width</span>
-              <span class="val" id="v2gWVal">480 px</span>
-            </div>
-            <input type="range" id="v2gW" min="120" max="960" value="480" step="20">
-          </div>
-          <div class="export-slider">
-            <div class="slabel">
-              <span>Quality (lower = better)</span>
-              <span class="val" id="v2gQVal">10</span>
-            </div>
-            <input type="range" id="v2gQ" min="1" max="30" value="10" step="1">
-          </div>
-          <button class="apply-btn" id="v2gConvert">Render GIF →</button>
-        </div>
-
-        <div class="progress-row" id="v2gProgressRow" hidden>
-          <div class="progress-bar"><div class="progress-fill" id="v2gFill"></div></div>
-          <div class="progress-text" id="v2gText">0%</div>
-        </div>
-
-        <div class="export-buttons" id="v2gResult" hidden style="justify-content:flex-start">
-          <button class="dl-btn" id="v2gDownload">Download GIF <span class="tag" id="v2gSize">—</span></button>
-        </div>
-      </section>
-
-      <!-- Universal Converter — anything → anything via ffmpeg.wasm -->
-      <section class="convert-card" style="grid-column: 1 / -1">
-        <h3>Universal Converter</h3>
-        <p class="desc">Drop a file, pick a target format, hit convert. Powered by <a href="https://ffmpegwasm.netlify.app/" target="_blank" rel="noopener" style="color:var(--text-dim); text-decoration:underline">ffmpeg.wasm</a> running entirely in your browser. Handles most audio &amp; video formats. Big files = slow first run (the ~30 MB engine has to download once).</p>
-
-        <div class="convert-drop" id="uniUpload">
-          <div>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-            </svg>
-            <div class="t">Drop any media — or click to browse</div>
-            <div class="s">video · audio · image · whatever</div>
-            <input type="file" id="uniFile" style="display:none">
-          </div>
-        </div>
-
-        <div class="convert-info" id="uniInfo" hidden>—</div>
-
-        <div class="convert-settings" id="uniSettings" hidden>
-          <div class="export-slider">
-            <div class="slabel"><span>Output format</span></div>
-            <select id="uniFormat" class="color-input" style="font-family:'JetBrains Mono', monospace; font-size:11px;">
-              <optgroup label="Video">
-                <option value="mp4">MP4 (H.264 + AAC) — most compatible</option>
-                <option value="webm">WEBM (VP9 + Opus)</option>
-                <option value="mov">MOV (H.264)</option>
-                <option value="mkv">MKV (H.264)</option>
-                <option value="avi">AVI (MPEG-4)</option>
-                <option value="gif">GIF — animated</option>
-              </optgroup>
-              <optgroup label="Audio">
-                <option value="mp3">MP3</option>
-                <option value="wav">WAV (PCM)</option>
-                <option value="ogg">OGG (Vorbis)</option>
-                <option value="opus">OPUS</option>
-                <option value="flac">FLAC (lossless)</option>
-                <option value="aac">AAC</option>
-                <option value="m4a">M4A</option>
-              </optgroup>
-              <optgroup label="Image (single frame from video)">
-                <option value="png">PNG</option>
-                <option value="jpg">JPG</option>
-                <option value="webp">WEBP</option>
-                <option value="bmp">BMP</option>
-              </optgroup>
-              <optgroup label="Custom (best-effort, may fail)">
-                <option value="__custom__">Type any extension…</option>
-              </optgroup>
-            </select>
-          </div>
-
-          <div class="export-slider" id="uniCustomRow" hidden>
-            <div class="slabel"><span>Custom extension</span></div>
-            <input type="text" id="uniCustomExt" class="color-input" placeholder="e.g. fbx, obj, dat, raw…" style="font-family:'JetBrains Mono', monospace; font-size:11px;">
-            <p class="desc" style="margin-top:6px; opacity:0.6; font-size:10px">
-              Non-media formats (3D models, archives, executables, etc.) can't be created from media — ffmpeg will refuse, or you'll get a corrupt file. Use real format-specific tools for those.
-            </p>
-          </div>
-
-          <div class="export-slider" id="uniTrimRow">
-            <div class="slabel">
-              <span>Trim (optional, seconds — leave 0 for full)</span>
-              <span class="val" id="uniTrimVal">full clip</span>
-            </div>
-            <div class="slider-row">
-              <input type="number" class="num-input" id="uniStart" min="0" step="0.1" value="0" placeholder="start">
-              <input type="number" class="num-input" id="uniEnd" min="0" step="0.1" value="0" placeholder="end (0=full)">
-            </div>
-          </div>
-
-          <button class="apply-btn" id="uniConvert">Convert →</button>
-        </div>
-
-        <div class="progress-row" id="uniProgressRow" hidden>
-          <div class="progress-bar"><div class="progress-fill" id="uniFill"></div></div>
-          <div class="progress-text" id="uniText">0%</div>
-        </div>
-
-        <pre id="uniLog" style="display:none; max-height:120px; overflow:auto; background:var(--bg-2); border:1px solid var(--border); border-radius:8px; padding:10px; font-family:'JetBrains Mono', monospace; font-size:10px; color:var(--text-dim); white-space:pre-wrap"></pre>
-
-        <div class="export-buttons" id="uniResult" hidden style="justify-content:flex-start; flex-wrap:wrap; gap:8px">
-          <button class="dl-btn" id="uniDownload">Download <span class="tag" id="uniSize">—</span></button>
-          <button class="dl-btn" id="uniToggleLog">Show log</button>
-        </div>
       </section>
 
     </div>
@@ -7723,6 +7571,165 @@ document.getElementById('sidebarToggle').addEventListener('click', () => {
 
   syncGroupActive();
   openActiveGroup();
+})();
+
+// ── Smart tab search: typo-tolerant + synonyms, filters the sidebar live ──
+(function() {
+  const input = document.getElementById('sbSearchInput');
+  if (!input) return;
+  const sidebar = document.getElementById('sidebar');
+  const searchBox = document.getElementById('sbSearch');
+  const emptyMsg = document.getElementById('sbSearchEmpty');
+
+  // Synonyms / related words per tab — typing any of these surfaces the tab
+  const TAB_WORDS = {
+    remover:    ['image editor', 'photo editor', 'picture', 'erase', 'eraser', 'background remover', 'remove background', 'filters', 'adjustments', 'magic wand', 'edit image', 'paint'],
+    compositor: ['channel compositor', 'channels', 'rgba', 'pack textures', 'combine channels', 'texture packing', 'masks'],
+    gradient:   ['gradient', 'blend images', 'mix two images', 'fade', 'transition', 'overlay'],
+    resizecrop: ['resize', 'crop', 'cut image', 'scale', '1920x1080', 'fit size', 'wallpaper', 'thumbnail', 'dimensions', 'aspect ratio'],
+    audio:      ['audio tools', 'sound', 'music', 'wav', 'mp3', 'trim audio', 'volume', 'pitch', 'voice'],
+    timeline:   ['timeline', 'video editor', 'clips', 'tracks', 'sequence', 'cut video', 'arrange'],
+    normalmix:  ['normal mix', 'normal map', 'normals', 'bump map', 'blend normals', 'material'],
+    model3d:    ['3d model', 'displacement', 'height map', 'heightmap', 'plane', 'mesh', 'depth', 'relief'],
+    convert:    ['converter', 'convert files', 'video downloader', 'download video', 'youtube', 'tiktok', 'instagram', 'mp3', 'mp4', 'wav', 'ogg', 'gif', 'extract audio', 'zip'],
+    textcase:   ['text case', 'uppercase', 'lowercase', 'capital letters', 'caps', 'case converter'],
+    filenames:  ['file names', 'filenames', 'list files', 'copy names', 'batch names'],
+    factory:    ['factory', 'satisfactory', 'production planner', 'calculator', 'recipes', 'machines', 'nodes'],
+    brainrot:   ['feed', 'reels', 'shorts', 'brainrot', 'scroll', 'watch videos', 'clips feed'],
+    chat:       ['chat', 'messages', 'talk', 'message board', 'public chat'],
+    codes:      ['codes', 'secret code', 'redeem', 'unlock', 'easter egg', 'cheat'],
+  };
+  const GROUP_WORDS = {
+    images: ['images', 'pictures', 'photos', 'image tools'],
+    audio:  ['audio', 'sound', 'music'],
+    threed: ['3d', 'three d', 'models'],
+    text:   ['text', 'words', 'strings'],
+    social: ['social', 'community', 'online'],
+  };
+
+  const norm = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+  function editDistance(a, b, max) {
+    if (Math.abs(a.length - b.length) > max) return max + 1;
+    const dp = Array.from({ length: a.length + 1 }, (_, i) => i);
+    for (let j = 1; j <= b.length; j++) {
+      let prev = dp[0];
+      dp[0] = j;
+      for (let i = 1; i <= a.length; i++) {
+        const t = dp[i];
+        dp[i] = Math.min(dp[i] + 1, dp[i - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+        prev = t;
+      }
+    }
+    return dp[a.length];
+  }
+  function isSubsequence(q, s) {
+    let i = 0;
+    for (const ch of s) if (ch === q[i]) i++;
+    return i >= q.length;
+  }
+
+  // Score one query token against one phrase. 0 = no match, higher = better.
+  function scorePhrase(q, phrase) {
+    if (!q) return 0;
+    if (phrase.includes(q)) return q.length >= 3 ? 100 : 60;
+    let best = 0;
+    for (const word of phrase.split(' ')) {
+      if (word.startsWith(q)) { best = Math.max(best, 90); continue; }
+      if (q.length >= 3) {
+        const tol = q.length >= 6 ? 2 : 1; // "compsitor" → "compositor"
+        if (editDistance(q, word, tol) <= tol) best = Math.max(best, 70);
+        else if (q.length >= 4 && isSubsequence(q, word)) best = Math.max(best, 40);
+      }
+    }
+    return best;
+  }
+  function scorePhrases(tokens, phrases) {
+    let total = 0;
+    for (const t of tokens) {
+      let best = 0;
+      for (const p of phrases) best = Math.max(best, scorePhrase(t, p));
+      if (!best) return 0; // every typed word must match something
+      total += best;
+    }
+    return total;
+  }
+  function tabPhrases(tabBtn) {
+    const label = tabBtn.querySelector('.sb-label');
+    return [norm(label ? label.textContent : '')].concat((TAB_WORDS[tabBtn.dataset.tab] || []).map(norm));
+  }
+
+  function applySearch() {
+    const tokens = norm(input.value).split(' ').filter(Boolean);
+    const tabs = [...document.querySelectorAll('.sidebar-tabs .sb-tab')];
+    const groups = [...document.querySelectorAll('.sb-group')];
+    if (!tokens.length) {
+      sidebar.classList.remove('searching');
+      emptyMsg.hidden = true;
+      tabs.forEach(t => { t.style.display = ''; });
+      groups.forEach(g => { g.style.display = ''; g.classList.remove('search-open'); });
+      return;
+    }
+    sidebar.classList.add('searching');
+    let any = false;
+    const scores = new Map();
+    tabs.forEach(t => scores.set(t, scorePhrases(tokens, tabPhrases(t))));
+    groups.forEach(g => {
+      // A group-name match surfaces the whole group
+      const label = g.querySelector('.sb-group-btn .sb-label');
+      const gPhrases = [norm(label ? label.textContent : '')].concat((GROUP_WORDS[g.dataset.group] || []).map(norm));
+      const gScore = scorePhrases(tokens, gPhrases);
+      if (gScore > 0) g.querySelectorAll('.sb-tab').forEach(t => scores.set(t, Math.max(scores.get(t) || 0, gScore)));
+    });
+    tabs.forEach(t => {
+      const show = scores.get(t) > 0;
+      t.style.display = show ? '' : 'none';
+      if (show) any = true;
+    });
+    groups.forEach(g => {
+      const hasMatch = [...g.querySelectorAll('.sb-tab')].some(t => scores.get(t) > 0);
+      g.style.display = hasMatch ? '' : 'none';
+      g.classList.toggle('search-open', hasMatch);
+    });
+    emptyMsg.hidden = any;
+  }
+
+  function clearSearch() {
+    input.value = '';
+    applySearch();
+  }
+
+  input.addEventListener('input', applySearch);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { clearSearch(); input.blur(); }
+    else if (e.key === 'Enter') {
+      const tokens = norm(input.value).split(' ').filter(Boolean);
+      if (!tokens.length) return;
+      const visible = [...document.querySelectorAll('.sidebar-tabs .sb-tab')].filter(t => t.style.display !== 'none');
+      if (!visible.length) return;
+      visible.sort((a, b) => scorePhrases(tokens, tabPhrases(b)) - scorePhrases(tokens, tabPhrases(a)));
+      clearSearch();
+      visible[0].click(); // switches mode + collapses the sidebar
+    }
+    e.stopPropagation(); // don't trigger the site's Tab-to-toggle etc. while typing
+  });
+
+  // Clicking the (collapsed) search icon expands the sidebar and focuses the box
+  searchBox.addEventListener('click', () => {
+    if (!sidebar.classList.contains('expanded')) sidebar.classList.add('expanded');
+    input.focus();
+  });
+
+  // Ctrl+K / Cmd+K from anywhere jumps to the tab search
+  window.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      sidebar.classList.add('expanded');
+      input.focus();
+      input.select();
+    }
+  });
 })();
 
 // Sidebar theme toggles — proxy to the corner-panel toggles so all the existing
@@ -12892,211 +12899,6 @@ updatePanelForSelection();
 if (typeof setActiveTrack === 'function') setActiveTrack(0);
 
 /* ============================================================
-   MP4 → MP3 converter (uses lamejs)
-   Pipeline: file → decodeAudioData → Float32 → Int16 → lamejs.encodeBuffer → Blob
-   ============================================================ */
-
-const m2mUpload = document.getElementById('m2mUpload');
-const m2mFile = document.getElementById('m2mFile');
-const m2mInfo = document.getElementById('m2mInfo');
-const m2mSettings = document.getElementById('m2mSettings');
-const m2mBr = document.getElementById('m2mBr');
-const m2mBrVal = document.getElementById('m2mBrVal');
-const m2mConvert = document.getElementById('m2mConvert');
-const m2mProgressRow = document.getElementById('m2mProgressRow');
-const m2mFill = document.getElementById('m2mFill');
-const m2mText = document.getElementById('m2mText');
-const m2mResult = document.getElementById('m2mResult');
-const m2mDownload = document.getElementById('m2mDownload');
-const m2mSize = document.getElementById('m2mSize');
-
-let m2mSourceBuffer = null;   // AudioBuffer decoded from file
-let m2mSourceName = 'audio';
-let m2mMp3Blob = null;
-
-m2mUpload.addEventListener('click', (e) => { if (e.target.tagName !== 'INPUT') m2mFile.click(); });
-m2mFile.addEventListener('change', e => { if (e.target.files[0]) m2mLoad(e.target.files[0]); });
-m2mUpload.addEventListener('dragover', e => { e.preventDefault(); m2mUpload.classList.add('drag'); });
-m2mUpload.addEventListener('dragleave', () => m2mUpload.classList.remove('drag'));
-m2mUpload.addEventListener('drop', e => {
-  e.preventDefault();
-  m2mUpload.classList.remove('drag');
-  const f = e.dataTransfer.files[0];
-  if (f) m2mLoad(f);
-});
-
-m2mBr.addEventListener('input', () => { m2mBrVal.textContent = `${m2mBr.value} kbps`; });
-
-async function m2mLoad(file) {
-  toast('Decoding…');
-  try {
-    const arr = await file.arrayBuffer();
-    const decodeCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const buf = await decodeCtx.decodeAudioData(arr.slice(0));
-    decodeCtx.close();
-    m2mSourceBuffer = buf;
-    m2mSourceName = file.name.replace(/\.[^.]+$/, '') || 'audio';
-    m2mInfo.hidden = false;
-    m2mInfo.textContent = `${file.name} · ${buf.duration.toFixed(1)}s · ${buf.numberOfChannels === 2 ? 'stereo' : 'mono'} · ${buf.sampleRate} Hz`;
-    m2mSettings.hidden = false;
-    // Show result block right away — WAV is available immediately (no encode needed),
-    // MP3 lights up once Convert is pressed.
-    m2mResult.hidden = false;
-    m2mSize.textContent = '— convert first';
-    // Quick WAV size estimate (16-bit PCM)
-    const mono = document.querySelector('input[name="m2mCh"]:checked').value === 'mono';
-    const ch = mono ? 1 : Math.min(2, buf.numberOfChannels);
-    const wavBytes = Math.round(buf.duration * buf.sampleRate * ch * 2) + 44;
-    m2mWavSize.textContent = '~' + formatBytes(wavBytes);
-    m2mProgressRow.hidden = true;
-    toast('Ready · WAV available now, MP3 needs Convert');;
-  } catch (err) {
-    console.error(err);
-    toast('Could not decode audio from this file');
-  }
-}
-
-m2mConvert.addEventListener('click', async () => {
-  if (!m2mSourceBuffer) return;
-  if (typeof lamejs === 'undefined') { toast('MP3 encoder not loaded — check internet'); return; }
-
-  const mono = document.querySelector('input[name="m2mCh"]:checked').value === 'mono';
-  const outChannels = mono ? 1 : Math.min(2, m2mSourceBuffer.numberOfChannels);
-  const kbps = +m2mBr.value;
-  const sr = m2mSourceBuffer.sampleRate;
-
-  m2mConvert.disabled = true;
-  m2mProgressRow.hidden = false;
-  m2mResult.hidden = true;
-  m2mFill.style.width = '0%';
-  m2mText.textContent = 'Preparing…';
-
-  // Get samples
-  const left = m2mSourceBuffer.getChannelData(0);
-  const right = m2mSourceBuffer.numberOfChannels > 1 ? m2mSourceBuffer.getChannelData(1) : left;
-
-  // If mono requested from stereo, mix down
-  let finalLeft, finalRight;
-  if (mono) {
-    const mix = new Float32Array(left.length);
-    for (let i = 0; i < left.length; i++) mix[i] = (left[i] + right[i]) * 0.5;
-    finalLeft = mix;
-    finalRight = null;
-  } else {
-    finalLeft = left;
-    finalRight = right;
-  }
-
-  // Convert Float32 [-1,1] → Int16
-  const toInt16 = (f32) => {
-    const i16 = new Int16Array(f32.length);
-    for (let i = 0; i < f32.length; i++) {
-      const s = Math.max(-1, Math.min(1, f32[i]));
-      i16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-    }
-    return i16;
-  };
-
-  const leftI = toInt16(finalLeft);
-  const rightI = finalRight ? toInt16(finalRight) : null;
-
-  // Encode in chunks, yielding to the UI between chunks for progress updates.
-  try {
-    const encoder = new lamejs.Mp3Encoder(outChannels, sr, kbps);
-    const chunkSize = 1152; // lamejs preferred block size
-    const mp3Data = [];
-    const total = leftI.length;
-    let i = 0;
-
-    await new Promise((resolve, reject) => {
-      function step() {
-        try {
-          const end = Math.min(i + chunkSize * 64, total); // process 64 blocks per tick for speed
-          for (; i + chunkSize <= end; i += chunkSize) {
-            const lChunk = leftI.subarray(i, i + chunkSize);
-            const mp3 = rightI
-              ? encoder.encodeBuffer(lChunk, rightI.subarray(i, i + chunkSize))
-              : encoder.encodeBuffer(lChunk);
-            if (mp3.length) mp3Data.push(mp3);
-          }
-          const pct = Math.round((i / total) * 100);
-          m2mFill.style.width = pct + '%';
-          m2mText.textContent = `Encoding · ${pct}%`;
-          if (i + chunkSize > total) {
-            // Flush remainder
-            if (i < total) {
-              const lRem = leftI.subarray(i, total);
-              const mp3 = rightI
-                ? encoder.encodeBuffer(lRem, rightI.subarray(i, total))
-                : encoder.encodeBuffer(lRem);
-              if (mp3.length) mp3Data.push(mp3);
-            }
-            const flush = encoder.flush();
-            if (flush.length) mp3Data.push(flush);
-            resolve();
-          } else {
-            setTimeout(step, 0);
-          }
-        } catch (e) { reject(e); }
-      }
-      step();
-    });
-
-    m2mMp3Blob = new Blob(mp3Data, { type: 'audio/mpeg' });
-    m2mSize.textContent = formatBytes(m2mMp3Blob.size);
-    m2mFill.style.width = '100%';
-    m2mText.textContent = 'Done';
-    m2mResult.hidden = false;
-    toast('MP3 ready');
-  } catch (err) {
-    console.error(err);
-    toast('MP3 encoding failed');
-    m2mText.textContent = 'Failed';
-  } finally {
-    m2mConvert.disabled = false;
-  }
-});
-
-m2mDownload.addEventListener('click', () => {
-  if (!m2mMp3Blob) return;
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(m2mMp3Blob);
-  a.download = `${m2mSourceName}.mp3`;
-  a.click();
-  URL.revokeObjectURL(a.href);
-});
-
-// WAV download — built from the already-decoded buffer, applying the same mono/stereo choice
-const m2mDownloadWav = document.getElementById('m2mDownloadWav');
-const m2mWavSize = document.getElementById('m2mWavSize');
-let m2mWavBlob = null;
-m2mDownloadWav.addEventListener('click', () => {
-  if (!m2mSourceBuffer) { toast('Convert first or load a file'); return; }
-  // Build a WAV that matches the channels selection
-  const mono = document.querySelector('input[name="m2mCh"]:checked').value === 'mono';
-  const ctxSr = m2mSourceBuffer.sampleRate;
-  const len = m2mSourceBuffer.length;
-  let outBuf;
-  if (mono && m2mSourceBuffer.numberOfChannels > 1) {
-    // Mix down to mono
-    outBuf = new AudioBuffer({ length: len, numberOfChannels: 1, sampleRate: ctxSr });
-    const L = m2mSourceBuffer.getChannelData(0);
-    const R = m2mSourceBuffer.getChannelData(1);
-    const out = outBuf.getChannelData(0);
-    for (let i = 0; i < len; i++) out[i] = (L[i] + R[i]) * 0.5;
-  } else {
-    outBuf = m2mSourceBuffer;
-  }
-  m2mWavBlob = audioBufferToWav(outBuf);
-  m2mWavSize.textContent = formatBytes(m2mWavBlob.size);
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(m2mWavBlob);
-  a.download = `${m2mSourceName}.wav`;
-  a.click();
-  URL.revokeObjectURL(a.href);
-});
-
-/* ============================================================
    VIDEO DOWNLOADER — YouTube / TikTok / Instagram / 1000+ sites.
    Talks to this site's own server (server.js), which runs yt-dlp
    on the host machine. No third-party downloader services.
@@ -13211,214 +13013,6 @@ m2mDownloadWav.addEventListener('click', () => {
   urlInput.addEventListener('keydown', e => { if (e.key === 'Enter') startDownload(); });
 })();
 
-/* ============================================================
-   MP4 → GIF converter (uses gif.js)
-   Pipeline: video → seek to each frame time → draw on canvas → gif.addFrame
-   ============================================================ */
-
-const v2gUpload = document.getElementById('v2gUpload');
-const v2gFile = document.getElementById('v2gFile');
-const v2gVideo = document.getElementById('v2gVideo');
-const v2gPreview = document.getElementById('v2gPreview');
-const v2gInfo = document.getElementById('v2gInfo');
-const v2gSettings = document.getElementById('v2gSettings');
-const v2gStart = document.getElementById('v2gStart');
-const v2gEnd = document.getElementById('v2gEnd');
-const v2gRangeVal = document.getElementById('v2gRangeVal');
-const v2gFps = document.getElementById('v2gFps');
-const v2gFpsVal = document.getElementById('v2gFpsVal');
-const v2gW = document.getElementById('v2gW');
-const v2gWVal = document.getElementById('v2gWVal');
-const v2gQ = document.getElementById('v2gQ');
-const v2gQVal = document.getElementById('v2gQVal');
-const v2gConvert = document.getElementById('v2gConvert');
-const v2gProgressRow = document.getElementById('v2gProgressRow');
-const v2gFill = document.getElementById('v2gFill');
-const v2gText = document.getElementById('v2gText');
-const v2gResult = document.getElementById('v2gResult');
-const v2gDownload = document.getElementById('v2gDownload');
-const v2gSize = document.getElementById('v2gSize');
-
-let v2gLoaded = false;
-let v2gSourceName = 'video';
-let v2gGifBlob = null;
-let v2gWorkerUrl = null;
-
-v2gUpload.addEventListener('click', (e) => { if (e.target.tagName !== 'INPUT') v2gFile.click(); });
-v2gFile.addEventListener('change', e => { if (e.target.files[0]) v2gLoad(e.target.files[0]); });
-v2gUpload.addEventListener('dragover', e => { e.preventDefault(); v2gUpload.classList.add('drag'); });
-v2gUpload.addEventListener('dragleave', () => v2gUpload.classList.remove('drag'));
-v2gUpload.addEventListener('drop', e => {
-  e.preventDefault();
-  v2gUpload.classList.remove('drag');
-  const f = e.dataTransfer.files[0];
-  if (f && f.type.startsWith('video/')) v2gLoad(f);
-  else if (f) toast('Not a video file');
-});
-
-function v2gLoad(file) {
-  const url = URL.createObjectURL(file);
-  v2gVideo.src = url;
-  v2gSourceName = file.name.replace(/\.[^.]+$/, '') || 'video';
-  v2gVideo.onloadedmetadata = () => {
-    const dur = v2gVideo.duration;
-    v2gLoaded = true;
-    v2gInfo.hidden = false;
-    v2gInfo.textContent = `${file.name} · ${dur.toFixed(1)}s · ${v2gVideo.videoWidth}×${v2gVideo.videoHeight}`;
-    v2gSettings.hidden = false;
-    v2gStart.value = 0;
-    v2gEnd.value = Math.min(5, dur).toFixed(1);
-    v2gStart.max = dur;
-    v2gEnd.max = dur;
-    updateRangeVal();
-    v2gResult.hidden = true;
-    v2gProgressRow.hidden = true;
-
-    // Show a preview frame at t=0
-    drawPreviewFrame();
-  };
-  v2gVideo.onerror = () => toast('Could not load video');
-}
-
-function updateRangeVal() {
-  const s = Math.max(0, +v2gStart.value);
-  const e = Math.max(s, +v2gEnd.value);
-  v2gRangeVal.textContent = `${s.toFixed(1)} – ${e.toFixed(1)}s`;
-}
-v2gStart.addEventListener('input', updateRangeVal);
-v2gEnd.addEventListener('input', updateRangeVal);
-v2gFps.addEventListener('input', () => { v2gFpsVal.textContent = `${v2gFps.value} fps`; });
-v2gW.addEventListener('input', () => { v2gWVal.textContent = `${v2gW.value} px`; drawPreviewFrame(); });
-v2gQ.addEventListener('input', () => { v2gQVal.textContent = v2gQ.value; });
-
-function drawPreviewFrame() {
-  if (!v2gLoaded) return;
-  const outW = +v2gW.value;
-  const outH = Math.round(v2gVideo.videoHeight * (outW / v2gVideo.videoWidth));
-  v2gPreview.width = outW;
-  v2gPreview.height = outH;
-  v2gPreview.hidden = false;
-  const ctx = v2gPreview.getContext('2d');
-  ctx.drawImage(v2gVideo, 0, 0, outW, outH);
-}
-
-// Seek video to specific time; resolve when a fresh frame is ready to read.
-function seekVideoTo(time) {
-  return new Promise((resolve) => {
-    const onSeeked = () => {
-      v2gVideo.removeEventListener('seeked', onSeeked);
-      // One more frame tick so the painted pixels are stable
-      requestAnimationFrame(() => resolve());
-    };
-    v2gVideo.addEventListener('seeked', onSeeked);
-    v2gVideo.currentTime = Math.min(Math.max(0, time), v2gVideo.duration - 0.001);
-  });
-}
-
-async function ensureGifWorker() {
-  if (v2gWorkerUrl) return v2gWorkerUrl;
-  // Fetch the gif.js worker script as a blob URL — avoids cross-origin worker issues.
-  const r = await fetch('https://unpkg.com/gif.js@0.2.0/dist/gif.worker.js');
-  if (!r.ok) throw new Error('Could not load gif worker');
-  const blob = await r.blob();
-  v2gWorkerUrl = URL.createObjectURL(blob);
-  return v2gWorkerUrl;
-}
-
-v2gConvert.addEventListener('click', async () => {
-  if (!v2gLoaded) return;
-  if (typeof GIF === 'undefined') { toast('GIF encoder not loaded — check internet'); return; }
-
-  const start = Math.max(0, +v2gStart.value);
-  const end = Math.max(start + 0.05, +v2gEnd.value);
-  const fps = Math.max(1, +v2gFps.value);
-  const outW = +v2gW.value;
-  const outH = Math.round(v2gVideo.videoHeight * (outW / v2gVideo.videoWidth));
-  const quality = +v2gQ.value;
-  const frameCount = Math.ceil((end - start) * fps);
-  const frameDelay = 1000 / fps;
-
-  if (frameCount > 600) {
-    if (!confirm(`That's ${frameCount} frames — this may be slow and memory-heavy. Continue?`)) return;
-  }
-
-  v2gConvert.disabled = true;
-  v2gProgressRow.hidden = false;
-  v2gResult.hidden = true;
-  v2gFill.style.width = '0%';
-  v2gText.textContent = 'Loading encoder…';
-
-  try {
-    const workerUrl = await ensureGifWorker();
-
-    const gif = new GIF({
-      workers: 2,
-      quality,
-      width: outW,
-      height: outH,
-      workerScript: workerUrl,
-      repeat: 0, // loop forever
-    });
-
-    const canvas = document.createElement('canvas');
-    canvas.width = outW;
-    canvas.height = outH;
-    const ctx = canvas.getContext('2d');
-
-    // Sample frames
-    for (let i = 0; i < frameCount; i++) {
-      const t = start + (i / fps);
-      await seekVideoTo(t);
-      ctx.drawImage(v2gVideo, 0, 0, outW, outH);
-      // Clone the canvas as a separate snapshot so gif.js sees stable pixels
-      const frameCanvas = document.createElement('canvas');
-      frameCanvas.width = outW;
-      frameCanvas.height = outH;
-      frameCanvas.getContext('2d').drawImage(canvas, 0, 0);
-      gif.addFrame(frameCanvas, { delay: frameDelay, copy: false });
-
-      const pct = Math.round(((i + 1) / frameCount) * 50); // sampling = first 50%
-      v2gFill.style.width = pct + '%';
-      v2gText.textContent = `Sampling · frame ${i + 1} / ${frameCount}`;
-    }
-
-    v2gText.textContent = 'Encoding…';
-    gif.on('progress', p => {
-      const pct = 50 + Math.round(p * 50); // encoding = second 50%
-      v2gFill.style.width = pct + '%';
-      v2gText.textContent = `Encoding · ${pct}%`;
-    });
-    gif.on('finished', blob => {
-      v2gGifBlob = blob;
-      v2gFill.style.width = '100%';
-      v2gText.textContent = 'Done';
-      v2gSize.textContent = formatBytes(blob.size);
-      v2gResult.hidden = false;
-      v2gConvert.disabled = false;
-      toast('GIF ready');
-    });
-    gif.on('abort', () => {
-      v2gText.textContent = 'Aborted';
-      v2gConvert.disabled = false;
-    });
-    gif.render();
-  } catch (err) {
-    console.error(err);
-    toast('GIF render failed');
-    v2gText.textContent = 'Failed';
-    v2gConvert.disabled = false;
-  }
-});
-
-v2gDownload.addEventListener('click', () => {
-  if (!v2gGifBlob) return;
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(v2gGifBlob);
-  a.download = `${v2gSourceName}.gif`;
-  a.click();
-  URL.revokeObjectURL(a.href);
-});
-
 setCurrentColor([255, 0, 0]);
 
 /* ============================================================
@@ -13484,289 +13078,6 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
 ['dragover','drop'].forEach(e =>
   window.addEventListener(e, ev => { if (ev.target === document.body) ev.preventDefault(); })
 );
-
-/* ============================================================
-   UNIVERSAL CONVERTER — anything → anything via ffmpeg.wasm
-   Loads ffmpeg.wasm lazily on first use (the engine is ~30MB).
-   For most media-to-media conversions this works great.
-   For non-media targets (FBX, OBJ, etc) ffmpeg refuses or you get a corrupt file.
-   ============================================================ */
-(function setupUniversalConverter() {
-  const uniUpload = document.getElementById('uniUpload');
-  const uniFile = document.getElementById('uniFile');
-  const uniInfo = document.getElementById('uniInfo');
-  const uniSettings = document.getElementById('uniSettings');
-  const uniFormat = document.getElementById('uniFormat');
-  const uniCustomRow = document.getElementById('uniCustomRow');
-  const uniCustomExt = document.getElementById('uniCustomExt');
-  const uniStart = document.getElementById('uniStart');
-  const uniEnd = document.getElementById('uniEnd');
-  const uniTrimVal = document.getElementById('uniTrimVal');
-  const uniConvert = document.getElementById('uniConvert');
-  const uniProgressRow = document.getElementById('uniProgressRow');
-  const uniFill = document.getElementById('uniFill');
-  const uniText = document.getElementById('uniText');
-  const uniLog = document.getElementById('uniLog');
-  const uniResult = document.getElementById('uniResult');
-  const uniDownload = document.getElementById('uniDownload');
-  const uniSize = document.getElementById('uniSize');
-  const uniToggleLog = document.getElementById('uniToggleLog');
-
-  if (!uniUpload) return;
-
-  let uniSourceFile = null;   // raw File from user
-  let uniOutBlob = null;
-  let uniOutName = 'output';
-  let ffmpeg = null;          // FFmpeg instance (lazy-loaded)
-  let ffmpegLoading = null;   // promise while loading
-
-  // ---- File picker / drop wiring ----
-  uniUpload.addEventListener('click', (e) => { if (e.target.tagName !== 'INPUT') uniFile.click(); });
-  uniFile.addEventListener('change', e => { if (e.target.files[0]) uniLoadFile(e.target.files[0]); e.target.value = ''; });
-  uniUpload.addEventListener('dragover', e => { e.preventDefault(); uniUpload.classList.add('drag'); });
-  uniUpload.addEventListener('dragleave', () => uniUpload.classList.remove('drag'));
-  uniUpload.addEventListener('drop', e => {
-    e.preventDefault(); uniUpload.classList.remove('drag');
-    const f = e.dataTransfer.files[0];
-    if (f) uniLoadFile(f);
-  });
-
-  // ---- Settings UI ----
-  uniFormat.addEventListener('change', () => {
-    uniCustomRow.hidden = (uniFormat.value !== '__custom__');
-  });
-
-  function syncTrimLabel() {
-    const s = +uniStart.value || 0, e = +uniEnd.value || 0;
-    uniTrimVal.textContent = (s === 0 && e === 0) ? 'full clip' : `${s.toFixed(1)} – ${e === 0 ? 'end' : e.toFixed(1) + 's'}`;
-  }
-  uniStart.addEventListener('input', syncTrimLabel);
-  uniEnd.addEventListener('input', syncTrimLabel);
-
-  function uniLoadFile(file) {
-    uniSourceFile = file;
-    uniOutBlob = null;
-    uniOutName = (file.name.replace(/\.[^.]+$/, '') || 'output');
-    uniInfo.hidden = false;
-    uniInfo.textContent = `${file.name} · ${formatBytes(file.size)} · ${file.type || 'unknown type'}`;
-    uniSettings.hidden = false;
-    uniResult.hidden = true;
-    uniProgressRow.hidden = true;
-    uniLog.textContent = '';
-    uniLog.style.display = 'none';
-    uniToggleLog.textContent = 'Show log';
-    syncTrimLabel();
-    // Default suggestion: video files → GIF, audio → MP3
-    if (file.type.startsWith('audio/')) uniFormat.value = 'mp3';
-    else if (file.type.startsWith('image/')) uniFormat.value = 'png';
-    else uniFormat.value = 'gif'; // default for video
-    uniCustomRow.hidden = (uniFormat.value !== '__custom__');
-  }
-
-  // ---- ffmpeg.wasm loader ----
-  // Use the shared ffmpeg singleton (defined at module scope above).
-  // First call from either feature triggers the engine download; subsequent
-  // calls from anywhere are instant.
-  async function loadFFmpeg() {
-    if (ffmpeg) return ffmpeg;
-    if (ffmpegLoading) return ffmpegLoading;
-
-    ffmpegLoading = (async () => {
-      uniText.textContent = 'Loading ffmpeg engine (~30 MB, one-time)…';
-      uniProgressRow.hidden = false;
-      uniFill.style.width = '5%';
-
-      const ff = await window.loadSharedFFmpeg((pct, msg) => {
-        uniFill.style.width = Math.max(5, Math.round(pct * 0.30)) + '%';
-        if (msg) uniText.textContent = msg;
-      });
-
-      // Register THIS card's progress/log callbacks with the shared instance.
-      // (The YT downloader does the same when it runs — last writer wins, which
-      // is fine because only one feature runs at a time.)
-      window._sharedFFmpegLogCb = (message) => {
-        uniLog.textContent += message + '\n';
-        uniLog.scrollTop = uniLog.scrollHeight;
-      };
-      window._sharedFFmpegProgressCb = (progress, time) => {
-        const p = (typeof progress === 'number') ? progress : 0;
-        const pct = 30 + Math.round(p * 65);
-        uniFill.style.width = Math.min(95, pct) + '%';
-        uniText.textContent = `Converting · ${Math.round(p * 100)}%`;
-      };
-
-      uniFill.style.width = '30%';
-      ffmpeg = ff;
-      return ff;
-    })();
-    return ffmpegLoading;
-  }
-
-  // Map output format → ffmpeg args. Returns { args, ext, mime }.
-  function buildFfmpegCommand(inputName, outputName, fmt, customExt, trimStart, trimEnd) {
-    const ext = (fmt === '__custom__') ? (customExt || 'bin').toLowerCase().replace(/^\./, '') : fmt;
-    const args = ['-y']; // overwrite output
-    // Trim BEFORE -i for fast keyframe-aligned seek when start > 0
-    if (trimStart && trimStart > 0) args.push('-ss', String(trimStart));
-    args.push('-i', inputName);
-    if (trimEnd && trimEnd > trimStart) args.push('-to', String(trimEnd));
-
-    let mime = 'application/octet-stream';
-    switch (ext) {
-      case 'mp4':
-        args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-c:a', 'aac', '-b:a', '128k', '-pix_fmt', 'yuv420p', '-movflags', '+faststart');
-        mime = 'video/mp4'; break;
-      case 'webm':
-        args.push('-c:v', 'libvpx-vp9', '-deadline', 'realtime', '-cpu-used', '8', '-c:a', 'libopus');
-        mime = 'video/webm'; break;
-      case 'mov':
-        args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac');
-        mime = 'video/quicktime'; break;
-      case 'mkv':
-        args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac');
-        mime = 'video/x-matroska'; break;
-      case 'avi':
-        args.push('-c:v', 'mpeg4', '-c:a', 'libmp3lame');
-        mime = 'video/x-msvideo'; break;
-      case 'gif':
-        // Two-pass-style palette inline; smaller width and 10fps for sane size
-        args.push('-vf', 'fps=12,scale=480:-2:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse');
-        mime = 'image/gif'; break;
-      case 'mp3':
-        args.push('-vn', '-c:a', 'libmp3lame', '-b:a', '192k');
-        mime = 'audio/mpeg'; break;
-      case 'wav':
-        args.push('-vn', '-c:a', 'pcm_s16le');
-        mime = 'audio/wav'; break;
-      case 'ogg':
-        args.push('-vn', '-c:a', 'libvorbis');
-        mime = 'audio/ogg'; break;
-      case 'opus':
-        args.push('-vn', '-c:a', 'libopus');
-        mime = 'audio/opus'; break;
-      case 'flac':
-        args.push('-vn', '-c:a', 'flac');
-        mime = 'audio/flac'; break;
-      case 'aac':
-        args.push('-vn', '-c:a', 'aac', '-b:a', '192k');
-        mime = 'audio/aac'; break;
-      case 'm4a':
-        args.push('-vn', '-c:a', 'aac', '-b:a', '192k');
-        mime = 'audio/mp4'; break;
-      case 'png':
-      case 'jpg':
-      case 'jpeg':
-      case 'webp':
-      case 'bmp':
-        // Single frame: take from trimStart (default 0) — let user trim to pick frame
-        args.push('-vframes', '1');
-        mime = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
-        break;
-      default:
-        // Best-effort for unknown extensions — ffmpeg will likely fail, that's fine.
-        mime = 'application/octet-stream';
-        break;
-    }
-    args.push(outputName);
-    return { args, ext, mime, outputName };
-  }
-
-  // ---- Convert button ----
-  uniConvert.addEventListener('click', async () => {
-    if (!uniSourceFile) { toast('Drop a file first'); return; }
-
-    const fmt = uniFormat.value;
-    const customExt = (uniCustomExt.value || '').trim();
-    if (fmt === '__custom__' && !customExt) { toast('Type a custom extension'); return; }
-
-    const trimStart = Math.max(0, +uniStart.value || 0);
-    const trimEndRaw = Math.max(0, +uniEnd.value || 0);
-    const trimEnd = (trimEndRaw > trimStart) ? trimEndRaw : 0;
-
-    // Special-case: GIF — use existing high-quality gif.js path for video files.
-    // Faster, smaller, and avoids forcing ffmpeg to download for the common case.
-    // But ffmpeg path also works and is more flexible.
-
-    uniConvert.disabled = true;
-    uniResult.hidden = true;
-    uniProgressRow.hidden = false;
-    uniFill.style.width = '0%';
-    uniText.textContent = 'Preparing…';
-    uniLog.textContent = '';
-
-    try {
-      const ff = await loadFFmpeg();
-
-      const inputName = 'input' + (uniSourceFile.name.match(/\.[^.]+$/) || ['.bin'])[0];
-      const cmd = buildFfmpegCommand(inputName, 'output.' + ((fmt === '__custom__') ? customExt.replace(/^\./, '') : fmt), fmt, customExt, trimStart, trimEnd);
-
-      // Write input to virtual FS
-      uniText.textContent = 'Loading file into engine…';
-      uniFill.style.width = '32%';
-      const fetchFile = (window.FFmpegUtil && window.FFmpegUtil.fetchFile) || (async (file) => new Uint8Array(await file.arrayBuffer()));
-      const inputData = await fetchFile(uniSourceFile);
-      await ff.writeFile(inputName, inputData);
-
-      uniText.textContent = 'Running ffmpeg…';
-      uniFill.style.width = '35%';
-      const exitCode = await ff.exec(cmd.args);
-      if (exitCode !== 0 && exitCode !== undefined) {
-        // Some ffmpeg.wasm versions return undefined on success — treat that as OK
-        throw new Error(`ffmpeg exited with code ${exitCode}`);
-      }
-
-      uniText.textContent = 'Reading output…';
-      uniFill.style.width = '96%';
-      const outputData = await ff.readFile(cmd.outputName);
-      // outputData is Uint8Array
-      uniOutBlob = new Blob([outputData.buffer], { type: cmd.mime });
-      uniOutName = `${(uniSourceFile.name.replace(/\.[^.]+$/, '') || 'output')}.${cmd.ext}`;
-
-      // Cleanup virtual FS
-      try { await ff.deleteFile(inputName); } catch (e) {}
-      try { await ff.deleteFile(cmd.outputName); } catch (e) {}
-
-      uniFill.style.width = '100%';
-      uniText.textContent = 'Done';
-      uniSize.textContent = formatBytes(uniOutBlob.size);
-      uniDownload.querySelector('.tag') ? null : null; // no-op
-      uniDownload.firstChild && (uniDownload.firstChild.textContent = `Download .${cmd.ext.toUpperCase()} `);
-      uniResult.hidden = false;
-      toast(`Converted to .${cmd.ext} (${formatBytes(uniOutBlob.size)})`);
-    } catch (err) {
-      console.error('[uni-convert]', err);
-      uniText.textContent = 'Failed — see log';
-      uniLog.style.display = 'block';
-      uniToggleLog.textContent = 'Hide log';
-      const msg = (err && err.message) ? err.message : String(err);
-      uniLog.textContent += '\n[error] ' + msg + '\n';
-      toast('Conversion failed — open the log for details');
-    } finally {
-      uniConvert.disabled = false;
-    }
-  });
-
-  uniDownload.addEventListener('click', () => {
-    if (!uniOutBlob) return;
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(uniOutBlob);
-    a.download = uniOutName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  });
-
-  uniToggleLog.addEventListener('click', () => {
-    if (uniLog.style.display === 'none') {
-      uniLog.style.display = 'block';
-      uniToggleLog.textContent = 'Hide log';
-    } else {
-      uniLog.style.display = 'none';
-      uniToggleLog.textContent = 'Show log';
-    }
-  });
-})();
 
 /* ============================================================
    BULK CONVERTER — many files → one target format
