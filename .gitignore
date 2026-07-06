@@ -1,0 +1,12 @@
+# Downloader binaries — the server auto-downloads these into bin/ on first use
+bin/
+
+# Dependencies — restored by `npm install` (Render does this at build time)
+node_modules/
+
+# Editor / IDE junk
+.vs/
+
+# Downloader temp output
+*.part
+*.ytdl

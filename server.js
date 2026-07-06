@@ -674,5 +674,266 @@ io.on('connection', (socket) => {
   });
 });
 
+/* ===================================================================
+   VIDEO DOWNLOADER — self-hosted backend for the Converter tab.
+   Runs yt-dlp on this machine (auto-downloaded to ./bin on first use,
+   plus ffmpeg for MP3 conversion / HD merging). Jobs report live
+   progress; finished files are streamed to the browser then deleted.
+   =================================================================== */
+const fs = require('fs');
+const os = require('os');
+const https = require('https');
+const { execFileSync } = require('child_process');
+
+const BIN_DIR = path.join(__dirname, 'bin');
+const IS_WIN = process.platform === 'win32';
+const YTDLP_PATH = path.join(BIN_DIR, IS_WIN ? 'yt-dlp.exe' : 'yt-dlp');
+const FFMPEG_LOCAL = path.join(BIN_DIR, IS_WIN ? 'ffmpeg.exe' : 'ffmpeg');
+const DL_DIR = path.join(os.tmpdir(), 'aio-editor-downloads');
+
+// setup phase shared with clients so the first-ever download can show
+// "installing tools" progress instead of hanging silently
+const dlSetup = { phase: fs.existsSync(YTDLP_PATH) ? 'ready' : 'idle', pct: 0 };
+
+function httpsDownload(url, dest, onProgress, redirects = 8) {
+  return new Promise((resolve, reject) => {
+    https.get(url, { headers: { 'User-Agent': 'aio-editor' } }, res => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) {
+        res.resume();
+        return resolve(httpsDownload(res.headers.location, dest, onProgress, redirects - 1));
+      }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error('HTTP ' + res.statusCode + ' fetching ' + url)); }
+      const total = parseInt(res.headers['content-length'], 10) || 0;
+      let got = 0;
+      const out = fs.createWriteStream(dest);
+      res.on('data', c => { got += c.length; if (total && onProgress) onProgress(Math.round(got / total * 100)); });
+      res.pipe(out);
+      out.on('finish', () => out.close(() => resolve()));
+      out.on('error', reject);
+      res.on('error', reject);
+    }).on('error', reject);
+  });
+}
+
+function hasCmd(cmd) {
+  try { execFileSync(cmd, ['-version'], { stdio: 'ignore', windowsHide: true }); return true; } catch (e) { return false; }
+}
+function ffmpegPath() {
+  if (fs.existsSync(FFMPEG_LOCAL)) return FFMPEG_LOCAL;
+  if (hasCmd('ffmpeg')) return 'ffmpeg';
+  return null;
+}
+
+// Grab the ffmpeg build published by the yt-dlp team and keep only the exe.
+async function downloadFfmpeg(onProgress) {
+  const tmpBase = path.join(os.tmpdir(), 'aio-ffmpeg-' + Date.now());
+  fs.mkdirSync(tmpBase, { recursive: true });
+  try {
+    if (IS_WIN) {
+      const zipPath = path.join(tmpBase, 'ffmpeg.zip');
+      await httpsDownload('https://github.com/yt-dlp/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip', zipPath, onProgress);
+      await new Promise((resolve, reject) => {
+        const ps = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+          `Expand-Archive -LiteralPath '${zipPath}' -DestinationPath '${tmpBase}' -Force`], { windowsHide: true });
+        ps.on('error', reject);
+        ps.on('close', code => code === 0 ? resolve() : reject(new Error('unzip failed (' + code + ')')));
+      });
+      const found = [];
+      (function walk(dir) {
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+          const p = path.join(dir, e.name);
+          if (e.isDirectory()) walk(p);
+          else if (/^ff(mpeg|probe)\.exe$/i.test(e.name)) found.push(p);
+        }
+      })(tmpBase);
+      if (!found.some(f => /ffmpeg\.exe$/i.test(f))) throw new Error('ffmpeg.exe not found in archive');
+      for (const f of found) fs.copyFileSync(f, path.join(BIN_DIR, path.basename(f).toLowerCase()));
+    } else {
+      const arch = process.arch === 'arm64' ? 'linuxarm64' : 'linux64';
+      const tarPath = path.join(tmpBase, 'ffmpeg.tar.xz');
+      await httpsDownload(`https://github.com/yt-dlp/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-${arch}-gpl.tar.xz`, tarPath, onProgress);
+      await new Promise((resolve, reject) => {
+        const t = spawn('tar', ['-xJf', tarPath, '-C', tmpBase]);
+        t.on('error', reject);
+        t.on('close', code => code === 0 ? resolve() : reject(new Error('tar failed (' + code + ')')));
+      });
+      const found = [];
+      (function walk(dir) {
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+          const p = path.join(dir, e.name);
+          if (e.isDirectory()) walk(p);
+          else if (e.name === 'ffmpeg' || e.name === 'ffprobe') found.push(p);
+        }
+      })(tmpBase);
+      if (!found.some(f => path.basename(f) === 'ffmpeg')) throw new Error('ffmpeg not found in archive');
+      for (const f of found) { const d = path.join(BIN_DIR, path.basename(f)); fs.copyFileSync(f, d); fs.chmodSync(d, 0o755); }
+    }
+  } finally {
+    fs.rm(tmpBase, { recursive: true, force: true }, () => {});
+  }
+}
+
+let ytdlpFetchPromise = null;
+function ensureYtdlp() {
+  if (fs.existsSync(YTDLP_PATH)) return Promise.resolve();
+  if (!ytdlpFetchPromise) {
+    ytdlpFetchPromise = (async () => {
+      fs.mkdirSync(BIN_DIR, { recursive: true });
+      dlSetup.phase = 'ytdlp'; dlSetup.pct = 0;
+      const asset = IS_WIN ? 'yt-dlp.exe' : (process.platform === 'darwin' ? 'yt-dlp_macos' : 'yt-dlp');
+      const tmp = YTDLP_PATH + '.tmp';
+      await httpsDownload('https://github.com/yt-dlp/yt-dlp/releases/latest/download/' + asset, tmp, p => dlSetup.pct = p);
+      fs.renameSync(tmp, YTDLP_PATH);
+      if (!IS_WIN) fs.chmodSync(YTDLP_PATH, 0o755);
+      console.log('[downloader] yt-dlp fetched');
+    })().catch(e => { ytdlpFetchPromise = null; throw e; });
+  }
+  return ytdlpFetchPromise;
+}
+
+let dlSetupPromise = null;
+function ensureDlTools() {
+  if (!dlSetupPromise) {
+    dlSetupPromise = (async () => {
+      await ensureYtdlp();
+      if (!ffmpegPath()) {
+        dlSetup.phase = 'ffmpeg'; dlSetup.pct = 0;
+        await downloadFfmpeg(p => dlSetup.pct = p);
+      }
+      dlSetup.phase = 'ready';
+      console.log('[downloader] yt-dlp + ffmpeg ready');
+    })().catch(e => {
+      dlSetup.phase = 'error';
+      dlSetupPromise = null; // allow retry on next request
+      throw e;
+    });
+  }
+  return dlSetupPromise;
+}
+
+function cleanYtdlpError(stderr) {
+  const lines = String(stderr).split(/\r?\n/).filter(l => l.startsWith('ERROR:'));
+  if (!lines.length) return null;
+  return lines[lines.length - 1]
+    .replace(/^ERROR:\s*(\[[^\]]*\]\s*)?([A-Za-z0-9_-]{6,}:\s*)?/, '')
+    .slice(0, 300);
+}
+
+const dlJobs = new Map();
+let dlSeq = 0;
+
+async function runDlJob(job, url, kind, quality) {
+  await ensureDlTools();
+  job.state = 'starting';
+  fs.mkdirSync(job.dir, { recursive: true });
+  const ff = ffmpegPath();
+  const args = [
+    '--newline', '--no-playlist', '--no-warnings', '--no-mtime',
+    '-N', '8', // parallel fragment downloads — saturates the connection
+    '-o', path.join(job.dir, '%(title).150B.%(ext)s'),
+  ];
+  if (ff && ff !== 'ffmpeg') args.push('--ffmpeg-location', ff);
+  if (kind === 'audio') {
+    args.push('-f', 'bestaudio/best', '-x', '--audio-format', 'mp3');
+    const kbps = parseInt(quality, 10);
+    if (kbps) args.push('--audio-quality', kbps + 'K');
+  } else {
+    const h = parseInt(quality, 10);
+    const cap = h ? `[height<=${h}]` : '';
+    if (kind === 'mute') args.push('-f', `bv*${cap}[ext=mp4]/bv*${cap}/bv*`);
+    else args.push('-f', `bv*${cap}[ext=mp4]+ba[ext=m4a]/bv*${cap}+ba/b${cap}/b`, '--merge-output-format', 'mp4');
+  }
+  args.push(url);
+
+  await new Promise((resolve, reject) => {
+    const proc = spawn(YTDLP_PATH, args, { windowsHide: true });
+    job.proc = proc;
+    let errBuf = '';
+    proc.stdout.on('data', chunk => {
+      for (const line of chunk.toString().split(/\r?\n/)) {
+        const m = line.match(/\[download\]\s+([\d.]+)%\s+of\s+~?\s*[\d.]+\w+(?:\s+at\s+([\d.]+\s*\w+\/s))?(?:\s+ETA\s+([\d:]+))?/);
+        if (m) { job.state = 'downloading'; job.pct = +m[1]; job.speed = m[2] || ''; job.eta = m[3] || ''; }
+        else if (/^\[(Merger|ExtractAudio|VideoConvertor|Fixup)/.test(line.trim())) { job.state = 'processing'; job.pct = 99; }
+        const dm = line.match(/\[download\] Destination: (.+)$/);
+        if (dm) job.title = path.basename(dm[1].trim()).replace(/\.[^.]+$/, '');
+      }
+    });
+    proc.stderr.on('data', d => { errBuf += d; if (errBuf.length > 8000) errBuf = errBuf.slice(-8000); });
+    proc.on('error', reject);
+    proc.on('close', code => {
+      job.proc = null;
+      if (code === 0) resolve();
+      else reject(new Error(cleanYtdlpError(errBuf) || ('downloader exited with code ' + code)));
+    });
+  });
+
+  const files = fs.readdirSync(job.dir).filter(f => !/\.(part|ytdl|temp)$/i.test(f));
+  if (!files.length) throw new Error('Download finished but produced no file');
+  files.sort((a, b) => fs.statSync(path.join(job.dir, b)).size - fs.statSync(path.join(job.dir, a)).size);
+  job.file = path.join(job.dir, files[0]);
+  job.pct = 100;
+  job.state = 'done';
+}
+
+function cleanupDlJob(job) {
+  dlJobs.delete(job.id);
+  try { if (job.proc) job.proc.kill(); } catch (e) {}
+  fs.rm(job.dir, { recursive: true, force: true }, () => {});
+}
+
+app.get('/api/dl/ping', (req, res) => {
+  res.json({ ok: true, setup: dlSetup.phase, ytdlp: fs.existsSync(YTDLP_PATH), ffmpeg: !!ffmpegPath() });
+});
+
+app.get('/api/dl/start', (req, res) => {
+  const url = String(req.query.url || '').trim();
+  if (!/^https?:\/\/\S+$/i.test(url)) return res.status(400).json({ error: 'That does not look like a link' });
+  const kind = ['audio', 'video', 'mute'].includes(req.query.kind) ? req.query.kind : 'video';
+  const quality = String(req.query.quality || '').replace(/[^0-9a-z]/gi, '').slice(0, 8);
+  const id = 'j' + (++dlSeq) + Math.random().toString(36).slice(2, 8);
+  const job = {
+    id, state: 'setup', pct: 0, speed: '', eta: '', title: '',
+    file: null, error: null, proc: null,
+    dir: path.join(DL_DIR, id), createdAt: Date.now(),
+  };
+  dlJobs.set(id, job);
+  res.json({ id });
+  runDlJob(job, url, kind, quality).catch(e => {
+    job.state = 'error';
+    job.error = String(e && e.message || e).slice(0, 300);
+    console.error('[downloader]', job.error);
+  });
+});
+
+app.get('/api/dl/progress/:id', (req, res) => {
+  const job = dlJobs.get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Unknown job' });
+  const out = {
+    state: job.state, pct: job.pct, speed: job.speed, eta: job.eta,
+    title: job.title, error: job.error,
+    filename: job.file ? path.basename(job.file) : null,
+  };
+  if (job.state === 'setup') { out.setupPhase = dlSetup.phase; out.setupPct = dlSetup.pct; }
+  res.json(out);
+});
+
+app.get('/api/dl/file/:id', (req, res) => {
+  const job = dlJobs.get(req.params.id);
+  if (!job || !job.file) return res.status(404).send('Not ready');
+  res.download(job.file, path.basename(job.file), () => cleanupDlJob(job));
+});
+
+// Janitor: kill abandoned jobs after 30 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const job of dlJobs.values()) {
+    if (now - job.createdAt > 30 * 60 * 1000) cleanupDlJob(job);
+  }
+}, 5 * 60 * 1000);
+
+// Warm up yt-dlp in the background at boot (small, ~18MB) so the first
+// download doesn't stall; ffmpeg (~170MB, one-time) fetches on first job.
+ensureYtdlp().catch(e => console.warn('[downloader] yt-dlp prefetch failed:', e.message));
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Claude Arena running on http://localhost:${PORT}`));

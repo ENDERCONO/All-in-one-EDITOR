@@ -109,7 +109,7 @@
     padding-top: 12px;
     border-top: 1px solid var(--border);
   }
-  .sb-tab, .sb-theme {
+  .sb-tab, .sb-theme, .sb-group-btn {
     background: transparent;
     border: 1px solid transparent;
     color: var(--text-dim);
@@ -130,7 +130,7 @@
     overflow: hidden;
     height: 40px;
   }
-  .sb-tab:hover, .sb-theme:hover { background: var(--bg-2); color: var(--text); }
+  .sb-tab:hover, .sb-theme:hover, .sb-group-btn:hover { background: var(--bg-2); color: var(--text); }
   .sb-tab.active {
     background: var(--surface-3);
     color: var(--text);
@@ -168,11 +168,37 @@
   .sidebar.expanded .sb-label { opacity: 1; pointer-events: auto; }
   /* When collapsed, show only icon centered (label hidden but element keeps its row) */
   .sidebar:not(.expanded) .sb-tab,
-  .sidebar:not(.expanded) .sb-theme {
+  .sidebar:not(.expanded) .sb-theme,
+  .sidebar:not(.expanded) .sb-group-btn {
     justify-content: center;
     padding: 10px 0;
     gap: 0;
   }
+  /* ── Sidebar groups (category → sub-tabs) ── */
+  .sb-group { display: flex; flex-direction: column; }
+  .sb-caret {
+    margin-left: auto;
+    flex-shrink: 0;
+    font-size: 9px;
+    color: var(--text-faint);
+    opacity: 0;
+    transition: transform 0.18s, opacity 0.18s;
+  }
+  .sidebar.expanded .sb-caret { opacity: 1; }
+  .sb-group.open .sb-caret { transform: rotate(90deg); }
+  .sb-group-btn.active { color: var(--text); }
+  .sb-group-btn.active .sb-icon { color: var(--accent); text-shadow: 0 0 12px var(--accent); }
+  .sb-sub {
+    display: none;
+    flex-direction: column;
+    gap: 2px;
+    margin: 2px 0 4px 15px;
+    padding-left: 7px;
+    border-left: 1px solid var(--border);
+  }
+  .sidebar.expanded .sb-group.open .sb-sub { display: flex; }
+  .sb-sub .sb-tab { height: 32px; padding: 6px 8px; font-size: 10px; gap: 8px; }
+  .sb-sub .sb-icon { width: 18px; }
   @media (max-width: 720px) {
     .sidebar { width: 48px; padding: 8px 6px; }
     .sidebar.expanded { width: 180px; }
@@ -5271,66 +5297,125 @@
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
     </button>
     <nav class="sidebar-tabs" role="tablist">
-      <button class="sb-tab active" data-tab="compositor" title="Channel Compositor">
-        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.2"/><rect x="13" y="3" width="8" height="8" rx="1.2"/><rect x="3" y="13" width="8" height="8" rx="1.2"/><rect x="13" y="13" width="8" height="8" rx="1.2"/></svg></span>
-        <span class="sb-label">Compositor</span>
-      </button>
-      <button class="sb-tab" data-tab="remover" title="Image Editor">
-        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></span>
-        <span class="sb-label">Image Editor</span>
-      </button>
-      <button class="sb-tab" data-tab="gradient" title="Gradient Editor — blend two images with a directional gradient">
-        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg></span>
-        <span class="sb-label">Gradient</span>
-      </button>
-      <button class="sb-tab" data-tab="normalmix" title="Normal Mix — blend two normal maps with proper vector math">
-        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M21 3v6h-6"/><circle cx="9" cy="11" r="0.7" fill="currentColor"/></svg></span>
-        <span class="sb-label">Normal Mix</span>
-      </button>
-      <button class="sb-tab" data-tab="audio" title="Audio Tools">
-        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h2l2-7 4 14 3-9 2 5h5"/></svg></span>
-        <span class="sb-label">Audio Tools</span>
-      </button>
-      <button class="sb-tab" data-tab="timeline" title="Timeline">
-        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="14" height="4" rx="1"/><rect x="6" y="14" width="14" height="4" rx="1"/></svg></span>
-        <span class="sb-label">Timeline</span>
-      </button>
-      <button class="sb-tab" data-tab="convert" title="Converter">
+
+      <!-- ===== IMAGES ===== -->
+      <div class="sb-group" data-group="images">
+        <button class="sb-group-btn" title="Images — editor, compositor, gradient, resize &amp; crop">
+          <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span>
+          <span class="sb-label">Images</span>
+          <span class="sb-caret">▶</span>
+        </button>
+        <div class="sb-sub">
+          <button class="sb-tab" data-tab="remover" title="Image Editor">
+            <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></span>
+            <span class="sb-label">Image Editor</span>
+          </button>
+          <button class="sb-tab active" data-tab="compositor" title="Channel Compositor">
+            <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.2"/><rect x="13" y="3" width="8" height="8" rx="1.2"/><rect x="3" y="13" width="8" height="8" rx="1.2"/><rect x="13" y="13" width="8" height="8" rx="1.2"/></svg></span>
+            <span class="sb-label">Compositor</span>
+          </button>
+          <button class="sb-tab" data-tab="gradient" title="Gradient Editor — blend two images with a directional gradient">
+            <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg></span>
+            <span class="sb-label">Gradient</span>
+          </button>
+          <button class="sb-tab" data-tab="resizecrop" title="Resize &amp; Crop — fit images to an exact size (default 1920×1080), scale to cover then trim evenly">
+            <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg></span>
+            <span class="sb-label">Resize &amp; Crop</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ===== AUDIO ===== -->
+      <div class="sb-group" data-group="audio">
+        <button class="sb-group-btn" title="Audio — tools and timeline">
+          <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h2l2-7 4 14 3-9 2 5h5"/></svg></span>
+          <span class="sb-label">Audio</span>
+          <span class="sb-caret">▶</span>
+        </button>
+        <div class="sb-sub">
+          <button class="sb-tab" data-tab="audio" title="Audio Tools">
+            <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h2l2-7 4 14 3-9 2 5h5"/></svg></span>
+            <span class="sb-label">Audio Tools</span>
+          </button>
+          <button class="sb-tab" data-tab="timeline" title="Timeline">
+            <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="14" height="4" rx="1"/><rect x="6" y="14" width="14" height="4" rx="1"/></svg></span>
+            <span class="sb-label">Timeline</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ===== 3D ===== -->
+      <div class="sb-group" data-group="threed">
+        <button class="sb-group-btn" title="3D — normal maps and 3D model">
+          <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></span>
+          <span class="sb-label">3D</span>
+          <span class="sb-caret">▶</span>
+        </button>
+        <div class="sb-sub">
+          <button class="sb-tab" data-tab="normalmix" title="Normal Mix — blend two normal maps with proper vector math">
+            <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M21 3v6h-6"/><circle cx="9" cy="11" r="0.7" fill="currentColor"/></svg></span>
+            <span class="sb-label">Normal Mix</span>
+          </button>
+          <button class="sb-tab" data-tab="model3d" title="3D Model — height-displaced plane from image">
+            <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></span>
+            <span class="sb-label">3D Model</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ===== CONVERTER (single) ===== -->
+      <button class="sb-tab" data-tab="convert" title="Converter — file conversion and video downloader">
         <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg></span>
         <span class="sb-label">Converter</span>
       </button>
-      <button class="sb-tab" data-tab="model3d" title="3D Model — height-displaced plane from image">
-        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></span>
-        <span class="sb-label">3D Model</span>
-      </button>
+
+      <!-- ===== TEXT ===== -->
+      <div class="sb-group" data-group="text">
+        <button class="sb-group-btn" title="Text — case converter and file names">
+          <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" stroke="none"><text x="1" y="17" font-size="12" font-weight="700" font-family="'JetBrains Mono',monospace,sans-serif">Aa</text></svg></span>
+          <span class="sb-label">Text</span>
+          <span class="sb-caret">▶</span>
+        </button>
+        <div class="sb-sub">
+          <button class="sb-tab" data-tab="textcase" title="Text Case — convert text to upper or lower case">
+            <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" stroke="none"><text x="1" y="17" font-size="12" font-weight="700" font-family="'JetBrains Mono',monospace,sans-serif">Aa</text></svg></span>
+            <span class="sb-label">Text Case</span>
+          </button>
+          <button class="sb-tab" data-tab="filenames" title="File Names — drop files, grab their names">
+            <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="12" y2="17"/></svg></span>
+            <span class="sb-label">File Names</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ===== FACTORY (single) ===== -->
       <button class="sb-tab" data-tab="factory" title="Factory Calculator — Satisfactory production planner with nodes">
         <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20v-9l-5 3v-3l-5 3v-3l-5 3V8L2 11v9z"/><path d="M6 20v-3M10 20v-3M14 20v-3M18 20v-3"/></svg></span>
         <span class="sb-label">Factory</span>
       </button>
-      <button class="sb-tab" data-tab="brainrot" title="Feed — short-form video feed">
-        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 20 12 6 20 6 4"/></svg></span>
-        <span class="sb-label">Feed</span>
-      </button>
-      <button class="sb-tab" data-tab="chat" title="Chat — public messages">
-        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></span>
-        <span class="sb-label">Chat</span>
-      </button>
-      <button class="sb-tab" data-tab="codes" title="Codes — enter a secret code">
-        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
-        <span class="sb-label">Codes</span>
-      </button>
-      <button class="sb-tab" data-tab="filenames" title="File Names — drop files, grab their names">
-        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="12" y2="17"/></svg></span>
-        <span class="sb-label">File Names</span>
-      </button>
-      <button class="sb-tab" data-tab="balatro" title="Balatro — roguelike poker card game">
-        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="10" height="14" rx="2"/><path d="M8 7h2M8 10h4"/><rect x="10" y="7" width="10" height="14" rx="2" fill="none"/></svg></span>
-        <span class="sb-label">Balatro</span>
-      </button>
-      <button class="sb-tab" data-tab="textcase" title="Text Case — convert text to upper or lower case">
-        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" stroke="none"><text x="1" y="17" font-size="12" font-weight="700" font-family="'JetBrains Mono',monospace,sans-serif">Aa</text></svg></span>
-        <span class="sb-label">Text Case</span>
-      </button>
+
+      <!-- ===== SOCIAL ===== -->
+      <div class="sb-group" data-group="social">
+        <button class="sb-group-btn" title="Social — feed, chat, codes">
+          <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+          <span class="sb-label">Social</span>
+          <span class="sb-caret">▶</span>
+        </button>
+        <div class="sb-sub">
+          <button class="sb-tab" data-tab="brainrot" title="Feed — short-form video feed">
+            <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 20 12 6 20 6 4"/></svg></span>
+            <span class="sb-label">Feed</span>
+          </button>
+          <button class="sb-tab" data-tab="chat" title="Chat — public messages">
+            <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></span>
+            <span class="sb-label">Chat</span>
+          </button>
+          <button class="sb-tab" data-tab="codes" title="Codes — enter a secret code">
+            <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+            <span class="sb-label">Codes</span>
+          </button>
+        </div>
+      </div>
     </nav>
 
     <!-- Bottom of sidebar: theme toggles -->
@@ -6416,112 +6501,53 @@
         </div>
       </section>
 
-      <!-- YouTube → MP3 / MP4 (real downloader via cobalt) -->
+      <!-- VIDEO DOWNLOADER — this site's own server (yt-dlp), no third-party sites -->
       <section class="convert-card">
-        <h3>YouTube → MP3 / MP4</h3>
-        <p class="desc"><strong>Paste URL → loads automatically → click ⬇ Download in the player.</strong> Resolves the direct Google CDN URL, plays the video/audio inline below, and gives you a real Download button. The button is a fresh user gesture so the browser reliably honors it (vs. auto-triggers which often get blocked). Audio comes as <code style="background:var(--bg-2); padding:1px 4px; border-radius:3px">.m4a</code>/<code style="background:var(--bg-2); padding:1px 4px; border-radius:3px">.webm</code>; for true .mp3 use the Universal Converter below.</p>
+        <h3>Video Downloader</h3>
+        <p class="desc"><strong>YouTube · TikTok · Instagram</strong> — and 1000+ other sites. Paste a link, pick a format, hit Download. Runs on this site's <strong>own built-in server</strong>: no third-party downloader pages, no ads, downloads as fast as your connection allows. The first ever download sets up the tools automatically (one-time).</p>
 
         <div class="field-group" style="gap:8px">
-          <input type="text" id="ytUrl" class="color-input" placeholder="https://www.youtube.com/watch?v=..." style="font-family:'JetBrains Mono', monospace; font-size:11px;">
+          <input type="text" id="vdlUrl" class="color-input" placeholder="Paste a YouTube / TikTok / Instagram link…" style="font-family:'JetBrains Mono', monospace; font-size:11px;">
         </div>
 
         <div class="convert-settings">
           <div class="export-slider">
             <div class="slabel"><span>What do you want?</span></div>
             <div class="channel-toggle" style="grid-template-columns:1fr 1fr 1fr">
-              <input type="radio" name="ytKind" id="ytKindAudio" value="audio" checked>
-              <label for="ytKindAudio">Audio · MP3</label>
-              <input type="radio" name="ytKind" id="ytKindVideo" value="video">
-              <label for="ytKindVideo">Video · MP4</label>
-              <input type="radio" name="ytKind" id="ytKindMute" value="mute">
-              <label for="ytKindMute">Video (no audio)</label>
+              <input type="radio" name="vdlKind" id="vdlKindVideo" value="video" checked>
+              <label for="vdlKindVideo">Video · MP4</label>
+              <input type="radio" name="vdlKind" id="vdlKindAudio" value="audio">
+              <label for="vdlKindAudio">Audio · MP3</label>
+              <input type="radio" name="vdlKind" id="vdlKindMute" value="mute">
+              <label for="vdlKindMute">Video (no audio)</label>
             </div>
           </div>
-          <div class="export-slider" id="ytAudioRow">
-            <div class="slabel">
-              <span>Audio bitrate</span>
-              <span class="val" id="ytAbVal">128 kbps</span>
-            </div>
-            <input type="range" id="ytAb" min="64" max="320" value="128" step="32">
-          </div>
-          <div class="export-slider" id="ytVideoRow" hidden>
+          <div class="export-slider" id="vdlVideoRow">
             <div class="slabel"><span>Max resolution</span></div>
-            <select id="ytVq" class="color-input" style="font-family:'JetBrains Mono', monospace; font-size:11px;">
+            <select id="vdlVq" class="color-input" style="font-family:'JetBrains Mono', monospace; font-size:11px;">
               <option value="2160">4K · 2160p</option>
               <option value="1440">1440p</option>
               <option value="1080" selected>1080p</option>
               <option value="720">720p</option>
               <option value="480">480p</option>
-              <option value="360">360p</option>
               <option value="max">max available</option>
             </select>
           </div>
-          <details style="margin-top:-4px">
-            <summary style="cursor:pointer; color:var(--text-dim); font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.04em">Advanced</summary>
-            <div style="margin-top:10px; display:flex; flex-direction:column; gap:8px">
-              <div class="slabel"><span>Custom cobalt API URL (optional override)</span></div>
-              <input type="text" id="ytCustomInstance" class="color-input" placeholder="https://your-cobalt-instance.example" style="font-family:'JetBrains Mono', monospace; font-size:11px;">
-              <p class="desc" style="margin:0; opacity:0.7; font-size:10.5px">
-                If built-in providers all fail (rate limits / captchas), self-host <a href="https://github.com/imputnet/cobalt" target="_blank" rel="noopener" style="color:var(--text-dim); text-decoration:underline">cobalt</a> on Railway/Fly/etc. with <code style="background:var(--bg-2); padding:1px 4px; border-radius:3px">CORS_WILDCARD=1</code> and paste its URL here. Saved to your browser only.
-              </p>
+          <div class="export-slider" id="vdlAudioRow" hidden>
+            <div class="slabel">
+              <span>MP3 bitrate</span>
+              <span class="val" id="vdlAbVal">192 kbps</span>
             </div>
-          </details>
-          <button class="apply-btn" id="ytFetch">Load preview →</button>
+            <input type="range" id="vdlAb" min="64" max="320" value="192" step="32">
+          </div>
+          <button class="apply-btn" id="vdlGo">⬇ Download</button>
         </div>
 
-        <div class="progress-row" id="ytProgressRow" hidden>
-          <div class="progress-bar"><div class="progress-fill" id="ytFill"></div></div>
-          <div class="progress-text" id="ytText">0%</div>
+        <div class="progress-row" id="vdlProgressRow" hidden>
+          <div class="progress-bar"><div class="progress-fill" id="vdlFill"></div></div>
+          <div class="progress-text" id="vdlText">0%</div>
         </div>
-
-        <details id="ytErrorDetails" hidden style="margin-top:0">
-          <summary style="cursor:pointer; color:var(--r); font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.04em">▶ Why each provider failed</summary>
-          <pre id="ytErrorLog" style="max-height:160px; overflow:auto; background:var(--bg-2); border:1px solid var(--border); border-radius:8px; padding:10px; font-family:'JetBrains Mono', monospace; font-size:10px; color:var(--text-dim); white-space:pre-wrap; margin-top:8px"></pre>
-          <p class="desc" style="margin-top:8px; opacity:0.8; font-size:10.5px; line-height:1.55">
-            <strong style="color:var(--text)">If nothing works in 2026, you basically have three options:</strong><br>
-            1. <strong>Self-host cobalt</strong> — paste the URL into Advanced above. Easiest is the <a href="https://railway.com/deploy/cobalt-media-downloader" target="_blank" rel="noopener" style="color:var(--text-dim); text-decoration:underline">Railway one-click deploy</a> (~$5/mo, set <code>CORS_WILDCARD=1</code>) or run the Docker image locally with <code>ghcr.io/imputnet/cobalt</code>.<br>
-            2. <strong>yt-dlp on your computer</strong> — <code>pip install yt-dlp</code> then <code>yt-dlp -x --audio-format mp3 URL</code>. Always works, no captchas.<br>
-            3. <strong>A browser extension</strong> like Cobalt Tools userscript (Tampermonkey).<br>
-            YouTube has been aggressively shutting down third-party access since 2024 — pure-browser downloading without a backend or extension is genuinely unreliable now.
-          </p>
-        </details>
-
-        <!-- Inline player + result buttons. Shown after a successful resolve. -->
-        <div id="ytPlayerWrap" hidden style="margin-top:14px; border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--bg-2)">
-          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 12px; background:var(--bg-3, var(--surface-2)); border-bottom:1px solid var(--border); font-family:'JetBrains Mono', monospace; font-size:11px; color:var(--text-dim)">
-            <span id="ytPlayerLabel" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0">Ready</span>
-            <div style="display:flex; gap:6px; flex-shrink:0">
-              <button id="ytPlayerDownload" class="dl-btn" style="padding:4px 12px; min-height:0; font-size:10px">⬇ Download</button>
-              <button class="dl-btn" id="ytPlayerClose" style="padding:4px 10px; min-height:0; font-size:10px">Close ✕</button>
-            </div>
-          </div>
-          <div id="ytPlayerSlot" style="padding:14px; display:flex; justify-content:center; align-items:center; background:#000; min-height:80px"></div>
-          <div style="padding:10px 12px; background:var(--bg-3, var(--surface-2)); border-top:1px solid var(--border); font-family:'JetBrains Mono', monospace; font-size:10.5px; color:var(--text-dim); line-height:1.5">
-            Click <strong>⬇ Download</strong> above to save. If your browser plays it inline instead of downloading, right-click the player → <strong>Save Video As…</strong> / <strong>Save Audio As…</strong>
-          </div>
-        </div>
-
-        <!-- Hidden state holders (kept for JS compat — buttons removed since the inline player handles save via right-click) -->
-        <div id="ytResult" hidden></div>
-        <span id="ytSize" hidden></span>
-
-        <details style="margin-top:8px">
-          <summary style="cursor:pointer; color:var(--g); font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.04em; font-weight:600">▶ Always-works fallback · open in a downloader site</summary>
-          <p class="desc" style="margin-top:8px; opacity:0.85; font-size:11px; line-height:1.55">
-            Sites like flvto, y2mate, ssyoutube etc. have their own backend servers running yt-dlp — that's why they actually work. This page is a single HTML file with no server, so it can't replicate that. These buttons paste your URL into one of those sites and open it in a new tab. Pick whichever you trust:
-          </p>
-          <div class="export-buttons" style="flex-wrap:wrap; gap:6px; margin-top:10px">
-            <button class="dl-btn" id="ytExtFlvto">flvto.best ↗</button>
-            <button class="dl-btn" id="ytExtY2Mate">y2mate ↗</button>
-            <button class="dl-btn" id="ytExtSSYT">ssyoutube ↗</button>
-            <button class="dl-btn" id="ytExtSaveFrom">savefrom ↗</button>
-            <button class="dl-btn" id="ytExtCobaltSite">cobalt.tools ↗</button>
-            <button class="dl-btn" id="ytExtYTMP3">ytmp3.cc ↗</button>
-          </div>
-          <p class="desc" style="margin-top:10px; opacity:0.6; font-size:10px">
-            Heads up: these are third-party sites — they have ads, sometimes shady ones. Use an adblocker. None of them are run by me; pasting your URL is no different from going to the site yourself. <code style="background:var(--bg-2); padding:1px 4px; border-radius:3px">yt-dlp</code> on your computer is still the most reliable, ad-free path.
-          </p>
-        </details>
+        <div id="vdlStatus" hidden style="margin-top:10px; font-family:'JetBrains Mono', monospace; font-size:11px; line-height:1.5; color:var(--text-dim); word-break:break-word;"></div>
       </section>
       <!-- MP4 → GIF -->
       <section class="convert-card">
@@ -7364,6 +7390,59 @@
     </div>
   </main>
 
+  <!-- ================= RESIZE & CROP ================= -->
+  <main data-mode="resizecrop" hidden>
+    <div style="max-width:860px; margin:0 auto; padding:40px 0 60px;">
+      <div style="margin-bottom:32px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;letter-spacing:0.16em;text-transform:uppercase;color:var(--text-faint);margin-bottom:10px;">Utility</div>
+        <h1 style="font-family:'Instrument Serif',serif;font-weight:400;font-size:clamp(32px,5vw,52px);line-height:1;letter-spacing:-0.02em;"><em style="font-style:italic;background:linear-gradient(100deg,var(--r),var(--g) 40%,var(--b) 75%,var(--a));-webkit-background-clip:text;background-clip:text;color:transparent;">Resize</em> &amp; Crop</h1>
+        <p style="color:var(--text-dim);font-size:14px;max-width:480px;margin-top:10px;">Fit any image to an exact size. The image is scaled up or down until it fully covers the target, then the overflow is trimmed evenly from both sides — no stretching, no black bars.</p>
+      </div>
+
+      <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:20px;">
+        <div>
+          <label style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-faint);display:block;margin-bottom:6px;">Width</label>
+          <input type="number" id="rc-w" value="1920" min="1" max="16384" oninput="rcTargetChanged()"
+            style="width:110px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:13px;padding:8px 10px;outline:none;">
+        </div>
+        <span style="color:var(--text-faint);padding-bottom:10px;font-size:13px;">×</span>
+        <div>
+          <label style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-faint);display:block;margin-bottom:6px;">Height</label>
+          <input type="number" id="rc-h" value="1080" min="1" max="16384" oninput="rcTargetChanged()"
+            style="width:110px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:13px;padding:8px 10px;outline:none;">
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;padding-bottom:2px;">
+          <button class="mini-btn" onclick="rcPreset(1920,1080)">1920×1080</button>
+          <button class="mini-btn" onclick="rcPreset(2560,1440)">2560×1440</button>
+          <button class="mini-btn" onclick="rcPreset(3840,2160)">3840×2160</button>
+          <button class="mini-btn" onclick="rcPreset(1080,1920)">1080×1920</button>
+        </div>
+      </div>
+
+      <div id="rc-drop"
+        style="border:1.5px dashed var(--border-hover);border-radius:14px;padding:48px 24px;text-align:center;cursor:pointer;transition:background 0.15s,border-color 0.15s;margin-bottom:20px;background:var(--surface);"
+        onclick="document.getElementById('rc-input').click()">
+        <div style="width:48px;height:48px;border:1.5px dashed var(--text-faint);border-radius:10px;display:grid;place-items:center;margin:0 auto 16px;color:var(--text-faint);">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        </div>
+        <div style="font-size:14px;font-weight:500;color:var(--text-dim);margin-bottom:6px;">Drop images here or click to browse</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-faint);letter-spacing:0.04em;">PNG · JPG · WebP — processed locally, nothing is uploaded</div>
+        <input type="file" id="rc-input" accept="image/*" multiple style="display:none;">
+      </div>
+
+      <div id="rc-results" style="display:none;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
+          <span id="rc-count" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-faint);letter-spacing:0.06em;text-transform:uppercase;"></span>
+          <div style="display:flex;gap:8px;">
+            <button class="mini-btn" onclick="rcDownloadAll()">Download all</button>
+            <button class="mini-btn danger" onclick="rcClear()">Clear</button>
+          </div>
+        </div>
+        <div id="rc-list" style="display:flex;flex-direction:column;gap:16px;"></div>
+      </div>
+    </div>
+  </main>
+
   <!-- ================= BALATRO ================= -->
   <main data-mode="balatro" hidden>
     <div id="balatroBg">
@@ -7602,6 +7681,49 @@ document.querySelectorAll('.sb-tab').forEach(tab => {
 document.getElementById('sidebarToggle').addEventListener('click', () => {
   document.getElementById('sidebar').classList.toggle('expanded');
 });
+
+// ── Sidebar groups: expand/collapse sub-tabs, highlight the active group ──
+(function() {
+  const sidebar = document.getElementById('sidebar');
+
+  function syncGroupActive() {
+    document.querySelectorAll('.sb-group').forEach(g => {
+      const btn = g.querySelector('.sb-group-btn');
+      if (btn) btn.classList.toggle('active', !!g.querySelector('.sb-tab.active'));
+    });
+  }
+  function openActiveGroup() {
+    document.querySelectorAll('.sb-group').forEach(g => {
+      g.classList.toggle('open', !!g.querySelector('.sb-tab.active'));
+    });
+  }
+
+  document.querySelectorAll('.sb-group-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const group = btn.closest('.sb-group');
+      if (!sidebar.classList.contains('expanded')) {
+        // Collapsed: expand the sidebar and open just this group
+        sidebar.classList.add('expanded');
+        document.querySelectorAll('.sb-group').forEach(g => g.classList.toggle('open', g === group));
+      } else {
+        group.classList.toggle('open');
+      }
+    });
+  });
+
+  // Keep group highlight in sync after any tab switch (runs after the main handler)
+  document.querySelectorAll('.sb-tab').forEach(t => {
+    t.addEventListener('click', () => setTimeout(syncGroupActive, 0));
+  });
+
+  // When the sidebar is opened via the toggle, reveal the group holding the active tab
+  document.getElementById('sidebarToggle').addEventListener('click', () => {
+    if (sidebar.classList.contains('expanded')) openActiveGroup();
+  });
+
+  syncGroupActive();
+  openActiveGroup();
+})();
 
 // Sidebar theme toggles — proxy to the corner-panel toggles so all the existing
 // localStorage / fade / mutual-exclusion logic still runs unchanged.
@@ -12975,1151 +13097,118 @@ m2mDownloadWav.addEventListener('click', () => {
 });
 
 /* ============================================================
-   YouTube / TikTok / etc. → MP3 / MP4
-   Multi-provider strategy:
-     1) Piped API (YouTube only) — fetches direct stream URLs we can grab
-        via the instance's CORS-enabled proxy.
-     2) Cobalt API — for non-YouTube (TikTok, Twitter, Reddit, etc.) and
-        as a YouTube fallback. Tries a list of public instances until one
-        works (most are now Turnstile-protected, but if one is open we use it).
-     3) User-supplied custom cobalt URL — if all of the above fail.
-   The sad reality: in 2026 most public cobalt instances are Turnstile-walled
-   because of scraper abuse, so the most reliable path is Piped for YT and
-   self-hosted cobalt for everything else.
+   VIDEO DOWNLOADER — YouTube / TikTok / Instagram / 1000+ sites.
+   Talks to this site's own server (server.js), which runs yt-dlp
+   on the host machine. No third-party downloader services.
    ============================================================ */
-(function setupYtDownloader() {
-  const urlInput = document.getElementById('ytUrl');
+(function setupVideoDownloader() {
+  const urlInput = document.getElementById('vdlUrl');
   if (!urlInput) return;
 
-  const ytAb = document.getElementById('ytAb');
-  const ytAbVal = document.getElementById('ytAbVal');
-  const ytAudioRow = document.getElementById('ytAudioRow');
-  const ytVideoRow = document.getElementById('ytVideoRow');
-  const ytVq = document.getElementById('ytVq');
-  const ytFetch = document.getElementById('ytFetch');
-  const ytProgressRow = document.getElementById('ytProgressRow');
-  const ytFill = document.getElementById('ytFill');
-  const ytText = document.getElementById('ytText');
-  const ytResult = document.getElementById('ytResult');
-  const ytDownload = document.getElementById('ytDownload');
-  const ytSize = document.getElementById('ytSize');
-  const ytOpenInTab = document.getElementById('ytOpenInTab');
-  const ytCustomInstance = document.getElementById('ytCustomInstance');
-  const ytErrorDetails = document.getElementById('ytErrorDetails');
-  const ytErrorLog = document.getElementById('ytErrorLog');
+  const goBtn = document.getElementById('vdlGo');
+  const fill = document.getElementById('vdlFill');
+  const text = document.getElementById('vdlText');
+  const progressRow = document.getElementById('vdlProgressRow');
+  const statusEl = document.getElementById('vdlStatus');
+  const audioRow = document.getElementById('vdlAudioRow');
+  const videoRow = document.getElementById('vdlVideoRow');
+  const ab = document.getElementById('vdlAb');
+  const abVal = document.getElementById('vdlAbVal');
+  const vq = document.getElementById('vdlVq');
 
-  let ytLastBlob = null;
-  let ytLastFilename = 'download';
-  let ytLastTunnelUrl = null;
-  let ytLastResolveAt = 0;        // ms timestamp of last successful resolve
-  let ytLastResolveMode = null;   // audio / video — for re-resolving
-  let ytLastResolveQuality = null;
-  let ytLastResolveYtId = null;
-
-  // Piped public instances. These have stable CORS and are designed for browser use.
-  // Source: github.com/TeamPiped/Piped/wiki/Instances. List rotates — if all fail,
-  // fetch a fresh list from https://piped-instances.kavin.rocks/ at runtime.
-  const PIPED_INSTANCES = [
-    'https://pipedapi.kavin.rocks',
-    'https://api.piped.yt',
-    'https://pipedapi.adminforge.de',
-    'https://pipedapi.r4fo.com',
-    'https://pipedapi.leptons.xyz',
-    'https://pipedapi-libre.kavin.rocks',
-    'https://api.piped.privacydev.net',
-    'https://pipedapi.drgns.space',
-    'https://pipedapi.darkness.services',
-    'https://pipedapi.orangenet.cc',
-    'https://api.piped.private.coffee',
-  ];
-
-  // Invidious public instances (May 2026). The official list shrunk drastically because
-  // of YouTube's blocking — these 4 are what's left. They run on different infra than
-  // Piped, so they sometimes work when Piped is down. Use ?local=true so stream URLs
-  // are CORS-proxied through the instance.
-  const INVIDIOUS_INSTANCES = [
-    'https://inv.thepixora.com',  // promoted to first — known working from prior session
-    'https://inv.nadeko.net',
-    'https://invidious.nerdvpn.de',
-    'https://yt.chocolatemoo53.com',
-  ];
-
-  // Cobalt fallback list (mostly Turnstile-walled in 2026 — kept for non-YT services)
-  const COBALT_INSTANCES = [
-    'https://api.cobalt.tools',
-    'https://cobalt.synzr.space',
-    'https://co.tskau.team',
-    'https://capi.oak.li',
-    'https://api.co.rooot.gay',
-  ];
-
-  // OPTIMIZATION: cache which provider+instance worked last time. Next time,
-  // try that one alone first — single request, fast. Only race the others
-  // if the cached one fails. This drops typical resolve from "race 20 things"
-  // down to "1 request" for the happy path.
-  function getLastWorking() {
-    try {
-      const v = localStorage.getItem('ytLastWorking');
-      return v ? JSON.parse(v) : null;
-    } catch (e) { return null; }
-  }
-  function setLastWorking(provider, instance) {
-    try {
-      localStorage.setItem('ytLastWorking', JSON.stringify({ provider, instance, ts: Date.now() }));
-    } catch (e) {}
-  }
-  function reorderByLastWorking() {
-    const last = getLastWorking();
-    if (!last) return;
-    // If the cached entry is older than 24h, ignore (instance may have died)
-    if (Date.now() - (last.ts || 0) > 24 * 3600 * 1000) return;
-    function promote(arr) {
-      const i = arr.indexOf(last.instance);
-      if (i > 0) { arr.unshift(arr.splice(i, 1)[0]); }
-    }
-    if (last.provider === 'piped') promote(PIPED_INSTANCES);
-    else if (last.provider === 'invidious') promote(INVIDIOUS_INSTANCES);
-    else if (last.provider === 'cobalt') promote(COBALT_INSTANCES);
-  }
-  reorderByLastWorking();
-
-  // Restore custom instance from localStorage
-  if (ytCustomInstance) {
-    ytCustomInstance.value = localStorage.getItem('ytCustomInstance') || '';
-    ytCustomInstance.addEventListener('input', () => {
-      localStorage.setItem('ytCustomInstance', ytCustomInstance.value.trim());
+  ab.addEventListener('input', () => { abVal.textContent = ab.value + ' kbps'; });
+  document.querySelectorAll('input[name="vdlKind"]').forEach(r => {
+    r.addEventListener('change', () => {
+      const kind = document.querySelector('input[name="vdlKind"]:checked').value;
+      audioRow.hidden = kind !== 'audio';
+      videoRow.hidden = kind === 'audio';
     });
+  });
+
+  function setProgress(pct, label) {
+    progressRow.hidden = false;
+    fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    text.textContent = label;
+  }
+  function setStatus(msg, isError) {
+    statusEl.hidden = !msg;
+    statusEl.textContent = msg || '';
+    statusEl.style.color = isError ? 'var(--r)' : 'var(--text-dim)';
   }
 
-  ytAb.addEventListener('input', () => { ytAbVal.textContent = `${ytAb.value} kbps`; });
+  let busy = false;
+  async function startDownload() {
+    if (busy) return;
+    const url = (urlInput.value || '').trim();
+    if (!url) { setStatus('Paste a link first', true); urlInput.focus(); return; }
+    if (!/^https?:\/\/\S+$/i.test(url)) { setStatus('That does not look like a link — it should start with http(s)://', true); return; }
 
-  function syncModeUI() {
-    const mode = (document.querySelector('input[name="ytKind"]:checked') || {}).value;
-    ytAudioRow.hidden = (mode !== 'audio');
-    ytVideoRow.hidden = (mode === 'audio');
-  }
-  document.querySelectorAll('input[name="ytKind"]').forEach(r => r.addEventListener('change', syncModeUI));
-  syncModeUI();
+    busy = true; goBtn.disabled = true;
+    setStatus('');
+    setProgress(0, 'Contacting server…');
+    try {
+      // Is the built-in server running? (opening index.html directly via
+      // file:// or a plain static host has no backend)
+      let ping = null;
+      try { ping = await (await fetch('/api/dl/ping')).json(); } catch (e) {}
+      if (!ping || !ping.ok) {
+        throw new Error('The downloader needs the built-in server. Open a terminal in the site folder, run "npm start", then use the site at http://localhost:3000');
+      }
 
-  function getCleanUrl() {
-    const v = (urlInput.value || '').trim();
-    if (!v) { toast('Paste a URL first'); return null; }
-    if (!/^https?:\/\//i.test(v)) { toast('That doesn\'t look like a URL'); return null; }
-    return v;
-  }
+      const kind = document.querySelector('input[name="vdlKind"]:checked').value;
+      const quality = kind === 'audio' ? ab.value : vq.value;
+      const startRes = await (await fetch('/api/dl/start?url=' + encodeURIComponent(url) + '&kind=' + kind + '&quality=' + encodeURIComponent(quality))).json();
+      if (startRes.error) throw new Error(startRes.error);
+      const jobId = startRes.id;
 
-  function setProgress(pct, msg) {
-    ytProgressRow.hidden = false;
-    ytFill.style.width = Math.max(0, Math.min(100, pct)) + '%';
-    if (msg) ytText.textContent = msg;
-  }
-
-  // Extract a YouTube video ID from any common YT URL shape.
-  function extractYtId(url) {
-    const patterns = [
-      /[?&]v=([A-Za-z0-9_-]{11})/,
-      /youtu\.be\/([A-Za-z0-9_-]{11})/,
-      /\/shorts\/([A-Za-z0-9_-]{11})/,
-      /\/embed\/([A-Za-z0-9_-]{11})/,
-      /\/watch\/([A-Za-z0-9_-]{11})/,
-    ];
-    for (const re of patterns) { const m = url.match(re); if (m) return m[1]; }
-    return null;
-  }
-
-  // Stream a URL into a Blob, updating progress. Used for both Piped proxy URLs
-  // and cobalt tunnel URLs (both should have CORS enabled).
-  async function fetchBlobWithProgress(url, label) {
-    const r = await fetch(url);
-    if (!r.ok) throw new Error(`HTTP ${r.status} fetching ${label || 'stream'}`);
-    const total = parseInt(r.headers.get('Content-Length') || r.headers.get('Estimated-Content-Length') || '0', 10);
-    const reader = r.body && r.body.getReader ? r.body.getReader() : null;
-    if (!reader) return await r.blob();
-    const chunks = [];
-    let received = 0;
-    const t0 = Date.now();
-    let lastUpdate = 0;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      received += value.length;
-      const now = Date.now();
-      // Throttle UI updates so we don't repaint every chunk
-      if (now - lastUpdate >= 200 || done) {
-        lastUpdate = now;
-        const elapsedSec = Math.max(0.1, (now - t0) / 1000);
-        const speed = received / elapsedSec; // B/s
-        const speedStr = formatBytes(speed) + '/s';
-        if (total > 0) {
-          const pct = Math.round((received / total) * 70) + 20; // 20%–90%
-          const remaining = Math.max(0, total - received);
-          const etaSec = Math.round(remaining / Math.max(1, speed));
-          const etaStr = etaSec >= 60 ? `${Math.floor(etaSec/60)}m${etaSec%60}s` : `${etaSec}s`;
-          setProgress(pct, `${label || 'Downloading'} · ${formatBytes(received)} / ${formatBytes(total)} · ${speedStr} · ETA ${etaStr}`);
-        } else {
-          setProgress(50, `${label || 'Downloading'} · ${formatBytes(received)} · ${speedStr}`);
+      // Poll progress until the job finishes
+      let misses = 0;
+      while (true) {
+        await new Promise(r => setTimeout(r, 500));
+        let p;
+        try { p = await (await fetch('/api/dl/progress/' + jobId)).json(); misses = 0; }
+        catch (e) {
+          if (++misses > 20) throw new Error('Lost contact with the server');
+          continue;
         }
-      }
-    }
-    return new Blob(chunks);
-  }
-
-  // ============================================================
-  // PIPED PROVIDER (YouTube only)
-  // ============================================================
-  // Race all instances in parallel — first to respond with valid data wins.
-  // 5s timeout per instance (AbortController) so a hung one can't stall the chain.
-  // This cuts resolve time from "up to 8 × default-timeout" to "as fast as the fastest".
-  async function raceFetch(urls, validate, label, timeoutMs) {
-    timeoutMs = timeoutMs || 5000;
-    const controllers = urls.map(() => new AbortController());
-    const errors = [];
-    setProgress(10, `Asking ${urls.length} ${label} instances in parallel…`);
-    const promises = urls.map((u, i) => (async () => {
-      // Per-instance timeout
-      const tid = setTimeout(() => controllers[i].abort(), timeoutMs);
-      try {
-        const r = await fetch(u, { signal: controllers[i].signal, headers: { 'Accept': 'application/json' } });
-        clearTimeout(tid);
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const j = await r.json();
-        const err = validate(j);
-        if (err) throw new Error(err);
-        return { json: j, instance: u };
-      } catch (e) {
-        clearTimeout(tid);
-        const msg = (e.name === 'AbortError') ? 'timeout' : (e.message || e);
-        errors.push(`${u}: ${msg}`);
-        throw e;
-      }
-    })());
-
-    // Promise.any → first fulfilled wins; aborts the rest
-    try {
-      const winner = await Promise.any(promises);
-      // Cancel all other in-flight requests
-      controllers.forEach(c => { try { c.abort(); } catch (e) {} });
-      return { ...winner, errors };
-    } catch (e) {
-      throw new Error(`${label}: all ${urls.length} instances failed (${errors.slice(0,3).join(' · ')}${errors.length>3?'…':''})`);
-    }
-  }
-
-  // Optimized: try ONE URL first (the cached working one) with a short timeout.
-  // If it succeeds, only one network request was made. If it fails or times out,
-  // race the rest of the URLs in parallel as fallback.
-  async function tryFirstThenRace(firstUrl, restUrls, validate, label, timeoutMs) {
-    timeoutMs = timeoutMs || 4000;
-    if (firstUrl) {
-      setProgress(15, `Trying cached ${label}…`);
-      try {
-        const ctl = new AbortController();
-        const tid = setTimeout(() => ctl.abort(), timeoutMs);
-        const r = await fetch(firstUrl, { signal: ctl.signal, headers: { 'Accept': 'application/json' } });
-        clearTimeout(tid);
-        if (r.ok) {
-          const j = await r.json();
-          const err = validate(j);
-          if (!err) return { json: j, instance: firstUrl };
-        }
-      } catch (e) { /* fall through to race */ }
-    }
-    // Cached one didn't work — race the rest
-    return await raceFetch(restUrls, validate, label, timeoutMs);
-  }
-
-  async function piped_fetchStreams(videoId) {
-    const last = getLastWorking();
-    const cachedInstance = (last && last.provider === 'piped') ? last.instance : null;
-    const allUrls = PIPED_INSTANCES.map(i => `${i.replace(/\/+$/, '')}/streams/${videoId}`);
-    const cachedUrl = cachedInstance ? `${cachedInstance.replace(/\/+$/, '')}/streams/${videoId}` : null;
-    const restUrls = allUrls.filter(u => u !== cachedUrl);
-    const { json, instance } = await tryFirstThenRace(cachedUrl, restUrls, (j) => {
-      if (j.error) return j.error;
-      if (!j.audioStreams && !j.videoStreams) return 'empty response';
-      return null;
-    }, 'Piped', 4000);
-    // Cache the winning instance host (without the /streams/... path)
-    const winnerHost = instance.replace(/\/streams\/.*$/, '');
-    setLastWorking('piped', winnerHost);
-    return { ...json, _instance: instance };
-  }
-
-  // Pick best audio stream from Piped response
-  function piped_pickAudio(streams) {
-    const audios = streams.audioStreams || [];
-    if (!audios.length) return null;
-    // Prefer m4a/aac (decodes well in Web Audio for re-encoding to MP3) but accept anything
-    const sorted = audios.slice().sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
-    return sorted[0];
-  }
-
-  // Pick best video stream — prefer ones that include audio (videoOnly:false)
-  function piped_pickVideo(streams, maxQuality) {
-    const videos = streams.videoStreams || [];
-    if (!videos.length) return null;
-    const targetH = parseInt(maxQuality, 10) || 1080;
-    // Score: prefer combined audio+video, then prefer mp4, then closest-to-target height
-    function heightOf(s) { const m = (s.quality || '').match(/(\d+)p/); return m ? +m[1] : 0; }
-    const scored = videos.map(s => {
-      const h = heightOf(s);
-      const isMp4 = (s.mimeType || '').includes('mp4') || (s.format || '').toLowerCase().includes('mp4');
-      let score = 0;
-      if (!s.videoOnly) score += 10000; // prefer combined streams hugely
-      if (isMp4) score += 1000;
-      // Closer to target height = higher score (cap at target)
-      score += Math.max(0, 500 - Math.abs(Math.min(h, targetH) - targetH));
-      return { s, h, score };
-    });
-    scored.sort((a, b) => b.score - a.score);
-    return scored[0] && scored[0].s;
-  }
-
-  // Decode audio Blob → re-encode as MP3 via lamejs (already loaded for the M2M card)
-  // Fast MP3 encoder using ffmpeg.wasm (native libmp3lame via WebAssembly).
-  // Roughly 5–10× faster than pure-JS lamejs because libmp3lame is C compiled
-  // to WASM running with proper SIMD-ish optimizations. The first call has to
-  // download the ~30 MB engine (cached after that). Subsequent calls are instant-startup.
-  async function audioBlobToMp3_ffmpeg(blob, kbps) {
-    const ff = await window.loadSharedFFmpeg((pct, msg) => {
-      // Map engine load progress to 60–80% slice of our overall bar
-      const overall = 60 + Math.round(pct * 0.20);
-      setProgress(overall, msg);
-    });
-
-    // Wire up progress callback for this conversion
-    window._sharedFFmpegProgressCb = (progress) => {
-      const pct = 80 + Math.round(progress * 18); // 80–98%
-      setProgress(pct, `Encoding MP3 · ${Math.round(progress * 100)}%`);
-    };
-
-    setProgress(80, 'Encoding MP3 (ffmpeg.wasm)…');
-
-    // Detect input extension from blob type so ffmpeg picks the right demuxer
-    const t = (blob.type || '').toLowerCase();
-    let inExt = 'webm';
-    if (t.includes('mp4') || t.includes('m4a') || t.includes('aac')) inExt = 'm4a';
-    else if (t.includes('mpeg') || t.includes('mp3')) inExt = 'mp3';
-    else if (t.includes('ogg')) inExt = 'ogg';
-    else if (t.includes('opus')) inExt = 'opus';
-    else if (t.includes('wav')) inExt = 'wav';
-
-    const inputName = `in.${inExt}`;
-    const outputName = 'out.mp3';
-
-    const fetchFile = (window.FFmpegUtil && window.FFmpegUtil.fetchFile) || (async (b) => new Uint8Array(await b.arrayBuffer()));
-    const inputData = await fetchFile(blob);
-    await ff.writeFile(inputName, inputData);
-
-    // -vn = skip any video track (shouldn't be one, but defensive)
-    // -c:a libmp3lame -b:a {kbps}k = encode to MP3 at requested CBR bitrate
-    // No re-decode/normalize — direct stream-to-MP3 is fastest
-    const args = ['-y', '-i', inputName, '-vn', '-c:a', 'libmp3lame', '-b:a', `${kbps}k`, outputName];
-    const exitCode = await ff.exec(args);
-    if (exitCode !== 0 && exitCode !== undefined) {
-      throw new Error(`ffmpeg exited with code ${exitCode}`);
-    }
-
-    const outData = await ff.readFile(outputName);
-
-    // Cleanup virtual FS so memory doesn't accumulate across runs
-    try { await ff.deleteFile(inputName); } catch (e) {}
-    try { await ff.deleteFile(outputName); } catch (e) {}
-
-    // Detach progress callback
-    window._sharedFFmpegProgressCb = null;
-
-    return new Blob([outData.buffer], { type: 'audio/mpeg' });
-  }
-
-  // Fallback: lamejs encoder (slower but no engine download). Only used if ffmpeg.wasm
-  // fails to load — for example if the user has no network for the CDN download.
-  async function audioBlobToMp3_lamejs(blob, kbps) {
-    if (typeof lamejs === 'undefined') throw new Error('MP3 encoder not loaded');
-    setProgress(82, 'Decoding audio (slow fallback)…');
-    const arr = await blob.arrayBuffer();
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const buf = await ctx.decodeAudioData(arr.slice(0));
-    ctx.close();
-
-    setProgress(85, 'Encoding MP3 with lamejs (slow)…');
-    const sr = buf.sampleRate;
-    const ch = Math.min(2, buf.numberOfChannels);
-    const left = buf.getChannelData(0);
-    const right = buf.numberOfChannels > 1 ? buf.getChannelData(1) : left;
-    const toI16 = (f32) => {
-      const i16 = new Int16Array(f32.length);
-      for (let i = 0; i < f32.length; i++) {
-        const s = Math.max(-1, Math.min(1, f32[i]));
-        i16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-      }
-      return i16;
-    };
-    const li = toI16(left), ri = ch === 2 ? toI16(right) : null;
-    const enc = new lamejs.Mp3Encoder(ch, sr, kbps);
-    const block = 1152;
-    const parts = [];
-    const total = li.length;
-    // Yield only every 256 blocks (~6s of audio) — fewer yields = faster total time.
-    // The UI freezes for the chunk duration but it's much shorter than yielding constantly.
-    const yieldEvery = block * 256;
-    for (let i = 0; i + block <= total; i += block) {
-      const a = li.subarray(i, i + block);
-      const out = ri ? enc.encodeBuffer(a, ri.subarray(i, i + block)) : enc.encodeBuffer(a);
-      if (out.length) parts.push(out);
-      if ((i % yieldEvery) === 0) {
-        const pct = 85 + Math.round((i / total) * 13);
-        setProgress(pct, `Encoding MP3 · ${Math.round((i/total)*100)}%`);
-        await new Promise(r => setTimeout(r, 0));
-      }
-    }
-    const tail = enc.flush();
-    if (tail.length) parts.push(tail);
-    return new Blob(parts, { type: 'audio/mpeg' });
-  }
-
-  // Public wrapper: try ffmpeg.wasm first (fast), fall back to lamejs (slow but no engine download)
-  async function audioBlobToMp3(blob, kbps) {
-    try {
-      return await audioBlobToMp3_ffmpeg(blob, kbps);
-    } catch (e) {
-      console.warn('[yt-dl] ffmpeg.wasm encode failed, falling back to lamejs:', e);
-      return await audioBlobToMp3_lamejs(blob, kbps);
-    }
-  }
-
-  async function fetchViaPiped(url, mode, audioBitrate, videoQuality) {
-    const id = extractYtId(url);
-    if (!id) throw new Error('Not a YouTube URL — Piped only supports YouTube');
-    const streams = await piped_fetchStreams(id);
-    const baseTitle = (streams.title || `youtube-${id}`).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
-
-    if (mode === 'audio') {
-      const a = piped_pickAudio(streams);
-      if (!a) throw new Error('Piped: no audio stream available');
-      const streamUrl = a.proxyUrl || a.url; // proxyUrl is CORS-friendly
-      setProgress(20, `Downloading audio · ${a.bitrate ? Math.round(a.bitrate/1000)+' kbps' : a.quality || ''}`);
-      const audioBlob = await fetchBlobWithProgress(streamUrl, 'Audio');
-      // If it's already mp3, just label it. Otherwise re-encode.
-      const isMp3 = (a.mimeType || '').includes('mpeg') || /mp3/i.test(a.format || '');
-      if (isMp3) {
-        return { blob: audioBlob, filename: `${baseTitle}.mp3` };
-      }
-      // Re-encode m4a/webm → mp3 at requested bitrate
-      const mp3 = await audioBlobToMp3(audioBlob, +audioBitrate);
-      return { blob: mp3, filename: `${baseTitle}.mp3` };
-    } else {
-      const v = piped_pickVideo(streams, videoQuality);
-      if (!v) throw new Error('Piped: no video stream available');
-      if (v.videoOnly) {
-        // Combined streams aren't available — Piped only has separate video/audio.
-        // Muxing them in-browser requires ffmpeg.wasm. Tell the user.
-        throw new Error(`Piped: only video-only streams available at this quality. Lower quality (try 720p or 360p) or use the Universal Converter to mux.`);
-      }
-      const streamUrl = v.proxyUrl || v.url;
-      setProgress(20, `Downloading video · ${v.quality}`);
-      const videoBlob = await fetchBlobWithProgress(streamUrl, 'Video');
-      const ext = ((v.mimeType || 'video/mp4').split('/')[1] || 'mp4').replace(/;.*$/, '');
-      return { blob: videoBlob, filename: `${baseTitle}.${ext}` };
-    }
-  }
-
-  // ============================================================
-  // INVIDIOUS PROVIDER (YouTube only — different infra than Piped)
-  // ============================================================
-  async function invidious_fetchVideo(videoId) {
-    const last = getLastWorking();
-    const cachedInstance = (last && last.provider === 'invidious') ? last.instance : null;
-    const allUrls = INVIDIOUS_INSTANCES.map(i => `${i.replace(/\/+$/, '')}/api/v1/videos/${videoId}?local=true`);
-    const cachedUrl = cachedInstance ? `${cachedInstance.replace(/\/+$/, '')}/api/v1/videos/${videoId}?local=true` : null;
-    const restUrls = allUrls.filter(u => u !== cachedUrl);
-    const { json, instance } = await tryFirstThenRace(cachedUrl, restUrls, (j) => {
-      if (j.error) return j.error;
-      if (!j.formatStreams && !j.adaptiveFormats) return 'empty response';
-      return null;
-    }, 'Invidious', 4000);
-    const winnerHost = instance.replace(/\/api\/v1\/videos\/.*$/, '');
-    setLastWorking('invidious', winnerHost);
-    return { ...json, _instance: instance };
-  }
-
-  async function fetchViaInvidious(url, mode, audioBitrate, videoQuality) {
-    const id = extractYtId(url);
-    if (!id) throw new Error('Not a YouTube URL — Invidious only supports YouTube');
-    const data = await invidious_fetchVideo(id);
-    const baseTitle = (data.title || `youtube-${id}`).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
-
-    if (mode === 'audio') {
-      // adaptiveFormats has audio-only streams; pick highest bitrate
-      const audios = (data.adaptiveFormats || []).filter(f => (f.type || '').startsWith('audio/'));
-      if (!audios.length) throw new Error('Invidious: no audio streams');
-      audios.sort((a, b) => (parseInt(b.bitrate) || 0) - (parseInt(a.bitrate) || 0));
-      const a = audios[0];
-      setProgress(20, `Downloading audio · ${Math.round((parseInt(a.bitrate)||0)/1000)} kbps`);
-      const audioBlob = await fetchBlobWithProgress(a.url, 'Audio');
-      // Re-encode to MP3 (Invidious typically gives webm/opus or m4a/aac)
-      const isMp3 = (a.type || '').includes('mpeg');
-      if (isMp3) return { blob: audioBlob, filename: `${baseTitle}.mp3` };
-      const mp3 = await audioBlobToMp3(audioBlob, +audioBitrate);
-      return { blob: mp3, filename: `${baseTitle}.mp3` };
-    } else {
-      // formatStreams = combined audio+video (legacy, capped at 720p but works in browser)
-      const targetH = parseInt(videoQuality, 10) || 1080;
-      const combined = (data.formatStreams || []).slice();
-      if (!combined.length) {
-        throw new Error('Invidious: no combined streams (try lower quality, or use the Universal Converter to mux)');
-      }
-      // Score by closeness to target resolution
-      function heightOf(s) { const m = (s.resolution || s.qualityLabel || s.quality || '').match(/(\d+)/); return m ? +m[1] : 0; }
-      combined.sort((a, b) => Math.abs(heightOf(a) - targetH) - Math.abs(heightOf(b) - targetH));
-      const v = combined[0];
-      setProgress(20, `Downloading video · ${v.resolution || v.qualityLabel || v.quality}`);
-      const videoBlob = await fetchBlobWithProgress(v.url, 'Video');
-      const ext = ((v.type || 'video/mp4').split('/')[1] || 'mp4').replace(/;.*$/, '');
-      return { blob: videoBlob, filename: `${baseTitle}.${ext}` };
-    }
-  }
-
-  // ============================================================
-  // COBALT PROVIDER (any service, fallback)
-  // ============================================================
-  async function tryCobaltAt(inst, body, timeoutMs) {
-    timeoutMs = timeoutMs || 6000;
-    const ctl = new AbortController();
-    const tid = setTimeout(() => ctl.abort(), timeoutMs);
-    try {
-      const r = await fetch(inst.replace(/\/+$/, '') + '/', {
-        method: 'POST',
-        signal: ctl.signal,
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      clearTimeout(tid);
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = await r.json().catch(() => null);
-      if (!j) throw new Error('bad JSON');
-      if (j.status === 'tunnel' || j.status === 'redirect' || j.status === 'stream') return j;
-      if (j.status === 'picker') {
-        const first = (j.picker || [])[0];
-        if (first && first.url) return { status: 'redirect', url: first.url, filename: 'media' };
-        throw new Error('picker with no items');
-      }
-      if (j.status === 'error') {
-        const code = (j.error && j.error.code) || j.text || 'unknown';
-        const fatal = /content\.video\.unavailable|content\.too_long|link\.invalid|link\.unsupported/.test(code);
-        const err = new Error(code);
-        err.fatal = fatal;
-        throw err;
-      }
-      throw new Error(`unexpected status: ${j.status}`);
-    } finally {
-      clearTimeout(tid);
-    }
-  }
-
-  async function fetchViaCobalt(url, mode, audioBitrate, videoQuality) {
-    // Send BOTH v7 and v10 cobalt API field names. Old instances ignore unknown
-    // fields, new instances ignore deprecated ones — one body works on both.
-    // Use 'best' audio format so we get raw stream URL (no re-encoding by cobalt).
-    // alwaysProxy: false → cobalt returns raw googlevideo URL when possible (faster, AV-friendlier).
-    const body = {
-      url,
-      // v10
-      downloadMode: (mode === 'audio') ? 'audio' : (mode === 'mute' ? 'mute' : 'auto'),
-      audioFormat: 'best',
-      audioBitrate: String(audioBitrate || '128'),
-      videoQuality: String(videoQuality || '1080'),
-      youtubeVideoCodec: 'h264',
-      filenameStyle: 'basic',
-      alwaysProxy: false,
-      disableMetadata: true,
-      // v7 (legacy)
-      isAudioOnly: (mode === 'audio'),
-      aFormat: 'best',
-      vQuality: String(videoQuality || '1080'),
-      vCodec: 'h264',
-      filenamePattern: 'basic',
-    };
-    const tries = [];
-    const custom = (ytCustomInstance && ytCustomInstance.value || '').trim();
-    if (custom) tries.push(custom);
-    tries.push(...COBALT_INSTANCES);
-
-    // Try cached working instance first (cuts to a single request on success)
-    const last = getLastWorking();
-    const cachedInstance = (last && last.provider === 'cobalt') ? last.instance : null;
-    if (cachedInstance && tries.includes(cachedInstance)) {
-      try {
-        const resp = await tryCobaltAt(cachedInstance, body, 4000);
-        setLastWorking('cobalt', cachedInstance);
-        return {
-          tunnelUrl: resp.url,
-          filename: resp.filename || (mode === 'audio' ? 'audio.mp3' : 'video.mp4'),
-          instance: cachedInstance,
-        };
-      } catch (e) { if (e.fatal) throw e; /* else fall through to race */ }
-    }
-
-    // Race all instances in parallel — first valid response wins.
-    const errors = [];
-    const promises = tries.filter(i => i !== cachedInstance).map(inst => (async () => {
-      try {
-        const resp = await tryCobaltAt(inst, body, 6000);
-        return { resp, inst };
-      } catch (e) {
-        errors.push(`${inst}: ${e.message || e}`);
-        if (e.fatal) throw e;
-        throw e;
-      }
-    })());
-    try {
-      const winner = await Promise.any(promises);
-      setLastWorking('cobalt', winner.inst);
-      return {
-        tunnelUrl: winner.resp.url,
-        filename: winner.resp.filename || (mode === 'audio' ? 'audio.mp3' : 'video.mp4'),
-        instance: winner.inst,
-      };
-    } catch (e) {
-      throw new Error(`Cobalt: all ${tries.length} instances failed (${errors.slice(0,3).join(' · ')}…)`);
-    }
-  }
-
-  // ============================================================
-  // MAIN — smart router
-  // Default = FAST mode: resolve direct CDN URL → trigger auto-download.
-  // "Force MP3" checkbox = SLOW mode: stream through proxy + re-encode.
-  // Non-YouTube URLs always use Cobalt.
-  // ============================================================
-
-  // Fetch direct CDN URL into a Blob (so we can trigger a clean .download save).
-  // YouTube's CDN doesn't always set Content-Disposition, so navigating to it
-  // may open inline. Fetching as a Blob then using <a download> sidesteps that
-  // — works on every modern browser. Speed = full CDN speed (not proxied).
-  // CORS: googlevideo.com URLs returned by Piped/Invidious DO send Access-Control-Allow-Origin
-  // when accessed via the right host headers — we'll try and fall back if it doesn't.
-  // Quick CORS test — request just the first 1KB with a 3s timeout.
-  // If it works, full fetch will work too. If not, jump straight to new-tab fallback.
-  async function quickCorsTest(url) {
-    const ctl = new AbortController();
-    const tid = setTimeout(() => ctl.abort(), 3000);
-    try {
-      const r = await fetch(url, {
-        signal: ctl.signal,
-        headers: { 'Range': 'bytes=0-1023' }, // hint to the CDN we want a tiny chunk
-      });
-      clearTimeout(tid);
-      return r.ok || r.status === 206; // 206 = partial content (success)
-    } catch (e) {
-      clearTimeout(tid);
-      return false;
-    }
-  }
-
-  async function downloadBlobFromUrl(directUrl, filename, label) {
-    setProgress(15, `Testing CDN connection…`);
-    const corsOk = await quickCorsTest(directUrl);
-    if (!corsOk) {
-      // Don't even start the full fetch — jump straight to new-tab fallback.
-      console.warn('[yt-dl fast] CORS preflight failed, skipping to new-tab open');
-      window.open(directUrl, '_blank', 'noopener');
-      throw new Error('CORS_FALLBACK_OPENED');
-    }
-    setProgress(20, `Connected · downloading from Google CDN…`);
-    let blob;
-    try {
-      blob = await fetchBlobWithProgress(directUrl, label || 'Downloading');
-    } catch (corsErr) {
-      console.warn('[yt-dl fast] fetch failed mid-stream, opening tab', corsErr);
-      window.open(directUrl, '_blank', 'noopener');
-      throw new Error('CORS_FALLBACK_OPENED');
-    }
-    // Trigger auto-download with the right filename
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-    ytLastBlob = blob;
-    ytLastFilename = filename;
-    return blob;
-  }
-
-  // Resolve a direct googlevideo URL via Piped → Invidious. Returns { directUrl, filename, mime }.
-  async function resolveDirectStreamUrl(videoId, mode, videoQuality) {
-    let directUrl = null, baseTitle = '', mime = 'application/octet-stream', extHint = '';
-    const errs = [];
-
-    // Try Piped first
-    try {
-      const streams = await piped_fetchStreams(videoId);
-      baseTitle = (streams.title || `youtube-${videoId}`).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
-      if (mode === 'audio') {
-        const a = piped_pickAudio(streams);
-        if (!a) throw new Error('no audio stream');
-        directUrl = a.url;
-        mime = a.mimeType || 'audio/mp4';
-        extHint = (mime.includes('webm') || mime.includes('opus')) ? 'webm' : 'm4a';
-      } else {
-        const v = piped_pickVideo(streams, videoQuality);
-        if (!v) throw new Error('no video stream');
-        directUrl = v.url;
-        mime = v.mimeType || 'video/mp4';
-        extHint = mime.includes('webm') ? 'webm' : 'mp4';
-      }
-      return { directUrl, filename: `${baseTitle}.${extHint}`, mime };
-    } catch (e) { errs.push(`Piped: ${e.message || e}`); }
-
-    // Then Invidious
-    try {
-      const data = await invidious_fetchVideo(videoId);
-      baseTitle = (data.title || `youtube-${videoId}`).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
-      if (mode === 'audio') {
-        const audios = (data.adaptiveFormats || []).filter(f => (f.type || '').startsWith('audio/'));
-        audios.sort((a, b) => (parseInt(b.bitrate)||0) - (parseInt(a.bitrate)||0));
-        if (!audios.length) throw new Error('no audio stream');
-        directUrl = audios[0].url;
-        mime = audios[0].type || 'audio/mp4';
-        extHint = (mime.includes('webm') || mime.includes('opus')) ? 'webm' : 'm4a';
-      } else {
-        const targetH = parseInt(videoQuality, 10) || 1080;
-        const combined = (data.formatStreams || []).slice();
-        if (!combined.length) throw new Error('no combined video stream');
-        function heightOf(s) { const m = (s.resolution || s.qualityLabel || s.quality || '').match(/(\d+)/); return m ? +m[1] : 0; }
-        combined.sort((a, b) => Math.abs(heightOf(a) - targetH) - Math.abs(heightOf(b) - targetH));
-        directUrl = combined[0].url;
-        mime = combined[0].type || 'video/mp4';
-        extHint = mime.includes('webm') ? 'webm' : 'mp4';
-      }
-      return { directUrl, filename: `${baseTitle}.${extHint}`, mime };
-    } catch (e) { errs.push(`Invidious: ${e.message || e}`); }
-
-    // Cobalt as third resolver — works on networks where Piped/Invidious are blocked.
-    // Returns a direct googlevideo URL when alwaysProxy:false is set.
-    try {
-      const sourceUrl = `https://www.youtube.com/watch?v=${videoId}`;
-      const cob = await fetchViaCobalt(sourceUrl, mode, '128', videoQuality);
-      const cobTitle = (cob.filename || `youtube-${videoId}`).replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
-      // Guess mime from the URL or filename
-      const isWebm = /\.webm/i.test(cob.tunnelUrl) || /\.webm/i.test(cob.filename || '');
-      if (mode === 'audio') {
-        mime = isWebm ? 'audio/webm' : 'audio/mp4';
-        extHint = isWebm ? 'webm' : 'm4a';
-      } else {
-        mime = isWebm ? 'video/webm' : 'video/mp4';
-        extHint = isWebm ? 'webm' : 'mp4';
-      }
-      return { directUrl: cob.tunnelUrl, filename: `${cobTitle}.${extHint}`, mime };
-    } catch (e) { errs.push(`Cobalt: ${e.message || e}`); }
-
-    const err = new Error(errs.join(' | '));
-    throw err;
-  }
-
-  ytFetch.addEventListener('click', async () => {
-    const url = getCleanUrl();
-    if (!url) return;
-
-    const mode = document.querySelector('input[name="ytKind"]:checked').value; // audio / video / mute
-    const audioBitrate = String(ytAb.value);
-    const videoQuality = ytVq.value;
-
-    ytFetch.disabled = true;
-    ytResult.hidden = true;
-    // Also hide and clear any previous inline player
-    const prevWrap = document.getElementById('ytPlayerWrap');
-    const prevSlot = document.getElementById('ytPlayerSlot');
-    if (prevWrap && prevSlot) {
-      prevSlot.querySelectorAll('audio, video').forEach(m => {
-        try { m.pause(); m.removeAttribute('src'); m.load(); } catch (e) {}
-      });
-      prevSlot.innerHTML = '';
-      prevWrap.hidden = true;
-    }
-    ytErrorDetails.hidden = true;
-    ytErrorLog.textContent = '';
-    ytLastBlob = null;
-    ytLastTunnelUrl = null;
-    setProgress(5, 'Starting…');
-
-    const isYT = !!extractYtId(url);
-    const errors = [];
-    function logErr(provider, e) {
-      const msg = (e && e.message) ? e.message : String(e);
-      errors.push(`[${provider}] ${msg}`);
-      console.warn(`[yt-dl] ${provider} failed:`, e);
-    }
-
-    // Helper: trigger a browser download for a Blob with a given filename
-    function triggerDownload(blob, filename) {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-    }
-
-    try {
-      // ====================================================================
-      // INSTANT FAST PATH: resolve direct CDN URL, trigger browser download
-      // via a hidden iframe. Google's CDN sends Content-Disposition: attachment,
-      // so the browser auto-downloads to disk — NO new tab opens, NO Blob fetch,
-      // NO re-encoding. Just a click → file appears in Downloads.
-      //
-      // For audio: the file is technically AAC inside an .m4a container, but
-      // we set the filename to ".mp3" so it appears as MP3. Every modern player
-      // (Windows Media Player, VLC, Spotify import, iPhones, Android, web players)
-      // detects the actual format from the file content, not the extension —
-      // so this works seamlessly. If a user ever hits a strict player that
-      // rejects it, the Universal Converter card below can re-encode locally
-      // in seconds (ffmpeg.wasm).
-      // ====================================================================
-      if (isYT) {
-        try {
-          setProgress(8, 'Resolving direct stream URL…');
-          const resolved = await resolveDirectStreamUrl(extractYtId(url), mode, videoQuality);
-          const baseTitle = resolved.filename.replace(/\.[^.]+$/, '');
-
-          // Pick filename + display extension
-          let finalName;
-          if (mode === 'audio') {
-            finalName = `${baseTitle}.mp3`;
-          } else {
-            const ext = resolved.mime.includes('webm') ? 'webm' : 'mp4';
-            finalName = `${baseTitle}.${ext}`;
-          }
-
-          setProgress(70, `Loading ${finalName} into player…`);
-
-          // Drop the media into the inline player panel on this page.
-          // No tab navigation. Audio gets an <audio>, video gets a <video>.
-          // Both have controls + native right-click → Save As.
-          const slot = document.getElementById('ytPlayerSlot');
-          const wrap = document.getElementById('ytPlayerWrap');
-          const playerLabel = document.getElementById('ytPlayerLabel');
-          slot.innerHTML = '';
-          let media;
-          if (mode === 'audio') {
-            media = document.createElement('audio');
-            media.style.cssText = 'width:100%; max-width:560px';
-          } else {
-            media = document.createElement('video');
-            media.style.cssText = 'max-width:100%; max-height:460px; background:#000';
-          }
-          media.controls = true;
-          media.src = resolved.directUrl;
-          media.crossOrigin = 'anonymous';
-          // Hint to browsers to enable the download option in the controls menu
-          media.setAttribute('controlsList', 'nodownload'.replace('nodownload','')); // keep download enabled
-          slot.appendChild(media);
-          playerLabel.textContent = finalName;
-          wrap.hidden = false;
-
-          // Try to scroll the player into view so user sees it without scrolling
-          setTimeout(() => {
-            try { wrap.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
-          }, 100);
-
-          ytLastFilename = finalName;
-          ytLastTunnelUrl = resolved.directUrl;
-          ytLastResolveAt = Date.now();
-          ytLastResolveMode = mode;
-          ytLastResolveQuality = videoQuality;
-          ytLastResolveYtId = extractYtId(url);
-
-          // AUTO-TRIGGER DOWNLOAD using a hidden iframe — fires right after resolve
-          // so the googlevideo URL signature is still valid (those URLs expire in
-          // ~6 hours but get rejected much earlier sometimes).
-          // Iframes don't count as popups and don't need a fresh user gesture.
-          try {
-            let dlFrame = document.getElementById('ytDlFrame');
-            if (!dlFrame) {
-              dlFrame = document.createElement('iframe');
-              dlFrame.id = 'ytDlFrame';
-              dlFrame.style.cssText = 'position:absolute; width:0; height:0; border:0; visibility:hidden; pointer-events:none';
-              document.body.appendChild(dlFrame);
-            }
-            dlFrame.src = resolved.directUrl;
-          } catch (e) { /* no-op — manual download button is the backup */ }
-
-          setProgress(100, `Saving ${finalName} — if not, click ⬇ Download in the player`);
-          ytSize.textContent = '— ready';
-          ytResult.hidden = false;
-          toast(`Downloading ${finalName}`);
-          return;
-        } catch (e) {
-          logErr('FastDirect', e);
-          setProgress(20, 'Fast path failed · trying proxy fallback…');
-          // Fall through to slow path
-        }
-      }
-
-      // ====================================================================
-      // SLOW PATH: fast path failed, or non-YT URL.
-      // Routes through Piped/Invidious proxyUrl (slower) or Cobalt.
-      // The slow Piped/Invidious path already re-encodes audio to MP3 internally.
-      // ====================================================================
-      if (isYT) {
-        // Piped (slow but reliable)
-        try {
-          const out = await fetchViaPiped(url, mode, audioBitrate, videoQuality);
-          ytLastBlob = out.blob;
-          ytLastFilename = out.filename;
-          // Auto-trigger download
+        if (p.error && p.state !== 'error') p.state = 'error';
+        if (p.state === 'setup') {
+          const phase = p.setupPhase === 'ffmpeg' ? 'ffmpeg (~170MB, only ever happens once)' : 'yt-dlp';
+          setProgress(p.setupPct || 0, 'One-time setup: fetching ' + phase + '… ' + (p.setupPct || 0) + '%');
+        } else if (p.state === 'starting') {
+          setProgress(2, 'Resolving link…');
+        } else if (p.state === 'downloading') {
+          const extra = [p.speed && ('at ' + p.speed), p.eta && ('ETA ' + p.eta)].filter(Boolean).join(' · ');
+          setProgress(p.pct, (p.pct || 0).toFixed(0) + '%' + (extra ? ' · ' + extra : ''));
+          if (p.title) setStatus(p.title);
+        } else if (p.state === 'processing') {
+          setProgress(99, kind === 'audio' ? 'Converting to MP3…' : 'Merging video + audio…');
+        } else if (p.state === 'done') {
+          setProgress(100, 'Done — saving file');
+          // Navigate to the file endpoint; the server streams it as an attachment
           const a = document.createElement('a');
-          a.href = URL.createObjectURL(out.blob);
-          a.download = out.filename;
-          document.body.appendChild(a); a.click(); a.remove();
-          setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-          setProgress(100, `Saved ${out.filename} · via Piped`);
-          ytSize.textContent = formatBytes(out.blob.size);
-          ytResult.hidden = false;
-          toast(`Downloaded ${out.filename}`);
-          return;
-        } catch (e) {
-          logErr('Piped', e);
-          setProgress(20, 'Piped failed · trying Invidious…');
-        }
-
-        try {
-          const out = await fetchViaInvidious(url, mode, audioBitrate, videoQuality);
-          ytLastBlob = out.blob;
-          ytLastFilename = out.filename;
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(out.blob);
-          a.download = out.filename;
-          document.body.appendChild(a); a.click(); a.remove();
-          setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-          setProgress(100, `Saved ${out.filename} · via Invidious`);
-          ytSize.textContent = formatBytes(out.blob.size);
-          ytResult.hidden = false;
-          toast(`Downloaded ${out.filename}`);
-          return;
-        } catch (e) {
-          logErr('Invidious', e);
-          setProgress(25, 'Invidious failed · trying cobalt…');
+          a.href = '/api/dl/file/' + jobId;
+          a.download = p.filename || 'download';
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => a.remove(), 5000);
+          setStatus('Saved: ' + (p.filename || 'download') + ' — check your Downloads folder');
+          if (typeof toast === 'function') toast('Downloaded ' + (p.filename || ''));
+          break;
+        } else if (p.state === 'error') {
+          throw new Error(p.error || 'Download failed');
         }
       }
-
-      // Cobalt — final fallback / required for non-YT
-      let cobaltResult;
-      try {
-        cobaltResult = await fetchViaCobalt(url, mode, audioBitrate, videoQuality);
-      } catch (e) {
-        logErr('Cobalt', e);
-        throw new Error('all-providers-failed');
-      }
-      ytLastTunnelUrl = cobaltResult.tunnelUrl;
-      ytLastFilename = cobaltResult.filename;
-
-      try {
-        const blob = await fetchBlobWithProgress(cobaltResult.tunnelUrl, 'Downloading');
-        ytLastBlob = blob;
-        // Auto-trigger download
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = cobaltResult.filename;
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-        setProgress(100, `Saved ${cobaltResult.filename} · via cobalt`);
-        ytSize.textContent = formatBytes(blob.size);
-        ytResult.hidden = false;
-        toast(`Downloaded ${cobaltResult.filename}`);
-      } catch (corsErr) {
-        // CORS blocked direct fetch — open the cobalt tunnel URL in a new tab
-        console.warn('CORS blocked tunnel fetch', corsErr);
-        window.open(cobaltResult.tunnelUrl, '_blank', 'noopener');
-        ytSize.textContent = '— in new tab';
-        ytResult.hidden = false;
-        setProgress(100, 'Opened in new tab (CORS blocked) — file should download');
-        toast('Opened in new tab — file should download');
-      }
-    } catch (err) {
-      const allMsg = errors.join('\n');
-      let userMsg = 'All providers failed — see details below';
-      if (/content\.video\.unavailable/i.test(allMsg)) userMsg = 'Video unavailable (private, age-gated, or region-locked)';
-      else if (/content\.too_long/i.test(allMsg)) userMsg = 'Video too long for free instances';
-      else if (/link\.invalid|link\.unsupported/i.test(allMsg)) userMsg = 'Link not supported';
-      else if (/Piped: only video-only|no combined video stream/i.test(allMsg)) userMsg = 'Try a lower video quality (720p or 360p)';
-      else if (errors.length && errors.every(e => /captcha|turnstile|auth/i.test(e))) userMsg = 'All instances are captcha-walled — only self-hosted cobalt will work';
-      else if (errors.length && errors.every(e => /HTTP 5\d\d|fetch|network/i.test(e))) userMsg = 'All instances unreachable — try a fallback site below';
-
-      ytText.textContent = userMsg;
-      ytErrorLog.textContent = errors.length
-        ? errors.map(e => '• ' + e).join('\n')
-        : '(no provider attempted — likely an internal error)';
-      ytErrorDetails.hidden = false;
-      ytErrorDetails.open = true;
-      console.error('[yt-dl] full errors:', allMsg);
-      toast(userMsg);
+    } catch (e) {
+      setProgress(0, 'Failed');
+      setStatus(String(e && e.message || e), true);
     } finally {
-      ytFetch.disabled = false;
+      busy = false; goBtn.disabled = false;
     }
-  });
-
-  // Auto-load preview when user pastes/types a YouTube URL.
-  // Debounced so we don't fire on every keystroke. Triggers ytFetch click
-  // automatically once a valid URL has been stable for 600ms.
-  let ytAutoLoadTimer = null;
-  let ytLastAutoLoadedUrl = null;
-  function maybeAutoLoad() {
-    clearTimeout(ytAutoLoadTimer);
-    ytAutoLoadTimer = setTimeout(() => {
-      const v = (urlInput.value || '').trim();
-      if (!v) return;
-      if (v === ytLastAutoLoadedUrl) return; // already loaded this exact URL
-      // Only auto-trigger if it's clearly a YouTube URL (don't fire on partial paste)
-      const id = (function() {
-        const patterns = [
-          /[?&]v=([A-Za-z0-9_-]{11})/,
-          /youtu\.be\/([A-Za-z0-9_-]{11})/,
-          /\/shorts\/([A-Za-z0-9_-]{11})/,
-          /\/embed\/([A-Za-z0-9_-]{11})/,
-        ];
-        for (const re of patterns) { const m = v.match(re); if (m) return m[1]; }
-        return null;
-      })();
-      if (!id) return;
-      if (ytFetch.disabled) return; // a fetch is already in progress
-      ytLastAutoLoadedUrl = v;
-      ytFetch.click();
-    }, 600);
-  }
-  urlInput.addEventListener('input', maybeAutoLoad);
-  urlInput.addEventListener('paste', () => {
-    // setTimeout so urlInput.value reflects the pasted content
-    setTimeout(maybeAutoLoad, 50);
-  });
-
-  // Close the inline player and unload the media so it stops streaming
-  const ytPlayerCloseBtn = document.getElementById('ytPlayerClose');
-  if (ytPlayerCloseBtn) {
-    ytPlayerCloseBtn.addEventListener('click', () => {
-      const slot = document.getElementById('ytPlayerSlot');
-      const wrap = document.getElementById('ytPlayerWrap');
-      // Stop and unload any active media to free bandwidth
-      slot.querySelectorAll('audio, video').forEach(m => {
-        try { m.pause(); m.removeAttribute('src'); m.load(); } catch (e) {}
-      });
-      slot.innerHTML = '';
-      wrap.hidden = true;
-    });
   }
 
-  // Manual Download button in the player header.
-  // Re-resolves the URL if it's older than ~3 minutes — googlevideo URLs
-  // expire fast (they have signed expire= params), so a stale URL gives 403.
-  const ytPlayerDownloadBtn = document.getElementById('ytPlayerDownload');
-  if (ytPlayerDownloadBtn) {
-    ytPlayerDownloadBtn.addEventListener('click', async () => {
-      if (!ytLastTunnelUrl) { toast('Load a video first'); return; }
-
-      const ageMs = Date.now() - (ytLastResolveAt || 0);
-      const STALE_THRESHOLD_MS = 3 * 60 * 1000; // 3 minutes — fresh enough for any CDN
-      let urlToUse = ytLastTunnelUrl;
-      let nameToUse = ytLastFilename;
-
-      if (ageMs > STALE_THRESHOLD_MS && ytLastResolveYtId) {
-        // URL is stale — re-resolve to get a fresh signature
-        ytPlayerDownloadBtn.textContent = '⏳ Refreshing URL…';
-        ytPlayerDownloadBtn.disabled = true;
-        try {
-          const fresh = await resolveDirectStreamUrl(ytLastResolveYtId, ytLastResolveMode, ytLastResolveQuality);
-          const baseTitle = fresh.filename.replace(/\.[^.]+$/, '');
-          if (ytLastResolveMode === 'audio') {
-            nameToUse = `${baseTitle}.mp3`;
-          } else {
-            nameToUse = `${baseTitle}.${fresh.mime.includes('webm') ? 'webm' : 'mp4'}`;
-          }
-          urlToUse = fresh.directUrl;
-          // Update cached state with refreshed URL
-          ytLastTunnelUrl = urlToUse;
-          ytLastFilename = nameToUse;
-          ytLastResolveAt = Date.now();
-        } catch (e) {
-          ytPlayerDownloadBtn.textContent = '⬇ Download';
-          ytPlayerDownloadBtn.disabled = false;
-          console.warn('[yt-dl] re-resolve failed', e);
-          toast('Could not refresh URL — try clicking Load preview again');
-          return;
-        }
-        ytPlayerDownloadBtn.textContent = '⬇ Download';
-        ytPlayerDownloadBtn.disabled = false;
-      }
-
-      // Trigger the download. This click IS a fresh user gesture, so we use an
-      // <a download> click which the browser will reliably honor (no popup blocker
-      // and no need for the iframe trick).
-      const a = document.createElement('a');
-      a.href = urlToUse;
-      a.download = nameToUse;
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => a.remove(), 5000);
-      toast(`Downloading ${nameToUse}`);
-    });
-  }
-
-  // ============================================================
-  // Always-works fallback: open the URL on a third-party converter site
-  // These sites have their own backends, so they actually work — but they're
-  // ad-supported and not run by us. Each button just opens a new tab.
-  // ============================================================
-  function getUrlOrPrompt() {
-    const v = (urlInput.value || '').trim();
-    if (!v) { toast('Paste a URL first'); urlInput.focus(); return null; }
-    return v;
-  }
-  function bindExt(id, builder) {
-    const btn = document.getElementById(id);
-    if (!btn) return;
-    btn.addEventListener('click', () => {
-      const u = getUrlOrPrompt();
-      if (!u) return;
-      const dest = builder(u);
-      if (!dest) { toast('Couldn\'t build URL — only YouTube links work for this one'); return; }
-      window.open(dest, '_blank', 'noopener');
-      toast('Opened in new tab');
-    });
-  }
-
-  // flvto.best uses /convert/{videoId} for YT; otherwise just home page
-  bindExt('ytExtFlvto', (u) => {
-    const id = extractYtId(u);
-    return id ? `https://flvto.best/convert/${id}` : 'https://flvto.best/';
-  });
-
-  // y2mate uses /youtube/{videoId} for YT
-  bindExt('ytExtY2Mate', (u) => {
-    const id = extractYtId(u);
-    return id ? `https://www.y2mate.com/youtube/${id}` : 'https://www.y2mate.com';
-  });
-
-  // ssyoutube — literally just inserts "ss" before "youtube" in the URL
-  bindExt('ytExtSSYT', (u) => {
-    if (!extractYtId(u)) return null;
-    return u
-      .replace(/^https?:\/\/(www\.)?youtube\.com/, 'https://ssyoutube.com')
-      .replace(/^https?:\/\/youtu\.be\//, 'https://ssyoutube.com/youtu.be/');
-  });
-
-  // savefrom.net — accepts ?url=... query param
-  bindExt('ytExtSaveFrom', (u) => `https://en.savefrom.net/#url=${encodeURIComponent(u)}`);
-
-  // cobalt.tools (the website, not the API — Turnstile is solvable manually)
-  bindExt('ytExtCobaltSite', (u) => `https://cobalt.tools/?u=${encodeURIComponent(u)}`);
-
-  // ytmp3.cc — accepts the YT video URL pasted directly into ?vid= or via home redirect
-  bindExt('ytExtYTMP3', (u) => {
-    const id = extractYtId(u);
-    return id ? `https://ytmp3.cc/youtube-to-mp3/?v=${id}` : 'https://ytmp3.cc/';
-  });
+  goBtn.addEventListener('click', startDownload);
+  urlInput.addEventListener('keydown', e => { if (e.key === 'Enter') startDownload(); });
 })();
 
 /* ============================================================
@@ -20374,6 +19463,150 @@ Takes:  {
       setTimeout(function() { el.style.opacity = '0'; }, 1800);
     });
   };
+})();
+
+/* ===== RESIZE & CROP ===== */
+(function() {
+  var rcItems = []; // { name, img, ext } — img kept so items re-render when the target size changes
+  var rcDebounce = null;
+  var drop = document.getElementById('rc-drop');
+  var input = document.getElementById('rc-input');
+  if (!drop || !input) return;
+
+  function rcTarget() {
+    var w = parseInt(document.getElementById('rc-w').value, 10);
+    var h = parseInt(document.getElementById('rc-h').value, 10);
+    if (!(w > 0)) w = 1920;
+    if (!(h > 0)) h = 1080;
+    return { w: Math.min(w, 16384), h: Math.min(h, 16384) };
+  }
+
+  // Cover fit: scale until both dimensions reach the target, then center so the
+  // overflow on the longer axis is cut evenly from both sides.
+  function rcRenderCanvas(img, t) {
+    var scale = Math.max(t.w / img.naturalWidth, t.h / img.naturalHeight);
+    var sw = Math.max(t.w, Math.round(img.naturalWidth * scale));
+    var sh = Math.max(t.h, Math.round(img.naturalHeight * scale));
+    var canvas = document.createElement('canvas');
+    canvas.width = t.w;
+    canvas.height = t.h;
+    var ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, Math.round((t.w - sw) / 2), Math.round((t.h - sh) / 2), sw, sh);
+    return { canvas: canvas, sw: sw, sh: sh };
+  }
+
+  function rcOutName(item, t) {
+    var base = item.name.replace(/\.[^.]+$/, '');
+    return base + '_' + t.w + 'x' + t.h + '.' + (item.ext === 'jpg' ? 'jpg' : 'png');
+  }
+
+  function rcDownloadItem(item, t) {
+    var r = rcRenderCanvas(item.img, t);
+    var type = item.ext === 'jpg' ? 'image/jpeg' : 'image/png';
+    r.canvas.toBlob(function(blob) {
+      if (!blob) return;
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = rcOutName(item, t);
+      a.click();
+      setTimeout(function() { URL.revokeObjectURL(a.href); }, 5000);
+    }, type, 0.92);
+  }
+
+  function rcRender() {
+    var results = document.getElementById('rc-results');
+    var list = document.getElementById('rc-list');
+    var count = document.getElementById('rc-count');
+    if (!rcItems.length) { results.style.display = 'none'; list.innerHTML = ''; return; }
+    var t = rcTarget();
+    results.style.display = 'block';
+    count.textContent = rcItems.length + ' image' + (rcItems.length !== 1 ? 's' : '') + ' → ' + t.w + '×' + t.h;
+    list.innerHTML = '';
+    rcItems.forEach(function(item, i) {
+      var r = rcRenderCanvas(item.img, t);
+      var cutW = r.sw - t.w, cutH = r.sh - t.h;
+      var cutTxt = cutW > 0 ? 'cut ' + cutW + 'px width (' + Math.floor(cutW / 2) + 'px each side)'
+                 : cutH > 0 ? 'cut ' + cutH + 'px height (' + Math.floor(cutH / 2) + 'px top/bottom)'
+                 : 'exact fit, nothing cut';
+
+      var card = document.createElement('div');
+      card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;';
+
+      var head = document.createElement('div');
+      head.style.cssText = 'display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;';
+      var nameEl = document.createElement('span');
+      nameEl.style.cssText = 'flex:1;min-width:140px;font-size:13px;color:var(--text);word-break:break-all;font-family:JetBrains Mono,monospace;';
+      nameEl.textContent = item.name;
+      var metaEl = document.createElement('span');
+      metaEl.style.cssText = 'font-family:JetBrains Mono,monospace;font-size:10px;color:var(--text-faint);';
+      metaEl.textContent = item.img.naturalWidth + '×' + item.img.naturalHeight + ' → scaled ' + r.sw + '×' + r.sh + ' → ' + cutTxt;
+      var dlBtn = document.createElement('button');
+      dlBtn.className = 'mini-btn';
+      dlBtn.textContent = 'Download';
+      dlBtn.addEventListener('click', function() { rcDownloadItem(item, rcTarget()); });
+      var rmBtn = document.createElement('button');
+      rmBtn.className = 'mini-btn danger';
+      rmBtn.textContent = '✕';
+      rmBtn.title = 'Remove';
+      rmBtn.addEventListener('click', function() { rcItems.splice(i, 1); rcRender(); });
+      head.appendChild(nameEl); head.appendChild(metaEl); head.appendChild(dlBtn); head.appendChild(rmBtn);
+
+      r.canvas.style.cssText = 'display:block;width:100%;height:auto;background:var(--surface-2);';
+
+      card.appendChild(head);
+      card.appendChild(r.canvas);
+      list.appendChild(card);
+    });
+  }
+
+  function rcAdd(files) {
+    var pending = 0;
+    Array.prototype.forEach.call(files, function(file) {
+      if (!file.type.startsWith('image/')) return;
+      pending++;
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function() {
+        URL.revokeObjectURL(url);
+        var ext = /\.jpe?g$/i.test(file.name) || file.type === 'image/jpeg' ? 'jpg' : 'png';
+        rcItems.push({ name: file.name, img: img, ext: ext });
+        if (--pending === 0) rcRender();
+      };
+      img.onerror = function() {
+        URL.revokeObjectURL(url);
+        if (--pending === 0) rcRender();
+      };
+      img.src = url;
+    });
+    if (pending === 0) rcRender();
+  }
+
+  window.rcPreset = function(w, h) {
+    document.getElementById('rc-w').value = w;
+    document.getElementById('rc-h').value = h;
+    rcRender();
+  };
+
+  window.rcTargetChanged = function() {
+    clearTimeout(rcDebounce);
+    rcDebounce = setTimeout(rcRender, 300);
+  };
+
+  window.rcDownloadAll = function() {
+    var t = rcTarget();
+    rcItems.forEach(function(item, i) {
+      setTimeout(function() { rcDownloadItem(item, t); }, i * 350);
+    });
+  };
+
+  window.rcClear = function() { rcItems = []; rcRender(); };
+
+  input.addEventListener('change', function(e) { rcAdd(e.target.files); input.value = ''; });
+  drop.addEventListener('dragover', function(e) { e.preventDefault(); drop.style.background = 'var(--surface-2)'; drop.style.borderColor = 'var(--accent)'; });
+  drop.addEventListener('dragleave', function() { drop.style.background = 'var(--surface)'; drop.style.borderColor = 'var(--border-hover)'; });
+  drop.addEventListener('drop', function(e) { e.preventDefault(); drop.style.background = 'var(--surface)'; drop.style.borderColor = 'var(--border-hover)'; rcAdd(e.dataTransfer.files); });
 })();
 </script>
 
