@@ -13166,9 +13166,14 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
     return fmt;
   }
 
-  // Same arg mapping as the Universal Converter, kept local & self-contained.
-  function ffArgs(inputName, outputName, ext) {
-    const args = ['-y', '-i', inputName];
+  // Same arg mapping as the server converter, kept local & self-contained.
+  // isImage: still images have one frame and no duration — fps filters
+  // output nothing and video targets need -loop, so they get special args.
+  function ffArgs(inputName, outputName, ext, isImage) {
+    const args = ['-y'];
+    if (isImage && ['mp4','webm','mov','mkv','avi'].includes(ext)) args.push('-loop','1','-t','3');
+    args.push('-i', inputName);
+    if (isImage && ['mp4','mov','mkv','avi'].includes(ext)) args.push('-vf','scale=trunc(iw/2)*2:trunc(ih/2)*2');
     let mime = 'application/octet-stream';
     switch (ext) {
       case 'mp4':  args.push('-c:v','libx264','-preset','ultrafast','-crf','23','-c:a','aac','-b:a','128k','-pix_fmt','yuv420p','-movflags','+faststart'); mime='video/mp4'; break;
@@ -13176,7 +13181,10 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
       case 'mov':  args.push('-c:v','libx264','-preset','ultrafast','-c:a','aac'); mime='video/quicktime'; break;
       case 'mkv':  args.push('-c:v','libx264','-preset','ultrafast','-c:a','aac'); mime='video/x-matroska'; break;
       case 'avi':  args.push('-c:v','mpeg4','-c:a','libmp3lame'); mime='video/x-msvideo'; break;
-      case 'gif':  args.push('-vf','fps=12,scale=480:-2:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse'); mime='image/gif'; break;
+      case 'gif':
+        if (isImage) args.push('-frames:v','1');
+        else args.push('-vf','fps=12,scale=480:-2:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse');
+        mime='image/gif'; break;
       case 'mp3':  args.push('-vn','-c:a','libmp3lame','-b:a','192k'); mime='audio/mpeg'; break;
       case 'wav':  args.push('-vn','-c:a','pcm_s16le'); mime='audio/wav'; break;
       case 'ogg':  args.push('-vn','-c:a','libvorbis'); mime='audio/ogg'; break;
@@ -13342,9 +13350,10 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
       const outputName = 'bulk_out_' + it.id + '.' + ext;
       bulkText.textContent = 'Converting ' + (done + 1) + '/' + total + ' · ' + it.file.name;
 
+      const isImage = it.file.type.startsWith('image/') || /\.(png|jpe?g|webp|bmp|tiff?)$/i.test(it.file.name);
       try {
         if (useServer) {
-          const { mime } = ffArgs(inputName, outputName, ext);
+          const { mime } = ffArgs(inputName, outputName, ext, isImage);
           const blob = await serverConvertFile(apiBase, it.file, ext, frac => {
             bulkFill.style.width = Math.round(((done + frac) / total) * 100) + '%';
             bulkText.textContent = 'Converting ' + (done + 1) + '/' + total + ' · ' + it.file.name + ' · ' + Math.round(frac * 100) + '%';
@@ -13355,7 +13364,7 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
         } else {
           const data = await fetchFile(it.file);
           await ff.writeFile(inputName, data);
-          const { args, mime } = ffArgs(inputName, outputName, ext);
+          const { args, mime } = ffArgs(inputName, outputName, ext, isImage);
           const code = await ff.exec(args);
           if (code !== 0 && code !== undefined) throw new Error('ffmpeg exit ' + code);
           const out = await ff.readFile(outputName);

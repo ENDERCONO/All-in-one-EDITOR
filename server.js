@@ -950,16 +950,27 @@ function ffprobePath() {
   return null;
 }
 
-// Codec args per target extension (mirrors the browser-side mapping)
+// Codec args per target extension (mirrors the browser-side mapping).
+// Still-image inputs need special handling: they have a single frame with
+// no duration, so fps filters output nothing and video targets need -loop.
+const STILL_RE = /\.(png|jpe?g|webp|bmp|tiff?)$/i;
 function cvArgs(inPath, outPath, ext) {
-  const a = ['-y', '-i', inPath];
+  const still = STILL_RE.test(inPath);
+  const a = ['-y'];
+  if (still && ['mp4','webm','mov','mkv','avi'].includes(ext)) a.push('-loop','1','-t','3');
+  a.push('-i', inPath);
+  // libx264/mpeg4 refuse odd dimensions — images often have them
+  if (still && ['mp4','mov','mkv','avi'].includes(ext)) a.push('-vf','scale=trunc(iw/2)*2:trunc(ih/2)*2');
   switch (ext) {
     case 'mp4':  a.push('-c:v','libx264','-preset','fast','-crf','21','-c:a','aac','-b:a','160k','-pix_fmt','yuv420p','-movflags','+faststart'); break;
     case 'webm': a.push('-c:v','libvpx-vp9','-deadline','good','-cpu-used','4','-c:a','libopus'); break;
     case 'mov':  a.push('-c:v','libx264','-preset','fast','-c:a','aac'); break;
     case 'mkv':  a.push('-c:v','libx264','-preset','fast','-c:a','aac'); break;
     case 'avi':  a.push('-c:v','mpeg4','-c:a','libmp3lame'); break;
-    case 'gif':  a.push('-vf','fps=12,scale=480:-2:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse'); break;
+    case 'gif':
+      if (still) a.push('-frames:v','1'); // single-frame GIF straight from the image
+      else a.push('-vf','fps=12,scale=480:-2:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse');
+      break;
     case 'mp3':  a.push('-vn','-c:a','libmp3lame','-b:a','192k'); break;
     case 'wav':  a.push('-vn','-c:a','pcm_s16le'); break;
     case 'ogg':  a.push('-vn','-c:a','libvorbis'); break;
