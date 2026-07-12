@@ -13350,7 +13350,7 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
       const outputName = 'bulk_out_' + it.id + '.' + ext;
       bulkText.textContent = 'Converting ' + (done + 1) + '/' + total + ' · ' + it.file.name;
 
-      const isImage = it.file.type.startsWith('image/') || /\.(png|jpe?g|webp|bmp|tiff?)$/i.test(it.file.name);
+      const isImage = it.file.type.startsWith('image/') || /\.(png|jpe?g|jfif|pjpe?g|pjp|webp|bmp|tiff?|avif|heic|heif|ico|tga|dds)$/i.test(it.file.name);
       try {
         if (useServer) {
           const { mime } = ffArgs(inputName, outputName, ext, isImage);

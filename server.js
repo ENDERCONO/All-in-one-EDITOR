@@ -953,9 +953,8 @@ function ffprobePath() {
 // Codec args per target extension (mirrors the browser-side mapping).
 // Still-image inputs need special handling: they have a single frame with
 // no duration, so fps filters output nothing and video targets need -loop.
-const STILL_RE = /\.(png|jpe?g|webp|bmp|tiff?)$/i;
-function cvArgs(inPath, outPath, ext) {
-  const still = STILL_RE.test(inPath);
+const STILL_RE = /\.(png|jpe?g|jfif|pjpe?g|pjp|webp|bmp|tiff?|avif|heic|heif|ico|tga|dds)$/i;
+function cvArgs(inPath, outPath, ext, still) {
   const a = ['-y'];
   if (still && ['mp4','webm','mov','mkv','avi'].includes(ext)) a.push('-loop','1','-t','3');
   a.push('-i', inPath);
@@ -998,19 +997,27 @@ function cleanupCvJob(job) {
 async function runCvJob(job, inPath, target) {
   await ensureDlTools(); // makes sure ffmpeg exists (auto-fetch on very first use)
   job.state = 'converting';
-  // Probe duration so we can report % progress (0 = unknown, e.g. images)
+  // Probe duration (for % progress) and stream layout (to detect still
+  // images by content — the extension alone misses .jfif, .avif, etc.,
+  // and a still run through the video GIF pipeline outputs zero frames)
   let duration = 0;
+  let hasVideo = false, hasAudio = false;
   const probe = ffprobePath();
   if (probe) {
     try {
-      duration = parseFloat(execFileSync(probe,
-        ['-v','error','-show_entries','format=duration','-of','default=nw=1:nk=1', inPath],
-        { windowsHide: true }).toString()) || 0;
+      const info = execFileSync(probe,
+        ['-v','error','-show_entries','format=duration:stream=codec_type','-of','default=nw=1', inPath],
+        { windowsHide: true }).toString();
+      const m = info.match(/duration=([0-9.]+)/);
+      duration = m ? (parseFloat(m[1]) || 0) : 0;
+      hasVideo = info.includes('codec_type=video');
+      hasAudio = info.includes('codec_type=audio');
     } catch (e) {}
   }
+  const still = STILL_RE.test(inPath) || (hasVideo && !hasAudio && duration <= 0.05);
   const base = path.basename(inPath).replace(/^in_/, '').replace(/\.[^.]+$/, '') || 'output';
   const outPath = path.join(job.dir, base + '.' + target);
-  const args = cvArgs(inPath, outPath, target);
+  const args = cvArgs(inPath, outPath, target, still);
   args.splice(1, 0, '-progress', 'pipe:1', '-nostats'); // after -y
 
   await new Promise((resolve, reject) => {
@@ -1030,7 +1037,11 @@ async function runCvJob(job, inPath, target) {
       job.proc = null;
       if (code === 0) return resolve();
       const lines = errBuf.split(/\r?\n/).filter(l => l.trim() && !/^\s*(frame=|size=)/.test(l));
-      reject(new Error((lines[lines.length - 1] || 'ffmpeg exited with code ' + code).slice(0, 300)));
+      // "Conversion failed!" is ffmpeg's generic last line — prefer the
+      // specific error above it when there is one
+      const specific = lines.filter(l => /error|invalid|unable|failed to|no such|not found|unsupported/i.test(l) && !/^Conversion failed/i.test(l.trim()));
+      const msg = specific[specific.length - 1] || lines[lines.length - 1] || ('ffmpeg exited with code ' + code);
+      reject(new Error(msg.trim().slice(0, 300)));
     });
   });
 
