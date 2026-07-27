@@ -1205,6 +1205,73 @@
     border-color: var(--border-hover);
   }
 
+  /* Auto hue match — pick a source color + target color, shift whole image */
+  .hue-match {
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 10px; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--bg-2);
+  }
+  .hue-match .hm-title {
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px; color: var(--text-dim);
+    letter-spacing: 0.05em; text-transform: uppercase;
+  }
+  .hue-match .hm-delta {
+    font-weight: 600; color: var(--text);
+    padding: 2px 7px; background: var(--surface-3);
+    border-radius: 5px; font-size: 10.5px;
+    font-variant-numeric: tabular-nums;
+  }
+  .hue-match-row { display: flex; align-items: center; gap: 8px; }
+  .hm-from, .hm-to {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--surface-3); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 8px; cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--text-dim);
+    letter-spacing: 0.05em; text-transform: uppercase;
+    transition: all 0.15s;
+  }
+  .hm-from:hover, .hm-to:hover { border-color: var(--border-hover); color: var(--text); }
+  .hm-from.armed {
+    border-color: var(--b);
+    box-shadow: 0 0 0 1px var(--b);
+    color: var(--text);
+  }
+  .hm-chip {
+    width: 16px; height: 16px; border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.25);
+    display: inline-block; background: #ff0000; flex: none;
+  }
+  .hm-to-input {
+    -webkit-appearance: none; appearance: none;
+    width: 18px; height: 18px; padding: 0; margin: 0;
+    border: 1px solid rgba(255,255,255,0.25); border-radius: 4px;
+    background: none; cursor: pointer;
+  }
+  .hm-to-input::-webkit-color-swatch-wrapper { padding: 0; }
+  .hm-to-input::-webkit-color-swatch { border: none; border-radius: 3px; }
+  .hm-arrow { color: var(--text-dim); font-size: 13px; }
+  .hm-apply {
+    margin-left: auto;
+    background: var(--surface-3); border: 1px solid var(--border);
+    color: var(--text); padding: 6px 12px; border-radius: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.05em; text-transform: uppercase;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .hm-apply:hover { border-color: var(--border-hover); background: var(--surface-2); }
+  .hm-opt {
+    display: flex; align-items: center; gap: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px; color: var(--text-dim);
+    letter-spacing: 0.04em; text-transform: uppercase;
+    cursor: pointer;
+  }
+  .hm-opt input { accent-color: var(--b); }
+
   /* =====================================================
      Audio tools
      ===================================================== */
@@ -5701,6 +5768,22 @@
             <div class="fl"><span>Hue shift</span><span class="fv" id="fHueVal">0°</span></div>
             <input type="range" id="fHue" min="-180" max="180" value="0" step="1">
           </div>
+
+          <div class="hue-match" id="hueMatch">
+            <div class="hm-title"><span>Auto hue match</span><span class="hm-delta" id="hmDelta">—</span></div>
+            <div class="hue-match-row">
+              <button type="button" class="hm-from" id="hmFromBtn" title="Click, then click the image to sample the color you want to change">
+                <span class="hm-chip" id="hmFromChip"></span><span>From</span>
+              </button>
+              <span class="hm-arrow">→</span>
+              <label class="hm-to" title="Target color">
+                <input type="color" class="hm-to-input" id="hmTo" value="#3fa9ff"><span>To</span>
+              </label>
+              <button type="button" class="hm-apply" id="hmApply" title="Shift the whole image's hue so the From color becomes the To color">Match</button>
+            </div>
+            <label class="hm-opt"><input type="checkbox" id="hmSat" checked> also nudge saturation to match</label>
+          </div>
+
           <div class="filter-row">
             <div class="fl"><span>Saturation</span><span class="fv" id="fSatVal">100%</span></div>
             <input type="range" id="fSat" min="0" max="200" value="100" step="1">
@@ -8631,6 +8714,15 @@ remCanvas.addEventListener('click', (e) => {
   if (x < 0 || y < 0 || x >= rem.w || y >= rem.h) return;
   const src = rem.sourceData.data;
 
+  // Auto hue match — armed eyedropper takes priority over the active tool
+  if (hueMatch.picking) {
+    const i = (y * rem.w + x) * 4;
+    setHueFrom([src[i], src[i+1], src[i+2]]);
+    disarmHuePick();
+    toast(`From color: rgb(${src[i]}, ${src[i+1]}, ${src[i+2]})`);
+    return;
+  }
+
   if (remTool === 'wand') {
     const result = magicWandFloodFill(x, y, wandTolerance);
     if (result && result.count > 0) {
@@ -8715,8 +8807,72 @@ document.getElementById('remResetFilters').addEventListener('click', () => {
   document.getElementById('fSharp').value = 0; document.getElementById('fSharpVal').textContent = '0';
   document.getElementById('fNoise').value = 0; document.getElementById('fNoiseVal').textContent = '0';
   ['fInvert','fFlipH','fFlipV','fGray'].forEach(id => document.getElementById(id).classList.remove('active'));
+  hueMatch.from = [255, 0, 0];
+  document.getElementById('hmFromChip').style.background = '#ff0000';
+  document.getElementById('hmDelta').textContent = '—';
+  disarmHuePick();
   schedulePreview();
 });
+
+/* ---- Auto hue match: pick a source color + a target color, then hue-shift
+   the whole image so the source color lands on the target color. ---- */
+const hueMatch = { from: [255, 0, 0], picking: false };
+const hmFromBtn = document.getElementById('hmFromBtn');
+
+function setHueFrom(rgb) {
+  hueMatch.from = rgb.slice(0, 3);
+  document.getElementById('hmFromChip').style.background = rgbToHex(hueMatch.from);
+}
+function armHuePick() {
+  hueMatch.picking = true;
+  hmFromBtn.classList.add('armed');
+  document.getElementById('remToolHint').textContent = 'Auto hue match · click the image to sample the From color';
+}
+function disarmHuePick() {
+  hueMatch.picking = false;
+  hmFromBtn.classList.remove('armed');
+  document.getElementById('remToolHint').textContent = remTool === 'wand'
+    ? 'Magic wand · click any zone to flood-fill remove it'
+    : 'Color removal · pick a color, click image to sample';
+}
+hmFromBtn.addEventListener('click', () => {
+  if (!rem.sourceData) { toast('Load an image first'); return; }
+  hueMatch.picking ? disarmHuePick() : armHuePick();
+});
+
+function applyHueMatch() {
+  if (!rem.sourceData) { toast('Load an image first'); return; }
+  const from = hueMatch.from;
+  const to = hexToRgb(document.getElementById('hmTo').value) || [63, 169, 255];
+  const [fh, fs] = rgbToHsl(from[0], from[1], from[2]);
+  const [th, ts] = rgbToHsl(to[0], to[1], to[2]);
+
+  // Shortest signed hue rotation, normalized to -180..180
+  const hue = Math.round(((th - fh + 540) % 360) - 180);
+  filters.hue = hue;
+  document.getElementById('fHue').value = hue;
+  document.getElementById('fHueVal').textContent = `${hue}°`;
+
+  if (document.getElementById('hmSat').checked) {
+    // Scale global saturation so the From color's saturation matches the To color's
+    let satPct = 100;
+    if (fs >= 0.02) satPct = Math.round(Math.max(0, Math.min(200, (ts / fs) * 100)));
+    else if (ts >= 0.02) satPct = 200;
+    filters.sat = satPct;
+    document.getElementById('fSat').value = satPct;
+    document.getElementById('fSatVal').textContent = `${satPct}%`;
+  }
+
+  document.getElementById('hmDelta').textContent = `${hue > 0 ? '+' : ''}${hue}°`;
+  schedulePreview();
+
+  if (fs < 0.05) {
+    toast('From color is near-neutral — hue shift can’t recolor grays; sample a more colorful area');
+  } else {
+    toast(`Hue shifted ${hue > 0 ? '+' : ''}${hue}° to match`);
+  }
+}
+document.getElementById('hmApply').addEventListener('click', applyHueMatch);
 
 // RGB <-> HSL for hue/sat adjustments
 function rgbToHsl(r, g, b) {
