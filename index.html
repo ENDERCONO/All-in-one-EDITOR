@@ -5802,6 +5802,7 @@
             </div>
             <button type="button" class="hm-apply" id="hmApply" title="Shift the whole image's hue so the From color becomes the To color">Match</button>
             <label class="hm-opt"><input type="checkbox" id="hmSat" checked> match brightness & saturation too (exact recolor)</label>
+            <label class="hm-opt"><input type="checkbox" id="hmColorize"> colorize — tint every shade to the To color (fixes leftover borders / darks)</label>
           </div>
 
           <div class="filter-row">
@@ -8784,6 +8785,8 @@ const filters = {
   invert: false, flipH: false, flipV: false, gray: false,
   // Auto hue match — exact From→To recolor, composed on top of the sliders.
   matchHue: 0, matchSatMul: 1, matchLightAdd: 0,
+  // Colorize: force every pixel to the To hue/sat so borders & darks match too.
+  matchColorize: false, matchToHue: 0, matchToSat: 0,
 };
 
 // Wire filter sliders
@@ -8832,9 +8835,13 @@ document.getElementById('remResetFilters').addEventListener('click', () => {
   document.getElementById('fNoise').value = 0; document.getElementById('fNoiseVal').textContent = '0';
   ['fInvert','fFlipH','fFlipV','fGray'].forEach(id => document.getElementById(id).classList.remove('active'));
   filters.matchHue = 0; filters.matchSatMul = 1; filters.matchLightAdd = 0;
+  filters.matchColorize = false; filters.matchToHue = 0; filters.matchToSat = 0;
   document.getElementById('hmFrom').value = '#ff0000';
   document.getElementById('hmTo').value = '#3fa9ff';
+  document.getElementById('hmColorize').checked = false;
+  document.getElementById('hmSat').checked = true;
   document.getElementById('hmDelta').textContent = '—';
+  hueMatch.applied = false;
   disarmHuePick();
   schedulePreview();
 });
@@ -8842,7 +8849,7 @@ document.getElementById('remResetFilters').addEventListener('click', () => {
 /* ---- Auto hue match: pick a source color + a target color (either can be
    dropped straight from the image), then hue-shift the whole image so the
    source color lands on the target color. ---- */
-const hueMatch = { picking: null };   // null | 'from' | 'to'
+const hueMatch = { picking: null, applied: false };   // picking: null | 'from' | 'to'
 const hmFromDrop = document.getElementById('hmFromDrop');
 const hmToDrop = document.getElementById('hmToDrop');
 
@@ -8916,6 +8923,7 @@ function applyHueMatch() {
   const [fh, fs, fl] = rgbToHsl(from[0], from[1], from[2]);
   const [th, ts, tl] = rgbToHsl(to[0], to[1], to[2]);
   const matchFull = document.getElementById('hmSat').checked;
+  const colorize = document.getElementById('hmColorize').checked;
 
   // Exact recolor: this transform maps the From color precisely onto the To
   // color (and carries the rest of the image along the same way).
@@ -8928,18 +8936,32 @@ function applyHueMatch() {
   filters.matchLightAdd = matchFull ? (tl - fl) : 0;
   if (!matchFull) filters.matchSatMul = 1;                 // hue-only when unticked
 
+  // Colorize forces every shade to the To hue/sat so borders & darks match too.
+  filters.matchColorize = colorize;
+  filters.matchToHue = th;
+  filters.matchToSat = ts;
+
+  hueMatch.applied = true;
   const hue = Math.round(dh);
   document.getElementById('hmDelta').textContent = `${hue > 0 ? '+' : ''}${hue}°`;
   schedulePreview();
 
-  if (matchFull && fs < 0.05) {
-    toast('From is near-neutral — hue can’t recolor grays well; the whole image will be pushed toward that color');
+  if (colorize) {
+    toast(`Colorized whole image → ${rgbToHex(to)}`);
+  } else if (matchFull && fs < 0.05) {
+    toast('From is near-neutral — try “colorize” so borders & darks recolor too');
   } else {
     toast(matchFull ? `Recolored: From → To (Δhue ${hue > 0 ? '+' : ''}${hue}°)`
                     : `Hue shifted ${hue > 0 ? '+' : ''}${hue}°`);
   }
 }
 document.getElementById('hmApply').addEventListener('click', applyHueMatch);
+// Toggling either option live-reapplies once a match has been made
+['hmSat', 'hmColorize'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => {
+    if (hueMatch.applied && rem.sourceData) applyHueMatch();
+  });
+});
 
 // RGB <-> HSL for hue/sat adjustments
 function rgbToHsl(r, g, b) {
@@ -8979,9 +9001,12 @@ function applyFilters(imgData) {
   const hueShift = filters.hue + filters.matchHue;
   const satMul = (filters.sat / 100) * filters.matchSatMul;
   const lightAdd = filters.matchLightAdd;      // -1..+1 in HSL lightness space
+  const colorize = filters.matchColorize;      // force every pixel to the To hue/sat
+  const czHue = filters.matchToHue + filters.hue;             // absolute target hue (+ manual nudge)
+  const czSat = Math.max(0, Math.min(1, filters.matchToSat * (filters.sat / 100)));
   const expMul = Math.pow(2, filters.exp / 50); // -100..+100 → 0.25x..4x
   const conAmt = filters.contrast / 100;        // -1..+1
-  const doHueSat = hueShift !== 0 || satMul !== 1 || lightAdd !== 0 || filters.gray;
+  const doHueSat = colorize || hueShift !== 0 || satMul !== 1 || lightAdd !== 0 || filters.gray;
   const doExp = filters.exp !== 0;
   const doCon = filters.contrast !== 0;
   const doInvert = filters.invert;
@@ -9004,8 +9029,15 @@ function applyFilters(imgData) {
     }
     if (doHueSat) {
       let [h, s, l] = rgbToHsl(r, g, b);
-      h += hueShift;
-      s = filters.gray ? 0 : Math.max(0, Math.min(1, s * satMul));
+      if (colorize) {
+        // Every shade takes the target hue+sat, keeping only its own lightness,
+        // so anti-aliased borders and dark pixels recolor too (no red left over).
+        h = czHue;
+        s = filters.gray ? 0 : czSat;
+      } else {
+        h += hueShift;
+        s = filters.gray ? 0 : Math.max(0, Math.min(1, s * satMul));
+      }
       if (lightAdd !== 0) l = Math.max(0, Math.min(1, l + lightAdd));
       [r, g, b] = hslToRgb(h, s, l);
     }
