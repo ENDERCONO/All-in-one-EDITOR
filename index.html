@@ -1223,40 +1223,43 @@
     border-radius: 5px; font-size: 10.5px;
     font-variant-numeric: tabular-nums;
   }
-  .hue-match-row { display: flex; align-items: center; gap: 8px; }
-  .hm-from, .hm-to {
+  .hue-match-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .hm-side {
     display: flex; align-items: center; gap: 6px;
     background: var(--surface-3); border: 1px solid var(--border);
-    border-radius: 6px; padding: 5px 8px; cursor: pointer;
+    border-radius: 6px; padding: 4px 6px;
     font-family: 'JetBrains Mono', monospace;
     font-size: 10px; color: var(--text-dim);
     letter-spacing: 0.05em; text-transform: uppercase;
     transition: all 0.15s;
   }
-  .hm-from:hover, .hm-to:hover { border-color: var(--border-hover); color: var(--text); }
-  .hm-from.armed {
-    border-color: var(--b);
-    box-shadow: 0 0 0 1px var(--b);
-    color: var(--text);
-  }
-  .hm-chip {
-    width: 16px; height: 16px; border-radius: 4px;
-    border: 1px solid rgba(255,255,255,0.25);
-    display: inline-block; background: #ff0000; flex: none;
-  }
-  .hm-to-input {
+  .hm-side:hover { border-color: var(--border-hover); color: var(--text); }
+  .hm-swatch {
     -webkit-appearance: none; appearance: none;
     width: 18px; height: 18px; padding: 0; margin: 0;
     border: 1px solid rgba(255,255,255,0.25); border-radius: 4px;
-    background: none; cursor: pointer;
+    background: none; cursor: pointer; flex: none;
   }
-  .hm-to-input::-webkit-color-swatch-wrapper { padding: 0; }
-  .hm-to-input::-webkit-color-swatch { border: none; border-radius: 3px; }
+  .hm-swatch::-webkit-color-swatch-wrapper { padding: 0; }
+  .hm-swatch::-webkit-color-swatch { border: none; border-radius: 3px; }
+  .hm-drop {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; padding: 0; line-height: 1;
+    background: var(--bg-2); border: 1px solid var(--border);
+    border-radius: 5px; cursor: pointer; font-size: 12px;
+    transition: all 0.15s;
+  }
+  .hm-drop:hover { border-color: var(--border-hover); }
+  .hm-drop.armed {
+    border-color: var(--b);
+    box-shadow: 0 0 0 1px var(--b);
+    background: var(--b-soft);
+  }
   .hm-arrow { color: var(--text-dim); font-size: 13px; }
   .hm-apply {
-    margin-left: auto;
+    width: 100%;
     background: var(--surface-3); border: 1px solid var(--border);
-    color: var(--text); padding: 6px 12px; border-radius: 6px;
+    color: var(--text); padding: 7px 12px; border-radius: 6px;
     font-family: 'JetBrains Mono', monospace;
     font-size: 10px; font-weight: 600;
     letter-spacing: 0.05em; text-transform: uppercase;
@@ -1271,6 +1274,21 @@
     cursor: pointer;
   }
   .hm-opt input { accent-color: var(--b); }
+  /* Live color loupe that follows the cursor while a dropper is armed */
+  .hm-loupe {
+    position: fixed; z-index: 99999; pointer-events: none; display: none;
+    align-items: center; gap: 7px; padding: 4px 7px 4px 5px;
+    border-radius: 7px; background: var(--surface-3);
+    border: 1px solid var(--border-hover);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.45);
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    color: var(--text); font-variant-numeric: tabular-nums;
+  }
+  .hm-loupe .sw {
+    width: 22px; height: 22px; border-radius: 5px;
+    border: 1px solid rgba(255,255,255,0.35);
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.35);
+  }
 
   /* =====================================================
      Audio tools
@@ -5772,16 +5790,18 @@
           <div class="hue-match" id="hueMatch">
             <div class="hm-title"><span>Auto hue match</span><span class="hm-delta" id="hmDelta">—</span></div>
             <div class="hue-match-row">
-              <button type="button" class="hm-from" id="hmFromBtn" title="Click, then click the image to sample the color you want to change">
-                <span class="hm-chip" id="hmFromChip"></span><span>From</span>
-              </button>
+              <span class="hm-side" title="Color to change — pick manually or drop it from the image">
+                <input type="color" class="hm-swatch" id="hmFrom" value="#ff0000"><span>From</span>
+                <button type="button" class="hm-drop" id="hmFromDrop" title="💧 Drop the From color from the image">💧</button>
+              </span>
               <span class="hm-arrow">→</span>
-              <label class="hm-to" title="Target color">
-                <input type="color" class="hm-to-input" id="hmTo" value="#3fa9ff"><span>To</span>
-              </label>
-              <button type="button" class="hm-apply" id="hmApply" title="Shift the whole image's hue so the From color becomes the To color">Match</button>
+              <span class="hm-side" title="Target color — pick manually or drop it from the image">
+                <input type="color" class="hm-swatch" id="hmTo" value="#3fa9ff"><span>To</span>
+                <button type="button" class="hm-drop" id="hmToDrop" title="💧 Drop the To color from the image">💧</button>
+              </span>
             </div>
-            <label class="hm-opt"><input type="checkbox" id="hmSat" checked> also nudge saturation to match</label>
+            <button type="button" class="hm-apply" id="hmApply" title="Shift the whole image's hue so the From color becomes the To color">Match</button>
+            <label class="hm-opt"><input type="checkbox" id="hmSat" checked> match brightness & saturation too (exact recolor)</label>
           </div>
 
           <div class="filter-row">
@@ -8714,12 +8734,14 @@ remCanvas.addEventListener('click', (e) => {
   if (x < 0 || y < 0 || x >= rem.w || y >= rem.h) return;
   const src = rem.sourceData.data;
 
-  // Auto hue match — armed eyedropper takes priority over the active tool
+  // Auto hue match — armed dropper takes priority over the active tool
   if (hueMatch.picking) {
     const i = (y * rem.w + x) * 4;
-    setHueFrom([src[i], src[i+1], src[i+2]]);
+    const hex = rgbToHex([src[i], src[i+1], src[i+2]]);
+    const which = hueMatch.picking;
+    document.getElementById(which === 'from' ? 'hmFrom' : 'hmTo').value = hex;
     disarmHuePick();
-    toast(`From color: rgb(${src[i]}, ${src[i+1]}, ${src[i+2]})`);
+    toast(`${which === 'from' ? 'From' : 'To'} color: ${hex}`);
     return;
   }
 
@@ -8760,6 +8782,8 @@ const filters = {
   hue: 0, sat: 100, exp: 0, contrast: 0,
   sharpen: 0, noise: 0,
   invert: false, flipH: false, flipV: false, gray: false,
+  // Auto hue match — exact From→To recolor, composed on top of the sliders.
+  matchHue: 0, matchSatMul: 1, matchLightAdd: 0,
 };
 
 // Wire filter sliders
@@ -8807,69 +8831,112 @@ document.getElementById('remResetFilters').addEventListener('click', () => {
   document.getElementById('fSharp').value = 0; document.getElementById('fSharpVal').textContent = '0';
   document.getElementById('fNoise').value = 0; document.getElementById('fNoiseVal').textContent = '0';
   ['fInvert','fFlipH','fFlipV','fGray'].forEach(id => document.getElementById(id).classList.remove('active'));
-  hueMatch.from = [255, 0, 0];
-  document.getElementById('hmFromChip').style.background = '#ff0000';
+  filters.matchHue = 0; filters.matchSatMul = 1; filters.matchLightAdd = 0;
+  document.getElementById('hmFrom').value = '#ff0000';
+  document.getElementById('hmTo').value = '#3fa9ff';
   document.getElementById('hmDelta').textContent = '—';
   disarmHuePick();
   schedulePreview();
 });
 
-/* ---- Auto hue match: pick a source color + a target color, then hue-shift
-   the whole image so the source color lands on the target color. ---- */
-const hueMatch = { from: [255, 0, 0], picking: false };
-const hmFromBtn = document.getElementById('hmFromBtn');
+/* ---- Auto hue match: pick a source color + a target color (either can be
+   dropped straight from the image), then hue-shift the whole image so the
+   source color lands on the target color. ---- */
+const hueMatch = { picking: null };   // null | 'from' | 'to'
+const hmFromDrop = document.getElementById('hmFromDrop');
+const hmToDrop = document.getElementById('hmToDrop');
 
-function setHueFrom(rgb) {
-  hueMatch.from = rgb.slice(0, 3);
-  document.getElementById('hmFromChip').style.background = rgbToHex(hueMatch.from);
+// Live color loupe that trails the cursor while a dropper is armed
+const hmLoupe = document.createElement('div');
+hmLoupe.className = 'hm-loupe';
+hmLoupe.innerHTML = '<span class="sw"></span><span class="hex">#000000</span>';
+document.body.appendChild(hmLoupe);
+const hmLoupeSw = hmLoupe.querySelector('.sw');
+const hmLoupeHex = hmLoupe.querySelector('.hex');
+
+// Map a client point to the source-image pixel color, or null if off-image
+function hmColorAt(clientX, clientY) {
+  if (!rem.sourceData) return null;
+  const rect = remCanvas.getBoundingClientRect();
+  const x = Math.floor((clientX - rect.left) * (rem.w / rect.width));
+  const y = Math.floor((clientY - rect.top) * (rem.h / rect.height));
+  if (x < 0 || y < 0 || x >= rem.w || y >= rem.h) return null;
+  const d = rem.sourceData.data, i = (y * rem.w + x) * 4;
+  return [d[i], d[i+1], d[i+2]];
 }
-function armHuePick() {
-  hueMatch.picking = true;
-  hmFromBtn.classList.add('armed');
-  document.getElementById('remToolHint').textContent = 'Auto hue match · click the image to sample the From color';
+
+function hmMoveLoupe(e) {
+  if (!hueMatch.picking) { hmLoupe.style.display = 'none'; return; }
+  const rgb = hmColorAt(e.clientX, e.clientY);
+  if (!rgb) { hmLoupe.style.display = 'none'; return; }
+  const hex = rgbToHex(rgb);
+  hmLoupeSw.style.background = hex;
+  hmLoupeHex.textContent = hex;
+  hmLoupe.style.display = 'flex';
+  // keep the loupe on-screen (flip to the left/up near edges)
+  const ox = e.clientX + 18 > innerWidth - 120 ? -128 : 18;
+  const oy = e.clientY + 18 > innerHeight - 40 ? -34 : 18;
+  hmLoupe.style.left = (e.clientX + ox) + 'px';
+  hmLoupe.style.top = (e.clientY + oy) + 'px';
+}
+remCanvas.addEventListener('mousemove', hmMoveLoupe);
+remCanvas.addEventListener('mouseleave', () => { hmLoupe.style.display = 'none'; });
+
+function armHuePick(which) {
+  hueMatch.picking = which;
+  hmFromDrop.classList.toggle('armed', which === 'from');
+  hmToDrop.classList.toggle('armed', which === 'to');
+  remCanvas.style.cursor = 'cell';
+  document.getElementById('remToolHint').textContent =
+    `Auto hue match · click the image to drop the ${which === 'from' ? 'From' : 'To'} color`;
 }
 function disarmHuePick() {
-  hueMatch.picking = false;
-  hmFromBtn.classList.remove('armed');
+  hueMatch.picking = null;
+  hmFromDrop.classList.remove('armed');
+  hmToDrop.classList.remove('armed');
+  hmLoupe.style.display = 'none';
+  remCanvas.style.cursor = 'crosshair';
   document.getElementById('remToolHint').textContent = remTool === 'wand'
     ? 'Magic wand · click any zone to flood-fill remove it'
     : 'Color removal · pick a color, click image to sample';
 }
-hmFromBtn.addEventListener('click', () => {
+hmFromDrop.addEventListener('click', () => {
   if (!rem.sourceData) { toast('Load an image first'); return; }
-  hueMatch.picking ? disarmHuePick() : armHuePick();
+  hueMatch.picking === 'from' ? disarmHuePick() : armHuePick('from');
+});
+hmToDrop.addEventListener('click', () => {
+  if (!rem.sourceData) { toast('Load an image first'); return; }
+  hueMatch.picking === 'to' ? disarmHuePick() : armHuePick('to');
 });
 
 function applyHueMatch() {
   if (!rem.sourceData) { toast('Load an image first'); return; }
-  const from = hueMatch.from;
+  const from = hexToRgb(document.getElementById('hmFrom').value) || [255, 0, 0];
   const to = hexToRgb(document.getElementById('hmTo').value) || [63, 169, 255];
-  const [fh, fs] = rgbToHsl(from[0], from[1], from[2]);
-  const [th, ts] = rgbToHsl(to[0], to[1], to[2]);
+  const [fh, fs, fl] = rgbToHsl(from[0], from[1], from[2]);
+  const [th, ts, tl] = rgbToHsl(to[0], to[1], to[2]);
+  const matchFull = document.getElementById('hmSat').checked;
 
-  // Shortest signed hue rotation, normalized to -180..180
-  const hue = Math.round(((th - fh + 540) % 360) - 180);
-  filters.hue = hue;
-  document.getElementById('fHue').value = hue;
-  document.getElementById('fHueVal').textContent = `${hue}°`;
+  // Exact recolor: this transform maps the From color precisely onto the To
+  // color (and carries the rest of the image along the same way).
+  //  · hue   — shortest signed rotation, so fh + Δh = th
+  //  · sat   — multiplier, uncapped, so fs · k = ts
+  //  · light — additive offset, so fl + Δl = tl
+  const dh = ((th - fh + 540) % 360) - 180;               // -180..180
+  filters.matchHue = dh;
+  filters.matchSatMul = fs >= 0.004 ? Math.min(64, ts / fs) : (ts >= 0.02 ? 64 : 1);
+  filters.matchLightAdd = matchFull ? (tl - fl) : 0;
+  if (!matchFull) filters.matchSatMul = 1;                 // hue-only when unticked
 
-  if (document.getElementById('hmSat').checked) {
-    // Scale global saturation so the From color's saturation matches the To color's
-    let satPct = 100;
-    if (fs >= 0.02) satPct = Math.round(Math.max(0, Math.min(200, (ts / fs) * 100)));
-    else if (ts >= 0.02) satPct = 200;
-    filters.sat = satPct;
-    document.getElementById('fSat').value = satPct;
-    document.getElementById('fSatVal').textContent = `${satPct}%`;
-  }
-
+  const hue = Math.round(dh);
   document.getElementById('hmDelta').textContent = `${hue > 0 ? '+' : ''}${hue}°`;
   schedulePreview();
 
-  if (fs < 0.05) {
-    toast('From color is near-neutral — hue shift can’t recolor grays; sample a more colorful area');
+  if (matchFull && fs < 0.05) {
+    toast('From is near-neutral — hue can’t recolor grays well; the whole image will be pushed toward that color');
   } else {
-    toast(`Hue shifted ${hue > 0 ? '+' : ''}${hue}° to match`);
+    toast(matchFull ? `Recolored: From → To (Δhue ${hue > 0 ? '+' : ''}${hue}°)`
+                    : `Hue shifted ${hue > 0 ? '+' : ''}${hue}°`);
   }
 }
 document.getElementById('hmApply').addEventListener('click', applyHueMatch);
@@ -8909,11 +8976,12 @@ function applyFilters(imgData) {
   const d = imgData.data;
   const W = imgData.width, H = imgData.height;
 
-  const hueShift = filters.hue;
-  const satMul = filters.sat / 100;
+  const hueShift = filters.hue + filters.matchHue;
+  const satMul = (filters.sat / 100) * filters.matchSatMul;
+  const lightAdd = filters.matchLightAdd;      // -1..+1 in HSL lightness space
   const expMul = Math.pow(2, filters.exp / 50); // -100..+100 → 0.25x..4x
   const conAmt = filters.contrast / 100;        // -1..+1
-  const doHueSat = hueShift !== 0 || satMul !== 1 || filters.gray;
+  const doHueSat = hueShift !== 0 || satMul !== 1 || lightAdd !== 0 || filters.gray;
   const doExp = filters.exp !== 0;
   const doCon = filters.contrast !== 0;
   const doInvert = filters.invert;
@@ -8938,6 +9006,7 @@ function applyFilters(imgData) {
       let [h, s, l] = rgbToHsl(r, g, b);
       h += hueShift;
       s = filters.gray ? 0 : Math.max(0, Math.min(1, s * satMul));
+      if (lightAdd !== 0) l = Math.max(0, Math.min(1, l + lightAdd));
       [r, g, b] = hslToRgb(h, s, l);
     }
     if (doInvert) {
