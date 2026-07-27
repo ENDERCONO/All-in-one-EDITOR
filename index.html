@@ -1244,16 +1244,17 @@
   .hm-swatch::-webkit-color-swatch { border: none; border-radius: 3px; }
   .hm-drop {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 22px; height: 22px; padding: 0; line-height: 1;
+    width: 24px; height: 22px; padding: 0; line-height: 0;
     background: var(--bg-2); border: 1px solid var(--border);
-    border-radius: 5px; cursor: pointer; font-size: 12px;
+    border-radius: 5px; cursor: pointer; color: var(--text-dim);
     transition: all 0.15s;
   }
-  .hm-drop:hover { border-color: var(--border-hover); }
+  .hm-drop:hover { border-color: var(--border-hover); color: var(--text); }
   .hm-drop.armed {
     border-color: var(--b);
     box-shadow: 0 0 0 1px var(--b);
     background: var(--b-soft);
+    color: var(--b);
   }
   .hm-arrow { color: var(--text-dim); font-size: 13px; }
   .hm-apply {
@@ -5790,14 +5791,18 @@
           <div class="hue-match" id="hueMatch">
             <div class="hm-title"><span>Auto hue match</span><span class="hm-delta" id="hmDelta">—</span></div>
             <div class="hue-match-row">
-              <span class="hm-side" title="Color to change — pick manually or drop it from the image">
+              <span class="hm-side" title="Color to change — pick manually or sample it from the image">
                 <input type="color" class="hm-swatch" id="hmFrom" value="#ff0000"><span>From</span>
-                <button type="button" class="hm-drop" id="hmFromDrop" title="💧 Drop the From color from the image">💧</button>
+                <button type="button" class="hm-drop" id="hmFromDrop" aria-label="Sample From color from image" title="Sample the From color from the image">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M19 3a2.83 2.83 0 0 0-4 0l-2.6 2.6-1-1-2 2 6.9 6.9 2-2-1-1L20 7a2.83 2.83 0 0 0-1-4Z"/><path d="m11 8-6.6 6.6a2 2 0 1 0 3 3L14 11"/></svg>
+                </button>
               </span>
               <span class="hm-arrow">→</span>
-              <span class="hm-side" title="Target color — pick manually or drop it from the image">
+              <span class="hm-side" title="Target color — pick manually or sample it from the image">
                 <input type="color" class="hm-swatch" id="hmTo" value="#3fa9ff"><span>To</span>
-                <button type="button" class="hm-drop" id="hmToDrop" title="💧 Drop the To color from the image">💧</button>
+                <button type="button" class="hm-drop" id="hmToDrop" aria-label="Sample To color from image" title="Sample the To color from the image">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M19 3a2.83 2.83 0 0 0-4 0l-2.6 2.6-1-1-2 2 6.9 6.9 2-2-1-1L20 7a2.83 2.83 0 0 0-1-4Z"/><path d="m11 8-6.6 6.6a2 2 0 1 0 3 3L14 11"/></svg>
+                </button>
               </span>
             </div>
             <button type="button" class="hm-apply" id="hmApply" title="Shift the whole image's hue so the From color becomes the To color">Match</button>
@@ -8784,7 +8789,9 @@ const filters = {
   sharpen: 0, noise: 0,
   invert: false, flipH: false, flipV: false, gray: false,
   // Auto hue match — exact From→To recolor, composed on top of the sliders.
-  matchHue: 0, matchSatMul: 1, matchLightAdd: 0,
+  // Lightness is remapped with a gamma curve (l → l^γ) so darks/shadows keep
+  // their relative depth instead of everything shifting by the same amount.
+  matchHue: 0, matchSatMul: 1, matchLightGamma: 1,
   // Colorize: force every pixel to the To hue/sat so borders & darks match too.
   matchColorize: false, matchToHue: 0, matchToSat: 0,
 };
@@ -8834,7 +8841,7 @@ document.getElementById('remResetFilters').addEventListener('click', () => {
   document.getElementById('fSharp').value = 0; document.getElementById('fSharpVal').textContent = '0';
   document.getElementById('fNoise').value = 0; document.getElementById('fNoiseVal').textContent = '0';
   ['fInvert','fFlipH','fFlipV','fGray'].forEach(id => document.getElementById(id).classList.remove('active'));
-  filters.matchHue = 0; filters.matchSatMul = 1; filters.matchLightAdd = 0;
+  filters.matchHue = 0; filters.matchSatMul = 1; filters.matchLightGamma = 1;
   filters.matchColorize = false; filters.matchToHue = 0; filters.matchToSat = 0;
   document.getElementById('hmFrom').value = '#ff0000';
   document.getElementById('hmTo').value = '#3fa9ff';
@@ -8933,7 +8940,11 @@ function applyHueMatch() {
   const dh = ((th - fh + 540) % 360) - 180;               // -180..180
   filters.matchHue = dh;
   filters.matchSatMul = fs >= 0.004 ? Math.min(64, ts / fs) : (ts >= 0.02 ? 64 : 1);
-  filters.matchLightAdd = matchFull ? (tl - fl) : 0;
+  // Gamma that carries the From lightness onto the To lightness (l^γ),
+  // keeping pure black/white fixed so shading is preserved, not flattened.
+  const flc = Math.min(0.985, Math.max(0.015, fl));
+  const tlc = Math.min(0.985, Math.max(0.015, tl));
+  filters.matchLightGamma = matchFull ? (Math.log(tlc) / Math.log(flc)) : 1;
   if (!matchFull) filters.matchSatMul = 1;                 // hue-only when unticked
 
   // Colorize forces every shade to the To hue/sat so borders & darks match too.
@@ -9000,13 +9011,13 @@ function applyFilters(imgData) {
 
   const hueShift = filters.hue + filters.matchHue;
   const satMul = (filters.sat / 100) * filters.matchSatMul;
-  const lightAdd = filters.matchLightAdd;      // -1..+1 in HSL lightness space
+  const lgamma = filters.matchLightGamma;      // 1 = identity; l → l^lgamma
   const colorize = filters.matchColorize;      // force every pixel to the To hue/sat
   const czHue = filters.matchToHue + filters.hue;             // absolute target hue (+ manual nudge)
   const czSat = Math.max(0, Math.min(1, filters.matchToSat * (filters.sat / 100)));
   const expMul = Math.pow(2, filters.exp / 50); // -100..+100 → 0.25x..4x
   const conAmt = filters.contrast / 100;        // -1..+1
-  const doHueSat = colorize || hueShift !== 0 || satMul !== 1 || lightAdd !== 0 || filters.gray;
+  const doHueSat = colorize || hueShift !== 0 || satMul !== 1 || lgamma !== 1 || filters.gray;
   const doExp = filters.exp !== 0;
   const doCon = filters.contrast !== 0;
   const doInvert = filters.invert;
@@ -9038,7 +9049,9 @@ function applyFilters(imgData) {
         h += hueShift;
         s = filters.gray ? 0 : Math.max(0, Math.min(1, s * satMul));
       }
-      if (lightAdd !== 0) l = Math.max(0, Math.min(1, l + lightAdd));
+      // Gamma remap keeps 0→0 (black) and 1→1 (white) fixed while moving the
+      // sampled tone onto the target's — shadows stay proportionally dark.
+      if (lgamma !== 1) l = Math.pow(l < 0 ? 0 : l > 1 ? 1 : l, lgamma);
       [r, g, b] = hslToRgb(h, s, l);
     }
     if (doInvert) {
