@@ -6425,6 +6425,11 @@
               <span class="lbl">Head sway</span>
               <span class="desc" id="audSwayDesc">on</span>
             </label>
+            <label class="pitch-toggle">
+              <input type="checkbox" id="audPointSource" checked>
+              <span class="lbl">Point source (mono)</span>
+              <span class="desc" id="audPointSourceDesc">on</span>
+            </label>
             <div class="spatial-hint">Headphones required — front/back cues don't survive speakers. Still sounds inside your head? Raise Distance, nudge Angle off dead-centre (200° reads as "behind" more clearly than 180°), and add ~15% Reverb wet.</div>
           </div>
         </div>
@@ -9454,6 +9459,8 @@ const audHeadShadow = document.getElementById('audHeadShadow');
 const audHeadShadowDesc = document.getElementById('audHeadShadowDesc');
 const audSway = document.getElementById('audSway');
 const audSwayDesc = document.getElementById('audSwayDesc');
+const audPointSource = document.getElementById('audPointSource');
+const audPointSourceDesc = document.getElementById('audPointSourceDesc');
 
 // Quick actions / meter refs
 const audBypassBtn = document.getElementById('audBypass');
@@ -9679,6 +9686,10 @@ function resetAudioFxSliders() {
     audSway.checked = true;
     audSway.dispatchEvent(new Event('change', { bubbles: true }));
   }
+  if (!audPointSource.checked) {
+    audPointSource.checked = true;
+    audPointSource.dispatchEvent(new Event('change', { bubbles: true }));
+  }
   // clear bypass/mute quietly — a preset or a fresh file shouldn't toast
   au.bypass = false;
   au.muted = false;
@@ -9780,6 +9791,15 @@ function audSetListenerFront(ctx) {
 
 function buildSpatialChain(ctx) {
   const input = ctx.createGain();
+  // Point source: a thing that is genuinely behind you is one point in space,
+  // i.e. mono. Feeding a wide stereo image into the panner leaves part of the
+  // signal smeared across your head and fights the localisation cue.
+  // channelCount 1 + 'explicit' makes this node downmix to (L+R)/2; flipping
+  // back to max/2 restores stereo without rebuilding the graph.
+  const mono = ctx.createGain();
+  mono.channelCount = 1;
+  mono.channelCountMode = 'explicit';
+  mono.channelInterpretation = 'speakers';
   const shelf = ctx.createBiquadFilter();
   shelf.type = 'highshelf'; shelf.frequency.value = 3200; shelf.gain.value = 0;
   const notch = ctx.createBiquadFilter();
@@ -9797,11 +9817,12 @@ function buildSpatialChain(ctx) {
   const wet = ctx.createGain(); wet.gain.value = 0;
   const dry = ctx.createGain(); dry.gain.value = 1;
   const mix = ctx.createGain();
-  input.connect(shelf); shelf.connect(notch); notch.connect(lp); lp.connect(panner);
+  input.connect(mono); mono.connect(shelf);
+  shelf.connect(notch); notch.connect(lp); lp.connect(panner);
   panner.connect(wet); wet.connect(mix);
   dry.connect(mix);
   audSetListenerFront(ctx);
-  return { input, shelf, notch, lp, panner, wet, dry, mix };
+  return { input, mono, shelf, notch, lp, panner, wet, dry, mix };
 }
 
 // Cartesian position for an azimuth in degrees (0 = front, 90 = right, 180 = behind)
@@ -9841,6 +9862,8 @@ function applySpatialParams(chain, ctx, fx, ramp = 0.02) {
   chain.wet.gain.setTargetAtTime(on ? 1 : 0, t, ramp);
   chain.dry.gain.setTargetAtTime(on ? 0 : 1, t, ramp);
   if (!on) return;
+  chain.mono.channelCount = fx.pointSource ? 1 : 2;
+  chain.mono.channelCountMode = fx.pointSource ? 'explicit' : 'max';
   audSetPannerPos(chain.panner, ctx, audSpatialVec(fx.angle, fx.dist, fx.elev), ramp);
   const back = fx.shadow ? audBackFactor(fx.angle) : 0;
   chain.shelf.gain.setTargetAtTime(2 - 14 * back, t, ramp);
@@ -10271,12 +10294,13 @@ function audCurrentFx() {
     dist: +audDist.value,
     elev: +audElev.value,
     shadow: audHeadShadow.checked,
+    pointSource: audPointSource.checked,
   };
 }
 const AUD_NEUTRAL_FX = {
   muffle: 0, hp: 20, gain: 0, bass: 0, reverb: 0,
   bits: 16, sr: 48000, ad: 0, da: 0,
-  spatial: 'off', angle: 0, dist: 1, elev: 0, shadow: false,
+  spatial: 'off', angle: 0, dist: 1, elev: 0, shadow: false, pointSource: false,
 };
 function audEffectiveFx() {
   return au.bypass ? Object.assign({}, AUD_NEUTRAL_FX) : audCurrentFx();
@@ -10438,6 +10462,10 @@ audOrbit.addEventListener('input', e => {
 });
 audHeadShadow.addEventListener('change', () => {
   audHeadShadowDesc.textContent = audHeadShadow.checked ? 'on' : 'off';
+  audSyncFx();
+});
+audPointSource.addEventListener('change', () => {
+  audPointSourceDesc.textContent = audPointSource.checked ? 'on' : 'off';
   audSyncFx();
 });
 audSway.addEventListener('change', () => {
@@ -10756,6 +10784,8 @@ async function renderOffline() {
     node.connect(chain.dry);
     chain.wet.gain.value = 1;
     chain.dry.gain.value = 0;
+    chain.mono.channelCount = fx.pointSource ? 1 : 2;
+    chain.mono.channelCountMode = fx.pointSource ? 'explicit' : 'max';
     const orbiting = fx.spatial === 'orbit';
     const swaying = audSwayActive();
     const rate = +audOrbit.value;
