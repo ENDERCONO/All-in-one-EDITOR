@@ -1486,6 +1486,137 @@
   }
 
   /* =====================================================
+     Audio — spatial stage, presets, output meter
+     ===================================================== */
+  .spatial-modes {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    background: var(--bg-2);
+    padding: 4px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+  .spatial-modes button {
+    cursor: pointer;
+    padding: 9px 4px;
+    border: none; border-radius: 6px;
+    background: transparent;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; font-weight: 500;
+    letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--text-dim);
+    transition: all 0.15s;
+  }
+  .spatial-modes button:hover { color: var(--text); }
+  .spatial-modes button.active {
+    background: var(--surface-3);
+    color: var(--text);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset;
+  }
+  .spatial-body { display: flex; flex-direction: column; gap: 14px; }
+  .spatial-stage {
+    position: relative;
+    height: 128px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg-2);
+    overflow: hidden;
+  }
+  .spatial-stage .ring {
+    position: absolute; left: 50%; top: 50%;
+    width: 96px; height: 96px; margin: -48px 0 0 -48px;
+    border-radius: 50%;
+    border: 1px dashed var(--border-hover);
+  }
+  .spatial-stage .head {
+    position: absolute; left: 50%; top: 50%;
+    width: 26px; height: 26px; margin: -13px 0 0 -13px;
+    border-radius: 50%;
+    background: var(--surface-3);
+    border: 1px solid var(--border-hover);
+  }
+  /* little nose so "front" is unambiguous */
+  .spatial-stage .head::after {
+    content: ''; position: absolute;
+    left: 50%; top: -5px; margin-left: -3px;
+    border-left: 3px solid transparent;
+    border-right: 3px solid transparent;
+    border-bottom: 6px solid var(--border-hover);
+  }
+  .spatial-stage .src {
+    position: absolute; left: 50%; top: 50%;
+    width: 13px; height: 13px; margin: -6.5px 0 0 -6.5px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 14px var(--a-soft);
+    transition: transform 0.1s linear, opacity 0.15s;
+  }
+  .spatial-stage .src.behind { opacity: 0.55; }
+  .spatial-stage .tag {
+    position: absolute;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--text-faint);
+  }
+  .spatial-stage .tag.t { top: 6px; left: 50%; transform: translateX(-50%); }
+  .spatial-stage .tag.b { bottom: 6px; left: 50%; transform: translateX(-50%); }
+  .spatial-stage .tag.l { left: 8px; top: 50%; transform: translateY(-50%); }
+  .spatial-stage .tag.r { right: 8px; top: 50%; transform: translateY(-50%); }
+
+  .aud-quickbar { display: flex; flex-wrap: wrap; gap: 6px; }
+  .aud-chip {
+    cursor: pointer;
+    padding: 7px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-2);
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.04em;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .aud-chip:hover { border-color: var(--border-hover); color: var(--text); }
+  .aud-chip.on {
+    background: var(--surface-3);
+    border-color: var(--border-hover);
+    color: var(--text);
+  }
+  .aud-meter { display: grid; gap: 5px; }
+  .aud-meter .row { display: grid; grid-template-columns: 26px 1fr; gap: 8px; align-items: center; }
+  .aud-meter .ch {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; color: var(--text-faint); letter-spacing: 0.08em;
+  }
+  .aud-meter .bar {
+    position: relative; height: 7px;
+    border-radius: 4px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .aud-meter .fill {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 0%;
+    background: linear-gradient(90deg, var(--g) 0%, var(--g) 62%, #e8c547 82%, var(--r) 100%);
+    background-size: 100vw 100%;
+    transition: width 0.05s linear;
+  }
+  .aud-meter .peak {
+    position: absolute; top: 0; bottom: 0; width: 2px;
+    background: var(--text);
+    left: 0; opacity: 0.7;
+    transition: left 0.12s linear;
+  }
+  .aud-meter .clip {
+    display: flex; align-items: center; justify-content: space-between;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px; color: var(--text-faint); letter-spacing: 0.06em;
+  }
+  .aud-meter .clip .led { color: var(--text-faint); }
+  .aud-meter .clip .led.hot { color: var(--r); }
+
+  /* =====================================================
      Audio recorder
      ===================================================== */
   .audio-recorder {
@@ -6124,10 +6255,11 @@
       <div>
         <div class="eyebrow">Mode 03 · Real-time audio processing</div>
         <h1>Audio <em>Tools</em></h1>
-        <p>Load a track and shape it live — speed, pitch, muffle, bit-crushing, resampling, filters. Every knob updates the sound in real time while it plays.</p>
+        <p>Load a track and shape it live — direction (front / behind / 8D orbit), speed, pitch, muffle, bit-crushing, resampling, filters. Every knob updates the sound in real time while it plays.</p>
       </div>
       <div class="legend">
         <span class="pill">Web Audio · local only</span>
+        <span class="pill">Space play · ←/→ seek · ↑/↓ volume · B bypass · L loop · M mute</span>
       </div>
     </header>
 
@@ -6189,6 +6321,25 @@
         <h3>Controls</h3>
 
         <div class="audio-section">
+          <div class="section-title">Presets &amp; quick actions</div>
+          <div class="aud-quickbar" id="audPresetBar">
+            <button type="button" class="aud-chip" data-preset="reset">Reset all</button>
+            <button type="button" class="aud-chip" data-preset="behindWall">Behind the wall</button>
+            <button type="button" class="aud-chip" data-preset="slowedReverb">Slowed + reverb</button>
+            <button type="button" class="aud-chip" data-preset="nightcore">Nightcore</button>
+            <button type="button" class="aud-chip" data-preset="orbit8d">8D orbit</button>
+            <button type="button" class="aud-chip" data-preset="underwater">Underwater</button>
+            <button type="button" class="aud-chip" data-preset="oldRadio">Old radio</button>
+            <button type="button" class="aud-chip" data-preset="nextRoom">Next room</button>
+          </div>
+          <div class="aud-quickbar">
+            <button type="button" class="aud-chip" id="audBypass" title="Compare with the untouched original (B)">A/B bypass</button>
+            <button type="button" class="aud-chip" id="audLoop" title="Loop playback (L)">Loop</button>
+            <button type="button" class="aud-chip" id="audLimiter" title="Catch peaks so boosted bass / reverb can't clip">Safety limiter</button>
+          </div>
+        </div>
+
+        <div class="audio-section">
           <div class="section-title">Playback</div>
           <div class="field-group">
             <div class="field-label">
@@ -6205,6 +6356,60 @@
             <span class="lbl">Preserve pitch</span>
             <span class="desc" id="audPitchDesc">on</span>
           </label>
+        </div>
+
+        <div class="audio-section">
+          <div class="section-title">Direction — where the sound comes from</div>
+          <div class="spatial-modes" id="audSpatialModes">
+            <button type="button" data-spatial="off" class="active" title="Plain stereo, untouched">Off</button>
+            <button type="button" data-spatial="behind" title="Sound sits behind your head">Behind</button>
+            <button type="button" data-spatial="front" title="Sound sits in front of you">Front</button>
+            <button type="button" data-spatial="orbit" title="Sound circles around your head (8D)">8D orbit</button>
+          </div>
+          <div class="spatial-body" id="audSpatialBody" hidden>
+            <div class="spatial-stage">
+              <div class="ring"></div>
+              <div class="head"></div>
+              <div class="src" id="audSpatialDot"></div>
+              <div class="tag t">front</div>
+              <div class="tag b">behind</div>
+              <div class="tag l">left</div>
+              <div class="tag r">right</div>
+            </div>
+            <div class="field-group">
+              <div class="field-label">
+                <span>Angle</span>
+                <span class="color-rgb-display" id="audAngleVal">180° · behind</span>
+              </div>
+              <input type="range" id="audAngle" min="0" max="359" value="180" step="1">
+            </div>
+            <div class="field-group">
+              <div class="field-label">
+                <span>Distance</span>
+                <span class="color-rgb-display" id="audDistVal">1.5 m</span>
+              </div>
+              <input type="range" id="audDist" min="1" max="12" value="1.5" step="0.1">
+            </div>
+            <div class="field-group">
+              <div class="field-label">
+                <span>Height</span>
+                <span class="color-rgb-display" id="audElevVal">+0.0 m</span>
+              </div>
+              <input type="range" id="audElev" min="-2" max="2" value="0" step="0.1">
+            </div>
+            <div class="field-group" id="audOrbitRow" hidden>
+              <div class="field-label">
+                <span>Orbit speed</span>
+                <span class="color-rgb-display" id="audOrbitVal">0.20 Hz</span>
+              </div>
+              <input type="range" id="audOrbit" min="0.02" max="1.5" value="0.2" step="0.01">
+            </div>
+            <label class="pitch-toggle">
+              <input type="checkbox" id="audHeadShadow" checked>
+              <span class="lbl">Head shadow</span>
+              <span class="desc" id="audHeadShadowDesc">on</span>
+            </label>
+          </div>
         </div>
 
         <div class="audio-section">
@@ -6254,6 +6459,14 @@
               <span class="color-rgb-display" id="audReverbSizeVal">1.5s</span>
             </div>
             <input type="range" id="audReverbSize" min="0.2" max="6" value="1.5" step="0.1">
+          </div>
+          <div class="aud-meter" id="audMeter">
+            <div class="row"><span class="ch">L</span><div class="bar"><div class="fill" id="audMeterL"></div><div class="peak" id="audPeakL"></div></div></div>
+            <div class="row"><span class="ch">R</span><div class="bar"><div class="fill" id="audMeterR"></div><div class="peak" id="audPeakR"></div></div></div>
+            <div class="clip">
+              <span>Output level</span>
+              <span class="led" id="audClipLed">peak —</span>
+            </div>
           </div>
         </div>
 
@@ -9210,6 +9423,33 @@ const audDaVal = document.getElementById('audDaVal');
 const audBr = document.getElementById('audBr');
 const audBrVal = document.getElementById('audBrVal');
 
+// Spatial ("where is the sound coming from") refs
+const audSpatialModes = document.getElementById('audSpatialModes');
+const audSpatialBody = document.getElementById('audSpatialBody');
+const audSpatialDot = document.getElementById('audSpatialDot');
+const audAngle = document.getElementById('audAngle');
+const audAngleVal = document.getElementById('audAngleVal');
+const audDist = document.getElementById('audDist');
+const audDistVal = document.getElementById('audDistVal');
+const audElev = document.getElementById('audElev');
+const audElevVal = document.getElementById('audElevVal');
+const audOrbit = document.getElementById('audOrbit');
+const audOrbitVal = document.getElementById('audOrbitVal');
+const audOrbitRow = document.getElementById('audOrbitRow');
+const audHeadShadow = document.getElementById('audHeadShadow');
+const audHeadShadowDesc = document.getElementById('audHeadShadowDesc');
+
+// Quick actions / meter refs
+const audBypassBtn = document.getElementById('audBypass');
+const audLoopBtn = document.getElementById('audLoop');
+const audLimiterBtn = document.getElementById('audLimiter');
+const audPresetBar = document.getElementById('audPresetBar');
+const audMeterL = document.getElementById('audMeterL');
+const audMeterR = document.getElementById('audMeterR');
+const audPeakL = document.getElementById('audPeakL');
+const audPeakR = document.getElementById('audPeakR');
+const audClipLed = document.getElementById('audClipLed');
+
 const au = {
   ctx: null,
   buffer: null,
@@ -9226,6 +9466,26 @@ const au = {
   daNode: null,
   crusherNode: null,
   crusherReady: false,
+  reverbAmount: null,
+  reverbDry: null,
+  convolverNode: null,
+  spatial: null,      // { input, shelf, notch, panner, wet, dry, mix }
+  limiterNode: null,
+  outNode: null,      // last node before destination — recorders tap this
+  analyserL: null,
+  analyserR: null,
+  // Modes / toggles
+  spatialMode: 'off', // off | behind | front | orbit
+  spatialAngle: 180,  // degrees, 0 = dead ahead, 180 = directly behind
+  bypass: false,
+  muted: false,
+  loop: false,
+  limiter: true,
+  orbitRAF: 0,
+  orbitLast: 0,
+  meterRAF: 0,
+  peakHoldL: 0,
+  peakHoldR: 0,
 };
 
 // Live recorder state has been moved into the editor (see editor.liveRec below).
@@ -9371,13 +9631,15 @@ async function audLoadFile(file) {
   }
 }
 
-// Reset every FX slider back to its default — used on Clear and on new load.
+// Reset every FX slider back to its default — used on Clear, on new load, and
+// as the starting point for every preset.
 function resetAudioFxSliders() {
   const defaults = {
     audSpeed: 1, audSpeedNum: 1,
     audMuffle: 0, audHp: 20, audGain: 0,
     audBits: 16, audSr: 48000, audAd: 0, audDa: 0,
     audBass: 0, audReverb: 0, audReverbSize: 1.5,
+    audDist: 1.5, audElev: 0, audOrbit: 0.2, audAngle: 180,
   };
   for (const [id, val] of Object.entries(defaults)) {
     const el = document.getElementById(id);
@@ -9386,6 +9648,21 @@ function resetAudioFxSliders() {
       el.dispatchEvent(new Event('input', { bubbles: true }));
     }
   }
+  if (!audPreservePitch.checked) {
+    audPreservePitch.checked = true;
+    audPreservePitch.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  if (!audHeadShadow.checked) {
+    audHeadShadow.checked = true;
+    audHeadShadow.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  // clear bypass/mute quietly — a preset or a fresh file shouldn't toast
+  au.bypass = false;
+  au.muted = false;
+  audBypassBtn.classList.remove('on');
+  audBypassBtn.textContent = 'A/B bypass';
+  au.spatialAngle = 180;
+  audSetSpatialMode('off', { keepAngle: true });
 }
 
 // Clear current audio so the dropzone is shown again and a new file can be picked
@@ -9455,9 +9732,127 @@ function drawWaveform(buffer) {
   }
 }
 
+/* ---- Spatial helpers ----
+   The "behind" effect is two things stacked:
+     1. an HRTF PannerNode placed behind the listener (0,0,-1 is dead ahead in
+        Web Audio, so +Z is behind), and
+     2. a head-shadow EQ — browsers' HRTF is weak at front/back, so we roll off
+        the highs and dig a pinna notch around 7.5 kHz the further back the
+        source sits. That's the cue the ear actually uses to say "behind me".
+   The panner lives on a wet path with a dry bypass so "Off" is bit-identical
+   to no spatial processing at all. */
+function audSetListenerFront(ctx) {
+  const l = ctx.listener;
+  if (!l) return;
+  if (l.forwardX) {
+    const t = ctx.currentTime;
+    l.forwardX.setValueAtTime(0, t); l.forwardY.setValueAtTime(0, t); l.forwardZ.setValueAtTime(-1, t);
+    l.upX.setValueAtTime(0, t); l.upY.setValueAtTime(1, t); l.upZ.setValueAtTime(0, t);
+    if (l.positionX) { l.positionX.setValueAtTime(0, t); l.positionY.setValueAtTime(0, t); l.positionZ.setValueAtTime(0, t); }
+  } else if (l.setOrientation) {
+    l.setOrientation(0, 0, -1, 0, 1, 0);
+    if (l.setPosition) l.setPosition(0, 0, 0);
+  }
+}
+
+function buildSpatialChain(ctx) {
+  const input = ctx.createGain();
+  const shelf = ctx.createBiquadFilter();
+  shelf.type = 'highshelf'; shelf.frequency.value = 3200; shelf.gain.value = 0;
+  const notch = ctx.createBiquadFilter();
+  notch.type = 'peaking'; notch.frequency.value = 7500; notch.Q.value = 1.4; notch.gain.value = 0;
+  const panner = ctx.createPanner();
+  panner.panningModel = 'HRTF';
+  panner.distanceModel = 'inverse';
+  panner.refDistance = 1;
+  panner.maxDistance = 40;
+  panner.rolloffFactor = 0.6;
+  const wet = ctx.createGain(); wet.gain.value = 0;
+  const dry = ctx.createGain(); dry.gain.value = 1;
+  const mix = ctx.createGain();
+  input.connect(shelf); shelf.connect(notch); notch.connect(panner);
+  panner.connect(wet); wet.connect(mix);
+  dry.connect(mix);
+  audSetListenerFront(ctx);
+  return { input, shelf, notch, panner, wet, dry, mix };
+}
+
+// Cartesian position for an azimuth in degrees (0 = front, 90 = right, 180 = behind)
+function audSpatialVec(angleDeg, dist, elev) {
+  const a = (angleDeg * Math.PI) / 180;
+  return { x: Math.sin(a) * dist, y: elev, z: -Math.cos(a) * dist };
+}
+
+// How far "behind" the source is: 0 = dead ahead, 1 = directly behind
+function audBackFactor(angleDeg) {
+  return (1 - Math.cos((angleDeg * Math.PI) / 180)) / 2;
+}
+
+function audSetPannerPos(panner, ctx, pos, ramp) {
+  if (panner.positionX) {
+    const t = ctx.currentTime;
+    if (ramp > 0) {
+      panner.positionX.setTargetAtTime(pos.x, t, ramp);
+      panner.positionY.setTargetAtTime(pos.y, t, ramp);
+      panner.positionZ.setTargetAtTime(pos.z, t, ramp);
+    } else {
+      panner.positionX.setValueAtTime(pos.x, t);
+      panner.positionY.setValueAtTime(pos.y, t);
+      panner.positionZ.setValueAtTime(pos.z, t);
+    }
+  } else if (panner.setPosition) {
+    panner.setPosition(pos.x, pos.y, pos.z);
+  }
+}
+
+// Push a set of spatial values onto a chain (live or offline)
+function applySpatialParams(chain, ctx, fx, ramp = 0.02) {
+  if (!chain) return;
+  ramp = Math.max(0.0005, ramp); // a 0 time-constant is not portable
+  const t = ctx.currentTime;
+  const on = fx.spatial && fx.spatial !== 'off';
+  chain.wet.gain.setTargetAtTime(on ? 1 : 0, t, ramp);
+  chain.dry.gain.setTargetAtTime(on ? 0 : 1, t, ramp);
+  if (!on) return;
+  audSetPannerPos(chain.panner, ctx, audSpatialVec(fx.angle, fx.dist, fx.elev), ramp);
+  const back = fx.shadow ? audBackFactor(fx.angle) : 0;
+  chain.shelf.gain.setTargetAtTime(1.5 - 9.5 * back, t, ramp);
+  chain.notch.gain.setTargetAtTime(-9 * back, t, ramp);
+}
+
+function applyLimiterSettings(limiter) {
+  if (!limiter) return;
+  const t = au.ctx ? au.ctx.currentTime : 0;
+  // ratio 1 = literally no gain reduction, so "off" is transparent
+  limiter.threshold.setTargetAtTime(au.limiter ? -1.5 : 0, t, 0.02);
+  limiter.ratio.setTargetAtTime(au.limiter ? 20 : 1, t, 0.02);
+  limiter.knee.setTargetAtTime(au.limiter ? 2 : 0, t, 0.02);
+  limiter.attack.value = 0.002;
+  limiter.release.value = 0.12;
+}
+
+// Detach the previous play's nodes so stale graphs don't stay wired to the
+// destination when a new one is built (every play rebuilds the chain).
+function audTeardownGraph() {
+  const keys = ['adNode','crusherNode','daNode','muffleNode','hpNode','gainNode',
+                'bassNode','reverbAmount','reverbDry','convolverNode','limiterNode',
+                'analyserL','analyserR','meterSink'];
+  for (const k of keys) {
+    const n = au[k];
+    if (n && n.disconnect) { try { n.disconnect(); } catch (e) {} }
+    au[k] = null;
+  }
+  if (au.spatial) {
+    for (const n of Object.values(au.spatial)) { try { n.disconnect(); } catch (e) {} }
+    au.spatial = null;
+  }
+  au.outNode = null;
+}
+
 // ---- Graph building ----
 function buildGraph() {
   const ctx = au.ctx;
+  audTeardownGraph();
 
   const source = ctx.createBufferSource();
   source.buffer = au.buffer;
@@ -9521,7 +9916,9 @@ function buildGraph() {
   bassBoom.gain.value = (typeof audBass !== 'undefined') ? +audBass.value : 0;
   node.connect(bassBoom); node = bassBoom;
 
-  // Reverb wet/dry split — node feeds both a dry path and a convolver path
+  // Reverb wet/dry split — node feeds both a dry path and a convolver path.
+  // The convolver is always built (even at 0% wet) so the wet slider and the
+  // size slider can be moved mid-playback instead of only on the next play.
   const reverbWetVal = (typeof audReverb !== 'undefined') ? (+audReverb.value) / 100 : 0;
   const reverbSizeVal = (typeof audReverbSize !== 'undefined') ? +audReverbSize.value : 1.5;
   const reverbAmount = ctx.createGain();
@@ -9529,19 +9926,41 @@ function buildGraph() {
   reverbAmount.gain.value = reverbWetVal;
   reverbDry.gain.value = 1 - reverbWetVal;
   const reverbMix = ctx.createGain();
-  let convolverNode = null;
-  if (reverbWetVal > 0.001) {
-    convolverNode = ctx.createConvolver();
-    const sizeKey = 'audtools_' + reverbSizeVal.toFixed(1) + '_' + (ctx.sampleRate|0);
-    if (!irCache[sizeKey]) irCache[sizeKey] = buildIR(ctx, reverbSizeVal, 2.5);
-    convolverNode.buffer = irCache[sizeKey];
-    node.connect(convolverNode);
-    convolverNode.connect(reverbAmount);
-    reverbAmount.connect(reverbMix);
-  }
+  const convolverNode = ctx.createConvolver();
+  convolverNode.buffer = audGetReverbIR(ctx, reverbSizeVal);
+  node.connect(convolverNode);
+  convolverNode.connect(reverbAmount);
+  reverbAmount.connect(reverbMix);
   node.connect(reverbDry);
   reverbDry.connect(reverbMix);
   node = reverbMix;
+
+  // Spatial: dry passthrough + HRTF-panned wet path
+  const spatial = buildSpatialChain(ctx);
+  node.connect(spatial.dry);
+  node.connect(spatial.input);
+  node = spatial.mix;
+
+  // Safety limiter — transparent (ratio 1) when the toggle is off
+  const limiter = ctx.createDynamicsCompressor();
+  node.connect(limiter);
+  node = limiter;
+
+  // Metering tap. The analysers feed a silent sink that reaches the
+  // destination, which guarantees the browser keeps rendering them.
+  const splitter = ctx.createChannelSplitter(2);
+  const analyserL = ctx.createAnalyser();
+  const analyserR = ctx.createAnalyser();
+  analyserL.fftSize = 1024; analyserR.fftSize = 1024;
+  node.connect(splitter);
+  splitter.connect(analyserL, 0);
+  splitter.connect(analyserR, 1);
+  const meterSink = ctx.createGain();
+  au.meterSink = meterSink;
+  meterSink.gain.value = 0;
+  analyserL.connect(meterSink);
+  analyserR.connect(meterSink);
+  meterSink.connect(ctx.destination);
 
   node.connect(ctx.destination);
   // If the editor's live recorder is active, also tap the final node into its stream destination.
@@ -9564,6 +9983,26 @@ function buildGraph() {
   au.reverbAmount = reverbAmount;
   au.reverbDry = reverbDry;
   au.convolverNode = convolverNode;
+  au.spatial = spatial;
+  au.limiterNode = limiter;
+  au.outNode = node;
+  au.analyserL = analyserL;
+  au.analyserR = analyserR;
+
+  // Loop keeps playing until the user stops it (transport handles the wrap)
+  source.loop = au.loop;
+  if (au.loop) { source.loopStart = 0; source.loopEnd = au.buffer.duration; }
+
+  // Push the full current state (incl. bypass/mute/spatial) onto the fresh nodes
+  audSyncFx(0);
+}
+
+// Reverb IRs are cached per size + sample rate so dragging the size slider
+// during playback doesn't rebuild the same noise burst over and over.
+function audGetReverbIR(ctx, sizeSec) {
+  const key = 'audtools_' + sizeSec.toFixed(1) + '_' + (ctx.sampleRate | 0);
+  if (!irCache[key]) irCache[key] = buildIR(ctx, sizeSec, 2.5);
+  return irCache[key];
 }
 
 function adFreqFromSlider(pct, sr) {
@@ -9623,13 +10062,15 @@ function audStart() {
     tickActive = true;
     requestAnimationFrame(tickTransport);
   }
+  audStartMeter();
 }
 
 function audPause() {
   if (!au.source) return;
   const elapsed = (au.ctx.currentTime - au.startedAt) * (+audSpeed.value);
   au.startOffset += elapsed;
-  if (au.startOffset > au.buffer.duration) au.startOffset = au.buffer.duration;
+  if (au.loop) au.startOffset %= au.buffer.duration;
+  else if (au.startOffset > au.buffer.duration) au.startOffset = au.buffer.duration;
   au.playing = false;
   try { au.source.stop(); } catch(e) {}
   au.source = null;
@@ -9650,15 +10091,18 @@ function audStop(resetUI = true) {
 
 function tickTransport() {
   if (!au.playing) { tickActive = false; return; }
+  const dur = au.buffer.duration;
   const elapsed = (au.ctx.currentTime - au.startedAt) * (+audSpeed.value);
-  const cur = Math.min(au.buffer.duration, au.startOffset + elapsed);
+  // When looping, the buffer source wraps by itself — the playhead just wraps with it
+  const raw = au.startOffset + elapsed;
+  const cur = au.loop ? (raw % dur) : Math.min(dur, raw);
   audCur.textContent = fmtTime(cur);
-  const frac = cur / au.buffer.duration;
+  const frac = cur / dur;
   if (!wfDragging && !scrubDragging) {
     audScrub.value = Math.round(frac * 1000);
     audPlayhead.style.left = `${frac * 100}%`;
   }
-  if (cur >= au.buffer.duration) {
+  if (!au.loop && raw >= dur) {
     audStop(true);
     tickActive = false;
     return;
@@ -9771,20 +10215,6 @@ audPreservePitch.addEventListener('change', () => {
   }
 });
 
-audMuffle.addEventListener('input', e => {
-  audMuffleVal.textContent = `${e.target.value}%`;
-  if (au.muffleNode) au.muffleNode.frequency.setTargetAtTime(muffleFreqFromSlider(+e.target.value), au.ctx.currentTime, 0.02);
-});
-audHp.addEventListener('input', e => {
-  audHpVal.textContent = `${e.target.value} Hz`;
-  if (au.hpNode) au.hpNode.frequency.setTargetAtTime(+e.target.value, au.ctx.currentTime, 0.02);
-});
-audGain.addEventListener('input', e => {
-  const db = +e.target.value;
-  audGainVal.textContent = `${db >= 0 ? '+' : ''}${db.toFixed(1)} dB`;
-  if (au.gainNode) au.gainNode.gain.setTargetAtTime(Math.pow(10, db / 20), au.ctx.currentTime, 0.02);
-});
-
 const audBass = document.getElementById('audBass');
 const audBassVal = document.getElementById('audBassVal');
 const audReverb = document.getElementById('audReverb');
@@ -9792,53 +10222,379 @@ const audReverbVal = document.getElementById('audReverbVal');
 const audReverbSize = document.getElementById('audReverbSize');
 const audReverbSizeVal = document.getElementById('audReverbSizeVal');
 
+// Every FX value in one place. Sliders only update their own label and then
+// call audSyncFx() — that way A/B bypass and mute can override the whole set
+// without disturbing a single slider position.
+function audCurrentFx() {
+  return {
+    muffle: +audMuffle.value,
+    hp: +audHp.value,
+    gain: +audGain.value,
+    bass: +audBass.value,
+    reverb: (+audReverb.value) / 100,
+    bits: +audBits.value,
+    sr: +audSr.value,
+    ad: +audAd.value,
+    da: +audDa.value,
+    spatial: au.spatialMode,
+    angle: au.spatialAngle,
+    dist: +audDist.value,
+    elev: +audElev.value,
+    shadow: audHeadShadow.checked,
+  };
+}
+const AUD_NEUTRAL_FX = {
+  muffle: 0, hp: 20, gain: 0, bass: 0, reverb: 0,
+  bits: 16, sr: 48000, ad: 0, da: 0,
+  spatial: 'off', angle: 0, dist: 1, elev: 0, shadow: false,
+};
+function audEffectiveFx() {
+  return au.bypass ? Object.assign({}, AUD_NEUTRAL_FX) : audCurrentFx();
+}
+
+function audRampWorkletParam(name, value, ramp) {
+  if (!au.crusherNode) return;
+  const p = au.crusherNode.parameters.get(name);
+  const t = au.ctx.currentTime;
+  p.cancelScheduledValues(t);
+  p.setValueAtTime(p.value, t);
+  p.linearRampToValueAtTime(value, t + Math.max(0.005, ramp * 3));
+}
+
+// Push the effective FX state onto whatever live nodes exist right now.
+function audSyncFx(ramp = 0.02) {
+  if (!au.ctx) return;
+  ramp = Math.max(0.0005, ramp);
+  const t = au.ctx.currentTime;
+  const fx = audEffectiveFx();
+  if (au.muffleNode) au.muffleNode.frequency.setTargetAtTime(muffleFreqFromSlider(fx.muffle), t, ramp);
+  if (au.hpNode) au.hpNode.frequency.setTargetAtTime(fx.hp, t, ramp);
+  if (au.gainNode) au.gainNode.gain.setTargetAtTime(au.muted ? 0 : Math.pow(10, fx.gain / 20), t, ramp);
+  if (au.bassNode) au.bassNode.gain.setTargetAtTime(fx.bass, t, ramp);
+  if (au.reverbAmount) au.reverbAmount.gain.setTargetAtTime(fx.reverb, t, ramp);
+  if (au.reverbDry) au.reverbDry.gain.setTargetAtTime(1 - fx.reverb, t, ramp);
+  if (au.adNode) au.adNode.frequency.setTargetAtTime(adFreqFromSlider(fx.ad, fx.sr), t, ramp);
+  if (au.daNode) au.daNode.frequency.setTargetAtTime(daFreqFromSlider(fx.da, fx.sr), t, ramp);
+  audRampWorkletParam('bits', fx.bits, ramp);
+  audRampWorkletParam('sampleRate', fx.sr, ramp);
+  applySpatialParams(au.spatial, au.ctx, fx, ramp);
+  applyLimiterSettings(au.limiterNode);
+}
+
+audMuffle.addEventListener('input', e => {
+  audMuffleVal.textContent = `${e.target.value}%`;
+  audSyncFx();
+});
+audHp.addEventListener('input', e => {
+  audHpVal.textContent = `${e.target.value} Hz`;
+  audSyncFx();
+});
+audGain.addEventListener('input', e => {
+  const db = +e.target.value;
+  audGainVal.textContent = `${db >= 0 ? '+' : ''}${db.toFixed(1)} dB`;
+  audSyncFx();
+});
 audBass.addEventListener('input', e => {
   const db = +e.target.value;
   audBassVal.textContent = `${db >= 0 ? '+' : ''}${db.toFixed(1)} dB`;
-  if (au.bassNode) au.bassNode.gain.setTargetAtTime(db, au.ctx.currentTime, 0.02);
+  audSyncFx();
 });
 audReverb.addEventListener('input', e => {
-  const wet = (+e.target.value) / 100;
   audReverbVal.textContent = `${e.target.value}%`;
-  if (au.reverbAmount && au.reverbDry) {
-    au.reverbAmount.gain.setTargetAtTime(wet, au.ctx.currentTime, 0.02);
-    au.reverbDry.gain.setTargetAtTime(1 - wet, au.ctx.currentTime, 0.02);
-  }
+  audSyncFx();
 });
+// Reverb size now swaps the impulse response live instead of waiting for the
+// next play. Debounced so dragging doesn't thrash the IR builder.
+let audIRTimer = 0;
 audReverbSize.addEventListener('input', e => {
   audReverbSizeVal.textContent = `${(+e.target.value).toFixed(1)}s`;
-  // Size change requires rebuilding the IR — applies on next play
+  clearTimeout(audIRTimer);
+  audIRTimer = setTimeout(() => {
+    if (au.convolverNode && au.ctx) {
+      au.convolverNode.buffer = audGetReverbIR(au.ctx, +audReverbSize.value);
+    }
+  }, 120);
 });
 audBits.addEventListener('input', e => {
   audBitsVal.textContent = `${e.target.value} bit`;
-  if (au.crusherNode) {
-    const p = au.crusherNode.parameters.get('bits');
-    const t = au.ctx.currentTime;
-    p.cancelScheduledValues(t);
-    p.setValueAtTime(p.value, t);
-    p.linearRampToValueAtTime(+e.target.value, t + 0.06);
-  }
+  audSyncFx();
 });
 audSr.addEventListener('input', e => {
   audSrVal.textContent = `${e.target.value} Hz`;
-  if (au.crusherNode) {
-    const p = au.crusherNode.parameters.get('sampleRate');
-    const t = au.ctx.currentTime;
-    p.cancelScheduledValues(t);
-    p.setValueAtTime(p.value, t);
-    p.linearRampToValueAtTime(+e.target.value, t + 0.06);
-  }
-  // Update AD/DA cutoffs relative to new rate
-  if (au.adNode) au.adNode.frequency.setTargetAtTime(adFreqFromSlider(+audAd.value, +audSr.value), au.ctx.currentTime, 0.02);
-  if (au.daNode) au.daNode.frequency.setTargetAtTime(daFreqFromSlider(+audDa.value, +audSr.value), au.ctx.currentTime, 0.02);
+  audSyncFx();
 });
 audAd.addEventListener('input', e => {
   audAdVal.textContent = `${e.target.value}%`;
-  if (au.adNode) au.adNode.frequency.setTargetAtTime(adFreqFromSlider(+e.target.value, +audSr.value), au.ctx.currentTime, 0.02);
+  audSyncFx();
 });
 audDa.addEventListener('input', e => {
   audDaVal.textContent = `${e.target.value}%`;
-  if (au.daNode) au.daNode.frequency.setTargetAtTime(daFreqFromSlider(+e.target.value, +audSr.value), au.ctx.currentTime, 0.02);
+  audSyncFx();
+});
+
+/* ---- Direction / spatial controls ---- */
+function audAngleLabel(deg) {
+  const d = ((deg % 360) + 360) % 360;
+  let where = 'front';
+  if (d > 22.5 && d <= 67.5) where = 'front-right';
+  else if (d > 67.5 && d <= 112.5) where = 'right';
+  else if (d > 112.5 && d <= 157.5) where = 'behind-right';
+  else if (d > 157.5 && d <= 202.5) where = 'behind';
+  else if (d > 202.5 && d <= 247.5) where = 'behind-left';
+  else if (d > 247.5 && d <= 292.5) where = 'left';
+  else if (d > 292.5 && d <= 337.5) where = 'front-left';
+  return `${Math.round(d)}° · ${where}`;
+}
+
+// Move the dot on the little radar so the direction is visible, not just audible
+function audUpdateSpatialStage() {
+  const d = au.spatialAngle;
+  const dist = +audDist.value;
+  const radius = 20 + Math.min(1, (dist - 1) / 6) * 30; // px out from the head
+  const a = (d * Math.PI) / 180;
+  const x = Math.sin(a) * radius;
+  const y = -Math.cos(a) * radius;
+  audSpatialDot.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+  audSpatialDot.classList.toggle('behind', audBackFactor(d) > 0.5);
+}
+
+function audSetSpatialMode(mode, opts = {}) {
+  au.spatialMode = mode;
+  audSpatialModes.querySelectorAll('button').forEach(b => {
+    b.classList.toggle('active', b.dataset.spatial === mode);
+  });
+  audSpatialBody.hidden = (mode === 'off');
+  audOrbitRow.hidden = (mode !== 'orbit');
+  if (!opts.keepAngle) {
+    if (mode === 'behind') au.spatialAngle = 180;
+    else if (mode === 'front') au.spatialAngle = 0;
+  }
+  audAngle.value = Math.round(au.spatialAngle);
+  audAngleVal.textContent = audAngleLabel(au.spatialAngle);
+  audUpdateSpatialStage();
+  audSyncFx(0.06);
+  if (mode === 'orbit') audStartOrbit();
+  else audStopOrbit();
+}
+
+audSpatialModes.addEventListener('click', e => {
+  const btn = e.target.closest('button[data-spatial]');
+  if (!btn) return;
+  audSetSpatialMode(btn.dataset.spatial);
+  if (btn.dataset.spatial === 'behind') toast('Sound moved behind your head — headphones recommended');
+  else if (btn.dataset.spatial === 'orbit') toast('8D orbit on — the sound circles around you');
+});
+
+audAngle.addEventListener('input', e => {
+  au.spatialAngle = +e.target.value;
+  audAngleVal.textContent = audAngleLabel(au.spatialAngle);
+  audUpdateSpatialStage();
+  audSyncFx();
+});
+audDist.addEventListener('input', e => {
+  audDistVal.textContent = `${(+e.target.value).toFixed(1)} m`;
+  audUpdateSpatialStage();
+  audSyncFx();
+});
+audElev.addEventListener('input', e => {
+  const v = +e.target.value;
+  audElevVal.textContent = `${v >= 0 ? '+' : ''}${v.toFixed(1)} m`;
+  audSyncFx();
+});
+audOrbit.addEventListener('input', e => {
+  audOrbitVal.textContent = `${(+e.target.value).toFixed(2)} Hz`;
+});
+audHeadShadow.addEventListener('change', () => {
+  audHeadShadowDesc.textContent = audHeadShadow.checked ? 'on' : 'off';
+  audSyncFx();
+});
+
+function audStartOrbit() {
+  if (au.orbitRAF) return;
+  au.orbitLast = performance.now();
+  au.orbitRAF = requestAnimationFrame(audOrbitTick);
+}
+function audStopOrbit() {
+  if (au.orbitRAF) cancelAnimationFrame(au.orbitRAF);
+  au.orbitRAF = 0;
+}
+function audOrbitTick(now) {
+  if (au.spatialMode !== 'orbit') { au.orbitRAF = 0; return; }
+  const dt = Math.min(0.1, (now - au.orbitLast) / 1000);
+  au.orbitLast = now;
+  au.spatialAngle = (au.spatialAngle + (+audOrbit.value) * 360 * dt) % 360;
+  audAngle.value = Math.round(au.spatialAngle);
+  audAngleVal.textContent = audAngleLabel(au.spatialAngle);
+  audUpdateSpatialStage();
+  if (au.ctx && au.spatial && !au.bypass) {
+    applySpatialParams(au.spatial, au.ctx, audCurrentFx(), 0.04);
+  }
+  au.orbitRAF = requestAnimationFrame(audOrbitTick);
+}
+
+/* ---- Quick actions: A/B bypass, loop, limiter, mute ---- */
+function audSetBypass(on) {
+  au.bypass = on;
+  audBypassBtn.classList.toggle('on', on);
+  audBypassBtn.textContent = on ? 'A/B · original' : 'A/B bypass';
+  audSyncFx(0.03);
+  toast(on ? 'Bypassed — hearing the original' : 'Effects back on');
+}
+audBypassBtn.addEventListener('click', () => audSetBypass(!au.bypass));
+
+function audSetLoop(on) {
+  au.loop = on;
+  audLoopBtn.classList.toggle('on', on);
+  if (au.source) {
+    au.source.loop = on;
+    if (on && au.buffer) { au.source.loopStart = 0; au.source.loopEnd = au.buffer.duration; }
+  }
+}
+audLoopBtn.addEventListener('click', () => audSetLoop(!au.loop));
+
+function audSetLimiter(on) {
+  au.limiter = on;
+  audLimiterBtn.classList.toggle('on', on);
+  applyLimiterSettings(au.limiterNode);
+}
+audLimiterBtn.addEventListener('click', () => audSetLimiter(!au.limiter));
+audSetLimiter(true);
+audSetSpatialMode('off', { keepAngle: true });
+
+function audSetMuted(on) {
+  au.muted = on;
+  audSyncFx(0.02);
+  toast(on ? 'Muted' : 'Unmuted');
+}
+
+/* ---- Presets ---- */
+const AUD_PRESETS = {
+  reset: {},
+  behindWall: { muffle: 74, hp: 30, bass: 7, reverb: 24, reverbSize: 1.8, gain: 3, spatial: 'behind', dist: 3.5 },
+  slowedReverb: { speed: 0.82, preservePitch: false, reverb: 46, reverbSize: 3.2, bass: 4 },
+  nightcore: { speed: 1.28, preservePitch: false, reverb: 12, hp: 60 },
+  orbit8d: { spatial: 'orbit', orbit: 0.18, dist: 2.2, reverb: 18, reverbSize: 1.6 },
+  underwater: { muffle: 88, bass: 9, reverb: 36, reverbSize: 2.6, speed: 0.94 },
+  oldRadio: { muffle: 44, hp: 620, bits: 8, sr: 11000, ad: 30, da: 55, gain: 3 },
+  nextRoom: { muffle: 58, hp: 130, reverb: 32, reverbSize: 2.2, gain: 2, spatial: 'behind', angle: 215, dist: 4.5 },
+};
+const AUD_PRESET_SLIDERS = {
+  speed: 'audSpeed', muffle: 'audMuffle', hp: 'audHp', gain: 'audGain',
+  bass: 'audBass', reverb: 'audReverb', reverbSize: 'audReverbSize',
+  bits: 'audBits', sr: 'audSr', ad: 'audAd', da: 'audDa',
+  dist: 'audDist', elev: 'audElev', orbit: 'audOrbit',
+};
+function audApplyPreset(name) {
+  const p = AUD_PRESETS[name];
+  if (!p) return;
+  resetAudioFxSliders();
+  for (const [key, id] of Object.entries(AUD_PRESET_SLIDERS)) {
+    if (p[key] === undefined) continue;
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.value = p[key];
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  if (p.preservePitch !== undefined) {
+    audPreservePitch.checked = p.preservePitch;
+    audPreservePitch.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  if (p.angle !== undefined) au.spatialAngle = p.angle;
+  audSetSpatialMode(p.spatial || 'off', { keepAngle: p.angle !== undefined });
+  updateAudioSizeEstimate();
+}
+audPresetBar.addEventListener('click', e => {
+  const btn = e.target.closest('button[data-preset]');
+  if (!btn) return;
+  audApplyPreset(btn.dataset.preset);
+  toast(btn.dataset.preset === 'reset' ? 'Everything back to neutral' : `Preset: ${btn.textContent.trim()}`);
+});
+
+/* ---- Output meter ---- */
+function audDbToPct(db) {
+  return Math.max(0, Math.min(100, ((db + 60) / 60) * 100));
+}
+function audMeterTick() {
+  if (!au.analyserL || !au.playing) {
+    au.meterRAF = 0;
+    audMeterL.style.width = '0%';
+    audMeterR.style.width = '0%';
+    audPeakL.style.left = '0%';
+    audPeakR.style.left = '0%';
+    return;
+  }
+  const buf = au.meterBuf || (au.meterBuf = new Float32Array(au.analyserL.fftSize));
+  let hot = false;
+  const read = (analyser, fillEl, peakEl, holdKey) => {
+    analyser.getFloatTimeDomainData(buf);
+    let sum = 0, peak = 0;
+    for (let i = 0; i < buf.length; i++) {
+      const v = buf[i];
+      sum += v * v;
+      const a = Math.abs(v);
+      if (a > peak) peak = a;
+    }
+    const rms = Math.sqrt(sum / buf.length);
+    if (peak > 0.995) hot = true;
+    au[holdKey] = Math.max(peak, au[holdKey] * 0.94);
+    fillEl.style.width = audDbToPct(20 * Math.log10(rms || 1e-6)).toFixed(1) + '%';
+    peakEl.style.left = audDbToPct(20 * Math.log10(au[holdKey] || 1e-6)).toFixed(1) + '%';
+    return peak;
+  };
+  const pl = read(au.analyserL, audMeterL, audPeakL, 'peakHoldL');
+  const pr = read(au.analyserR, audMeterR, audPeakR, 'peakHoldR');
+  const dbfs = 20 * Math.log10(Math.max(pl, pr) || 1e-6);
+  audClipLed.textContent = hot ? 'clipping!' : `peak ${dbfs.toFixed(1)} dB`;
+  audClipLed.classList.toggle('hot', hot);
+  au.meterRAF = requestAnimationFrame(audMeterTick);
+}
+function audStartMeter() {
+  if (!au.meterRAF) au.meterRAF = requestAnimationFrame(audMeterTick);
+}
+
+/* ---- Keyboard shortcuts (Audio Tools tab only) ---- */
+function audioModeActive() {
+  const m = document.querySelector('main[data-mode="audio"]');
+  return !!m && !m.hidden;
+}
+window.addEventListener('keydown', e => {
+  if (!audioModeActive() || !au.buffer) return;
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const step = e.shiftKey ? 1 : 5;
+  const pos = () => {
+    if (!au.playing) return au.startOffset;
+    return au.startOffset + (au.ctx.currentTime - au.startedAt) * (+audSpeed.value);
+  };
+  switch (e.key) {
+    case ' ':
+      e.preventDefault();
+      if (au.playing) audPause(); else audStart();
+      break;
+    case 'ArrowLeft':
+      e.preventDefault();
+      seekTo((pos() - step) / au.buffer.duration);
+      break;
+    case 'ArrowRight':
+      e.preventDefault();
+      seekTo((pos() + step) / au.buffer.duration);
+      break;
+    case 'ArrowUp':
+      e.preventDefault();
+      audGain.value = Math.min(20, +audGain.value + 1);
+      audGain.dispatchEvent(new Event('input', { bubbles: true }));
+      break;
+    case 'ArrowDown':
+      e.preventDefault();
+      audGain.value = Math.max(-60, +audGain.value - 1);
+      audGain.dispatchEvent(new Event('input', { bubbles: true }));
+      break;
+    case 'b': case 'B': audSetBypass(!au.bypass); break;
+    case 'l': case 'L': audSetLoop(!au.loop); break;
+    case 'm': case 'M': audSetMuted(!au.muted); break;
+    default: return;
+  }
 });
 audBr.addEventListener('input', e => {
   audBrVal.textContent = `${e.target.value} kbps`;
@@ -9900,12 +10656,6 @@ async function renderOffline() {
   const g = offline.createGain();
   g.gain.value = Math.pow(10, (+audGain.value) / 20);
 
-  // Channel reduction if mono
-  let merger = null;
-  if (mono && au.buffer.numberOfChannels > 1) {
-    merger = offline.createChannelMerger(1);
-  }
-
   let node = src;
   node.connect(ad); node = ad;
   if (crusher) { node.connect(crusher); node = crusher; }
@@ -9913,7 +10663,83 @@ async function renderOffline() {
   node.connect(muffle); node = muffle;
   node.connect(hp); node = hp;
   node.connect(g); node = g;
-  g.connect(offline.destination);
+
+  // Bass boom — same low-shelf as the live graph
+  const bass = offline.createBiquadFilter();
+  bass.type = 'lowshelf';
+  bass.frequency.value = 120;
+  bass.gain.value = +audBass.value;
+  node.connect(bass); node = bass;
+
+  // Reverb wet/dry
+  const wet = (+audReverb.value) / 100;
+  if (wet > 0.001) {
+    const conv = offline.createConvolver();
+    conv.buffer = buildIR(offline, +audReverbSize.value, 2.5);
+    const wetGain = offline.createGain(); wetGain.gain.value = wet;
+    const dryGain = offline.createGain(); dryGain.gain.value = 1 - wet;
+    const mix = offline.createGain();
+    node.connect(conv); conv.connect(wetGain); wetGain.connect(mix);
+    node.connect(dryGain); dryGain.connect(mix);
+    node = mix;
+  }
+
+  // Spatial — rendered offline so the export matches what you heard.
+  // In orbit mode the position is keyframed across the whole render.
+  const fx = audCurrentFx();
+  if (fx.spatial !== 'off') {
+    const chain = buildSpatialChain(offline);
+    node.connect(chain.input);
+    node.connect(chain.dry);
+    chain.wet.gain.value = 1;
+    chain.dry.gain.value = 0;
+    if (fx.spatial === 'orbit') {
+      const rate = +audOrbit.value;
+      const stepSec = 0.05;
+      for (let t = 0; t < outDuration; t += stepSec) {
+        const deg = (fx.angle + rate * 360 * t) % 360;
+        const p = audSpatialVec(deg, fx.dist, fx.elev);
+        if (chain.panner.positionX) {
+          chain.panner.positionX.setValueAtTime(p.x, t);
+          chain.panner.positionY.setValueAtTime(p.y, t);
+          chain.panner.positionZ.setValueAtTime(p.z, t);
+        }
+        const back = fx.shadow ? audBackFactor(deg) : 0;
+        chain.shelf.gain.setValueAtTime(1.5 - 9.5 * back, t);
+        chain.notch.gain.setValueAtTime(-9 * back, t);
+      }
+      if (!chain.panner.positionX && chain.panner.setPosition) {
+        const p = audSpatialVec(fx.angle, fx.dist, fx.elev);
+        chain.panner.setPosition(p.x, p.y, p.z);
+      }
+    } else {
+      const p = audSpatialVec(fx.angle, fx.dist, fx.elev);
+      if (chain.panner.positionX) {
+        chain.panner.positionX.value = p.x;
+        chain.panner.positionY.value = p.y;
+        chain.panner.positionZ.value = p.z;
+      } else if (chain.panner.setPosition) {
+        chain.panner.setPosition(p.x, p.y, p.z);
+      }
+      const back = fx.shadow ? audBackFactor(fx.angle) : 0;
+      chain.shelf.gain.value = 1.5 - 9.5 * back;
+      chain.notch.gain.value = -9 * back;
+    }
+    node = chain.mix;
+  }
+
+  // Safety limiter, matching the live setting
+  if (au.limiter) {
+    const lim = offline.createDynamicsCompressor();
+    lim.threshold.value = -1.5;
+    lim.ratio.value = 20;
+    lim.knee.value = 2;
+    lim.attack.value = 0.002;
+    lim.release.value = 0.12;
+    node.connect(lim); node = lim;
+  }
+
+  node.connect(offline.destination);
 
   src.start(0);
   return await offline.startRendering();
@@ -10114,8 +10940,11 @@ function startAudioToolsRecording() {
 
   audRecState.streamDest = au.ctx.createMediaStreamDestination();
   // If something is currently playing (gain node already exists), tap it live.
-  if (au.gainNode) {
-    try { au.gainNode.connect(audRecState.streamDest); } catch(e) {}
+  // Tap the very end of the chain so recordings include reverb, spatial and
+  // the limiter — not just the pre-reverb gain stage.
+  const tap = au.outNode || au.gainNode;
+  if (tap) {
+    try { tap.connect(audRecState.streamDest); } catch(e) {}
   }
 
   audRecState.chunks = [];
