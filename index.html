@@ -1294,13 +1294,15 @@
   /* =====================================================
      Audio tools
      ===================================================== */
+  /* Player sits full width on top, controls flow underneath in as many
+     columns as the window allows — the old 2-column split left a huge
+     dead zone under the player on wide screens. */
   .audio-layout {
     display: grid;
-    grid-template-columns: 1.6fr 1fr;
+    grid-template-columns: 1fr;
     gap: 24px;
     margin-bottom: 40px;
   }
-  @media (max-width: 1000px) { .audio-layout { grid-template-columns: 1fr; } }
   .audio-preview {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -1342,7 +1344,7 @@
     background: var(--bg-2);
     border: 1px solid var(--border);
     border-radius: 10px;
-    height: 140px;
+    height: 190px;
     position: relative;
     overflow: hidden;
     cursor: ew-resize;
@@ -1408,26 +1410,35 @@
     letter-spacing: 0.03em;
     text-align: right;
   }
+  /* Multi-column instead of grid: cards pack by height, so short groups
+     (Playback) don't leave a hole next to tall ones (Direction). */
   .audio-panel {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 16px;
     padding: 24px;
-    display: flex; flex-direction: column;
-    gap: 18px;
+    columns: 320px;
+    column-gap: 18px;
   }
   .audio-panel h3 {
+    column-span: all;
     font-family: 'Instrument Serif', serif;
     font-style: italic; font-weight: 400;
     font-size: 22px;
     margin-bottom: 2px;
   }
+  /* Each group is its own card now that they sit side by side. Slightly
+     lighter than the panel so the inner controls (on --bg-2) still pop. */
   .audio-section {
-    border-top: 1px solid var(--border);
-    padding-top: 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 18px;
+    break-inside: avoid;
     display: flex; flex-direction: column; gap: 12px;
   }
-  .audio-section:first-of-type { border-top: none; padding-top: 0; }
+  .audio-section.span-all { column-span: all; }
   .audio-section .section-title {
     font-family: 'JetBrains Mono', monospace;
     font-size: 10.5px;
@@ -1562,6 +1573,11 @@
   .spatial-stage .tag.b { bottom: 6px; left: 50%; transform: translateX(-50%); }
   .spatial-stage .tag.l { left: 8px; top: 50%; transform: translateY(-50%); }
   .spatial-stage .tag.r { right: 8px; top: 50%; transform: translateY(-50%); }
+  .spatial-hint {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px; line-height: 1.6;
+    color: var(--text-faint);
+  }
 
   .aud-quickbar { display: flex; flex-wrap: wrap; gap: 6px; }
   .aud-chip {
@@ -6315,7 +6331,7 @@
       <div class="audio-panel">
         <h3>Controls</h3>
 
-        <div class="audio-section">
+        <div class="audio-section span-all">
           <div class="section-title">Presets &amp; quick actions</div>
           <div class="aud-quickbar" id="audPresetBar">
             <button type="button" class="aud-chip" data-preset="reset">Reset all</button>
@@ -6404,6 +6420,12 @@
               <span class="lbl">Head shadow</span>
               <span class="desc" id="audHeadShadowDesc">on</span>
             </label>
+            <label class="pitch-toggle">
+              <input type="checkbox" id="audSway" checked>
+              <span class="lbl">Head sway</span>
+              <span class="desc" id="audSwayDesc">on</span>
+            </label>
+            <div class="spatial-hint">Headphones required — front/back cues don't survive speakers. Still sounds inside your head? Raise Distance, nudge Angle off dead-centre (200° reads as "behind" more clearly than 180°), and add ~15% Reverb wet.</div>
           </div>
         </div>
 
@@ -9430,6 +9452,8 @@ const audOrbitVal = document.getElementById('audOrbitVal');
 const audOrbitRow = document.getElementById('audOrbitRow');
 const audHeadShadow = document.getElementById('audHeadShadow');
 const audHeadShadowDesc = document.getElementById('audHeadShadowDesc');
+const audSway = document.getElementById('audSway');
+const audSwayDesc = document.getElementById('audSwayDesc');
 
 // Quick actions / meter refs
 const audBypassBtn = document.getElementById('audBypass');
@@ -9475,6 +9499,9 @@ const au = {
   limiter: true,
   orbitRAF: 0,
   orbitLast: 0,
+  swayRAF: 0,
+  swayPhase: 0,
+  swayOffset: 0,   // degrees of automatic micro head-motion
   meterRAF: 0,
   peakHoldL: 0,
   peakHoldR: 0,
@@ -9648,6 +9675,10 @@ function resetAudioFxSliders() {
     audHeadShadow.checked = true;
     audHeadShadow.dispatchEvent(new Event('change', { bubbles: true }));
   }
+  if (!audSway.checked) {
+    audSway.checked = true;
+    audSway.dispatchEvent(new Event('change', { bubbles: true }));
+  }
   // clear bypass/mute quietly — a preset or a fresh file shouldn't toast
   au.bypass = false;
   au.muted = false;
@@ -9753,6 +9784,10 @@ function buildSpatialChain(ctx) {
   shelf.type = 'highshelf'; shelf.frequency.value = 3200; shelf.gain.value = 0;
   const notch = ctx.createBiquadFilter();
   notch.type = 'peaking'; notch.frequency.value = 7500; notch.Q.value = 1.4; notch.gain.value = 0;
+  // Rear lowpass — your pinna blocks highs from behind. This is the strongest
+  // front/back cue there is, much stronger than the HRTF alone.
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = 20000; lp.Q.value = 0.707;
   const panner = ctx.createPanner();
   panner.panningModel = 'HRTF';
   panner.distanceModel = 'inverse';
@@ -9762,11 +9797,11 @@ function buildSpatialChain(ctx) {
   const wet = ctx.createGain(); wet.gain.value = 0;
   const dry = ctx.createGain(); dry.gain.value = 1;
   const mix = ctx.createGain();
-  input.connect(shelf); shelf.connect(notch); notch.connect(panner);
+  input.connect(shelf); shelf.connect(notch); notch.connect(lp); lp.connect(panner);
   panner.connect(wet); wet.connect(mix);
   dry.connect(mix);
   audSetListenerFront(ctx);
-  return { input, shelf, notch, panner, wet, dry, mix };
+  return { input, shelf, notch, lp, panner, wet, dry, mix };
 }
 
 // Cartesian position for an azimuth in degrees (0 = front, 90 = right, 180 = behind)
@@ -9808,8 +9843,10 @@ function applySpatialParams(chain, ctx, fx, ramp = 0.02) {
   if (!on) return;
   audSetPannerPos(chain.panner, ctx, audSpatialVec(fx.angle, fx.dist, fx.elev), ramp);
   const back = fx.shadow ? audBackFactor(fx.angle) : 0;
-  chain.shelf.gain.setTargetAtTime(1.5 - 9.5 * back, t, ramp);
-  chain.notch.gain.setTargetAtTime(-9 * back, t, ramp);
+  chain.shelf.gain.setTargetAtTime(2 - 14 * back, t, ramp);
+  chain.notch.gain.setTargetAtTime(-13 * back, t, ramp);
+  // 20 kHz out front down to ~4 kHz directly behind
+  chain.lp.frequency.setTargetAtTime(20000 * Math.pow(0.2, back), t, ramp);
 }
 
 function applyLimiterSettings(limiter) {
@@ -10229,7 +10266,8 @@ function audCurrentFx() {
     ad: +audAd.value,
     da: +audDa.value,
     spatial: au.spatialMode,
-    angle: au.spatialAngle,
+    angle: au.spatialAngle + au.swayOffset,
+    baseAngle: au.spatialAngle,
     dist: +audDist.value,
     elev: +audElev.value,
     shadow: audHeadShadow.checked,
@@ -10367,6 +10405,8 @@ function audSetSpatialMode(mode, opts = {}) {
   audSyncFx(0.06);
   if (mode === 'orbit') audStartOrbit();
   else audStopOrbit();
+  if (audSwayActive()) audStartSway();
+  else audStopSway();
 }
 
 audSpatialModes.addEventListener('click', e => {
@@ -10400,6 +10440,38 @@ audHeadShadow.addEventListener('change', () => {
   audHeadShadowDesc.textContent = audHeadShadow.checked ? 'on' : 'off';
   audSyncFx();
 });
+audSway.addEventListener('change', () => {
+  audSwayDesc.textContent = audSway.checked ? 'on' : 'off';
+  if (audSwayActive()) audStartSway();
+  else { audStopSway(); audSyncFx(); }
+});
+
+/* Head sway: a tiny, slow wobble of the source angle. Real listeners turn
+   their head a few degrees to resolve "is that in front of or behind me?" —
+   simulating that motion is what stops the sound collapsing to the centre
+   of your skull. Only runs for the static behind/front modes; orbit already
+   moves on its own. */
+function audSwayActive() {
+  return audSway.checked && (au.spatialMode === 'behind' || au.spatialMode === 'front');
+}
+function audStartSway() {
+  if (au.swayRAF || !audSwayActive()) return;
+  au.swayRAF = requestAnimationFrame(audSwayTick);
+}
+function audStopSway() {
+  if (au.swayRAF) cancelAnimationFrame(au.swayRAF);
+  au.swayRAF = 0;
+  au.swayOffset = 0;
+}
+function audSwayTick(now) {
+  if (!audSwayActive()) { au.swayRAF = 0; au.swayOffset = 0; return; }
+  au.swayPhase = (now / 1000) * 0.13 * Math.PI * 2;
+  au.swayOffset = Math.sin(au.swayPhase) * 7;
+  if (au.ctx && au.spatial && !au.bypass) {
+    applySpatialParams(au.spatial, au.ctx, audCurrentFx(), 0.08);
+  }
+  au.swayRAF = requestAnimationFrame(audSwayTick);
+}
 
 function audStartOrbit() {
   if (au.orbitRAF) return;
@@ -10684,37 +10756,50 @@ async function renderOffline() {
     node.connect(chain.dry);
     chain.wet.gain.value = 1;
     chain.dry.gain.value = 0;
-    if (fx.spatial === 'orbit') {
-      const rate = +audOrbit.value;
+    const orbiting = fx.spatial === 'orbit';
+    const swaying = audSwayActive();
+    const rate = +audOrbit.value;
+    // Where the source points at render time t (orbit spin + head sway)
+    const degAt = t => {
+      let d = fx.baseAngle;
+      if (orbiting) d += rate * 360 * t;
+      if (swaying) d += Math.sin(t * 0.13 * Math.PI * 2) * 7;
+      return ((d % 360) + 360) % 360;
+    };
+    const shadowAt = (deg) => (fx.shadow ? audBackFactor(deg) : 0);
+    const canAutomate = !!chain.panner.positionX;
+    if (orbiting || swaying) {
       const stepSec = 0.05;
       for (let t = 0; t < outDuration; t += stepSec) {
-        const deg = (fx.angle + rate * 360 * t) % 360;
+        const deg = degAt(t);
         const p = audSpatialVec(deg, fx.dist, fx.elev);
-        if (chain.panner.positionX) {
+        if (canAutomate) {
           chain.panner.positionX.setValueAtTime(p.x, t);
           chain.panner.positionY.setValueAtTime(p.y, t);
           chain.panner.positionZ.setValueAtTime(p.z, t);
         }
-        const back = fx.shadow ? audBackFactor(deg) : 0;
-        chain.shelf.gain.setValueAtTime(1.5 - 9.5 * back, t);
-        chain.notch.gain.setValueAtTime(-9 * back, t);
+        const back = shadowAt(deg);
+        chain.shelf.gain.setValueAtTime(2 - 14 * back, t);
+        chain.notch.gain.setValueAtTime(-13 * back, t);
+        chain.lp.frequency.setValueAtTime(20000 * Math.pow(0.2, back), t);
       }
-      if (!chain.panner.positionX && chain.panner.setPosition) {
-        const p = audSpatialVec(fx.angle, fx.dist, fx.elev);
-        chain.panner.setPosition(p.x, p.y, p.z);
-      }
-    } else {
-      const p = audSpatialVec(fx.angle, fx.dist, fx.elev);
-      if (chain.panner.positionX) {
+    }
+    if (!orbiting && !swaying || !canAutomate) {
+      const deg = degAt(0);
+      const p = audSpatialVec(deg, fx.dist, fx.elev);
+      if (canAutomate) {
         chain.panner.positionX.value = p.x;
         chain.panner.positionY.value = p.y;
         chain.panner.positionZ.value = p.z;
       } else if (chain.panner.setPosition) {
         chain.panner.setPosition(p.x, p.y, p.z);
       }
-      const back = fx.shadow ? audBackFactor(fx.angle) : 0;
-      chain.shelf.gain.value = 1.5 - 9.5 * back;
-      chain.notch.gain.value = -9 * back;
+      if (!orbiting && !swaying) {
+        const back = shadowAt(deg);
+        chain.shelf.gain.value = 2 - 14 * back;
+        chain.notch.gain.value = -13 * back;
+        chain.lp.frequency.value = 20000 * Math.pow(0.2, back);
+      }
     }
     node = chain.mix;
   }
