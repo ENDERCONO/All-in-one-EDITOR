@@ -1608,13 +1608,8 @@
     left: 0; opacity: 0.7;
     transition: left 0.12s linear;
   }
-  .aud-meter .clip {
-    display: flex; align-items: center; justify-content: space-between;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 9.5px; color: var(--text-faint); letter-spacing: 0.06em;
-  }
-  .aud-meter .clip .led { color: var(--text-faint); }
-  .aud-meter .clip .led.hot { color: var(--r); }
+  /* clipping shows as the bars going solid red — no text readout */
+  .aud-meter .fill.hot { background: var(--r); }
 
   /* =====================================================
      Audio recorder
@@ -6463,10 +6458,7 @@
           <div class="aud-meter" id="audMeter">
             <div class="row"><span class="ch">L</span><div class="bar"><div class="fill" id="audMeterL"></div><div class="peak" id="audPeakL"></div></div></div>
             <div class="row"><span class="ch">R</span><div class="bar"><div class="fill" id="audMeterR"></div><div class="peak" id="audPeakR"></div></div></div>
-            <div class="clip">
-              <span>Output level</span>
-              <span class="led" id="audClipLed">peak —</span>
-            </div>
+
           </div>
         </div>
 
@@ -9448,7 +9440,7 @@ const audMeterL = document.getElementById('audMeterL');
 const audMeterR = document.getElementById('audMeterR');
 const audPeakL = document.getElementById('audPeakL');
 const audPeakR = document.getElementById('audPeakR');
-const audClipLed = document.getElementById('audClipLed');
+
 
 const au = {
   ctx: null,
@@ -10541,11 +10533,10 @@ function audMeterTick() {
     peakEl.style.left = audDbToPct(20 * Math.log10(au[holdKey] || 1e-6)).toFixed(1) + '%';
     return peak;
   };
-  const pl = read(au.analyserL, audMeterL, audPeakL, 'peakHoldL');
-  const pr = read(au.analyserR, audMeterR, audPeakR, 'peakHoldR');
-  const dbfs = 20 * Math.log10(Math.max(pl, pr) || 1e-6);
-  audClipLed.textContent = hot ? 'clipping!' : `peak ${dbfs.toFixed(1)} dB`;
-  audClipLed.classList.toggle('hot', hot);
+  read(au.analyserL, audMeterL, audPeakL, 'peakHoldL');
+  read(au.analyserR, audMeterR, audPeakR, 'peakHoldR');
+  audMeterL.classList.toggle('hot', hot);
+  audMeterR.classList.toggle('hot', hot);
   au.meterRAF = requestAnimationFrame(audMeterTick);
 }
 function audStartMeter() {
