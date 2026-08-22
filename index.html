@@ -1641,6 +1641,18 @@
   .spatial-stage .tag.b { bottom: 6px; left: 50%; transform: translateX(-50%); }
   .spatial-stage .tag.l { left: 8px; top: 50%; transform: translateY(-50%); }
   .spatial-stage .tag.r { right: 8px; top: 50%; transform: translateY(-50%); }
+  .spatial-stage .tag.e {
+    right: 8px; bottom: 6px;
+    color: var(--text-dim);
+    letter-spacing: 0.06em;
+  }
+  /* The stage is a control, not a picture: click or drag anywhere in it to
+     place the source. Dragging kills the dot's transition so it tracks 1:1. */
+  .spatial-stage { cursor: crosshair; touch-action: none; user-select: none; }
+  .spatial-stage .src { cursor: grab; }
+  .spatial-stage.dragging { cursor: grabbing; }
+  .spatial-stage.dragging .src { transition: opacity 0.15s; cursor: grabbing; }
+  .spatial-stage.dragging .ring { border-color: var(--accent); opacity: 0.6; }
   /* Unreal-style: click any value readout and type an exact number */
   .val-editable {
     cursor: text;
@@ -1660,6 +1672,7 @@
     text-align: right;
     outline: none;
   }
+  #audTailLen:disabled { opacity: 0.4; cursor: not-allowed; }
   .spatial-hint {
     font-family: 'JetBrains Mono', monospace;
     font-size: 9.5px; line-height: 1.6;
@@ -6483,7 +6496,7 @@
             <button type="button" data-spatial="sweep" title="Swings back and forth between two angles">Sweep</button>
           </div>
           <div class="spatial-body" id="audSpatialBody" hidden>
-            <div class="spatial-stage">
+            <div class="spatial-stage" id="audSpatialStage" title="Drag the dot (or click anywhere) to place the sound &middot; scroll to raise / lower it">
               <div class="ring"></div>
               <div class="head"></div>
               <div class="src" id="audSpatialDot"></div>
@@ -6491,6 +6504,7 @@
               <div class="tag b">behind</div>
               <div class="tag l">left</div>
               <div class="tag r">right</div>
+              <div class="tag e" id="audStageElev">+0.0 m</div>
             </div>
             <div class="field-group">
               <div class="field-label">
@@ -6552,7 +6566,7 @@
               <span class="lbl">Point source (mono)</span>
               <span class="desc" id="audPointSourceDesc">on</span>
             </label>
-            <div class="spatial-hint">Headphones required — front/back cues don't survive speakers. Still sounds inside your head? Raise Distance, nudge Angle off dead-centre (200° reads as "behind" more clearly than 180°), and add ~15% Reverb wet.</div>
+            <div class="spatial-hint">Drag the dot around the stage to set angle and distance at once &mdash; scroll over the stage to raise or lower it. Headphones required — front/back cues don't survive speakers. Still sounds inside your head? Raise Distance, nudge Angle off dead-centre (200° reads as "behind" more clearly than 180°), and add ~15% Reverb wet.</div>
           </div>
         </div>
 
@@ -6640,6 +6654,28 @@
             <span class="lbl">Ping-pong (L↔R)</span>
             <span class="desc" id="audEchoPingDesc">off</span>
           </label>
+        </div>
+
+        <div class="audio-section">
+          <div class="section-title">Tail &mdash; life after the last sample</div>
+          <div class="spatial-modes" id="audTailModes">
+            <button type="button" data-tail="end" title="Hard stop at the original runtime — the tail is chopped off mid-decay">End</button>
+            <button type="button" data-tail="continue" class="active" title="Let it ring out: the export grows so reverb / echo can decay to silence">Continue</button>
+            <button type="button" data-tail="wrap" title="Fold the overhang back onto the start — same length, loops seamlessly">Wrap</button>
+          </div>
+          <label class="pitch-toggle">
+            <input type="checkbox" id="audTailAuto" checked>
+            <span class="lbl">Auto length</span>
+            <span class="desc" id="audTailAutoDesc">on</span>
+          </label>
+          <div class="field-group">
+            <div class="field-label">
+              <span>Tail length</span>
+              <span class="color-rgb-display" id="audTailLenVal">0.0 s &middot; auto</span>
+            </div>
+            <input type="range" id="audTailLen" min="0" max="30" value="2" step="0.1" disabled>
+          </div>
+          <div class="spatial-hint" id="audTailHint"></div>
         </div>
 
         <div class="audio-section">
@@ -9599,6 +9635,7 @@ const audBrVal = document.getElementById('audBrVal');
 const audSpatialModes = document.getElementById('audSpatialModes');
 const audSpatialBody = document.getElementById('audSpatialBody');
 const audSpatialDot = document.getElementById('audSpatialDot');
+const audStageElev = document.getElementById('audStageElev');
 const audAngle = document.getElementById('audAngle');
 const audAngleVal = document.getElementById('audAngleVal');
 const audDist = document.getElementById('audDist');
@@ -9633,6 +9670,14 @@ const audEchoDamp = document.getElementById('audEchoDamp');
 const audEchoDampVal = document.getElementById('audEchoDampVal');
 const audEchoPing = document.getElementById('audEchoPing');
 const audEchoPingDesc = document.getElementById('audEchoPingDesc');
+
+// Tail refs — how far past the source's own runtime the effects are allowed to ring
+const audTailModes = document.getElementById('audTailModes');
+const audTailAuto = document.getElementById('audTailAuto');
+const audTailAutoDesc = document.getElementById('audTailAutoDesc');
+const audTailLen = document.getElementById('audTailLen');
+const audTailLenVal = document.getElementById('audTailLenVal');
+const audTailHint = document.getElementById('audTailHint');
 
 // Quick actions / meter refs
 const audBypassBtn = document.getElementById('audBypass');
@@ -9672,6 +9717,8 @@ const au = {
   analyserR: null,
   // Modes / toggles
   spatialMode: 'off', // off | behind | front | orbit
+  tailMode: 'continue', // end | continue | wrap — what happens past the last sample
+  tailGate: null,     // gain node that hard-stops the ring-out in 'end' mode
   spatialAngle: 180,  // degrees, 0 = dead ahead, 180 = directly behind
   bypass: false,
   muted: false,
@@ -9842,6 +9889,7 @@ function resetAudioFxSliders() {
     audDist: 1.5, audElev: 0, audOrbit: 0.2, audAngle: 180,
     audSweepMin: 90, audSweepMax: 270, audSweepSpeed: 0.15,
     audEchoMix: 0, audEchoTime: 300, audEchoFb: 35, audEchoDamp: 6000,
+    audTailLen: 2,
   };
   for (const [id, val] of Object.entries(defaults)) {
     const el = document.getElementById(id);
@@ -9877,6 +9925,8 @@ function resetAudioFxSliders() {
   audBypassBtn.textContent = 'A/B bypass';
   au.spatialAngle = 180;
   audSetSpatialMode('off', { keepAngle: true });
+  if (!audTailAuto.checked) audTailAuto.checked = true;
+  audSetTailMode('continue');
 }
 
 // Clear current audio so the dropzone is shown again and a new file can be picked
@@ -10108,7 +10158,7 @@ function applyLimiterSettings(limiter) {
 function audTeardownGraph() {
   const keys = ['adNode','crusherNode','daNode','muffleNode','hpNode','gainNode',
                 'bassNode','reverbAmount','reverbDry','convolverNode','limiterNode',
-                'analyserL','analyserR','meterSink'];
+                'tailGate','analyserL','analyserR','meterSink'];
   for (const k of keys) {
     const n = au[k];
     if (n && n.disconnect) { try { n.disconnect(); } catch (e) {} }
@@ -10226,6 +10276,13 @@ function buildGraph() {
   node.connect(limiter);
   node = limiter;
 
+  // Tail gate — sits after everything so it can mute the ring-out itself.
+  // Only 'end' mode ever closes it; the other modes leave it wide open.
+  const tailGate = ctx.createGain();
+  tailGate.gain.value = 1;
+  node.connect(tailGate);
+  node = tailGate;
+
   // Metering tap. The analysers feed a silent sink that reaches the
   // destination, which guarantees the browser keeps rendering them.
   const splitter = ctx.createChannelSplitter(2);
@@ -10266,6 +10323,7 @@ function buildGraph() {
   au.echo = echo;
   au.spatial = spatial;
   au.limiterNode = limiter;
+  au.tailGate = tailGate;
   au.outNode = node;
   au.analyserL = analyserL;
   au.analyserR = analyserR;
@@ -10321,6 +10379,7 @@ function audStart() {
   au.source.start(0, au.startOffset);
   au.startedAt = now;
   au.playing = true;
+  audScheduleTailGate();
   audPlayIcon.innerHTML = '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>';
 
   // Guard against stale onended callbacks: only the *current* source may touch state.
@@ -10580,6 +10639,7 @@ function audSyncFx(ramp = 0.02) {
   }
   applySpatialParams(au.spatial, au.ctx, fx, ramp);
   applyLimiterSettings(au.limiterNode);
+  audScheduleTailGate();
 }
 
 audMuffle.addEventListener('input', e => {
@@ -10680,6 +10740,7 @@ const AUD_VALUE_FIELDS = {
   audSweepMinVal: 'audSweepMin',
   audSweepMaxVal: 'audSweepMax',
   audSweepSpeedVal: 'audSweepSpeed',
+  audTailLenVal: 'audTailLen',
 };
 function audBindValueEditor(labelEl, slider) {
   if (!labelEl || !slider) return;
@@ -10722,6 +10783,23 @@ for (const [labelId, sliderId] of Object.entries(AUD_VALUE_FIELDS)) {
 }
 
 /* ---- Direction / spatial controls ---- */
+
+/* The radar maps distance to a pixel radius. Both directions of that mapping
+   live here so dragging the dot and moving the Distance slider agree — the
+   whole slider range is reachable on the stage instead of saturating early. */
+const AUD_STAGE_RMIN = 16;
+const AUD_STAGE_RMAX = 54;
+function audRadiusForDist(dist) {
+  const lo = +audDist.min, hi = +audDist.max;
+  const t = (hi > lo) ? Math.max(0, Math.min(1, (dist - lo) / (hi - lo))) : 0;
+  return AUD_STAGE_RMIN + t * (AUD_STAGE_RMAX - AUD_STAGE_RMIN);
+}
+function audDistForRadius(r) {
+  const lo = +audDist.min, hi = +audDist.max;
+  const t = Math.max(0, Math.min(1, (r - AUD_STAGE_RMIN) / (AUD_STAGE_RMAX - AUD_STAGE_RMIN)));
+  return lo + t * (hi - lo);
+}
+
 function audAngleLabel(deg) {
   const d = ((deg % 360) + 360) % 360;
   let where = 'front';
@@ -10738,14 +10816,81 @@ function audAngleLabel(deg) {
 // Move the dot on the little radar so the direction is visible, not just audible
 function audUpdateSpatialStage() {
   const d = au.spatialAngle;
-  const dist = +audDist.value;
-  const radius = 20 + Math.min(1, (dist - 1) / 6) * 30; // px out from the head
+  const elev = +audElev.value;
+  const radius = audRadiusForDist(+audDist.value); // px out from the head
   const a = (d * Math.PI) / 180;
   const x = Math.sin(a) * radius;
   const y = -Math.cos(a) * radius;
-  audSpatialDot.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+  // Height has no free axis left on a top-down radar, so it reads as dot size.
+  const scale = 1 + Math.max(-0.45, Math.min(0.6, elev * 0.25));
+  audSpatialDot.style.transform =
+    `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${scale.toFixed(2)})`;
   audSpatialDot.classList.toggle('behind', audBackFactor(d) > 0.5);
+  if (audStageElev) audStageElev.textContent = `${elev >= 0 ? '+' : ''}${elev.toFixed(1)} m`;
 }
+
+/* ---- Drag the source around the stage ----
+   Pointer position is the input; Angle and Distance are the outputs, written
+   straight back into their sliders so everything downstream (readouts, export,
+   presets, the type-in fields) sees a normal slider change. */
+const audSpatialStage = document.getElementById('audSpatialStage');
+let audStageDragging = false;
+
+function audStageApply(e) {
+  const rect = audSpatialStage.getBoundingClientRect();
+  const x = e.clientX - rect.left - rect.width / 2;
+  const y = e.clientY - rect.top - rect.height / 2;
+
+  // Screen up = front (0 deg), screen right = 90 deg — the same convention
+  // audUpdateSpatialStage draws with, run backwards.
+  const deg = ((Math.atan2(x, -y) * 180 / Math.PI) % 360 + 360) % 360;
+  const dist = audDistForRadius(Math.hypot(x, y));
+
+  const dStep = +audDist.step || 0.1;
+  audDist.value = (Math.round(dist / dStep) * dStep).toFixed(2);
+  audDistVal.textContent = `${(+audDist.value).toFixed(1)} m`;
+
+  // Sweep derives its angle from the swing phase, so writing one here would be
+  // overwritten on the next frame — drag only sets distance in that mode.
+  if (au.spatialMode !== 'sweep') {
+    au.spatialAngle = deg;
+    audAngle.value = Math.round(deg);
+    audAngleVal.textContent = audAngleLabel(deg);
+  }
+
+  audUpdateSpatialStage();
+  audSyncFx(0.03);
+}
+
+function audStageEndDrag(e) {
+  if (!audStageDragging) return;
+  audStageDragging = false;
+  audSpatialStage.classList.remove('dragging');
+  try { audSpatialStage.releasePointerCapture(e.pointerId); } catch (err) {}
+}
+
+audSpatialStage.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  audStageDragging = true;
+  audSpatialStage.classList.add('dragging');
+  try { audSpatialStage.setPointerCapture(e.pointerId); } catch (err) {}
+  audStageApply(e);
+});
+audSpatialStage.addEventListener('pointermove', e => {
+  if (audStageDragging) audStageApply(e);
+});
+audSpatialStage.addEventListener('pointerup', audStageEndDrag);
+audSpatialStage.addEventListener('pointercancel', audStageEndDrag);
+
+// Scrolling over the stage is the third axis: height.
+audSpatialStage.addEventListener('wheel', e => {
+  e.preventDefault();
+  const step = +audElev.step || 0.1;
+  const next = +audElev.value - Math.sign(e.deltaY) * step;
+  audElev.value = Math.max(+audElev.min, Math.min(+audElev.max, next)).toFixed(2);
+  audElev.dispatchEvent(new Event('input', { bubbles: true }));
+}, { passive: false });
 
 function audSetSpatialMode(mode, opts = {}) {
   au.spatialMode = mode;
@@ -10791,6 +10936,7 @@ audDist.addEventListener('input', e => {
 audElev.addEventListener('input', e => {
   const v = +e.target.value;
   audElevVal.textContent = `${v >= 0 ? '+' : ''}${v.toFixed(1)} m`;
+  audUpdateSpatialStage();
   audSyncFx();
 });
 audOrbit.addEventListener('input', e => {
@@ -10902,6 +11048,8 @@ function audSetLoop(on) {
     au.source.loop = on;
     if (on && au.buffer) { au.source.loopStart = 0; au.source.loopEnd = au.buffer.duration; }
   }
+  // A looping source never reaches an end to cut at — reopen the gate.
+  audScheduleTailGate();
 }
 audLoopBtn.addEventListener('click', () => audSetLoop(!au.loop));
 
@@ -10919,6 +11067,119 @@ function audSetMuted(on) {
   audSyncFx(0.02);
   toast(on ? 'Muted' : 'Unmuted');
 }
+
+/* ---- Tail: what happens after the source's last sample ----
+   Reverb, echo and long delays all keep making sound after the audio that fed
+   them has stopped. Three ways to deal with that overhang:
+
+     end       hard stop at the original runtime — the tail is cut mid-decay
+     continue  the output grows by the tail length so it decays into silence
+     wrap      the overhang is folded back over the start, so the file keeps
+               its original length and loops seamlessly
+
+   'Auto length' derives the tail from the current echo/reverb settings; turn
+   it off to dial in an exact number of seconds. */
+function audAutoTailSec() {
+  const echoTail = ((+audEchoMix.value) > 0)
+    ? ((+audEchoTime.value) / 1000) * (1 + Math.round((+audEchoFb.value) / 12))
+    : 0;
+  const reverbTail = ((+audReverb.value) > 0) ? +audReverbSize.value : 0;
+  return Math.min(12, Math.max(echoTail, reverbTail));
+}
+function audTailSeconds() {
+  const sec = audTailAuto.checked ? audAutoTailSec() : +audTailLen.value;
+  return Math.max(0, isFinite(sec) ? sec : 0);
+}
+
+// Live playback: the graph rings out on its own, so only 'end' needs doing —
+// close the gate exactly when the source runs out. A looping source never
+// reaches that point, and 'wrap' already happens naturally when looping
+// because the tail of one pass overlaps the head of the next.
+function audScheduleTailGate() {
+  if (!au.ctx || !au.tailGate) return;
+  const g = au.tailGate.gain;
+  const now = au.ctx.currentTime;
+  g.cancelScheduledValues(now);
+  g.setValueAtTime(1, now);
+  if (au.tailMode !== 'end' || au.loop || !au.playing || !au.buffer) return;
+  const speed = Math.max(0.01, +audSpeed.value);
+  const cut = au.startedAt + Math.max(0, au.buffer.duration - au.startOffset) / speed;
+  if (cut <= now) { g.setValueAtTime(0, now); return; }
+  g.setValueAtTime(1, Math.max(now, cut - 0.008));
+  g.linearRampToValueAtTime(0, cut);
+}
+
+// Fold everything past `bodyLen` samples back over the start of the buffer.
+// Wraps repeatedly, so a delay longer than the clip itself still lands.
+function audFoldTail(buffer, bodyLen) {
+  const len = Math.min(bodyLen, buffer.length);
+  if (len <= 0 || buffer.length <= len) return buffer;
+  const maker = au.ctx || new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 1, buffer.sampleRate);
+  const out = maker.createBuffer(buffer.numberOfChannels, len, buffer.sampleRate);
+  let peak = 0;
+  for (let c = 0; c < buffer.numberOfChannels; c++) {
+    const src = buffer.getChannelData(c);
+    const dst = out.getChannelData(c);
+    dst.set(src.subarray(0, len));
+    for (let i = len; i < src.length; i++) dst[(i - len) % len] += src[i];
+    for (let i = 0; i < len; i++) { const a = Math.abs(dst[i]); if (a > peak) peak = a; }
+  }
+  // The fold sums two signals and happens after the limiter's pass inside the
+  // render, so it can overshoot. Pull the whole thing back rather than clip.
+  if (peak > 1) {
+    const k = 1 / peak;
+    for (let c = 0; c < out.numberOfChannels; c++) {
+      const dst = out.getChannelData(c);
+      for (let i = 0; i < len; i++) dst[i] *= k;
+    }
+  }
+  return out;
+}
+
+function audUpdateTailUI() {
+  const auto = audTailAuto.checked;
+  audTailAutoDesc.textContent = auto ? 'on' : 'off';
+  audTailLen.disabled = auto;
+  const sec = audTailSeconds();
+  audTailLenVal.textContent = auto ? `${sec.toFixed(1)} s · auto` : `${sec.toFixed(1)} s`;
+  const t = sec.toFixed(1);
+  const hints = {
+    end: 'Hard stop at the original runtime. Reverb and echo get chopped off mid-decay — tight, but it clicks if the tail was still loud.',
+    continue: `Rings out: the export grows by ${t}s so the tail decays to silence. Safest for one-shots and stingers.`,
+    wrap: `The ${t}s overhang is folded back onto the start, so the file keeps its original length and loops seamlessly. Best for loops and beds — turn Loop on to hear it.`,
+  };
+  audTailHint.textContent = hints[au.tailMode] || '';
+  updateAudioSizeEstimate();
+}
+
+function audSetTailMode(mode) {
+  au.tailMode = mode;
+  audTailModes.querySelectorAll('button').forEach(b => {
+    b.classList.toggle('active', b.dataset.tail === mode);
+  });
+  audUpdateTailUI();
+  audScheduleTailGate();
+}
+
+audTailModes.addEventListener('click', e => {
+  const btn = e.target.closest('button[data-tail]');
+  if (!btn) return;
+  audSetTailMode(btn.dataset.tail);
+});
+audTailAuto.addEventListener('change', audUpdateTailUI);
+audTailLenVal.addEventListener('click', () => {
+  if (!audTailAuto.checked) return;
+  audTailAuto.checked = false;
+  audTailAutoDesc.textContent = 'off';
+  audTailLen.disabled = false;
+});
+audTailLen.addEventListener('input', audUpdateTailUI);
+// While Auto is on the tail follows the echo/reverb settings, so keep the
+// readout and the size estimate honest as those move.
+[audEchoMix, audEchoTime, audEchoFb, audReverb, audReverbSize].forEach(el => {
+  el.addEventListener('input', () => { if (audTailAuto.checked) audUpdateTailUI(); });
+});
+audSetTailMode('continue');
 
 /* ---- Presets ---- */
 const AUD_PRESETS = {
@@ -11069,13 +11330,13 @@ async function renderOffline() {
   const mono = document.querySelector('input[name="audChannels"]:checked').value === 'mono';
   const outChannels = mono ? 1 : 2;
   const speed = +audSpeed.value;
-  // Duration shrinks with speed when using playbackRate
-  // Leave room for echo/reverb tails so repeats aren't cut off at the end
-  const echoTail = ((+audEchoMix.value) > 0)
-    ? ((+audEchoTime.value) / 1000) * (1 + Math.round((+audEchoFb.value) / 12))
-    : 0;
-  const reverbTail = ((+audReverb.value) > 0) ? +audReverbSize.value : 0;
-  const outDuration = au.buffer.duration / speed + Math.min(12, Math.max(echoTail, reverbTail));
+  // Duration shrinks with speed when using playbackRate.
+  // The tail modifier decides how much room the echo/reverb ring-out gets:
+  // 'end' renders none of it, the other two render it and then either keep it
+  // ('continue') or fold it back onto the start ('wrap', handled below).
+  const bodyDuration = au.buffer.duration / speed;
+  const tailSec = (au.tailMode === 'end') ? 0 : audTailSeconds();
+  const outDuration = bodyDuration + tailSec;
 
   // Use the source buffer's sample rate as render rate (keeps quality, small file)
   const renderSr = au.buffer.sampleRate;
@@ -11241,7 +11502,11 @@ async function renderOffline() {
   node.connect(offline.destination);
 
   src.start(0);
-  return await offline.startRendering();
+  const rendered = await offline.startRendering();
+  if (au.tailMode === 'wrap' && tailSec > 0.001) {
+    return audFoldTail(rendered, Math.ceil(bodyDuration * renderSr));
+  }
+  return rendered;
 }
 
 // WAV encoder (16-bit PCM)
@@ -11325,7 +11590,10 @@ function updateAudioSizeEstimate() {
   const mono = document.querySelector('input[name="audChannels"]:checked').value === 'mono';
   const ch = mono ? 1 : 2;
   const speed = +audSpeed.value;
-  const dur = au.buffer.duration / speed;
+  // Only 'continue' makes the file longer — 'end' cuts at the runtime and
+  // 'wrap' folds the overhang back inside it.
+  const tail = (au.tailMode === 'continue') ? audTailSeconds() : 0;
+  const dur = au.buffer.duration / speed + tail;
   const wavBytes = Math.round(dur * au.buffer.sampleRate * ch * 2) + 44;
   const oggBytes = Math.round((+audBr.value) * 1000 / 8 * dur);
   document.getElementById('audWavSize').textContent = '~' + formatBytes(wavBytes);
