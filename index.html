@@ -1307,10 +1307,9 @@
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 16px;
-    padding: 24px;
+    padding: 20px 24px;
     display: flex; flex-direction: column;
-    gap: 16px;
-    min-height: 500px;
+    gap: 12px;
   }
   .audio-preview h3 {
     font-family: 'Instrument Serif', serif;
@@ -1344,7 +1343,7 @@
     background: var(--bg-2);
     border: 1px solid var(--border);
     border-radius: 10px;
-    height: 190px;
+    height: 104px;
     position: relative;
     overflow: hidden;
     cursor: ew-resize;
@@ -1374,9 +1373,31 @@
   }
   .audio-waveform .playhead::before { top: 0; }
   .audio-waveform .playhead::after  { bottom: 0; }
+  /* play · waveform · volume, all on one line so the player stays short */
   .audio-transport {
-    display: flex; align-items: center; gap: 12px;
-    padding: 6px 0;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .audio-transport .play-btn { align-self: center; }
+  .aud-vol {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: 6px 2px;
+  }
+  .aud-vol input[type="range"] {
+    writing-mode: vertical-lr;
+    direction: rtl;              /* bottom of the track = quietest */
+    width: 4px; height: 100%;
+    min-height: 70px;
+    flex: 1;
+  }
+  .aud-vol .vlabel {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
   .play-btn {
     width: 50px; height: 50px;
@@ -1395,14 +1416,19 @@
   }
   .play-btn:disabled { opacity: 0.35; cursor: not-allowed; }
   .play-btn svg { width: 20px; height: 20px; }
+  /* time now rides in the corner of the waveform instead of its own row */
   .audio-time {
+    position: absolute;
+    left: 8px; bottom: 6px;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
+    font-size: 11px;
     color: var(--text-dim);
     font-variant-numeric: tabular-nums;
-    min-width: 110px;
+    background: rgba(0,0,0,0.45);
+    padding: 2px 6px;
+    border-radius: 5px;
+    pointer-events: none;
   }
-  .audio-scrub { flex: 1; min-width: 0; }
   .audio-meta {
     font-family: 'JetBrains Mono', monospace;
     font-size: 10.5px;
@@ -1500,7 +1526,7 @@
      Audio — spatial stage, presets, output meter
      ===================================================== */
   .spatial-modes {
-    display: grid; grid-template-columns: repeat(4, 1fr);
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(62px, 1fr));
     gap: 6px;
     background: var(--bg-2);
     padding: 4px;
@@ -1573,6 +1599,25 @@
   .spatial-stage .tag.b { bottom: 6px; left: 50%; transform: translateX(-50%); }
   .spatial-stage .tag.l { left: 8px; top: 50%; transform: translateY(-50%); }
   .spatial-stage .tag.r { right: 8px; top: 50%; transform: translateY(-50%); }
+  /* Unreal-style: click any value readout and type an exact number */
+  .val-editable {
+    cursor: text;
+    border-bottom: 1px dashed transparent;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .val-editable:hover { color: var(--text); border-bottom-color: var(--border-hover); }
+  input.val-edit {
+    background: var(--bg-2);
+    border: 1px solid var(--border-hover);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 1px 4px;
+    width: 72px;
+    text-align: right;
+    outline: none;
+  }
   .spatial-hint {
     font-family: 'JetBrains Mono', monospace;
     font-size: 9.5px; line-height: 1.6;
@@ -6296,17 +6341,25 @@
           </div>
         </div>
 
-        <div class="audio-waveform" id="audWaveWrap" hidden>
-          <canvas id="audWave"></canvas>
-          <div class="playhead" id="audPlayhead"></div>
-        </div>
-
+        <!-- One compact row: play · waveform (doubles as the scrub bar) · volume -->
         <div class="audio-transport" hidden id="audTransport">
           <button class="play-btn" id="audPlay" disabled>
             <svg id="audPlayIcon" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
           </button>
-          <div class="audio-time"><span id="audCur">0:00</span> / <span id="audDur">0:00</span></div>
-          <div class="audio-scrub">
+
+          <div class="audio-waveform" id="audWaveWrap" hidden>
+            <canvas id="audWave"></canvas>
+            <div class="playhead" id="audPlayhead"></div>
+            <div class="audio-time"><span id="audCur">0:00</span> / <span id="audDur">0:00</span></div>
+          </div>
+
+          <div class="aud-vol" title="Volume (↑/↓)">
+            <input type="range" id="audGain" min="-60" max="20" value="0" step="0.1">
+            <span class="vlabel" id="audGainVal">0.0 dB</span>
+          </div>
+
+          <!-- kept for the transport logic; the waveform is the visible scrubber -->
+          <div class="audio-scrub" hidden>
             <input type="range" id="audScrub" min="0" max="1000" value="0" step="1">
           </div>
         </div>
@@ -6342,6 +6395,10 @@
             <button type="button" class="aud-chip" data-preset="underwater">Underwater</button>
             <button type="button" class="aud-chip" data-preset="oldRadio">Old radio</button>
             <button type="button" class="aud-chip" data-preset="nextRoom">Next room</button>
+            <button type="button" class="aud-chip" data-preset="pacing">Pacing behind you</button>
+            <button type="button" class="aud-chip" data-preset="canyon">Canyon echo</button>
+            <button type="button" class="aud-chip" data-preset="stadium">Stadium</button>
+            <button type="button" class="aud-chip" data-preset="slapback">Slapback</button>
           </div>
           <div class="aud-quickbar">
             <button type="button" class="aud-chip" id="audBypass" title="Compare with the untouched original (B)">A/B bypass</button>
@@ -6376,6 +6433,7 @@
             <button type="button" data-spatial="behind" title="Sound sits behind your head">Behind</button>
             <button type="button" data-spatial="front" title="Sound sits in front of you">Front</button>
             <button type="button" data-spatial="orbit" title="Sound circles around your head (8D)">8D orbit</button>
+            <button type="button" data-spatial="sweep" title="Swings back and forth between two angles">Sweep</button>
           </div>
           <div class="spatial-body" id="audSpatialBody" hidden>
             <div class="spatial-stage">
@@ -6414,6 +6472,23 @@
                 <span class="color-rgb-display" id="audOrbitVal">0.20 Hz</span>
               </div>
               <input type="range" id="audOrbit" min="0.02" max="1.5" value="0.2" step="0.01">
+            </div>
+            <div class="field-group" id="audSweepRow" hidden>
+              <div class="field-label">
+                <span>Sweep from</span>
+                <span class="color-rgb-display" id="audSweepMinVal">90° · right</span>
+              </div>
+              <input type="range" id="audSweepMin" min="0" max="359" value="90" step="1">
+              <div class="field-label">
+                <span>Sweep to</span>
+                <span class="color-rgb-display" id="audSweepMaxVal">270° · left</span>
+              </div>
+              <input type="range" id="audSweepMax" min="0" max="359" value="270" step="1">
+              <div class="field-label">
+                <span>Sweep speed</span>
+                <span class="color-rgb-display" id="audSweepSpeedVal">0.15 Hz</span>
+              </div>
+              <input type="range" id="audSweepSpeed" min="0.02" max="1.5" value="0.15" step="0.01">
             </div>
             <label class="pitch-toggle">
               <input type="checkbox" id="audHeadShadow" checked>
@@ -6454,13 +6529,7 @@
 
         <div class="audio-section">
           <div class="section-title">Level</div>
-          <div class="field-group">
-            <div class="field-label">
-              <span>Volume</span>
-              <span class="color-rgb-display" id="audGainVal">0.0 dB</span>
-            </div>
-            <input type="range" id="audGain" min="-60" max="20" value="0" step="0.1">
-          </div>
+
           <div class="field-group">
             <div class="field-label">
               <span>Bass boom</span>
@@ -6487,6 +6556,43 @@
             <div class="row"><span class="ch">R</span><div class="bar"><div class="fill" id="audMeterR"></div><div class="peak" id="audPeakR"></div></div></div>
 
           </div>
+        </div>
+
+        <div class="audio-section">
+          <div class="section-title">Echo</div>
+          <div class="field-group">
+            <div class="field-label">
+              <span>Echo mix</span>
+              <span class="color-rgb-display" id="audEchoMixVal">0%</span>
+            </div>
+            <input type="range" id="audEchoMix" min="0" max="100" value="0" step="1">
+          </div>
+          <div class="field-group">
+            <div class="field-label">
+              <span>Delay time</span>
+              <span class="color-rgb-display" id="audEchoTimeVal">300 ms</span>
+            </div>
+            <input type="range" id="audEchoTime" min="10" max="2000" value="300" step="5">
+          </div>
+          <div class="field-group">
+            <div class="field-label">
+              <span>Repeats (feedback)</span>
+              <span class="color-rgb-display" id="audEchoFbVal">35%</span>
+            </div>
+            <input type="range" id="audEchoFb" min="0" max="95" value="35" step="1">
+          </div>
+          <div class="field-group">
+            <div class="field-label">
+              <span>Repeat damping</span>
+              <span class="color-rgb-display" id="audEchoDampVal">6000 Hz</span>
+            </div>
+            <input type="range" id="audEchoDamp" min="200" max="20000" value="6000" step="50">
+          </div>
+          <label class="pitch-toggle">
+            <input type="checkbox" id="audEchoPing">
+            <span class="lbl">Ping-pong (L↔R)</span>
+            <span class="desc" id="audEchoPingDesc">off</span>
+          </label>
         </div>
 
         <div class="audio-section">
@@ -9455,12 +9561,31 @@ const audElevVal = document.getElementById('audElevVal');
 const audOrbit = document.getElementById('audOrbit');
 const audOrbitVal = document.getElementById('audOrbitVal');
 const audOrbitRow = document.getElementById('audOrbitRow');
+const audSweepRow = document.getElementById('audSweepRow');
+const audSweepMin = document.getElementById('audSweepMin');
+const audSweepMinVal = document.getElementById('audSweepMinVal');
+const audSweepMax = document.getElementById('audSweepMax');
+const audSweepMaxVal = document.getElementById('audSweepMaxVal');
+const audSweepSpeed = document.getElementById('audSweepSpeed');
+const audSweepSpeedVal = document.getElementById('audSweepSpeedVal');
 const audHeadShadow = document.getElementById('audHeadShadow');
 const audHeadShadowDesc = document.getElementById('audHeadShadowDesc');
 const audSway = document.getElementById('audSway');
 const audSwayDesc = document.getElementById('audSwayDesc');
 const audPointSource = document.getElementById('audPointSource');
 const audPointSourceDesc = document.getElementById('audPointSourceDesc');
+
+// Echo refs
+const audEchoMix = document.getElementById('audEchoMix');
+const audEchoMixVal = document.getElementById('audEchoMixVal');
+const audEchoTime = document.getElementById('audEchoTime');
+const audEchoTimeVal = document.getElementById('audEchoTimeVal');
+const audEchoFb = document.getElementById('audEchoFb');
+const audEchoFbVal = document.getElementById('audEchoFbVal');
+const audEchoDamp = document.getElementById('audEchoDamp');
+const audEchoDampVal = document.getElementById('audEchoDampVal');
+const audEchoPing = document.getElementById('audEchoPing');
+const audEchoPingDesc = document.getElementById('audEchoPingDesc');
 
 // Quick actions / meter refs
 const audBypassBtn = document.getElementById('audBypass');
@@ -9491,6 +9616,7 @@ const au = {
   crusherReady: false,
   reverbAmount: null,
   reverbDry: null,
+  echo: null,         // { delay, damp, fb, wet, split, merge, mix }
   convolverNode: null,
   spatial: null,      // { input, shelf, notch, panner, wet, dry, mix }
   limiterNode: null,
@@ -9506,6 +9632,7 @@ const au = {
   limiter: true,
   orbitRAF: 0,
   orbitLast: 0,
+  sweepPhase: 0,
   swayRAF: 0,
   swayPhase: 0,
   swayOffset: 0,   // degrees of automatic micro head-motion
@@ -9522,7 +9649,7 @@ const crusherWorkletCode = `
 class Crusher extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
-      { name: 'bits', defaultValue: 16, minValue: 1, maxValue: 16, automationRate: 'a-rate' },
+      { name: 'bits', defaultValue: 16, minValue: 1, maxValue: 32, automationRate: 'a-rate' },
       { name: 'sampleRate', defaultValue: 48000, minValue: 500, maxValue: 192000, automationRate: 'a-rate' },
     ];
   }
@@ -9543,7 +9670,7 @@ class Crusher extends AudioWorkletProcessor {
 
     for (let i = 0; i < len; i++) {
       // Read per-sample automation values (a-rate may have length 1 if unchanging, or full block length)
-      const bits = Math.max(1, Math.min(16, (bitsArr.length > 1 ? bitsArr[i] : bitsArr[0]) | 0));
+      const bits = Math.max(1, Math.min(32, (bitsArr.length > 1 ? bitsArr[i] : bitsArr[0]) | 0));
       const targetSr = Math.max(100, Math.min(sampleRate, srArr.length > 1 ? srArr[i] : srArr[0]));
       const step = targetSr / sampleRate;
       const levels = Math.pow(2, bits) - 1;
@@ -9666,6 +9793,8 @@ function resetAudioFxSliders() {
     audBits: 16, audSr: 48000, audAd: 0, audDa: 0,
     audBass: 0, audReverb: 0, audReverbSize: 1.5,
     audDist: 1.5, audElev: 0, audOrbit: 0.2, audAngle: 180,
+    audSweepMin: 90, audSweepMax: 270, audSweepSpeed: 0.15,
+    audEchoMix: 0, audEchoTime: 300, audEchoFb: 35, audEchoDamp: 6000,
   };
   for (const [id, val] of Object.entries(defaults)) {
     const el = document.getElementById(id);
@@ -9689,6 +9818,10 @@ function resetAudioFxSliders() {
   if (!audPointSource.checked) {
     audPointSource.checked = true;
     audPointSource.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  if (audEchoPing.checked) {
+    audEchoPing.checked = false;
+    audEchoPing.dispatchEvent(new Event('change', { bubbles: true }));
   }
   // clear bypass/mute quietly — a preset or a fresh file shouldn't toast
   au.bypass = false;
@@ -9787,6 +9920,46 @@ function audSetListenerFront(ctx) {
     l.setOrientation(0, 0, -1, 0, 1, 0);
     if (l.setPosition) l.setPosition(0, 0, 0);
   }
+}
+
+/* ---- Echo ----
+   A feedback delay with continuous controls rather than the fixed "small /
+   medium / large" presets other tools ship: exact delay time in ms, how much
+   of each repeat feeds back, how dark the repeats get, and how much of it you
+   hear. Ping-pong swaps L/R on every pass through the loop. */
+function buildEchoChain(ctx) {
+  const input = ctx.createGain();
+  const delay = ctx.createDelay(10);
+  const damp = ctx.createBiquadFilter();
+  damp.type = 'lowpass'; damp.Q.value = 0.707; damp.frequency.value = 6000;
+  const fb = ctx.createGain(); fb.gain.value = 0;
+  const wet = ctx.createGain(); wet.gain.value = 0;
+  const mix = ctx.createGain();
+  // L/R swap used by ping-pong: split the feedback and merge it crossed over
+  const split = ctx.createChannelSplitter(2);
+  const merge = ctx.createChannelMerger(2);
+  split.connect(merge, 0, 1);
+  split.connect(merge, 1, 0);
+  merge.connect(delay);
+
+  input.connect(mix);            // dry always passes straight through
+  input.connect(delay);
+  delay.connect(damp);
+  damp.connect(fb);              // fb target is wired by audSetEchoRouting
+  delay.connect(wet);
+  wet.connect(mix);
+  const chain = { input, delay, damp, fb, wet, mix, split, merge, ping: null };
+  audSetEchoRouting(chain, false);
+  return chain;
+}
+
+// Straight feedback loops back into the delay; ping-pong goes through the
+// swapper first. Re-routed live, no graph rebuild.
+function audSetEchoRouting(chain, ping) {
+  if (!chain || chain.ping === ping) return;
+  try { chain.fb.disconnect(); } catch (e) {}
+  chain.fb.connect(ping ? chain.split : chain.delay);
+  chain.ping = ping;
 }
 
 function buildSpatialChain(ctx) {
@@ -9898,6 +10071,10 @@ function audTeardownGraph() {
     for (const n of Object.values(au.spatial)) { try { n.disconnect(); } catch (e) {} }
     au.spatial = null;
   }
+  if (au.echo) {
+    for (const n of Object.values(au.echo)) { if (n && n.disconnect) { try { n.disconnect(); } catch (e) {} } }
+    au.echo = null;
+  }
   au.outNode = null;
 }
 
@@ -9968,6 +10145,10 @@ function buildGraph() {
   bassBoom.gain.value = (typeof audBass !== 'undefined') ? +audBass.value : 0;
   node.connect(bassBoom); node = bassBoom;
 
+  // Echo sits before the reverb, so the repeats get the room on top of them
+  const echo = buildEchoChain(ctx);
+  node.connect(echo.input); node = echo.mix;
+
   // Reverb wet/dry split — node feeds both a dry path and a convolver path.
   // The convolver is always built (even at 0% wet) so the wet slider and the
   // size slider can be moved mid-playback instead of only on the next play.
@@ -10035,6 +10216,7 @@ function buildGraph() {
   au.reverbAmount = reverbAmount;
   au.reverbDry = reverbDry;
   au.convolverNode = convolverNode;
+  au.echo = echo;
   au.spatial = spatial;
   au.limiterNode = limiter;
   au.outNode = node;
@@ -10247,7 +10429,12 @@ window.addEventListener('touchend', (e) => {
 
 // ---- Live parameter updates ----
 function setSpeed(v) {
-  v = Math.max(0.25, Math.min(4, +v));
+  // No upper clamp — a typed value overrides the slider range. Only guard
+  // against 0/negative, which would make the duration maths blow up.
+  v = Math.max(0.01, +v || 0.01);
+  // stretch both widgets so a typed-in value keeps its handle position
+  if (v < +audSpeed.min) { audSpeed.min = v; audSpeedNum.min = v; }
+  if (v > +audSpeed.max) { audSpeed.max = v; audSpeedNum.max = v; }
   audSpeed.value = v;
   audSpeedNum.value = v.toFixed(2);
   audSpeedVal.textContent = `${v.toFixed(2)}×`;
@@ -10288,6 +10475,11 @@ function audCurrentFx() {
     sr: +audSr.value,
     ad: +audAd.value,
     da: +audDa.value,
+    echoMix: (+audEchoMix.value) / 100,
+    echoTime: (+audEchoTime.value) / 1000,
+    echoFb: (+audEchoFb.value) / 100,
+    echoDamp: +audEchoDamp.value,
+    echoPing: audEchoPing.checked,
     spatial: au.spatialMode,
     angle: au.spatialAngle + au.swayOffset,
     baseAngle: au.spatialAngle,
@@ -10300,6 +10492,7 @@ function audCurrentFx() {
 const AUD_NEUTRAL_FX = {
   muffle: 0, hp: 20, gain: 0, bass: 0, reverb: 0,
   bits: 16, sr: 48000, ad: 0, da: 0,
+  echoMix: 0, echoTime: 0.3, echoFb: 0, echoDamp: 20000, echoPing: false,
   spatial: 'off', angle: 0, dist: 1, elev: 0, shadow: false, pointSource: false,
 };
 function audEffectiveFx() {
@@ -10331,6 +10524,13 @@ function audSyncFx(ramp = 0.02) {
   if (au.daNode) au.daNode.frequency.setTargetAtTime(daFreqFromSlider(fx.da, fx.sr), t, ramp);
   audRampWorkletParam('bits', fx.bits, ramp);
   audRampWorkletParam('sampleRate', fx.sr, ramp);
+  if (au.echo) {
+    au.echo.delay.delayTime.setTargetAtTime(Math.max(0.001, fx.echoTime), t, ramp);
+    au.echo.fb.gain.setTargetAtTime(fx.echoFb, t, ramp);
+    au.echo.damp.frequency.setTargetAtTime(fx.echoDamp, t, ramp);
+    au.echo.wet.gain.setTargetAtTime(fx.echoMix, t, ramp);
+    audSetEchoRouting(au.echo, fx.echoPing);
+  }
   applySpatialParams(au.spatial, au.ctx, fx, ramp);
   applyLimiterSettings(au.limiterNode);
 }
@@ -10377,6 +10577,26 @@ audSr.addEventListener('input', e => {
   audSrVal.textContent = `${e.target.value} Hz`;
   audSyncFx();
 });
+audEchoMix.addEventListener('input', e => {
+  audEchoMixVal.textContent = `${e.target.value}%`;
+  audSyncFx();
+});
+audEchoTime.addEventListener('input', e => {
+  audEchoTimeVal.textContent = `${Math.round(+e.target.value)} ms`;
+  audSyncFx(0.08);
+});
+audEchoFb.addEventListener('input', e => {
+  audEchoFbVal.textContent = `${e.target.value}%`;
+  audSyncFx();
+});
+audEchoDamp.addEventListener('input', e => {
+  audEchoDampVal.textContent = `${Math.round(+e.target.value)} Hz`;
+  audSyncFx();
+});
+audEchoPing.addEventListener('change', () => {
+  audEchoPingDesc.textContent = audEchoPing.checked ? 'on' : 'off';
+  audSyncFx();
+});
 audAd.addEventListener('input', e => {
   audAdVal.textContent = `${e.target.value}%`;
   audSyncFx();
@@ -10385,6 +10605,74 @@ audDa.addEventListener('input', e => {
   audDaVal.textContent = `${e.target.value}%`;
   audSyncFx();
 });
+
+/* ---- Type-in values (Unreal style) ----
+   Click any readout, type a number, Enter. The typed value wins even if it is
+   outside the slider's range — the slider's bounds stretch to fit it instead
+   of clamping. Esc cancels. */
+const AUD_VALUE_FIELDS = {
+  audSpeedVal: 'audSpeed',
+  audMuffleVal: 'audMuffle',
+  audHpVal: 'audHp',
+  audGainVal: 'audGain',
+  audBassVal: 'audBass',
+  audReverbVal: 'audReverb',
+  audReverbSizeVal: 'audReverbSize',
+  audBitsVal: 'audBits',
+  audSrVal: 'audSr',
+  audAdVal: 'audAd',
+  audDaVal: 'audDa',
+  audAngleVal: 'audAngle',
+  audDistVal: 'audDist',
+  audElevVal: 'audElev',
+  audOrbitVal: 'audOrbit',
+  audEchoMixVal: 'audEchoMix',
+  audEchoTimeVal: 'audEchoTime',
+  audEchoFbVal: 'audEchoFb',
+  audEchoDampVal: 'audEchoDamp',
+  audSweepMinVal: 'audSweepMin',
+  audSweepMaxVal: 'audSweepMax',
+  audSweepSpeedVal: 'audSweepSpeed',
+};
+function audBindValueEditor(labelEl, slider) {
+  if (!labelEl || !slider) return;
+  labelEl.classList.add('val-editable');
+  labelEl.title = 'Click to type an exact value (ignores the slider range)';
+  labelEl.addEventListener('click', () => {
+    if (labelEl.querySelector('input')) return;
+    const restore = labelEl.textContent;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'val-edit';
+    input.value = String(+slider.value);
+    labelEl.textContent = '';
+    labelEl.appendChild(input);
+    input.focus();
+    input.select();
+    let done = false;
+    const commit = apply => {
+      if (done) return;
+      done = true;
+      const v = parseFloat(String(input.value).replace(',', '.'));
+      input.remove();
+      labelEl.textContent = restore;
+      if (!apply || Number.isNaN(v)) return;
+      // stretch the track so an out-of-range value still has a handle position
+      if (v < +slider.min) slider.min = v;
+      if (v > +slider.max) slider.max = v;
+      slider.value = v;
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); commit(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); commit(false); }
+    });
+    input.addEventListener('blur', () => commit(true));
+  });
+}
+for (const [labelId, sliderId] of Object.entries(AUD_VALUE_FIELDS)) {
+  audBindValueEditor(document.getElementById(labelId), document.getElementById(sliderId));
+}
 
 /* ---- Direction / spatial controls ---- */
 function audAngleLabel(deg) {
@@ -10419,6 +10707,7 @@ function audSetSpatialMode(mode, opts = {}) {
   });
   audSpatialBody.hidden = (mode === 'off');
   audOrbitRow.hidden = (mode !== 'orbit');
+  audSweepRow.hidden = (mode !== 'sweep');
   if (!opts.keepAngle) {
     if (mode === 'behind') au.spatialAngle = 180;
     else if (mode === 'front') au.spatialAngle = 0;
@@ -10427,7 +10716,7 @@ function audSetSpatialMode(mode, opts = {}) {
   audAngleVal.textContent = audAngleLabel(au.spatialAngle);
   audUpdateSpatialStage();
   audSyncFx(0.06);
-  if (mode === 'orbit') audStartOrbit();
+  if (mode === 'orbit' || mode === 'sweep') audStartOrbit();
   else audStopOrbit();
   if (audSwayActive()) audStartSway();
   else audStopSway();
@@ -10459,6 +10748,15 @@ audElev.addEventListener('input', e => {
 });
 audOrbit.addEventListener('input', e => {
   audOrbitVal.textContent = `${(+e.target.value).toFixed(2)} Hz`;
+});
+audSweepMin.addEventListener('input', e => {
+  audSweepMinVal.textContent = audAngleLabel(+e.target.value);
+});
+audSweepMax.addEventListener('input', e => {
+  audSweepMaxVal.textContent = audAngleLabel(+e.target.value);
+});
+audSweepSpeed.addEventListener('input', e => {
+  audSweepSpeedVal.textContent = `${(+e.target.value).toFixed(2)} Hz`;
 });
 audHeadShadow.addEventListener('change', () => {
   audHeadShadowDesc.textContent = audHeadShadow.checked ? 'on' : 'off';
@@ -10501,6 +10799,14 @@ function audSwayTick(now) {
   au.swayRAF = requestAnimationFrame(audSwayTick);
 }
 
+// Cosine ease between the two sweep endpoints — it lingers at each end the way
+// a real source turning around would, instead of snapping at the turn.
+function audSweepAngle(phase) {
+  const a = +audSweepMin.value;
+  const b = +audSweepMax.value;
+  return a + (b - a) * (0.5 - 0.5 * Math.cos(phase));
+}
+
 function audStartOrbit() {
   if (au.orbitRAF) return;
   au.orbitLast = performance.now();
@@ -10510,11 +10816,19 @@ function audStopOrbit() {
   if (au.orbitRAF) cancelAnimationFrame(au.orbitRAF);
   au.orbitRAF = 0;
 }
+// Drives both moving modes: orbit spins a full circle, sweep eases back and
+// forth between the two angles you set.
 function audOrbitTick(now) {
-  if (au.spatialMode !== 'orbit') { au.orbitRAF = 0; return; }
+  const moving = au.spatialMode === 'orbit' || au.spatialMode === 'sweep';
+  if (!moving) { au.orbitRAF = 0; return; }
   const dt = Math.min(0.1, (now - au.orbitLast) / 1000);
   au.orbitLast = now;
-  au.spatialAngle = (au.spatialAngle + (+audOrbit.value) * 360 * dt) % 360;
+  if (au.spatialMode === 'sweep') {
+    au.sweepPhase += (+audSweepSpeed.value) * Math.PI * 2 * dt;
+    au.spatialAngle = audSweepAngle(au.sweepPhase);
+  } else {
+    au.spatialAngle = (au.spatialAngle + (+audOrbit.value) * 360 * dt) % 360;
+  }
   audAngle.value = Math.round(au.spatialAngle);
   audAngleVal.textContent = audAngleLabel(au.spatialAngle);
   audUpdateSpatialStage();
@@ -10569,12 +10883,18 @@ const AUD_PRESETS = {
   underwater: { muffle: 88, bass: 9, reverb: 36, reverbSize: 2.6, speed: 0.94 },
   oldRadio: { muffle: 44, hp: 620, bits: 8, sr: 11000, ad: 30, da: 55, gain: 3 },
   nextRoom: { muffle: 58, hp: 130, reverb: 32, reverbSize: 2.2, gain: 2, spatial: 'behind', angle: 215, dist: 4.5 },
+  pacing: { spatial: 'sweep', sweepMin: 120, sweepMax: 240, sweepSpeed: 0.1, dist: 3, reverb: 22, reverbSize: 2 },
+  canyon: { echoMix: 55, echoTime: 480, echoFb: 62, echoDamp: 3200, reverb: 25, reverbSize: 3.4 },
+  stadium: { echoMix: 40, echoTime: 900, echoFb: 45, echoDamp: 2200, reverb: 40, reverbSize: 4.5, bass: 4 },
+  slapback: { echoMix: 45, echoTime: 90, echoFb: 12, echoDamp: 8000 },
 };
 const AUD_PRESET_SLIDERS = {
   speed: 'audSpeed', muffle: 'audMuffle', hp: 'audHp', gain: 'audGain',
   bass: 'audBass', reverb: 'audReverb', reverbSize: 'audReverbSize',
   bits: 'audBits', sr: 'audSr', ad: 'audAd', da: 'audDa',
   dist: 'audDist', elev: 'audElev', orbit: 'audOrbit',
+  sweepMin: 'audSweepMin', sweepMax: 'audSweepMax', sweepSpeed: 'audSweepSpeed',
+  echoMix: 'audEchoMix', echoTime: 'audEchoTime', echoFb: 'audEchoFb', echoDamp: 'audEchoDamp',
 };
 function audApplyPreset(name) {
   const p = AUD_PRESETS[name];
@@ -10673,12 +10993,12 @@ window.addEventListener('keydown', e => {
       break;
     case 'ArrowUp':
       e.preventDefault();
-      audGain.value = Math.min(20, +audGain.value + 1);
+      audGain.value = Math.min(+audGain.max, +audGain.value + 1);
       audGain.dispatchEvent(new Event('input', { bubbles: true }));
       break;
     case 'ArrowDown':
       e.preventDefault();
-      audGain.value = Math.max(-60, +audGain.value - 1);
+      audGain.value = Math.max(+audGain.min, +audGain.value - 1);
       audGain.dispatchEvent(new Event('input', { bubbles: true }));
       break;
     case 'b': case 'B': audSetBypass(!au.bypass); break;
@@ -10703,7 +11023,12 @@ async function renderOffline() {
   const outChannels = mono ? 1 : 2;
   const speed = +audSpeed.value;
   // Duration shrinks with speed when using playbackRate
-  const outDuration = au.buffer.duration / speed;
+  // Leave room for echo/reverb tails so repeats aren't cut off at the end
+  const echoTail = ((+audEchoMix.value) > 0)
+    ? ((+audEchoTime.value) / 1000) * (1 + Math.round((+audEchoFb.value) / 12))
+    : 0;
+  const reverbTail = ((+audReverb.value) > 0) ? +audReverbSize.value : 0;
+  const outDuration = au.buffer.duration / speed + Math.min(12, Math.max(echoTail, reverbTail));
 
   // Use the source buffer's sample rate as render rate (keeps quality, small file)
   const renderSr = au.buffer.sampleRate;
@@ -10762,6 +11087,19 @@ async function renderOffline() {
   bass.gain.value = +audBass.value;
   node.connect(bass); node = bass;
 
+  // Echo — same feedback delay as the live graph
+  const echoMixVal = (+audEchoMix.value) / 100;
+  if (echoMixVal > 0.001) {
+    const echo = buildEchoChain(offline);
+    echo.delay.delayTime.value = Math.max(0.001, (+audEchoTime.value) / 1000);
+    echo.fb.gain.value = (+audEchoFb.value) / 100;
+    echo.damp.frequency.value = +audEchoDamp.value;
+    echo.wet.gain.value = echoMixVal;
+    audSetEchoRouting(echo, audEchoPing.checked);
+    node.connect(echo.input);
+    node = echo.mix;
+  }
+
   // Reverb wet/dry
   const wet = (+audReverb.value) / 100;
   if (wet > 0.001) {
@@ -10787,18 +11125,26 @@ async function renderOffline() {
     chain.mono.channelCount = fx.pointSource ? 1 : 2;
     chain.mono.channelCountMode = fx.pointSource ? 'explicit' : 'max';
     const orbiting = fx.spatial === 'orbit';
+    const sweeping = fx.spatial === 'sweep';
     const swaying = audSwayActive();
     const rate = +audOrbit.value;
-    // Where the source points at render time t (orbit spin + head sway)
+    const sweepRate = +audSweepSpeed.value;
+    const sweepA = +audSweepMin.value;
+    const sweepB = +audSweepMax.value;
+    // Where the source points at render time t (orbit spin / sweep swing / sway)
     const degAt = t => {
       let d = fx.baseAngle;
       if (orbiting) d += rate * 360 * t;
+      if (sweeping) {
+        const ph = t * sweepRate * Math.PI * 2;
+        d = sweepA + (sweepB - sweepA) * (0.5 - 0.5 * Math.cos(ph));
+      }
       if (swaying) d += Math.sin(t * 0.13 * Math.PI * 2) * 7;
       return ((d % 360) + 360) % 360;
     };
     const shadowAt = (deg) => (fx.shadow ? audBackFactor(deg) : 0);
     const canAutomate = !!chain.panner.positionX;
-    if (orbiting || swaying) {
+    if (orbiting || sweeping || swaying) {
       const stepSec = 0.05;
       for (let t = 0; t < outDuration; t += stepSec) {
         const deg = degAt(t);
@@ -10814,7 +11160,7 @@ async function renderOffline() {
         chain.lp.frequency.setValueAtTime(20000 * Math.pow(0.2, back), t);
       }
     }
-    if (!orbiting && !swaying || !canAutomate) {
+    if ((!orbiting && !sweeping && !swaying) || !canAutomate) {
       const deg = degAt(0);
       const p = audSpatialVec(deg, fx.dist, fx.elev);
       if (canAutomate) {
@@ -10824,7 +11170,7 @@ async function renderOffline() {
       } else if (chain.panner.setPosition) {
         chain.panner.setPosition(p.x, p.y, p.z);
       }
-      if (!orbiting && !swaying) {
+      if (!orbiting && !sweeping && !swaying) {
         const back = shadowAt(deg);
         chain.shelf.gain.value = 2 - 14 * back;
         chain.notch.gain.value = -13 * back;
