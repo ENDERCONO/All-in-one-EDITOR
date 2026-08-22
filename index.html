@@ -1380,24 +1380,66 @@
     align-items: stretch;
     gap: 14px;
   }
+  .audio-transport {
+    grid-template-columns: auto 1fr;
+  }
   .audio-transport .play-btn { align-self: center; }
+
+  /* Volume lives beside the player card, running its full height */
+  .player-strip {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 16px;
+    align-items: stretch;
+  }
+  /* The slider is absolutely positioned on purpose: a vertical range with
+     height:100% inside an auto-height parent resolves to a runaway intrinsic
+     height and drags the whole row with it. Taking it out of flow means the
+     row height comes from the player card and the slider simply fills it. */
+  .aud-vol-panel {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 14px 12px;
+    width: 76px;
+    min-height: 170px;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .aud-vol-panel .vtitle {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--text-faint);
+  }
   .aud-vol {
-    display: flex; flex-direction: column; align-items: center; gap: 6px;
-    padding: 6px 2px;
+    position: absolute;
+    top: 38px; bottom: 34px; left: 0; right: 0;
+    display: flex; justify-content: center;
   }
   .aud-vol input[type="range"] {
     writing-mode: vertical-lr;
     direction: rtl;              /* bottom of the track = quietest */
     width: 4px; height: 100%;
-    min-height: 70px;
-    flex: 1;
+    margin: 0;
   }
-  .aud-vol .vlabel {
+  .aud-vol-panel .vlabel {
+    position: absolute;
+    bottom: 12px; left: 0; right: 0;
+    text-align: center;
+  }
+  .vlabel {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 9.5px;
-    color: var(--text-faint);
+    font-size: 10px;
+    color: var(--text-dim);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+  }
+  @media (max-width: 700px) {
+    .player-strip { grid-template-columns: 1fr; }
+    .aud-vol-panel { width: auto; flex-direction: row; }
+    .aud-vol { position: static; width: 100%; }
+    .aud-vol-panel .vlabel { position: static; }
+    .aud-vol input[type="range"] { writing-mode: horizontal-tb; direction: ltr; width: 100%; height: 4px; }
   }
   .play-btn {
     width: 50px; height: 50px;
@@ -6320,7 +6362,8 @@
     </header>
 
     <div class="audio-layout">
-      <!-- Left: player / waveform -->
+      <!-- Player card + its own full-height volume column beside it -->
+      <div class="player-strip">
       <div class="audio-preview">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px">
           <h3>Player</h3>
@@ -6353,11 +6396,6 @@
             <div class="audio-time"><span id="audCur">0:00</span> / <span id="audDur">0:00</span></div>
           </div>
 
-          <div class="aud-vol" title="Volume (↑/↓)">
-            <input type="range" id="audGain" min="-60" max="20" value="0" step="0.1">
-            <span class="vlabel" id="audGainVal">0.0 dB</span>
-          </div>
-
           <!-- kept for the transport logic; the waveform is the visible scrubber -->
           <div class="audio-scrub" hidden>
             <input type="range" id="audScrub" min="0" max="1000" value="0" step="1">
@@ -6378,6 +6416,15 @@
           </div>
         </div>
 
+      </div>
+
+      <aside class="aud-vol-panel" title="Volume (↑/↓ keys, or click the value to type one)">
+        <div class="vtitle">Vol</div>
+        <div class="aud-vol">
+          <input type="range" id="audGain" min="-60" max="20" value="0" step="0.1">
+        </div>
+        <span class="vlabel" id="audGainVal">0.0 dB</span>
+      </aside>
       </div>
 
       <!-- Right: controls -->
