@@ -1089,6 +1089,17 @@
   }
   @media (max-width: 600px) { .export-sliders { grid-template-columns: 1fr; } }
   .export-slider { min-width: 0; }
+  /* Export layout / batch pickers are wide — let them span the whole row,
+     and give the blend options their own two-column grid inside it. */
+  #audBlendModeRow, #audBatchRow, #audBlendOpts { grid-column: 1 / -1; }
+  #audBlendOpts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+  #audBlendOpts[hidden] { display: none; }
+  #audBlendHint { grid-column: 1 / -1; }
+  @media (max-width: 600px) { #audBlendOpts { grid-template-columns: 1fr; } }
   .export-slider .slabel {
     display: flex; justify-content: space-between; align-items: center;
     font-family: 'JetBrains Mono', monospace;
@@ -1567,6 +1578,46 @@
   /* =====================================================
      Audio — spatial stage, presets, output meter
      ===================================================== */
+  /* Loaded-file queue: several inputs chained into one timeline */
+  .aud-filelist {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    padding: 8px; margin-top: 8px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .aud-fileitem {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 5px 8px;
+    background: var(--surface-3);
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--text-dim);
+    max-width: 100%;
+  }
+  .aud-fileitem .idx { color: var(--text-faint); }
+  .aud-fileitem .nm {
+    color: var(--text);
+    max-width: 180px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .aud-fileitem .dur { color: var(--text-faint); }
+  .aud-fileitem .x {
+    cursor: pointer; border: none; background: none;
+    color: var(--text-faint); font-size: 12px; line-height: 1;
+    padding: 0 1px;
+  }
+  .aud-fileitem .x:hover { color: var(--text); }
+  .aud-fileadd {
+    cursor: pointer;
+    padding: 5px 10px;
+    background: transparent;
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--text-dim);
+  }
+  .aud-fileadd:hover { color: var(--text); border-color: var(--text-faint); }
   .spatial-modes {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(62px, 1fr));
     gap: 6px;
@@ -6391,9 +6442,9 @@
               <circle cx="6" cy="18" r="3"/>
               <circle cx="18" cy="16" r="3"/>
             </svg>
-            <div class="t">Drop an audio or video file — or click to browse</div>
-            <div class="s">WAV · MP3 · OGG · FLAC · M4A · WEBM · MP4 (audio extracted)</div>
-            <input type="file" accept="audio/*,video/*" id="audFileInput">
+            <div class="t">Drop audio or video files — or click to browse</div>
+            <div class="s">WAV · MP3 · OGG · FLAC · M4A · WEBM · MP4 (audio extracted) · drop several to chain them back-to-back</div>
+            <input type="file" accept="audio/*,video/*" id="audFileInput" multiple>
           </div>
         </div>
 
@@ -6414,6 +6465,8 @@
             <input type="range" id="audScrub" min="0" max="1000" value="0" step="1">
           </div>
         </div>
+
+        <div class="aud-filelist" id="audFileList" hidden></div>
 
         <div class="audio-recorder" id="audRecorder" hidden>
           <button class="record-btn" id="audRecord" title="Record live output (slider tweaks are captured in real time)">
@@ -6454,6 +6507,7 @@
             <button type="button" class="aud-chip" data-preset="orbit8d">8D orbit</button>
             <button type="button" class="aud-chip" data-preset="underwater">Underwater</button>
             <button type="button" class="aud-chip" data-preset="oldRadio">Old radio</button>
+            <button type="button" class="aud-chip" data-preset="timeMachine" title="4.6-bit / 3587 Hz vintage sampler crunch">Time machine</button>
             <button type="button" class="aud-chip" data-preset="nextRoom">Next room</button>
             <button type="button" class="aud-chip" data-preset="pacing">Pacing behind you</button>
             <button type="button" class="aud-chip" data-preset="canyon">Canyon echo</button>
@@ -6584,7 +6638,7 @@
               <span>High-pass cutoff</span>
               <span class="color-rgb-display" id="audHpVal">20 Hz</span>
             </div>
-            <input type="range" id="audHp" min="20" max="2000" value="20" step="1">
+            <input type="range" id="audHp" min="20" max="2000" value="20" step="0.1">
           </div>
         </div>
 
@@ -6685,29 +6739,39 @@
               <span>Bit depth</span>
               <span class="color-rgb-display" id="audBitsVal">16 bit</span>
             </div>
-            <input type="range" id="audBits" min="1" max="16" value="16" step="1">
+            <input type="range" id="audBits" min="1" max="16" value="16" step="0.1">
           </div>
           <div class="field-group">
             <div class="field-label">
               <span>Resample rate</span>
               <span class="color-rgb-display" id="audSrVal">48000 Hz</span>
             </div>
-            <input type="range" id="audSr" min="500" max="48000" value="48000" step="100">
+            <input type="range" id="audSr" min="500" max="48000" value="48000" step="1">
           </div>
           <div class="field-group">
             <div class="field-label">
               <span>AD aliasing (pre-filter)</span>
               <span class="color-rgb-display" id="audAdVal">0%</span>
             </div>
-            <input type="range" id="audAd" min="0" max="100" value="0" step="1">
+            <input type="range" id="audAd" min="0" max="100" value="0" step="0.1">
           </div>
           <div class="field-group">
             <div class="field-label">
               <span>DA aliasing (post-filter)</span>
               <span class="color-rgb-display" id="audDaVal">0%</span>
             </div>
-            <input type="range" id="audDa" min="0" max="100" value="0" step="1">
+            <input type="range" id="audDa" min="0" max="100" value="0" step="0.1">
           </div>
+          <label class="pitch-toggle" title="Trade the gritty correlated distortion of a low bit depth for an even hiss">
+            <input type="checkbox" id="audDither">
+            <span class="lbl">Dithering</span>
+            <span class="desc" id="audDitherDesc">off</span>
+          </label>
+          <label class="pitch-toggle" title="Quantize in the log domain like a telephone codec — quiet detail survives, loud parts squash">
+            <input type="checkbox" id="audMulaw">
+            <span class="lbl">&micro;-law companding</span>
+            <span class="desc" id="audMulawDesc">off</span>
+          </label>
         </div>
       </div>
     </div>
@@ -6736,6 +6800,55 @@
               <span class="val" id="audBrVal">128 kbps</span>
             </div>
             <input type="range" id="audBr" min="24" max="256" value="128" step="8">
+          </div>
+
+          <div class="export-slider" id="audBlendModeRow">
+            <div class="slabel"><span>What goes in the file</span></div>
+            <div class="spatial-modes" id="audBlendModes">
+              <button type="button" data-blend="processed" class="active" title="Only the effected audio">Processed</button>
+              <button type="button" data-blend="fused" title="Original and processed stacked on top of each other — you hear both at once while playing">Fused</button>
+              <button type="button" data-blend="sequential" title="One whole pass then the other, joined into a single file">Both, in a row</button>
+            </div>
+          </div>
+
+          <div id="audBlendOpts" hidden>
+            <div class="export-slider">
+              <div class="slabel">
+                <span>Processed volume</span>
+                <span class="val" id="audMixProcVal">0.0 dB</span>
+              </div>
+              <input type="range" id="audMixProc" min="-60" max="12" value="0" step="0.1">
+            </div>
+            <div class="export-slider">
+              <div class="slabel">
+                <span>Original volume</span>
+                <span class="val" id="audMixOrigVal">-6.0 dB</span>
+              </div>
+              <input type="range" id="audMixOrig" min="-60" max="12" value="-6" step="0.1">
+            </div>
+            <div class="export-slider" id="audSeqOpts" hidden>
+              <div class="slabel"><span>Order</span></div>
+              <div class="spatial-modes" id="audSeqOrder" style="grid-template-columns:1fr 1fr">
+                <button type="button" data-seq="procFirst" class="active">Processed first</button>
+                <button type="button" data-seq="origFirst">Original first</button>
+              </div>
+            </div>
+            <div class="export-slider" id="audSeqGapRow" hidden>
+              <div class="slabel">
+                <span>Gap between the two</span>
+                <span class="val" id="audSeqGapVal">0.5 s</span>
+              </div>
+              <input type="range" id="audSeqGap" min="0" max="5" value="0.5" step="0.1">
+            </div>
+            <div class="spatial-hint" id="audBlendHint"></div>
+          </div>
+
+          <div class="export-slider" id="audBatchRow" hidden>
+            <div class="slabel"><span>Multiple inputs</span></div>
+            <div class="spatial-modes" id="audBatchModes" style="grid-template-columns:1fr 1fr">
+              <button type="button" data-batch="joined" class="active" title="Everything back-to-back in one file">One joined file</button>
+              <button type="button" data-batch="separate" title="One download per input file, each with the same effects">Separate files</button>
+            </div>
           </div>
         </div>
         <div class="export-buttons">
@@ -6835,8 +6948,22 @@
                 <option value="radio">Radio</option>
                 <option value="cave">Cave</option>
                 <option value="largeRoom">Large room</option>
+                <option value="timeMachine">Time machine (4.6-bit crunch)</option>
                 <option value="broken">Broken (glitch)</option>
               </select>
+            </div>
+            <label class="pitch-toggle" title="Play the untouched original underneath this clip's processed sound — audible right here on the timeline and kept in the export">
+              <input type="checkbox" id="pBlend">
+              <span class="lbl">Fuse original underneath</span>
+              <span class="desc" id="pBlendDesc">off</span>
+            </label>
+            <div class="field-group" id="pBlendProcRow" hidden>
+              <div class="field-label"><span>Processed volume</span><span class="color-rgb-display" id="pBlendProcVal">0.0 dB</span></div>
+              <input type="range" id="pBlendProc" min="-60" max="12" value="0" step="0.1">
+            </div>
+            <div class="field-group" id="pBlendOrigRow" hidden>
+              <div class="field-label"><span>Original volume</span><span class="color-rgb-display" id="pBlendOrigVal">-6.0 dB</span></div>
+              <input type="range" id="pBlendOrig" min="-60" max="12" value="-6" step="0.1">
             </div>
           </div>
 
@@ -6859,27 +6986,37 @@
             </div>
             <div class="field-group">
               <div class="field-label"><button type="button" class="auto-diamond" data-param="hp" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>High-pass</span><span class="color-rgb-display" id="pHpVal">20 Hz</span></div>
-              <input type="range" id="pHp" min="20" max="2000" value="20" step="1">
+              <input type="range" id="pHp" min="20" max="2000" value="20" step="0.1">
             </div>
           </div>
 
           <div class="cp-section" data-cp-section="crush" hidden>
             <div class="field-group">
               <div class="field-label"><button type="button" class="auto-diamond" data-param="bits" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>Bit depth</span><span class="color-rgb-display" id="pBitsVal">16 bit</span></div>
-              <input type="range" id="pBits" min="1" max="16" value="16" step="1">
+              <input type="range" id="pBits" min="1" max="16" value="16" step="0.1">
             </div>
             <div class="field-group">
               <div class="field-label"><button type="button" class="auto-diamond" data-param="sr" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>Resample rate</span><span class="color-rgb-display" id="pSrVal">48000 Hz</span></div>
-              <input type="range" id="pSr" min="500" max="48000" value="48000" step="100">
+              <input type="range" id="pSr" min="500" max="48000" value="48000" step="1">
             </div>
             <div class="field-group">
               <div class="field-label"><button type="button" class="auto-diamond" data-param="ad" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>AD aliasing</span><span class="color-rgb-display" id="pAdVal">0%</span></div>
-              <input type="range" id="pAd" min="0" max="100" value="0" step="1">
+              <input type="range" id="pAd" min="0" max="100" value="0" step="0.1">
             </div>
             <div class="field-group">
               <div class="field-label"><button type="button" class="auto-diamond" data-param="da" title="Click to toggle on graph (Shift = solo, Alt-click = add node here)">◇</button><span>DA aliasing</span><span class="color-rgb-display" id="pDaVal">0%</span></div>
-              <input type="range" id="pDa" min="0" max="100" value="0" step="1">
+              <input type="range" id="pDa" min="0" max="100" value="0" step="0.1">
             </div>
+            <label class="pitch-toggle" title="Even hiss instead of low-bit-depth grit">
+              <input type="checkbox" id="pDither">
+              <span class="lbl">Dithering</span>
+              <span class="desc" id="pDitherDesc">off</span>
+            </label>
+            <label class="pitch-toggle" title="Telephone-codec style log-domain quantizing">
+              <input type="checkbox" id="pMulaw">
+              <span class="lbl">&micro;-law companding</span>
+              <span class="desc" id="pMulawDesc">off</span>
+            </label>
           </div>
 
           <div class="cp-section" data-cp-section="auto" hidden>
@@ -9607,6 +9744,25 @@ const audScrub = document.getElementById('audScrub');
 const audInfo = document.getElementById('audInfo');
 const audDownloadWav = document.getElementById('audDownloadWav');
 const audDownloadOgg = document.getElementById('audDownloadOgg');
+const audFileList = document.getElementById('audFileList');
+const audDither = document.getElementById('audDither');
+const audDitherDesc = document.getElementById('audDitherDesc');
+const audMulaw = document.getElementById('audMulaw');
+const audMulawDesc = document.getElementById('audMulawDesc');
+const audBlendModes = document.getElementById('audBlendModes');
+const audBlendOpts = document.getElementById('audBlendOpts');
+const audBlendHint = document.getElementById('audBlendHint');
+const audMixProc = document.getElementById('audMixProc');
+const audMixProcVal = document.getElementById('audMixProcVal');
+const audMixOrig = document.getElementById('audMixOrig');
+const audMixOrigVal = document.getElementById('audMixOrigVal');
+const audSeqOpts = document.getElementById('audSeqOpts');
+const audSeqOrder = document.getElementById('audSeqOrder');
+const audSeqGapRow = document.getElementById('audSeqGapRow');
+const audSeqGap = document.getElementById('audSeqGap');
+const audSeqGapVal = document.getElementById('audSeqGapVal');
+const audBatchRow = document.getElementById('audBatchRow');
+const audBatchModes = document.getElementById('audBatchModes');
 
 // Param refs
 const audSpeed = document.getElementById('audSpeed');
@@ -9733,6 +9889,18 @@ const au = {
   meterRAF: 0,
   peakHoldL: 0,
   peakHoldR: 0,
+  // Several inputs chained back-to-back into one working buffer.
+  // items[] keeps each source so "separate files" export can still render
+  // them one at a time through exactly the same chain.
+  items: [],        // [{ name, buffer, start, duration }]
+  // Export layout: 'processed' | 'fused' (both at once) | 'sequential' (one then the other)
+  blendMode: 'processed',
+  seqOrder: 'procFirst',
+  batchMode: 'joined',
+  origSource: null, // dry passthrough source used to audition the fusion live
+  origGain: null,
+  procMix: null,
+  busNode: null,
 };
 
 // Live recorder state has been moved into the editor (see editor.liveRec below).
@@ -9745,6 +9913,13 @@ class Crusher extends AudioWorkletProcessor {
     return [
       { name: 'bits', defaultValue: 16, minValue: 1, maxValue: 32, automationRate: 'a-rate' },
       { name: 'sampleRate', defaultValue: 48000, minValue: 500, maxValue: 192000, automationRate: 'a-rate' },
+      // Dithering: TPDF noise at 1 LSB, added before the quantizer. Trades a
+      // constant hiss for the gritty correlated distortion you get at low bit
+      // depths — exactly the "Dithering" switch on hardware-style crushers.
+      { name: 'dither', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      // mu-law companding: quantize in the log domain like a telephone codec,
+      // so quiet parts keep resolution and loud parts get squashed.
+      { name: 'mulaw', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
     ];
   }
   constructor() {
@@ -9759,12 +9934,39 @@ class Crusher extends AudioWorkletProcessor {
     if (!output || output.length === 0) return true;
     const bitsArr = params.bits;
     const srArr = params.sampleRate;
+    const useDither = (params.dither.length > 1 ? params.dither[0] : params.dither[0]) >= 0.5;
+    const useMulaw = (params.mulaw.length > 1 ? params.mulaw[0] : params.mulaw[0]) >= 0.5;
     const nChan = output.length;
     const len = output[0].length;
+    const MU = 255;
+    const LOG1MU = Math.log(1 + MU);
+
+    // Quantize one sample to \`levels\` steps, optionally through mu-law and
+    // optionally with triangular dither. Bit depth may be fractional (4.6 bit
+    // is a real setting on hardware-modelled crushers) — 2^bits just stops
+    // being a whole number of steps, which is exactly the point.
+    const quant = (v, levels) => {
+      let x = v < -1 ? -1 : (v > 1 ? 1 : v);
+      if (useMulaw) {
+        const sgn = x < 0 ? -1 : 1;
+        x = sgn * Math.log(1 + MU * Math.abs(x)) / LOG1MU;
+      }
+      if (useDither) {
+        // TPDF = sum of two uniform randoms, spanning +/-1 LSB
+        x += ((Math.random() + Math.random() - 1) / levels);
+      }
+      let q = Math.round(x * levels) / levels;
+      if (q < -1) q = -1; else if (q > 1) q = 1;
+      if (useMulaw) {
+        const sgn = q < 0 ? -1 : 1;
+        q = sgn * (Math.pow(1 + MU, Math.abs(q)) - 1) / MU;
+      }
+      return q;
+    };
 
     for (let i = 0; i < len; i++) {
       // Read per-sample automation values (a-rate may have length 1 if unchanging, or full block length)
-      const bits = Math.max(1, Math.min(32, (bitsArr.length > 1 ? bitsArr[i] : bitsArr[0]) | 0));
+      const bits = Math.max(1, Math.min(32, (bitsArr.length > 1 ? bitsArr[i] : bitsArr[0])));
       const targetSr = Math.max(100, Math.min(sampleRate, srArr.length > 1 ? srArr[i] : srArr[0]));
       const step = targetSr / sampleRate;
       const levels = Math.pow(2, bits) - 1;
@@ -9778,8 +9980,8 @@ class Crusher extends AudioWorkletProcessor {
         const inR = input && (input[1] || input[0]);
         const vL = inL ? inL[i] : 0;
         const vR = inR ? inR[i] : 0;
-        this.heldL = Math.round(vL * levels) / levels;
-        this.heldR = Math.round(vR * levels) / levels;
+        this.heldL = quant(vL, levels);
+        this.heldR = quant(vR, levels);
       }
 
       output[0][i] = this.heldL;
@@ -9811,8 +10013,13 @@ async function ensureAudioCtx() {
 audUpload.addEventListener('click', (e) => {
   if (e.target.tagName !== 'INPUT') audFileInput.click();
 });
+// When true the next batch of picked files is appended to the queue instead
+// of replacing it (set by the "+ Add files" chip in the queue strip).
+let audAppendNext = false;
 audFileInput.addEventListener('change', e => {
-  if (e.target.files[0]) audLoadFile(e.target.files[0]);
+  const files = Array.from(e.target.files || []);
+  if (files.length) audLoadFiles(files, audAppendNext);
+  audAppendNext = false;
   e.target.value = '';
 });
 audUpload.addEventListener('dragover', e => { e.preventDefault(); audUpload.classList.add('drag'); });
@@ -9820,62 +10027,172 @@ audUpload.addEventListener('dragleave', () => audUpload.classList.remove('drag')
 audUpload.addEventListener('drop', e => {
   e.preventDefault();
   audUpload.classList.remove('drag');
-  const f = e.dataTransfer.files[0];
-  if (f && (f.type.startsWith('audio/') || f.type.startsWith('video/'))) audLoadFile(f);
-  else if (f) toast('Not an audio file');
+  const files = audFilterMediaFiles(e.dataTransfer.files);
+  if (files.length) audLoadFiles(files, false);
+  else toast('No audio files in that drop');
+});
+// Once something is loaded the dropzone is hidden — dropping onto the waveform
+// appends instead, so you can keep chaining files without clearing first.
+audWaveWrap.addEventListener('dragover', e => {
+  if (!e.dataTransfer || !e.dataTransfer.types.includes('Files')) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+});
+audWaveWrap.addEventListener('drop', e => {
+  if (!e.dataTransfer) return;
+  e.preventDefault();
+  const files = audFilterMediaFiles(e.dataTransfer.files);
+  if (files.length) audLoadFiles(files, true);
 });
 
-async function audLoadFile(file) {
-  const isVideo = (file.type && file.type.startsWith('video/')) || /\.(mp4|mov|webm|mkv|avi|m4v|flv)$/i.test(file.name);
-  toast(isVideo ? 'Extracting audio from video…' : 'Decoding audio…');
+function audFilterMediaFiles(fileList) {
+  return Array.from(fileList || []).filter(f =>
+    (f.type && (f.type.startsWith('audio/') || f.type.startsWith('video/'))) ||
+    /\.(wav|mp3|ogg|oga|opus|flac|m4a|aac|aiff?|wma|mp4|mov|webm|mkv|avi|m4v|flv)$/i.test(f.name)
+  );
+}
+
+/* Chain every loaded item into one working buffer. Files decoded through the
+   same AudioContext already share its sample rate, so the only thing left to
+   reconcile is channel count — a mono input is duplicated across both sides. */
+function audRebuildFromItems() {
+  if (!au.items.length) { au.buffer = null; return; }
+  const sr = au.items[0].buffer.sampleRate;
+  const channels = au.items.reduce((m, it) => Math.max(m, it.buffer.numberOfChannels), 1);
+  const totalLen = au.items.reduce((n, it) => n + it.buffer.length, 0);
+  const out = au.ctx.createBuffer(channels, totalLen, sr);
+  let writeAt = 0;
+  for (const it of au.items) {
+    it.start = writeAt / sr;
+    it.duration = it.buffer.duration;
+    for (let c = 0; c < channels; c++) {
+      const srcCh = it.buffer.getChannelData(Math.min(c, it.buffer.numberOfChannels - 1));
+      out.getChannelData(c).set(srcCh, writeAt);
+    }
+    writeAt += it.buffer.length;
+  }
+  au.buffer = out;
+  au.filename = au.items.length === 1 ? au.items[0].name : (au.items.length + '-files');
+}
+
+function audRenderFileList() {
+  if (!audFileList) return;
+  if (!au.items.length) { audFileList.hidden = true; audFileList.innerHTML = ''; return; }
+  audFileList.hidden = false;
+  audFileList.innerHTML = '';
+  au.items.forEach((it, i) => {
+    const el = document.createElement('div');
+    el.className = 'aud-fileitem';
+    el.innerHTML = '<span class="idx">' + (i + 1) + '</span><span class="nm"></span>' +
+      '<span class="dur">' + it.duration.toFixed(1) + 's</span>' +
+      '<button class="x" title="Remove this file">✕</button>';
+    el.querySelector('.nm').textContent = it.name;
+    el.querySelector('.x').addEventListener('click', () => audRemoveItem(i));
+    audFileList.appendChild(el);
+  });
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'aud-fileadd';
+  add.textContent = '+ Add files';
+  add.title = 'Append more audio to the end of the chain (or just drop it on the waveform)';
+  add.addEventListener('click', () => { audAppendNext = true; audFileInput.click(); });
+  audFileList.appendChild(add);
+}
+
+function audRemoveItem(i) {
+  if (i < 0 || i >= au.items.length) return;
+  const wasPlaying = au.playing;
+  try { audStop(true); } catch (e) {}
+  const gone = au.items.splice(i, 1)[0];
+  if (!au.items.length) { audClearAll(); toast('Removed ' + gone.name + ' — nothing left'); return; }
+  audRebuildFromItems();
+  audAfterBufferChange();
+  toast('Removed ' + gone.name);
+  if (wasPlaying) audStart();
+}
+
+// Everything that has to be refreshed whenever au.buffer is swapped out
+function audAfterBufferChange() {
+  const b = au.buffer;
+  if (!b) return;
+  const many = au.items.length > 1;
+  audInfo.textContent = b.duration.toFixed(1) + 's · ' +
+    (b.numberOfChannels === 2 ? 'stereo' : 'mono') + ' · ' + b.sampleRate + ' Hz' +
+    (many ? ' · ' + au.items.length + ' files chained' : '');
+  audDur.textContent = fmtTime(b.duration);
+  audCur.textContent = fmtTime(Math.min(au.startOffset, b.duration));
+  drawWaveform(b);
+  audRenderFileList();
+  audUpdateBatchVisibility();
+  updateAudioSizeEstimate();
+}
+
+async function audLoadFiles(files, append = false) {
+  files = Array.from(files || []);
+  if (!files.length) return;
   await ensureAudioCtx();
-  // Defensive full-reset before loading the new file. This kills any in-flight
-  // playback, disconnects/destroys the source, resets transport position, and
-  // restores all sliders to default — so the new file plays totally clean.
+  const anyVideo = files.some(f => (f.type && f.type.startsWith('video/')) || /\.(mp4|mov|webm|mkv|avi|m4v|flv)$/i.test(f.name));
+  toast(files.length > 1
+    ? ('Decoding ' + files.length + ' files…')
+    : (anyVideo ? 'Extracting audio from video…' : 'Decoding audio…'));
+
+  // Defensive full-reset before loading. This kills any in-flight playback,
+  // disconnects/destroys the source and resets transport position. Appending
+  // keeps the current effect settings; a fresh load starts neutral.
   try { audStop(false); } catch (e) {}
   if (au.source) {
     try { au.source.stop(); } catch (e) {}
     try { au.source.disconnect(); } catch (e) {}
     au.source = null;
   }
-  au.buffer = null;
+  audStopDrySource();
   au.startOffset = 0;
   au.playing = false;
-  // Reset every effect slider so the new audio starts neutral instead of
-  // inheriting the previous file's FX settings.
-  resetAudioFxSliders();
-  try {
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = await au.ctx.decodeAudioData(arrayBuffer.slice(0));
-    au.buffer = buffer;
-    au.filename = file.name;
-    au.startOffset = 0;
+  if (!append) {
+    au.items = [];
+    au.buffer = null;
+    resetAudioFxSliders();
+  }
 
-    // UI updates
-    audUpload.style.display = 'none';
-    audWaveWrap.hidden = false;
-    audTransport.hidden = false;
-    document.getElementById('audRecorder').hidden = false;
-    audPlay.disabled = false;
-    audDownloadWav.disabled = false;
-    audDownloadOgg.disabled = false;
-    audInfo.textContent = `${buffer.duration.toFixed(1)}s · ${buffer.numberOfChannels === 2 ? 'stereo' : 'mono'} · ${buffer.sampleRate} Hz${isVideo ? ' · from video' : ''}`;
-    audDur.textContent = fmtTime(buffer.duration);
-    audCur.textContent = '0:00';
-    drawWaveform(buffer);
-    updateAudioSizeEstimate();
-    document.getElementById('audClearBtn').hidden = false;
-    toast(`Loaded ${file.name}`);
-  } catch (err) {
-    console.error(err);
-    if (isVideo) {
-      // Common case: video container/codec the browser can't decode directly
-      // (e.g. MKV with non-AAC audio). Point the user at the universal converter.
-      toast('Could not extract audio — convert to MP3 first via the Converter tab');
-    } else {
-      toast('Could not decode audio · try converting to MP3 / WAV first');
+  const added = [];
+  const failed = [];
+  for (const file of files) {
+    const isVideo = (file.type && file.type.startsWith('video/')) || /\.(mp4|mov|webm|mkv|avi|m4v|flv)$/i.test(file.name);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = await au.ctx.decodeAudioData(arrayBuffer.slice(0));
+      au.items.push({ name: file.name, buffer, start: 0, duration: buffer.duration });
+      added.push(file.name);
+    } catch (err) {
+      console.error(err);
+      failed.push({ name: file.name, isVideo });
     }
   }
+
+  if (!au.items.length) {
+    const v = failed.length && failed[0].isVideo;
+    toast(v
+      ? 'Could not extract audio — convert to MP3 first via the Converter tab'
+      : 'Could not decode audio · try converting to MP3 / WAV first');
+    return;
+  }
+
+  audRebuildFromItems();
+
+  // UI updates
+  audUpload.style.display = 'none';
+  audWaveWrap.hidden = false;
+  audTransport.hidden = false;
+  document.getElementById('audRecorder').hidden = false;
+  audPlay.disabled = false;
+  audDownloadWav.disabled = false;
+  audDownloadOgg.disabled = false;
+  document.getElementById('audClearBtn').hidden = false;
+  audAfterBufferChange();
+
+  if (failed.length) toast(failed.length + ' file' + (failed.length === 1 ? '' : 's') + ' could not be decoded');
+  else if (added.length === 1) toast((append ? 'Added ' : 'Loaded ') + added[0]);
+  else toast((append ? 'Added ' : 'Loaded ') + added.length + ' files — chained back-to-back');
 }
 
 // Reset every FX slider back to its default — used on Clear, on new load, and
@@ -9918,6 +10235,14 @@ function resetAudioFxSliders() {
     audEchoPing.checked = false;
     audEchoPing.dispatchEvent(new Event('change', { bubbles: true }));
   }
+  if (audDither.checked) {
+    audDither.checked = false;
+    audDither.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  if (audMulaw.checked) {
+    audMulaw.checked = false;
+    audMulaw.dispatchEvent(new Event('change', { bubbles: true }));
+  }
   // clear bypass/mute quietly — a preset or a fresh file shouldn't toast
   au.bypass = false;
   au.muted = false;
@@ -9929,19 +10254,23 @@ function resetAudioFxSliders() {
   audSetTailMode('continue');
 }
 
-// Clear current audio so the dropzone is shown again and a new file can be picked
-document.getElementById('audClearBtn').addEventListener('click', () => {
+// Clear current audio so the dropzone is shown again and new files can be picked
+function audClearAll() {
   try { audStop(false); } catch (e) {}
   if (au.source) {
     try { au.source.stop(); } catch (e) {}
     try { au.source.disconnect(); } catch (e) {}
     au.source = null;
   }
+  audStopDrySource();
   au.buffer = null;
+  au.items = [];
   au.filename = null;
   au.startOffset = 0;
   au.playing = false;
   resetAudioFxSliders();
+  audRenderFileList();
+  audUpdateBatchVisibility();
   // Reset the file input so picking the same file again works
   const fi = document.getElementById('audFile');
   if (fi) fi.value = '';
@@ -9957,7 +10286,10 @@ document.getElementById('audClearBtn').addEventListener('click', () => {
   audDur.textContent = '0:00';
   audCur.textContent = '0:00';
   document.getElementById('audClearBtn').hidden = true;
-  toast('Cleared — drop or pick a new audio file');
+}
+document.getElementById('audClearBtn').addEventListener('click', () => {
+  audClearAll();
+  toast('Cleared — drop or pick new audio files');
 });
 
 function fmtTime(s) {
@@ -9993,6 +10325,15 @@ function drawWaveform(buffer) {
     const y1 = midY + mn * midY * 0.92;
     const y2 = midY + mx * midY * 0.92;
     ctx.fillRect(x, y1, 1, Math.max(1, y2 - y1));
+  }
+
+  // Seams between chained files, so you can see where each input starts
+  if (au.items && au.items.length > 1 && buffer.duration > 0) {
+    ctx.fillStyle = 'rgba(255,120,180,0.55)';
+    for (let i = 1; i < au.items.length; i++) {
+      const x = Math.round((au.items[i].start / buffer.duration) * audWave.width);
+      ctx.fillRect(x, 0, Math.max(1, Math.round(dpr)), audWave.height);
+    }
   }
 }
 
@@ -10158,7 +10499,7 @@ function applyLimiterSettings(limiter) {
 function audTeardownGraph() {
   const keys = ['adNode','crusherNode','daNode','muffleNode','hpNode','gainNode',
                 'bassNode','reverbAmount','reverbDry','convolverNode','limiterNode',
-                'tailGate','analyserL','analyserR','meterSink'];
+                'tailGate','analyserL','analyserR','meterSink','procMix','busNode','origGain'];
   for (const k of keys) {
     const n = au[k];
     if (n && n.disconnect) { try { n.disconnect(); } catch (e) {} }
@@ -10202,6 +10543,8 @@ function buildGraph() {
     crusher = new AudioWorkletNode(ctx, 'crusher', { outputChannelCount: [2] });
     crusher.parameters.get('bits').value = +audBits.value;
     crusher.parameters.get('sampleRate').value = +audSr.value;
+    crusher.parameters.get('dither').value = audDither.checked ? 1 : 0;
+    crusher.parameters.get('mulaw').value = audMulaw.checked ? 1 : 0;
   }
 
   // DA aliasing: a post-crusher lowpass (reconstruction filter). 0% = raw stair-step, 100% = smoothed.
@@ -10283,6 +10626,32 @@ function buildGraph() {
   node.connect(tailGate);
   node = tailGate;
 
+  /* Blend bus — the processed chain lands on procMix, and in "Fused" mode a
+     second, completely untouched source of the same buffer lands beside it on
+     the same bus. Everything downstream (meter, recorders, speakers) taps the
+     bus, so what you hear, what the meter shows and what gets recorded are all
+     the same mix you will get in the exported file. */
+  const blending = au.blendMode === 'fused';
+  const procMix = ctx.createGain();
+  procMix.gain.value = blending ? audDbGain(+audMixProc.value) : 1;
+  node.connect(procMix);
+  const bus = ctx.createGain();
+  procMix.connect(bus);
+  node = bus;
+
+  let origSource = null;
+  let origGain = null;
+  if (blending) {
+    origSource = ctx.createBufferSource();
+    origSource.buffer = au.buffer;
+    origSource.loop = au.loop;
+    if (au.loop) { origSource.loopStart = 0; origSource.loopEnd = au.buffer.duration; }
+    origGain = ctx.createGain();
+    origGain.gain.value = au.muted ? 0 : audDbGain(+audMixOrig.value);
+    origSource.connect(origGain);
+    origGain.connect(bus);
+  }
+
   // Metering tap. The analysers feed a silent sink that reaches the
   // destination, which guarantees the browser keeps rendering them.
   const splitter = ctx.createChannelSplitter(2);
@@ -10324,6 +10693,10 @@ function buildGraph() {
   au.spatial = spatial;
   au.limiterNode = limiter;
   au.tailGate = tailGate;
+  au.procMix = procMix;
+  au.busNode = bus;
+  au.origSource = origSource;
+  au.origGain = origGain;
   au.outNode = node;
   au.analyserL = analyserL;
   au.analyserR = analyserR;
@@ -10377,6 +10750,11 @@ function audStart() {
   buildGraph();
   const now = au.ctx.currentTime;
   au.source.start(0, au.startOffset);
+  if (au.origSource) {
+    // Same offset, natural speed — the fusion is "original as it was" against
+    // the processed pass, exactly like the exported fused file.
+    try { au.origSource.start(0, Math.min(au.startOffset, au.buffer.duration)); } catch (e) {}
+  }
   au.startedAt = now;
   au.playing = true;
   audScheduleTailGate();
@@ -10414,11 +10792,23 @@ function audPause() {
   au.playing = false;
   try { au.source.stop(); } catch(e) {}
   au.source = null;
+  audStopDrySource();
   audPlayIcon.innerHTML = '<polygon points="5,3 19,12 5,21"/>';
+}
+
+// The untouched second source used by the fused blend. Torn down on every
+// stop/pause/seek so a stale one can never double up on the next play.
+function audStopDrySource() {
+  if (au.origSource) {
+    try { au.origSource.stop(); } catch (e) {}
+    try { au.origSource.disconnect(); } catch (e) {}
+    au.origSource = null;
+  }
 }
 
 function audStop(resetUI = true) {
   if (au.source) { try { au.source.stop(); } catch(e) {} au.source = null; }
+  audStopDrySource();
   au.playing = false;
   au.startOffset = 0;
   if (resetUI) {
@@ -10465,6 +10855,7 @@ function seekTo(frac) {
     // Restart from new position. The stale-source guard in onended keeps this safe.
     try { au.source.stop(); } catch(e) {}
     au.source = null;
+    audStopDrySource();
     au.playing = false;
     audStart();
   }
@@ -10581,6 +10972,8 @@ function audCurrentFx() {
     sr: +audSr.value,
     ad: +audAd.value,
     da: +audDa.value,
+    dither: audDither.checked,
+    mulaw: audMulaw.checked,
     echoMix: (+audEchoMix.value) / 100,
     echoTime: (+audEchoTime.value) / 1000,
     echoFb: (+audEchoFb.value) / 100,
@@ -10597,13 +10990,15 @@ function audCurrentFx() {
 }
 const AUD_NEUTRAL_FX = {
   muffle: 0, hp: 20, gain: 0, bass: 0, reverb: 0,
-  bits: 16, sr: 48000, ad: 0, da: 0,
+  bits: 16, sr: 48000, ad: 0, da: 0, dither: false, mulaw: false,
   echoMix: 0, echoTime: 0.3, echoFb: 0, echoDamp: 20000, echoPing: false,
   spatial: 'off', angle: 0, dist: 1, elev: 0, shadow: false, pointSource: false,
 };
 function audEffectiveFx() {
   return au.bypass ? Object.assign({}, AUD_NEUTRAL_FX) : audCurrentFx();
 }
+
+function audDbGain(db) { return Math.pow(10, (+db || 0) / 20); }
 
 function audRampWorkletParam(name, value, ramp) {
   if (!au.crusherNode) return;
@@ -10630,6 +11025,17 @@ function audSyncFx(ramp = 0.02) {
   if (au.daNode) au.daNode.frequency.setTargetAtTime(daFreqFromSlider(fx.da, fx.sr), t, ramp);
   audRampWorkletParam('bits', fx.bits, ramp);
   audRampWorkletParam('sampleRate', fx.sr, ramp);
+  if (au.crusherNode) {
+    // k-rate switches — set straight, no ramp
+    au.crusherNode.parameters.get('dither').value = fx.dither ? 1 : 0;
+    au.crusherNode.parameters.get('mulaw').value = fx.mulaw ? 1 : 0;
+  }
+  if (au.procMix) {
+    au.procMix.gain.setTargetAtTime(au.blendMode === 'fused' ? audDbGain(+audMixProc.value) : 1, t, ramp);
+  }
+  if (au.origGain) {
+    au.origGain.gain.setTargetAtTime(au.muted ? 0 : audDbGain(+audMixOrig.value), t, ramp);
+  }
   if (au.echo) {
     au.echo.delay.delayTime.setTargetAtTime(Math.max(0.001, fx.echoTime), t, ramp);
     au.echo.fb.gain.setTargetAtTime(fx.echoFb, t, ramp);
@@ -10647,7 +11053,7 @@ audMuffle.addEventListener('input', e => {
   audSyncFx();
 });
 audHp.addEventListener('input', e => {
-  audHpVal.textContent = `${e.target.value} Hz`;
+  audHpVal.textContent = audFmtHz(e.target.value);
   audSyncFx();
 });
 audGain.addEventListener('input', e => {
@@ -10676,12 +11082,27 @@ audReverbSize.addEventListener('input', e => {
     }
   }, 120);
 });
+// Bit depth is fractional now (4.6 bit is a real hardware-crusher setting),
+// so the readouts round for display instead of printing raw slider strings.
+function audFmtBits(v) { return `${(+v).toFixed(1)} bit`; }
+function audFmtHz(v) {
+  const n = +v;
+  return `${Number.isInteger(n) ? n : n.toFixed(1)} Hz`;
+}
 audBits.addEventListener('input', e => {
-  audBitsVal.textContent = `${e.target.value} bit`;
+  audBitsVal.textContent = audFmtBits(e.target.value);
   audSyncFx();
 });
 audSr.addEventListener('input', e => {
-  audSrVal.textContent = `${e.target.value} Hz`;
+  audSrVal.textContent = audFmtHz(e.target.value);
+  audSyncFx();
+});
+audDither.addEventListener('change', () => {
+  audDitherDesc.textContent = audDither.checked ? 'on' : 'off';
+  audSyncFx();
+});
+audMulaw.addEventListener('change', () => {
+  audMulawDesc.textContent = audMulaw.checked ? 'on' : 'off';
   audSyncFx();
 });
 audEchoMix.addEventListener('input', e => {
@@ -10704,12 +11125,16 @@ audEchoPing.addEventListener('change', () => {
   audEchoPingDesc.textContent = audEchoPing.checked ? 'on' : 'off';
   audSyncFx();
 });
+function audFmtPct(v) {
+  const n = +v;
+  return `${Number.isInteger(n) ? n : n.toFixed(1)}%`;
+}
 audAd.addEventListener('input', e => {
-  audAdVal.textContent = `${e.target.value}%`;
+  audAdVal.textContent = audFmtPct(e.target.value);
   audSyncFx();
 });
 audDa.addEventListener('input', e => {
-  audDaVal.textContent = `${e.target.value}%`;
+  audDaVal.textContent = audFmtPct(e.target.value);
   audSyncFx();
 });
 
@@ -11190,6 +11615,13 @@ const AUD_PRESETS = {
   orbit8d: { spatial: 'orbit', orbit: 0.18, dist: 2.2, reverb: 18, reverbSize: 1.6 },
   underwater: { muffle: 88, bass: 9, reverb: 36, reverbSize: 2.6, speed: 0.94 },
   oldRadio: { muffle: 44, hp: 620, bits: 8, sr: 11000, ad: 30, da: 55, gain: 3 },
+  // Vintage-sampler crunch, dialled to the same numbers a TimeMachine-style
+  // plugin sits at: a fractional 4.6-bit word, a 3.6 kHz conversion rate, and
+  // both converter filters half-open so the aliasing stays audible.
+  timeMachine: {
+    bits: 4.6, sr: 3587, hp: 594.2, ad: 54.5, da: 51.5,
+    dither: false, mulaw: false, gain: 4,
+  },
   nextRoom: { muffle: 58, hp: 130, reverb: 32, reverbSize: 2.2, gain: 2, spatial: 'behind', angle: 215, dist: 4.5 },
   pacing: { spatial: 'sweep', sweepMin: 120, sweepMax: 240, sweepSpeed: 0.1, dist: 3, reverb: 22, reverbSize: 2 },
   canyon: { echoMix: 55, echoTime: 480, echoFb: 62, echoDamp: 3200, reverb: 25, reverbSize: 3.4 },
@@ -11219,6 +11651,13 @@ function audApplyPreset(name) {
     audPreservePitch.checked = p.preservePitch;
     audPreservePitch.dispatchEvent(new Event('change', { bubbles: true }));
   }
+  for (const [key, el] of [['dither', audDither], ['mulaw', audMulaw]]) {
+    if (p[key] === undefined) continue;
+    if (el.checked !== p[key]) {
+      el.checked = p[key];
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
   if (p.angle !== undefined) au.spatialAngle = p.angle;
   audSetSpatialMode(p.spatial || 'off', { keepAngle: p.angle !== undefined });
   updateAudioSizeEstimate();
@@ -11229,6 +11668,94 @@ audPresetBar.addEventListener('click', e => {
   audApplyPreset(btn.dataset.preset);
   toast(btn.dataset.preset === 'reset' ? 'Everything back to neutral' : `Preset: ${btn.textContent.trim()}`);
 });
+
+/* ---- Export layout: processed only, fused, or both in a row ----
+   "Fused" stacks the untouched original under the processed pass at their own
+   volumes; you hear it live while playing, not only in the exported file.
+   "Both, in a row" writes one complete pass then the other into a single file. */
+function audUpdateBlendUI() {
+  const mode = au.blendMode;
+  for (const b of audBlendModes.querySelectorAll('button')) {
+    b.classList.toggle('active', b.dataset.blend === mode);
+  }
+  audBlendOpts.hidden = mode === 'processed';
+  audSeqOpts.hidden = mode !== 'sequential';
+  audSeqGapRow.hidden = mode !== 'sequential';
+  for (const b of audSeqOrder.querySelectorAll('button')) {
+    b.classList.toggle('active', b.dataset.seq === au.seqOrder);
+  }
+  if (mode === 'fused') {
+    audBlendHint.textContent = 'Both play at once — press play to hear the mix you are about to export.';
+  } else if (mode === 'sequential') {
+    audBlendHint.textContent = 'The two passes are joined at export. Playback previews the processed pass on its own.';
+  } else {
+    audBlendHint.textContent = '';
+  }
+  updateAudioSizeEstimate();
+}
+
+function audUpdateBatchVisibility() {
+  if (!audBatchRow) return;
+  audBatchRow.hidden = !(au.items && au.items.length > 1);
+  for (const b of audBatchModes.querySelectorAll('button')) {
+    b.classList.toggle('active', b.dataset.batch === au.batchMode);
+  }
+}
+
+// Switching layout mid-playback rebuilds the graph so the change is audible
+// immediately, from wherever the playhead currently sits.
+function audRestartIfPlaying() {
+  if (!au.playing || !au.buffer) return;
+  const elapsed = (au.ctx.currentTime - au.startedAt) * (+audSpeed.value);
+  let pos = au.startOffset + elapsed;
+  pos = au.loop ? (pos % au.buffer.duration) : Math.min(pos, au.buffer.duration);
+  try { au.source.stop(); } catch (e) {}
+  au.source = null;
+  audStopDrySource();
+  au.playing = false;
+  au.startOffset = Math.max(0, pos);
+  audStart();
+}
+
+audBlendModes.addEventListener('click', e => {
+  const btn = e.target.closest('button[data-blend]');
+  if (!btn || btn.dataset.blend === au.blendMode) return;
+  au.blendMode = btn.dataset.blend;
+  audUpdateBlendUI();
+  audRestartIfPlaying();
+  toast(au.blendMode === 'processed' ? 'Exporting the processed pass only'
+    : au.blendMode === 'fused' ? 'Original and processed fused into one mix'
+    : 'Original and processed joined one after the other');
+});
+audSeqOrder.addEventListener('click', e => {
+  const btn = e.target.closest('button[data-seq]');
+  if (!btn) return;
+  au.seqOrder = btn.dataset.seq;
+  audUpdateBlendUI();
+});
+audBatchModes.addEventListener('click', e => {
+  const btn = e.target.closest('button[data-batch]');
+  if (!btn) return;
+  au.batchMode = btn.dataset.batch;
+  audUpdateBatchVisibility();
+  updateAudioSizeEstimate();
+});
+audMixProc.addEventListener('input', e => {
+  const db = +e.target.value;
+  audMixProcVal.textContent = `${db >= 0 ? '+' : ''}${db.toFixed(1)} dB`;
+  audSyncFx();
+});
+audMixOrig.addEventListener('input', e => {
+  const db = +e.target.value;
+  audMixOrigVal.textContent = `${db >= 0 ? '+' : ''}${db.toFixed(1)} dB`;
+  audSyncFx();
+});
+audSeqGap.addEventListener('input', e => {
+  audSeqGapVal.textContent = `${(+e.target.value).toFixed(1)} s`;
+  updateAudioSizeEstimate();
+});
+audUpdateBlendUI();
+audUpdateBatchVisibility();
 
 /* ---- Output meter ---- */
 function audDbToPct(db) {
@@ -11325,8 +11852,9 @@ document.querySelectorAll('input[name="audChannels"]').forEach(r => {
 
 // ---- Offline rendering for export ----
 // Render processed audio using an OfflineAudioContext, applying all current params.
-async function renderOffline() {
-  if (!au.buffer) return null;
+async function renderOffline(srcBuffer) {
+  if (!srcBuffer) srcBuffer = au.buffer;
+  if (!srcBuffer) return null;
   const mono = document.querySelector('input[name="audChannels"]:checked').value === 'mono';
   const outChannels = mono ? 1 : 2;
   const speed = +audSpeed.value;
@@ -11334,12 +11862,12 @@ async function renderOffline() {
   // The tail modifier decides how much room the echo/reverb ring-out gets:
   // 'end' renders none of it, the other two render it and then either keep it
   // ('continue') or fold it back onto the start ('wrap', handled below).
-  const bodyDuration = au.buffer.duration / speed;
+  const bodyDuration = srcBuffer.duration / speed;
   const tailSec = (au.tailMode === 'end') ? 0 : audTailSeconds();
   const outDuration = bodyDuration + tailSec;
 
   // Use the source buffer's sample rate as render rate (keeps quality, small file)
-  const renderSr = au.buffer.sampleRate;
+  const renderSr = srcBuffer.sampleRate;
   const offline = new OfflineAudioContext(outChannels, Math.ceil(outDuration * renderSr), renderSr);
 
   // Load worklet into the offline context
@@ -11350,7 +11878,7 @@ async function renderOffline() {
   URL.revokeObjectURL(url);
 
   const src = offline.createBufferSource();
-  src.buffer = au.buffer;
+  src.buffer = srcBuffer;
   src.playbackRate.value = speed;
   if ('preservesPitch' in src) src.preservesPitch = audPreservePitch.checked;
 
@@ -11363,6 +11891,8 @@ async function renderOffline() {
     crusher = new AudioWorkletNode(offline, 'crusher', { outputChannelCount: [outChannels] });
     crusher.parameters.get('bits').value = +audBits.value;
     crusher.parameters.get('sampleRate').value = +audSr.value;
+    crusher.parameters.get('dither').value = audDither.checked ? 1 : 0;
+    crusher.parameters.get('mulaw').value = audMulaw.checked ? 1 : 0;
   }
 
   const da = offline.createBiquadFilter();
@@ -11509,6 +12039,88 @@ async function renderOffline() {
   return rendered;
 }
 
+/* ---- Fusing the original back in ----
+   The processed render decides the shape of the file (channel count and sample
+   rate), so the untouched original is re-rendered into that same shape first —
+   otherwise a mono source and a stereo render could not be summed. */
+async function audMatchShape(buffer, channels, sr) {
+  if (buffer.numberOfChannels === channels && buffer.sampleRate === sr) return buffer;
+  const off = new OfflineAudioContext(channels, Math.max(1, Math.ceil(buffer.duration * sr)), sr);
+  const src = off.createBufferSource();
+  src.buffer = buffer;
+  src.connect(off.destination);
+  src.start(0);
+  return await off.startRendering();
+}
+
+// Sum two buffers from time 0, each at its own gain. The result is as long as
+// the longer of the two — a slowed-down processed pass keeps its full length.
+function audMixBuffers(ctxLike, a, b, gainA, gainB) {
+  const channels = Math.max(a.numberOfChannels, b.numberOfChannels);
+  const len = Math.max(a.length, b.length);
+  const out = new AudioBuffer({ length: len, numberOfChannels: channels, sampleRate: a.sampleRate });
+  for (let c = 0; c < channels; c++) {
+    const dst = out.getChannelData(c);
+    const ca = a.getChannelData(Math.min(c, a.numberOfChannels - 1));
+    const cb = b.getChannelData(Math.min(c, b.numberOfChannels - 1));
+    for (let i = 0; i < len; i++) {
+      const va = i < ca.length ? ca[i] * gainA : 0;
+      const vb = i < cb.length ? cb[i] * gainB : 0;
+      let v = va + vb;
+      if (v > 1) v = 1; else if (v < -1) v = -1;
+      dst[i] = v;
+    }
+  }
+  return out;
+}
+
+// Lay buffers end to end into one file, with an optional silent gap between.
+function audConcatBuffers(list, gapSec, gains) {
+  const usable = list.filter(Boolean);
+  if (!usable.length) return null;
+  const sr = usable[0].sampleRate;
+  const channels = usable.reduce((m, b) => Math.max(m, b.numberOfChannels), 1);
+  const gapLen = Math.round(Math.max(0, gapSec || 0) * sr);
+  const total = usable.reduce((n, b) => n + b.length, 0) + gapLen * (usable.length - 1);
+  const out = new AudioBuffer({ length: total, numberOfChannels: channels, sampleRate: sr });
+  let writeAt = 0;
+  usable.forEach((b, idx) => {
+    const g = (gains && gains[idx] != null) ? gains[idx] : 1;
+    for (let c = 0; c < channels; c++) {
+      const dst = out.getChannelData(c);
+      const srcCh = b.getChannelData(Math.min(c, b.numberOfChannels - 1));
+      for (let i = 0; i < b.length; i++) {
+        let v = srcCh[i] * g;
+        if (v > 1) v = 1; else if (v < -1) v = -1;
+        dst[writeAt + i] = v;
+      }
+    }
+    writeAt += b.length + (idx < usable.length - 1 ? gapLen : 0);
+  });
+  return out;
+}
+
+/* Render one source buffer to exactly what should land in the file:
+   the processed pass alone, the two fused, or the two joined in a row. */
+async function renderExportBuffer(srcBuffer) {
+  if (!srcBuffer) srcBuffer = au.buffer;
+  const proc = await renderOffline(srcBuffer);
+  if (!proc || au.blendMode === 'processed') return proc;
+
+  const gProc = audDbGain(+audMixProc.value);
+  const gOrig = audDbGain(+audMixOrig.value);
+  const orig = await audMatchShape(srcBuffer, proc.numberOfChannels, proc.sampleRate);
+
+  if (au.blendMode === 'fused') return audMixBuffers(null, proc, orig, gProc, gOrig);
+
+  const origFirst = au.seqOrder === 'origFirst';
+  return audConcatBuffers(
+    origFirst ? [orig, proc] : [proc, orig],
+    +audSeqGap.value,
+    origFirst ? [gOrig, gProc] : [gProc, gOrig]
+  );
+}
+
 // WAV encoder (16-bit PCM)
 function audioBufferToWav(buffer) {
   const numCh = buffer.numberOfChannels;
@@ -11593,11 +12205,24 @@ function updateAudioSizeEstimate() {
   // Only 'continue' makes the file longer — 'end' cuts at the runtime and
   // 'wrap' folds the overhang back inside it.
   const tail = (au.tailMode === 'continue') ? audTailSeconds() : 0;
-  const dur = au.buffer.duration / speed + tail;
+  const procDur = au.buffer.duration / speed + tail;
+  // Fused is as long as the longer of the two passes; "both in a row" is the
+  // sum plus the gap. Separate-file mode reports the biggest single download.
+  let dur = procDur;
+  if (au.blendMode === 'fused') dur = Math.max(procDur, au.buffer.duration);
+  else if (au.blendMode === 'sequential') dur = procDur + au.buffer.duration + (+audSeqGap.value);
+  if (au.batchMode === 'separate' && au.items.length > 1) {
+    const longest = au.items.reduce((m, it) => Math.max(m, it.duration), 0);
+    const p = longest / speed + tail;
+    dur = au.blendMode === 'fused' ? Math.max(p, longest)
+      : au.blendMode === 'sequential' ? p + longest + (+audSeqGap.value)
+      : p;
+  }
   const wavBytes = Math.round(dur * au.buffer.sampleRate * ch * 2) + 44;
   const oggBytes = Math.round((+audBr.value) * 1000 / 8 * dur);
-  document.getElementById('audWavSize').textContent = '~' + formatBytes(wavBytes);
-  document.getElementById('audOggSize').textContent = '~' + formatBytes(oggBytes);
+  const each = (au.batchMode === 'separate' && au.items.length > 1) ? ' ea' : '';
+  document.getElementById('audWavSize').textContent = '~' + formatBytes(wavBytes) + each;
+  document.getElementById('audOggSize').textContent = '~' + formatBytes(oggBytes) + each;
 }
 
 // Update size when speed changes too
@@ -11606,56 +12231,86 @@ audSpeedNum.addEventListener('input', updateAudioSizeEstimate);
 document.querySelectorAll('input[name="audChannels"]').forEach(r => r.addEventListener('change', updateAudioSizeEstimate));
 
 // ---- Download handlers ----
-audDownloadWav.addEventListener('click', async () => {
-  if (!au.buffer) return;
-  audDownloadWav.disabled = true;
-  const oldTag = document.getElementById('audWavSize').textContent;
-  document.getElementById('audWavSize').textContent = '…';
-  try {
-    toast('Rendering WAV…');
-    const rendered = await renderOffline();
-    const blob = audioBufferToWav(rendered);
-    document.getElementById('audWavSize').textContent = formatBytes(blob.size);
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = (au.filename.replace(/\.[^.]+$/, '') || 'audio') + '-processed.wav';
-    a.click();
-    URL.revokeObjectURL(a.href);
-    toast('WAV saved');
-  } catch (e) {
-    console.error(e);
-    toast('WAV export failed');
-    document.getElementById('audWavSize').textContent = oldTag;
-  } finally {
-    audDownloadWav.disabled = false;
-  }
-});
+// A download is one buffer -> one file. In "separate files" mode the queue is
+// rendered item by item through the exact same chain, so every output carries
+// the same effects and the same original/processed layout.
+function audDownloadBlob(blob, filename) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
 
-audDownloadOgg.addEventListener('click', async () => {
-  if (!au.buffer) return;
-  audDownloadOgg.disabled = true;
-  document.getElementById('audOggSize').textContent = '…';
+function audBaseName(name) {
+  return (String(name || 'audio').replace(/\.[^.]+$/, '') || 'audio');
+}
+
+// Which buffers this export produces, and what to call each one.
+function audExportJobs() {
+  if (au.batchMode === 'separate' && au.items.length > 1) {
+    return au.items.map((it, idx) => ({
+      buffer: it.buffer,
+      name: String(idx + 1).padStart(2, '0') + '-' + audBaseName(it.name),
+    }));
+  }
+  return [{ buffer: au.buffer, name: audBaseName(au.filename) }];
+}
+
+function audExportSuffix() {
+  if (au.blendMode === 'fused') return '-fused';
+  if (au.blendMode === 'sequential') return '-both';
+  return '-processed';
+}
+
+async function audRunExport(kind) {
+  const btn = kind === 'wav' ? audDownloadWav : audDownloadOgg;
+  const tagEl = document.getElementById(kind === 'wav' ? 'audWavSize' : 'audOggSize');
+  const oldTag = tagEl.textContent;
+  btn.disabled = true;
+  tagEl.textContent = '…';
   try {
-    toast('Rendering audio…');
-    const rendered = await renderOffline();
-    toast('Encoding OGG/Opus…');
-    const { blob, mime } = await audioBufferToCompressed(rendered, +audBr.value);
-    document.getElementById('audOggSize').textContent = formatBytes(blob.size);
-    const ext = mime.includes('ogg') ? 'ogg' : 'webm';
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = (au.filename.replace(/\.[^.]+$/, '') || 'audio') + '-processed.' + ext;
-    a.click();
-    URL.revokeObjectURL(a.href);
-    toast('Audio saved');
+    const jobs = audExportJobs();
+    let lastSize = 0;
+    for (let n = 0; n < jobs.length; n++) {
+      const job = jobs[n];
+      toast(jobs.length > 1
+        ? `Rendering ${n + 1} of ${jobs.length}…`
+        : (kind === 'wav' ? 'Rendering WAV…' : 'Rendering audio…'));
+      const rendered = await renderExportBuffer(job.buffer);
+      if (!rendered) throw new Error('Nothing to render');
+      let blob, ext;
+      if (kind === 'wav') {
+        blob = audioBufferToWav(rendered);
+        ext = 'wav';
+      } else {
+        toast('Encoding OGG/Opus…');
+        const enc = await audioBufferToCompressed(rendered, +audBr.value);
+        blob = enc.blob;
+        ext = enc.mime.includes('ogg') ? 'ogg' : 'webm';
+      }
+      lastSize = blob.size;
+      audDownloadBlob(blob, job.name + audExportSuffix() + '.' + ext);
+      // Browsers throttle back-to-back programmatic downloads; give each one
+      // a beat to be accepted before starting the next render.
+      if (n < jobs.length - 1) await new Promise(r => setTimeout(r, 600));
+    }
+    tagEl.textContent = formatBytes(lastSize) + (jobs.length > 1 ? ' ea' : '');
+    toast(jobs.length > 1 ? `Saved ${jobs.length} files` : (kind === 'wav' ? 'WAV saved' : 'Audio saved'));
   } catch (e) {
     console.error(e);
-    toast('Audio export failed');
+    toast(kind === 'wav' ? 'WAV export failed' : 'Audio export failed');
+    tagEl.textContent = oldTag;
   } finally {
-    audDownloadOgg.disabled = false;
-    updateAudioSizeEstimate();
+    btn.disabled = false;
+    if (kind === 'ogg') updateAudioSizeEstimate();
   }
-});
+}
+
+audDownloadWav.addEventListener('click', () => { if (au.buffer) audRunExport('wav'); });
+audDownloadOgg.addEventListener('click', () => { if (au.buffer) audRunExport('ogg'); });
 
 // Redraw waveform on tab switch (canvas size becomes known)
 document.querySelector('[data-tab="audio"]').addEventListener('click', () => {
@@ -12140,8 +12795,11 @@ function defaultClipParams() {
   return {
     volumeDb: 0, fadeIn: 0, fadeOut: 0,
     speed: 1, muffle: 0, hp: 20, bits: 16, sr: 48000, ad: 0, da: 0,
+    dither: false, mulaw: false,
     bass: 0, reverb: 0, reverbSize: 1.5,
     preset: 'none',
+    // Fuse the untouched original under this clip's processed sound
+    blend: false, blendProcDb: 0, blendOrigDb: -6,
   };
 }
 
@@ -12944,6 +13602,8 @@ function buildClipGraph(sourceNode, clip, ctx = au.ctx) {
       crusher = new AudioWorkletNode(ctx, 'crusher', { outputChannelCount: [2] });
       crusher.parameters.get('bits').value = p.bits;
       crusher.parameters.get('sampleRate').value = p.sr;
+      crusher.parameters.get('dither').value = p.dither ? 1 : 0;
+      crusher.parameters.get('mulaw').value = p.mulaw ? 1 : 0;
     } catch(e) { crusher = null; }
   }
   const da = ctx.createBiquadFilter();
@@ -13002,6 +13662,35 @@ function buildClipGraph(sourceNode, clip, ctx = au.ctx) {
     node.connect(radioHP); node = radioHP;
     node.connect(radioLP); node = radioLP;
     node.connect(ws); node = ws;
+  } else if (p.preset === 'timeMachine') {
+    // The same vintage-sampler chain the Audio Tools preset builds: band-limit
+    // going in, quantize hard at a fractional word length and a low conversion
+    // rate, then only half-smooth the stair-step on the way out.
+    const tmIn = ctx.createBiquadFilter();
+    tmIn.type = 'lowpass';
+    tmIn.frequency.value = adFreqFromSlider(54.5, 3587);
+    const tmHp = ctx.createBiquadFilter();
+    tmHp.type = 'highpass';
+    tmHp.frequency.value = 594.2;
+    node.connect(tmIn); node = tmIn;
+    let tmCrusher = null;
+    try {
+      tmCrusher = new AudioWorkletNode(ctx, 'crusher', { outputChannelCount: [2] });
+      tmCrusher.parameters.get('bits').value = 4.6;
+      tmCrusher.parameters.get('sampleRate').value = 3587;
+      tmCrusher.parameters.get('dither').value = 0;
+      tmCrusher.parameters.get('mulaw').value = 0;
+    } catch (e) { tmCrusher = null; }
+    if (tmCrusher) { node.connect(tmCrusher); node = tmCrusher; }
+    const tmOut = ctx.createBiquadFilter();
+    tmOut.type = 'lowpass';
+    tmOut.frequency.value = daFreqFromSlider(51.5, 3587);
+    node.connect(tmOut); node = tmOut;
+    node.connect(tmHp); node = tmHp;
+    // Low bit depths lose level — put some of it back so A/B stays fair
+    const tmMakeup = ctx.createGain();
+    tmMakeup.gain.value = Math.pow(10, 4 / 20);
+    node.connect(tmMakeup); node = tmMakeup;
   } else if (p.preset === 'cave' || p.preset === 'largeRoom') {
     // Wet/dry parallel path
     const dry = ctx.createGain();
@@ -13042,7 +13731,49 @@ function buildClipGraph(sourceNode, clip, ctx = au.ctx) {
   reverbDry.connect(reverbMix);
   node = reverbMix;
 
-  return { out: node, ad, crusher, da, muffle, hp, clipVol, fadeGain, bass, reverbAmount, reverbDry };
+  /* Optional fusion of the untouched original. The dry path taps the raw
+     source, so it skips every effect — but it gets its own copies of the
+     clip's volume and fade gains, otherwise the original would ignore the
+     fades and click in at full level. scheduleClipFades() ramps both. */
+  let dryFade = null;
+  if (p.blend) {
+    const dryVol = ctx.createGain();
+    dryVol.gain.value = Math.pow(10, (p.volumeDb + trackVolDb) / 20);
+    dryFade = ctx.createGain();
+    const dryMix = ctx.createGain();
+    dryMix.gain.value = Math.pow(10, (p.blendOrigDb != null ? p.blendOrigDb : -6) / 20);
+    const procMix = ctx.createGain();
+    procMix.gain.value = Math.pow(10, (p.blendProcDb != null ? p.blendProcDb : 0) / 20);
+    const bus = ctx.createGain();
+    sourceNode.connect(dryVol);
+    dryVol.connect(dryFade);
+    dryFade.connect(dryMix);
+    dryMix.connect(bus);
+    node.connect(procMix);
+    procMix.connect(bus);
+    node = bus;
+  }
+
+  return { out: node, ad, crusher, da, muffle, hp, clipVol, fadeGain, dryFade, bass, reverbAmount, reverbDry };
+}
+
+/* Fade envelope — linear ramp in at the start, out at the end. Applied to the
+   processed path and, when the original is fused in, to its mirror gain too. */
+function scheduleClipFades(graph, clip, scheduleAt, playDur) {
+  const speed = clip.params.speed;
+  const fin = Math.min(clip.params.fadeIn, playDur);
+  const fout = Math.min(clip.params.fadeOut, playDur);
+  const fadeOutStart = scheduleAt + (playDur - fout) / speed;
+  const targets = [graph.fadeGain];
+  if (graph.dryFade) targets.push(graph.dryFade);
+  for (const g of targets) {
+    g.gain.setValueAtTime(fin > 0 ? 0 : 1, scheduleAt);
+    if (fin > 0) g.gain.linearRampToValueAtTime(1, scheduleAt + fin / speed);
+    if (fout > 0) {
+      g.gain.setValueAtTime(1, fadeOutStart);
+      g.gain.linearRampToValueAtTime(0, fadeOutStart + fout / speed);
+    }
+  }
 }
 
 // Apply automation to a running clip's audio params.
@@ -13168,16 +13899,7 @@ async function edStartPlayback() {
     graph.out.connect(au.ctx.destination);
     if (editor.liveRec.active && editor.liveRec.streamDest) graph.out.connect(editor.liveRec.streamDest);
 
-    // Fade envelope — linear ramp at start + out at end
-    const fin = Math.min(clip.params.fadeIn, playDur);
-    const fout = Math.min(clip.params.fadeOut, playDur);
-    graph.fadeGain.gain.setValueAtTime(fin > 0 ? 0 : 1, scheduleAt);
-    if (fin > 0) graph.fadeGain.gain.linearRampToValueAtTime(1, scheduleAt + fin / clip.params.speed);
-    const fadeOutStart = scheduleAt + (playDur - fout) / clip.params.speed;
-    if (fout > 0) {
-      graph.fadeGain.gain.setValueAtTime(1, fadeOutStart);
-      graph.fadeGain.gain.linearRampToValueAtTime(0, fadeOutStart + fout / clip.params.speed);
-    }
+    scheduleClipFades(graph, clip, scheduleAt, playDur);
 
     // Apply automation
     applyAutomation(graph, clip, scheduleAt, intoClip, playDur, src);
@@ -13807,6 +14529,37 @@ function refreshPanelValues() {
   set('pReverbSize', rs);
   document.getElementById('pReverbSizeVal').textContent = `${rs.toFixed(1)}s`;
   document.getElementById('pPreset').value = p.preset;
+  // Crusher switches + the fused-original blend (clips made before these
+  // existed simply read as off / defaults)
+  const dith = !!p.dither, mul = !!p.mulaw;
+  document.getElementById('pDither').checked = dith;
+  document.getElementById('pDitherDesc').textContent = dith ? 'on' : 'off';
+  document.getElementById('pMulaw').checked = mul;
+  document.getElementById('pMulawDesc').textContent = mul ? 'on' : 'off';
+  const bl = !!p.blend;
+  document.getElementById('pBlend').checked = bl;
+  document.getElementById('pBlendDesc').textContent = bl ? 'on' : 'off';
+  const bp = (p.blendProcDb != null) ? p.blendProcDb : 0;
+  const bo = (p.blendOrigDb != null) ? p.blendOrigDb : -6;
+  set('pBlendProc', bp);
+  document.getElementById('pBlendProcVal').textContent = `${bp >= 0 ? '+' : ''}${bp.toFixed(1)} dB`;
+  set('pBlendOrig', bo);
+  document.getElementById('pBlendOrigVal').textContent = `${bo >= 0 ? '+' : ''}${bo.toFixed(1)} dB`;
+  document.getElementById('pBlendProcRow').hidden = !bl;
+  document.getElementById('pBlendOrigRow').hidden = !bl;
+}
+
+// Anything that changes the shape of a clip's graph (a preset, the crusher
+// switches, the blend) can't be pushed onto running nodes — restart playback
+// from where the playhead is so the change is audible straight away.
+function edRebuildIfPlaying() {
+  if (!editor.playing) return;
+  // currentPos only advances on pause/seek, so bring it up to the playhead
+  // before restarting or the timeline would jump back to where play began.
+  const elapsed = au.ctx.currentTime - editor.playStartedCtxTime;
+  editor.currentPos = Math.max(0, editor.playStartedAtPos + elapsed);
+  edStopSources();
+  edStartPlayback();
 }
 
 function refreshAutoList() {
@@ -13967,8 +14720,44 @@ document.getElementById('pPreset').addEventListener('change', (e) => {
   c.params.preset = e.target.value;
   // Invalidate broken buffer cache when toggling
   if (c.params.preset !== 'broken') { c._brokenBuffer = null; }
+  edRebuildIfPlaying();
   toast(`Preset → ${e.target.value}`);
 });
+
+function wireClipSwitch(id, descId, key) {
+  const el = document.getElementById(id);
+  const desc = document.getElementById(descId);
+  el.addEventListener('change', () => {
+    const c = getSelectedClip();
+    if (!c) { el.checked = false; return; }
+    c.params[key] = el.checked;
+    desc.textContent = el.checked ? 'on' : 'off';
+    if (key === 'blend') {
+      document.getElementById('pBlendProcRow').hidden = !el.checked;
+      document.getElementById('pBlendOrigRow').hidden = !el.checked;
+    }
+    edRebuildIfPlaying();
+  });
+}
+wireClipSwitch('pDither', 'pDitherDesc', 'dither');
+wireClipSwitch('pMulaw', 'pMulawDesc', 'mulaw');
+wireClipSwitch('pBlend', 'pBlendDesc', 'blend');
+
+// The two fusion volumes ride the running graph — no restart needed
+function wireBlendVolume(id, valId, key) {
+  const el = document.getElementById(id);
+  const lbl = document.getElementById(valId);
+  el.addEventListener('input', () => {
+    const v = +el.value;
+    lbl.textContent = `${v >= 0 ? '+' : ''}${v.toFixed(1)} dB`;
+    const c = getSelectedClip();
+    if (!c) return;
+    c.params[key] = v;
+    edRebuildIfPlaying();
+  });
+}
+wireBlendVolume('pBlendProc', 'pBlendProcVal', 'blendProcDb');
+wireBlendVolume('pBlendOrig', 'pBlendOrigVal', 'blendOrigDb');
 
 document.getElementById('pClearAuto').addEventListener('click', () => {
   const c = getSelectedClip();
@@ -14702,15 +15491,7 @@ async function renderEditorOffline() {
     const graph = buildClipGraph(src, clip, offline);
     graph.out.connect(offline.destination);
     const scheduleAt = clip.startTime;
-    const fin = Math.min(clip.params.fadeIn, clip.duration);
-    const fout = Math.min(clip.params.fadeOut, clip.duration);
-    graph.fadeGain.gain.setValueAtTime(fin > 0 ? 0 : 1, scheduleAt);
-    if (fin > 0) graph.fadeGain.gain.linearRampToValueAtTime(1, scheduleAt + fin / clip.params.speed);
-    const foStart = scheduleAt + (clip.duration - fout) / clip.params.speed;
-    if (fout > 0) {
-      graph.fadeGain.gain.setValueAtTime(1, foStart);
-      graph.fadeGain.gain.linearRampToValueAtTime(0, foStart + fout / clip.params.speed);
-    }
+    scheduleClipFades(graph, clip, scheduleAt, clip.duration);
     applyAutomation(graph, clip, scheduleAt, 0, clip.duration, src);
     src.start(scheduleAt, clip.offset, clip.duration);
   }
