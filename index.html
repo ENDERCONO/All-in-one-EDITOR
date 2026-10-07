@@ -6008,6 +6008,7 @@
           <h3>Image previews</h3>
           <div class="row"><span>Zoom in / out</span><kbd>+ / −</kbd></div>
           <div class="row"><span>Fit to box</span><kbd>0</kbd></div>
+          <div class="row"><span>Zoom around cursor</span><kbd>Shift scroll</kbd></div>
           <div class="row"><span>Zoom around cursor</span><kbd>Ctrl scroll</kbd></div>
           <div class="row"><span>Pan</span><kbd>Space drag</kbd></div>
           <div class="row"><span>Pan</span><kbd>middle drag</kbd></div>
@@ -9691,7 +9692,7 @@ remCanvas.addEventListener('click', (e) => {
 remCanvas.style.cursor = 'crosshair';
 
 /* ---- Preview zoom (all image previews) ----
-   Ctrl/⌘ + scroll (or pinch) zooms around the cursor, the bar under the
+   Shift or Ctrl/⌘ + scroll (or pinch) zooms around the cursor, the bar under the
    preview steps through zoom levels, and middle-drag or Space + drag pans.
    Clicks keep working at any zoom because every click handler maps through
    getBoundingClientRect(). Upscaled pixels render crisp by default. */
@@ -9722,7 +9723,7 @@ remCanvas.style.cursor = 'crosshair';
       <button type="button" data-z="1" title="Actual pixels">1:1</button>
       <button type="button" data-z="crisp" title="Crisp pixels when zoomed in (great for pixel art) — click for smooth">Crisp</button>
       <button type="button" data-z="grid" title="Pixel grid when zoomed in far enough (600%+)">Grid</button>
-      <span class="zoom-pos" title="Ctrl/⌘ + scroll to zoom · middle-drag or Space + drag to pan">Ctrl + scroll to zoom</span>`;
+      <span class="zoom-pos" title="Shift + scroll (or Ctrl/⌘ + scroll) to zoom · middle-drag or Space + drag to pan">Shift + scroll to zoom</span>`;
     wrap.insertAdjacentElement('afterend', bar);
     const gridEl = document.createElement('div');
     gridEl.className = 'zoom-grid';
@@ -9758,9 +9759,12 @@ remCanvas.style.cursor = 'crosshair';
     });
 
     wrap.addEventListener('wheel', e => {
-      if (!visible(v) || !(e.ctrlKey || e.metaKey)) return;
+      if (!visible(v) || !(e.shiftKey || e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
-      const factor = Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0025));
+      // Browsers turn Shift + wheel into sideways scrolling, so the wheel
+      // movement can arrive in deltaX instead of deltaY.
+      const delta = e.deltaY || e.deltaX;
+      const factor = Math.exp(-delta * (e.deltaMode === 1 ? 0.05 : 0.0025));
       zoomTo(v, v.scale * factor, e.clientX, e.clientY);
     }, { passive: false });
 
@@ -9798,7 +9802,7 @@ remCanvas.style.cursor = 'crosshair';
       const y = Math.floor((e.clientY - r.top) * canvas.height / r.height);
       if (x >= 0 && y >= 0 && x < canvas.width && y < canvas.height) v.pos.textContent = `x ${x} · y ${y}`;
     });
-    canvas.addEventListener('mouseleave', () => { v.pos.textContent = 'Ctrl + scroll to zoom'; });
+    canvas.addEventListener('mouseleave', () => { v.pos.textContent = 'Shift + scroll to zoom'; });
 
     // A new image (size change) or showing / hiding the canvas resets to fit
     new MutationObserver(() => refresh(v)).observe(canvas, { attributes: true, attributeFilter: ['width', 'height', 'style'] });
