@@ -4087,6 +4087,36 @@
     mix-blend-mode: screen;
   }
 
+  /* Zoom for every image preview (.rem-canvas-wrap). Fit mode sizes the
+     canvas to the box (small pixel art gets scaled up); zoomed mode turns the
+     box into a scroll area so the image can be panned. */
+  .rem-canvas-wrap { min-width: 0; }
+  .rem-canvas-wrap.zoomable canvas { max-width: none; max-height: none; flex: none; }
+  .rem-canvas-wrap.zoomed { display: flex; overflow: auto; max-height: 80vh; }
+  .rem-canvas-wrap.zoomed canvas { margin: auto; }
+  .rem-canvas-wrap.panning, .rem-canvas-wrap.panning canvas { cursor: grabbing !important; }
+  .rem-canvas-wrap.pan-ready canvas { cursor: grab !important; }
+  .zoom-bar {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    margin-top: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px; color: var(--text-faint);
+  }
+  .zoom-bar[hidden] { display: none; }
+  .zoom-bar button {
+    cursor: pointer;
+    min-width: 28px; height: 26px; padding: 0 9px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--bg-2);
+    color: var(--text-dim);
+    font: inherit;
+  }
+  .zoom-bar button:hover { border-color: var(--border-hover); color: var(--text); }
+  .zoom-bar button.on { background: var(--surface-3); border-color: var(--border-hover); color: var(--text); }
+  .zoom-bar .zoom-pct { min-width: 52px; text-align: center; color: var(--text); }
+  .zoom-bar .zoom-pos { margin-left: auto; letter-spacing: 0.04em; }
+
   /* Magic wand cursor on canvas when wand tool active */
   .rem-canvas-wrap.wand-mode canvas {
     cursor: cell;
@@ -6518,6 +6548,45 @@
             <button type="button" class="aud-chip" id="audBypass" title="Compare with the untouched original (B)">A/B bypass</button>
             <button type="button" class="aud-chip" id="audLoop" title="Loop playback (L)">Loop</button>
             <button type="button" class="aud-chip" id="audLimiter" title="Catch peaks so boosted bass / reverb can't clip">Safety limiter</button>
+          </div>
+        </div>
+
+        <div class="audio-section span-all">
+          <div class="section-title">Voice filters</div>
+          <div class="aud-quickbar" id="audVoiceBar">
+            <button type="button" class="aud-chip on" data-voice="none">None</button>
+            <button type="button" class="aud-chip" data-voice="chipmunk" title="Sped-up squeaky voice, without the speed-up">Chipmunk</button>
+            <button type="button" class="aud-chip" data-voice="deep" title="Lower, fuller voice">Deep voice</button>
+            <button type="button" class="aud-chip" data-voice="giant" title="Huge, slow-sounding voice">Giant</button>
+            <button type="button" class="aud-chip" data-voice="demon" title="Two octaves of growl plus grit">Demon</button>
+            <button type="button" class="aud-chip" data-voice="robot" title="Metallic ring-mod + comb resonance">Robot</button>
+            <button type="button" class="aud-chip" data-voice="dalek" title="Classic 30 Hz ring modulator">Dalek</button>
+            <button type="button" class="aud-chip" data-voice="anonymous" title="Deep, masked hacker voice">Anonymous</button>
+            <button type="button" class="aud-chip" data-voice="alien" title="Pitched up, warbly and ring-modulated">Alien</button>
+            <button type="button" class="aud-chip" data-voice="telephone" title="Narrow 400–3400 Hz phone line">Telephone</button>
+            <button type="button" class="aud-chip" data-voice="radio" title="Walkie-talkie / AM radio">Radio</button>
+            <button type="button" class="aud-chip" data-voice="megaphone" title="Overdriven bullhorn">Megaphone</button>
+            <button type="button" class="aud-chip" data-voice="underwater" title="Muffled and wobbling">Underwater</button>
+            <button type="button" class="aud-chip" data-voice="cave" title="Big rocky echo">Cave</button>
+            <button type="button" class="aud-chip" data-voice="ghost" title="Airy, trembling, haunted">Ghost</button>
+            <button type="button" class="aud-chip" data-voice="choir" title="Your voice stacked in harmony">Choir</button>
+            <button type="button" class="aud-chip" data-voice="wobble" title="Vibrato wobble">Wobble</button>
+            <button type="button" class="aud-chip" data-voice="helicopter" title="Fast chopping tremolo">Helicopter</button>
+            <button type="button" class="aud-chip" data-voice="blownMic" title="Clipped, overloaded microphone">Blown-out mic</button>
+          </div>
+          <div class="field-group">
+            <div class="field-label">
+              <span>Filter amount</span>
+              <span class="color-rgb-display" id="audVoiceMixVal">100%</span>
+            </div>
+            <input type="range" id="audVoiceMix" min="0" max="100" value="100" step="1">
+          </div>
+          <div class="field-group">
+            <div class="field-label">
+              <span>Pitch shift (keeps speed)</span>
+              <span class="color-rgb-display" id="audVoicePitchVal">0 st</span>
+            </div>
+            <input type="range" id="audVoicePitch" min="-12" max="12" value="0" step="0.5">
           </div>
         </div>
 
@@ -9325,6 +9394,225 @@ remCanvas.addEventListener('click', (e) => {
 });
 remCanvas.style.cursor = 'crosshair';
 
+/* ---- Preview zoom (all image previews) ----
+   Ctrl/⌘ + scroll (or pinch) zooms around the cursor, the bar under the
+   preview steps through zoom levels, and middle-drag or Space + drag pans.
+   Clicks keep working at any zoom because every click handler maps through
+   getBoundingClientRect(). Upscaled pixels render crisp by default. */
+(function setupCanvasZoom() {
+  const LEVELS = [0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64];
+  const FIT_MAX_H = 520;
+  let crisp = true;
+  try { crisp = localStorage.getItem('previewZoomSmooth') !== '1'; } catch (e) {}
+  const views = [];
+  let spaceHeld = false;
+
+  function setup(wrap) {
+    const canvas = wrap.querySelector('canvas');
+    if (!canvas) return;
+    wrap.classList.add('zoomable');
+    if (wrap.parentElement) wrap.parentElement.style.minWidth = '0';
+    const bar = document.createElement('div');
+    bar.className = 'zoom-bar';
+    bar.hidden = true;
+    bar.innerHTML = `
+      <button type="button" data-z="out" title="Zoom out (−)">−</button>
+      <span class="zoom-pct">100%</span>
+      <button type="button" data-z="in" title="Zoom in (+)">+</button>
+      <button type="button" data-z="fit" title="Fit to the preview (0)">Fit</button>
+      <button type="button" data-z="1" title="Actual pixels">1:1</button>
+      <button type="button" data-z="crisp" title="Crisp pixels when zoomed in (great for pixel art) — click for smooth">Crisp</button>
+      <span class="zoom-pos" title="Ctrl/⌘ + scroll to zoom · middle-drag or Space + drag to pan">Ctrl + scroll to zoom</span>`;
+    wrap.insertAdjacentElement('afterend', bar);
+    const v = {
+      wrap, canvas, bar,
+      pct: bar.querySelector('.zoom-pct'),
+      pos: bar.querySelector('.zoom-pos'),
+      crispBtn: bar.querySelector('[data-z="crisp"]'),
+      fitBtn: bar.querySelector('[data-z="fit"]'),
+      mode: 'fit', scale: 1, key: '',
+    };
+    views.push(v);
+
+    bar.addEventListener('click', e => {
+      const b = e.target.closest('button[data-z]');
+      if (!b) return;
+      const z = b.dataset.z;
+      if (z === 'in') step(v, 1);
+      else if (z === 'out') step(v, -1);
+      else if (z === 'fit') setFit(v);
+      else if (z === '1') zoomTo(v, 1);
+      else if (z === 'crisp') {
+        crisp = !crisp;
+        try { localStorage.setItem('previewZoomSmooth', crisp ? '0' : '1'); } catch (err) {}
+        views.forEach(apply);
+      }
+    });
+
+    wrap.addEventListener('wheel', e => {
+      if (!visible(v) || !(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      const factor = Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0025));
+      zoomTo(v, v.scale * factor, e.clientX, e.clientY);
+    }, { passive: false });
+
+    // Panning: middle button anywhere, or left button while Space is held
+    wrap.addEventListener('pointerdown', e => {
+      if (v.mode !== 'zoom') return;
+      if (!(e.button === 1 || (e.button === 0 && spaceHeld))) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const sx = e.clientX, sy = e.clientY, sl = wrap.scrollLeft, st = wrap.scrollTop;
+      wrap.classList.add('panning');
+      wrap.setPointerCapture(e.pointerId);
+      const move = ev => { wrap.scrollLeft = sl - (ev.clientX - sx); wrap.scrollTop = st - (ev.clientY - sy); };
+      const up = () => {
+        wrap.classList.remove('panning');
+        wrap.removeEventListener('pointermove', move);
+        wrap.removeEventListener('pointerup', up);
+        wrap.removeEventListener('pointercancel', up);
+        // Swallow the click that follows a Space-drag so it doesn't pick a color
+        const block = ce => { ce.stopPropagation(); ce.preventDefault(); };
+        canvas.addEventListener('click', block, { capture: true, once: true });
+        setTimeout(() => canvas.removeEventListener('click', block, { capture: true }), 0);
+      };
+      wrap.addEventListener('pointermove', move);
+      wrap.addEventListener('pointerup', up);
+      wrap.addEventListener('pointercancel', up);
+    }, true);
+    wrap.addEventListener('auxclick', e => { if (e.button === 1 && v.mode === 'zoom') e.preventDefault(); });
+
+    // Pixel readout under the cursor
+    canvas.addEventListener('mousemove', e => {
+      const r = canvas.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      const x = Math.floor((e.clientX - r.left) * canvas.width / r.width);
+      const y = Math.floor((e.clientY - r.top) * canvas.height / r.height);
+      if (x >= 0 && y >= 0 && x < canvas.width && y < canvas.height) v.pos.textContent = `x ${x} · y ${y}`;
+    });
+    canvas.addEventListener('mouseleave', () => { v.pos.textContent = 'Ctrl + scroll to zoom'; });
+
+    // A new image (size change) or showing / hiding the canvas resets to fit
+    new MutationObserver(() => refresh(v)).observe(canvas, { attributes: true, attributeFilter: ['width', 'height', 'style'] });
+    new ResizeObserver(() => { if (v.mode === 'fit') apply(v); }).observe(wrap);
+    refresh(v);
+  }
+
+  function visible(v) {
+    return v.canvas.style.display !== 'none' && getComputedStyle(v.canvas).display !== 'none' && v.canvas.width > 0;
+  }
+
+  function refresh(v) {
+    const key = `${v.canvas.width}x${v.canvas.height}:${v.canvas.style.display}`;
+    if (key === v.key) return;
+    v.key = key;
+    v.mode = 'fit';
+    apply(v);
+  }
+
+  function fitScale(v) {
+    const cs = getComputedStyle(v.wrap);
+    const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+    const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    const availW = Math.max(40, v.wrap.clientWidth - padX);
+    const availH = FIT_MAX_H;
+    return Math.min(availW / v.canvas.width, availH / v.canvas.height) || 1;
+  }
+
+  function apply(v) {
+    const { wrap, canvas } = v;
+    if (!visible(v)) {
+      v.bar.hidden = true;
+      wrap.classList.remove('zoomed');
+      wrap.style.height = '';
+      canvas.style.width = canvas.style.height = '';
+      return;
+    }
+    v.bar.hidden = false;
+    if (v.mode === 'fit') {
+      v.scale = fitScale(v);
+      wrap.classList.remove('zoomed');
+      wrap.style.height = '';
+    } else if (!wrap.classList.contains('zoomed')) {
+      // lock the box height so zooming doesn't make the page jump
+      wrap.style.height = `${Math.max(360, wrap.offsetHeight)}px`;
+      wrap.classList.add('zoomed');
+    }
+    const w = `${Math.max(1, Math.round(canvas.width * v.scale))}px`;
+    const h = `${Math.max(1, Math.round(canvas.height * v.scale))}px`;
+    if (canvas.style.width !== w) canvas.style.width = w;
+    if (canvas.style.height !== h) canvas.style.height = h;
+    const ir = (crisp && v.scale > 1) ? 'pixelated' : '';
+    if (canvas.style.imageRendering !== ir) canvas.style.imageRendering = ir;
+    v.pct.textContent = `${Math.round(v.scale * 100)}%`;
+    v.fitBtn.classList.toggle('on', v.mode === 'fit');
+    v.crispBtn.classList.toggle('on', crisp);
+    v.crispBtn.textContent = crisp ? 'Crisp' : 'Smooth';
+  }
+
+  function zoomTo(v, scale, clientX, clientY) {
+    if (!visible(v)) return;
+    scale = Math.max(LEVELS[0], Math.min(LEVELS[LEVELS.length - 1], scale));
+    const before = v.canvas.getBoundingClientRect();
+    const wr = v.wrap.getBoundingClientRect();
+    if (clientX === undefined) { clientX = wr.left + wr.width / 2; clientY = wr.top + wr.height / 2; }
+    // image point under the anchor, clamped onto the image
+    const ix = Math.max(0, Math.min(before.width, clientX - before.left)) / v.scale;
+    const iy = Math.max(0, Math.min(before.height, clientY - before.top)) / v.scale;
+    v.mode = 'zoom';
+    v.scale = scale;
+    apply(v);
+    const after = v.canvas.getBoundingClientRect();
+    v.wrap.scrollLeft += (after.left + ix * scale) - clientX;
+    v.wrap.scrollTop += (after.top + iy * scale) - clientY;
+  }
+
+  function step(v, dir) {
+    const cur = v.scale;
+    const next = dir > 0
+      ? LEVELS.find(l => l > cur * 1.001)
+      : [...LEVELS].reverse().find(l => l < cur * 0.999);
+    if (next !== undefined) zoomTo(v, next);
+  }
+
+  function setFit(v) {
+    v.mode = 'fit';
+    apply(v);
+  }
+
+  // The view the keyboard talks to: a visible preview in the current mode
+  function activeView() {
+    return views.find(v => visible(v) && v.wrap.offsetParent !== null);
+  }
+  const typing = t => t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+  window.addEventListener('keydown', e => {
+    if (typing(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
+    const v = activeView();
+    if (!v) return;
+    if (e.code === 'Space') {
+      if (v.mode !== 'zoom') return;
+      if (!v.wrap.matches(':hover')) return;
+      e.preventDefault();
+      if (!spaceHeld) { spaceHeld = true; v.wrap.classList.add('pan-ready'); }
+      return;
+    }
+    if (e.key === '+' || e.key === '=') { e.preventDefault(); step(v, 1); }
+    else if (e.key === '-' || e.key === '_') { e.preventDefault(); step(v, -1); }
+    else if (e.key === '0') { e.preventDefault(); setFit(v); }
+  });
+  window.addEventListener('keyup', e => {
+    if (e.code !== 'Space') return;
+    spaceHeld = false;
+    views.forEach(v => v.wrap.classList.remove('pan-ready'));
+  });
+  window.addEventListener('blur', () => {
+    spaceHeld = false;
+    views.forEach(v => v.wrap.classList.remove('pan-ready'));
+  });
+
+  document.querySelectorAll('.rem-canvas-wrap').forEach(setup);
+})();
+
 // Ctrl/Cmd + Z / Y — remover only
 window.addEventListener('keydown', (e) => {
   if (currentMode !== 'remover') return;
@@ -9770,6 +10058,37 @@ const audSpeedNum = document.getElementById('audSpeedNum');
 const audSpeedVal = document.getElementById('audSpeedVal');
 const audPreservePitch = document.getElementById('audPreservePitch');
 const audPitchDesc = document.getElementById('audPitchDesc');
+const audVoiceBar = document.getElementById('audVoiceBar');
+const audVoiceMix = document.getElementById('audVoiceMix');
+const audVoiceMixVal = document.getElementById('audVoiceMixVal');
+const audVoicePitch = document.getElementById('audVoicePitch');
+const audVoicePitchVal = document.getElementById('audVoicePitchVal');
+// Voice filter recipes — see the "Voice filters" notes above buildVoiceChain()
+const VOICE_FILTERS = {
+  none: {},
+  chipmunk: { voices: [{ pitch: 9 }], hp: 150 },
+  deep: { voices: [{ pitch: -5 }], lowshelf: 5 },
+  giant: { voices: [{ pitch: -10 }], lowshelf: 6, drive: 0.15 },
+  demon: { voices: [{ pitch: -7 }, { pitch: -19, gain: 0.7 }], drive: 0.45, lowshelf: 4,
+           echo: { time: 0.06, fb: 0.3, mix: 0.25, damp: 3000 } },
+  robot: { ring: { freq: 50, mix: 0.6 }, comb: { time: 0.009, fb: 0.55 } },
+  dalek: { ring: { freq: 30, mix: 1 }, band: [250, 4500], drive: 0.2 },
+  anonymous: { voices: [{ pitch: -4 }], ring: { freq: 110, mix: 0.3 }, band: [200, 5000], drive: 0.25 },
+  alien: { voices: [{ pitch: 5, vibRate: 7, vibDepth: 0.0025 }], ring: { freq: 420, mix: 0.35 } },
+  telephone: { band: [400, 3400], drive: 0.25 },
+  radio: { band: [700, 3000], drive: 0.6, peak: { f: 1800, gain: 6 } },
+  megaphone: { band: [600, 3500], drive: 0.85, peak: { f: 1400, gain: 8 } },
+  underwater: { lp: 500, voices: [{ pitch: 0, vibRate: 1.1, vibDepth: 0.006 }], tremolo: { rate: 0.8, depth: 0.25 } },
+  cave: { echo: { time: 0.32, fb: 0.45, mix: 0.45, damp: 2500 }, lowshelf: 2 },
+  ghost: { voices: [{ pitch: 3, vibRate: 4, vibDepth: 0.002 }], hp: 300, tremolo: { rate: 5, depth: 0.3 },
+           echo: { time: 0.42, fb: 0.55, mix: 0.5, damp: 3000 } },
+  choir: { voices: [{ pitch: 0 }, { pitch: -12, gain: 0.6 }, { pitch: 7, gain: 0.5 },
+                    { pitch: 0, vibRate: 5, vibDepth: 0.003, gain: 0.6 }] },
+  wobble: { voices: [{ pitch: 0, vibRate: 6, vibDepth: 0.004 }] },
+  helicopter: { tremolo: { rate: 14, depth: 0.9 } },
+  blownMic: { drive: 0.9, band: [120, 7000] },
+};
+let audVoiceFilter = 'none';
 const audMuffle = document.getElementById('audMuffle');
 const audMuffleVal = document.getElementById('audMuffleVal');
 const audHp = document.getElementById('audHp');
@@ -9991,6 +10310,90 @@ class Crusher extends AudioWorkletProcessor {
   }
 }
 registerProcessor('crusher', Crusher);
+
+// Pitch shifter: two read taps sweep across a short delay window, crossfaded
+// with complementary sin^2 / cos^2 gains so the jump at each wrap is silent.
+// The delay shrinking (pitch up) or growing (pitch down) is what shifts the
+// pitch, so the playback speed never changes. vibRate / vibDepth add a slow
+// delay wobble on top for vibrato-style voice filters.
+class VoicePitch extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'semitones', defaultValue: 0, minValue: -36, maxValue: 36, automationRate: 'k-rate' },
+      { name: 'vibRate', defaultValue: 0, minValue: 0, maxValue: 20, automationRate: 'k-rate' },
+      { name: 'vibDepth', defaultValue: 0, minValue: 0, maxValue: 0.02, automationRate: 'k-rate' },
+    ];
+  }
+  constructor() {
+    super();
+    this.size = 32768;
+    this.mask = this.size - 1;
+    this.bufL = new Float32Array(this.size);
+    this.bufR = new Float32Array(this.size);
+    this.w = 0;
+    this.phase = 0;
+    this.vph = 0;
+    this.win = Math.round(sampleRate * 0.05);
+  }
+  read(buf, d) {
+    const pos = this.w - d;
+    const i0 = Math.floor(pos);
+    const f = pos - i0;
+    const a = buf[i0 & this.mask];
+    const b = buf[(i0 + 1) & this.mask];
+    return a + (b - a) * f;
+  }
+  process(inputs, outputs, params) {
+    const input = inputs[0];
+    const output = outputs[0];
+    if (!output || output.length === 0) return true;
+    const inL = input && input[0];
+    const inR = input && (input[1] || input[0]);
+    const oL = output[0];
+    const oR = output.length > 1 ? output[1] : null;
+    const len = oL.length;
+    const ratio = Math.pow(2, params.semitones[0] / 12);
+    const shifting = Math.abs(ratio - 1) > 1e-4;
+    const step = (1 - ratio) / this.win;
+    const vibRate = params.vibRate[0];
+    const vibDepth = params.vibDepth[0] * sampleRate;
+    const vibOn = vibRate > 0 && vibDepth > 0;
+    const vinc = 2 * Math.PI * vibRate / sampleRate;
+    const TWO_PI = 2 * Math.PI;
+    for (let i = 0; i < len; i++) {
+      this.bufL[this.w] = inL ? inL[i] : 0;
+      this.bufR[this.w] = inR ? inR[i] : 0;
+      let vib = 0;
+      if (vibOn) {
+        vib = vibDepth * 0.5 * (1 + Math.sin(this.vph));
+        this.vph += vinc;
+        if (this.vph > TWO_PI) this.vph -= TWO_PI;
+      }
+      let l, r;
+      if (shifting) {
+        const p1 = this.phase;
+        let p2 = p1 + 0.5; if (p2 >= 1) p2 -= 1;
+        const d1 = 2 + vib + p1 * this.win;
+        const d2 = 2 + vib + p2 * this.win;
+        const sn = Math.sin(Math.PI * p1);
+        const g1 = sn * sn, g2 = 1 - g1;
+        l = this.read(this.bufL, d1) * g1 + this.read(this.bufL, d2) * g2;
+        r = this.read(this.bufR, d1) * g1 + this.read(this.bufR, d2) * g2;
+        this.phase += step;
+        if (this.phase < 0) this.phase += 1;
+        else if (this.phase >= 1) this.phase -= 1;
+      } else {
+        l = this.read(this.bufL, 2 + vib);
+        r = this.read(this.bufR, 2 + vib);
+      }
+      oL[i] = l;
+      if (oR) oR[i] = r;
+      this.w = (this.w + 1) & this.mask;
+    }
+    return true;
+  }
+}
+registerProcessor('voice-pitch', VoicePitch);
 `;
 
 async function ensureAudioCtx() {
@@ -10206,8 +10609,9 @@ function resetAudioFxSliders() {
     audDist: 1.5, audElev: 0, audOrbit: 0.2, audAngle: 180,
     audSweepMin: 90, audSweepMax: 270, audSweepSpeed: 0.15,
     audEchoMix: 0, audEchoTime: 300, audEchoFb: 35, audEchoDamp: 6000,
-    audTailLen: 2,
+    audTailLen: 2, audVoiceMix: 100, audVoicePitch: 0,
   };
+  audSetVoiceFilter('none', { rebuild: false });
   for (const [id, val] of Object.entries(defaults)) {
     const el = document.getElementById(id);
     if (el && 'value' in el) {
@@ -10513,6 +10917,8 @@ function audTeardownGraph() {
     for (const n of Object.values(au.echo)) { if (n && n.disconnect) { try { n.disconnect(); } catch (e) {} } }
     au.echo = null;
   }
+  if (au.pitchNode) { try { au.pitchNode.disconnect(); } catch (e) {} au.pitchNode = null; }
+  if (au.voice) { audTeardownVoiceChain(au.voice); au.voice = null; }
   au.outNode = null;
 }
 
@@ -10569,8 +10975,19 @@ function buildGraph() {
   const g = ctx.createGain();
   g.gain.value = Math.pow(10, (+audGain.value) / 20);
 
-  // Wire: source → ad → crusher → da → muffle → hp → gain → out
+  // Pitch stage (manual shift + speed compensation) and the voice filter sit
+  // first, so everything after treats the filtered voice as the source.
   let node = source;
+  let pitchNode = null;
+  if (au.crusherReady) {
+    pitchNode = new AudioWorkletNode(ctx, 'voice-pitch', { outputChannelCount: [2] });
+    pitchNode.parameters.get('semitones').value = audGlobalSemitones();
+    node.connect(pitchNode); node = pitchNode;
+  }
+  const voice = buildVoiceChain(ctx, audVoiceFilter, au.crusherReady);
+  node.connect(voice.input); node = voice.output;
+
+  // Wire: source → pitch → voice → ad → crusher → da → muffle → hp → gain → out
   node.connect(ad); node = ad;
   if (crusher) { node.connect(crusher); node = crusher; }
   node.connect(da); node = da;
@@ -10679,6 +11096,8 @@ function buildGraph() {
   }
 
   au.source = source;
+  au.pitchNode = pitchNode;
+  au.voice = voice;
   au.adNode = ad;
   au.crusherNode = crusher;
   au.daNode = da;
@@ -10936,6 +11355,7 @@ function setSpeed(v) {
   audSpeedNum.value = v.toFixed(2);
   audSpeedVal.textContent = `${v.toFixed(2)}×`;
   if (au.source) au.source.playbackRate.setTargetAtTime(v, au.ctx.currentTime, 0.015);
+  audSyncPitch();
 }
 audSpeed.addEventListener('input', e => setSpeed(e.target.value));
 audSpeedNum.addEventListener('input', e => {
@@ -10949,6 +11369,7 @@ audPreservePitch.addEventListener('change', () => {
     else if ('mozPreservesPitch' in au.source) au.source.mozPreservesPitch = audPreservePitch.checked;
     else if ('webkitPreservesPitch' in au.source) au.source.webkitPreservesPitch = audPreservePitch.checked;
   }
+  audSyncPitch();
 });
 
 const audBass = document.getElementById('audBass');
@@ -10986,6 +11407,8 @@ function audCurrentFx() {
     elev: +audElev.value,
     shadow: audHeadShadow.checked,
     pointSource: audPointSource.checked,
+    voice: audVoiceFilter,
+    voiceMix: (+audVoiceMix.value) / 100,
   };
 }
 const AUD_NEUTRAL_FX = {
@@ -10993,6 +11416,7 @@ const AUD_NEUTRAL_FX = {
   bits: 16, sr: 48000, ad: 0, da: 0, dither: false, mulaw: false,
   echoMix: 0, echoTime: 0.3, echoFb: 0, echoDamp: 20000, echoPing: false,
   spatial: 'off', angle: 0, dist: 1, elev: 0, shadow: false, pointSource: false,
+  voice: 'none', voiceMix: 0,
 };
 function audEffectiveFx() {
   return au.bypass ? Object.assign({}, AUD_NEUTRAL_FX) : audCurrentFx();
@@ -11043,6 +11467,10 @@ function audSyncFx(ramp = 0.02) {
     au.echo.wet.gain.setTargetAtTime(fx.echoMix, t, ramp);
     audSetEchoRouting(au.echo, fx.echoPing);
   }
+  if (au.pitchNode) {
+    au.pitchNode.parameters.get('semitones').setValueAtTime(au.bypass ? 0 : audGlobalSemitones(), t);
+  }
+  if (au.voice) audSetVoiceMix(au.voice, au.bypass ? 0 : fx.voiceMix, t, ramp);
   applySpatialParams(au.spatial, au.ctx, fx, ramp);
   applyLimiterSettings(au.limiterNode);
   audScheduleTailGate();
@@ -11509,7 +11937,9 @@ function audAutoTailSec() {
     ? ((+audEchoTime.value) / 1000) * (1 + Math.round((+audEchoFb.value) / 12))
     : 0;
   const reverbTail = ((+audReverb.value) > 0) ? +audReverbSize.value : 0;
-  return Math.min(12, Math.max(echoTail, reverbTail));
+  const vEcho = (VOICE_FILTERS[audVoiceFilter] || {}).echo;
+  const voiceTail = vEcho ? vEcho.time * (1 + Math.round(vEcho.fb * 100 / 12)) : 0;
+  return Math.min(12, Math.max(echoTail, reverbTail, voiceTail));
 }
 function audTailSeconds() {
   const sec = audTailAuto.checked ? audAutoTailSec() : +audTailLen.value;
@@ -11605,6 +12035,198 @@ audTailLen.addEventListener('input', audUpdateTailUI);
   el.addEventListener('input', () => { if (audTailAuto.checked) audUpdateTailUI(); });
 });
 audSetTailMode('continue');
+
+/* ---- Voice filters ----
+   Each filter in VOICE_FILTERS (declared with the param refs) is a recipe of small building blocks, assembled the same way
+   for live playback and for the offline export so both sound identical:
+     voices   one pitch-shifted copy per entry (semitones, optional vibrato, gain)
+     ring     ring modulator (multiply by a sine) — robots, daleks, aliens
+     comb     short feedback delay — metallic resonance
+     drive    soft-clip distortion amount 0..1
+     band     [low, high] Hz band-pass; hp / lp single cut-offs
+     peak     { f, gain } presence boost; lowshelf dB of low-end weight
+     tremolo  { rate, depth } volume chop
+     echo     { time, fb, mix, damp } feedback echo
+   "Filter amount" crossfades the filtered voice against the dry signal. */
+
+// Manual pitch shift plus, when "Preserve pitch" is on, the exact opposite of
+// the pitch change the speed slider causes — buffer sources can't keep their
+// pitch on their own, so the pitch stage undoes it.
+function audGlobalSemitones() {
+  let st = +audVoicePitch.value || 0;
+  const speed = +audSpeed.value || 1;
+  if (audPreservePitch.checked && Math.abs(speed - 1) > 1e-4) st -= 12 * Math.log2(speed);
+  return Math.max(-36, Math.min(36, st));
+}
+function audSyncPitch() {
+  if (!au.ctx || !au.pitchNode) return;
+  au.pitchNode.parameters.get('semitones').setValueAtTime(au.bypass ? 0 : audGlobalSemitones(), au.ctx.currentTime);
+}
+
+function audDriveCurve(amount) {
+  const k = amount * 60;
+  const n = 1024;
+  const curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    curve[i] = ((1 + k) * x) / (1 + k * Math.abs(x));
+  }
+  return curve;
+}
+
+// Builds input → [dry | wet recipe] → output. Returns the nodes so the live
+// graph can retune the mix and stop the oscillators on teardown.
+function buildVoiceChain(ctx, name, workletReady, channels = 2) {
+  const def = VOICE_FILTERS[name] || {};
+  const input = ctx.createGain();
+  const output = ctx.createGain();
+  const dry = ctx.createGain();
+  const wet = ctx.createGain();
+  const chain = { input, output, dry, wet, nodes: [input, output, dry, wet], oscs: [], active: name !== 'none' };
+  input.connect(dry); dry.connect(output);
+  wet.connect(output);
+  if (!chain.active) { wet.gain.value = 0; return chain; }
+
+  const add = n => { chain.nodes.push(n); return n; };
+  const osc = (freq) => {
+    const o = ctx.createOscillator();
+    o.frequency.value = freq;
+    chain.oscs.push(o); chain.nodes.push(o);
+    o.start(0);
+    return o;
+  };
+
+  let node = input;
+  // Pitch voices, summed
+  if (def.voices && workletReady) {
+    const sum = add(ctx.createGain());
+    for (const v of def.voices) {
+      const pn = add(new AudioWorkletNode(ctx, 'voice-pitch', { outputChannelCount: [channels] }));
+      pn.parameters.get('semitones').value = v.pitch || 0;
+      pn.parameters.get('vibRate').value = v.vibRate || 0;
+      pn.parameters.get('vibDepth').value = v.vibDepth || 0;
+      const vg = add(ctx.createGain());
+      vg.gain.value = (v.gain !== undefined ? v.gain : 1) / Math.sqrt(def.voices.length);
+      node.connect(pn); pn.connect(vg); vg.connect(sum);
+    }
+    node = sum;
+  }
+  // Ring modulator: output = input × sine, blended with the unmodulated voice
+  if (def.ring) {
+    const ringMul = add(ctx.createGain());
+    ringMul.gain.value = 0;
+    osc(def.ring.freq).connect(ringMul.gain);
+    const ringWet = add(ctx.createGain()); ringWet.gain.value = def.ring.mix * 1.4;
+    const ringDry = add(ctx.createGain()); ringDry.gain.value = 1 - def.ring.mix;
+    const ringOut = add(ctx.createGain());
+    node.connect(ringMul); ringMul.connect(ringWet); ringWet.connect(ringOut);
+    node.connect(ringDry); ringDry.connect(ringOut);
+    node = ringOut;
+  }
+  // Comb resonance
+  if (def.comb) {
+    const combSum = add(ctx.createGain());
+    const d = add(ctx.createDelay(0.1)); d.delayTime.value = def.comb.time;
+    const fb = add(ctx.createGain()); fb.gain.value = def.comb.fb;
+    node.connect(combSum); combSum.connect(d); d.connect(fb); fb.connect(combSum);
+    const combOut = add(ctx.createGain()); combOut.gain.value = 1 - def.comb.fb * 0.5;
+    combSum.connect(combOut);
+    node = combOut;
+  }
+  // Tone shaping
+  const filt = (type, freq, opts = {}) => {
+    const f = add(ctx.createBiquadFilter());
+    f.type = type; f.frequency.value = freq;
+    if (opts.Q !== undefined) f.Q.value = opts.Q;
+    if (opts.gain !== undefined) f.gain.value = opts.gain;
+    node.connect(f); node = f;
+  };
+  if (def.band) {
+    filt('highpass', def.band[0], { Q: 0.9 }); filt('highpass', def.band[0], { Q: 0.7 });
+    filt('lowpass', def.band[1], { Q: 0.9 }); filt('lowpass', def.band[1], { Q: 0.7 });
+  }
+  if (def.hp) filt('highpass', def.hp, { Q: 0.707 });
+  if (def.lp) { filt('lowpass', def.lp, { Q: 0.707 }); filt('lowpass', def.lp, { Q: 0.707 }); }
+  if (def.peak) filt('peaking', def.peak.f, { Q: 1.2, gain: def.peak.gain });
+  if (def.lowshelf) filt('lowshelf', 150, { gain: def.lowshelf });
+  // Distortion
+  if (def.drive) {
+    const ws = add(ctx.createWaveShaper());
+    ws.curve = audDriveCurve(def.drive);
+    ws.oversample = '2x';
+    // Level-match: a half-scale signal comes out at the same level it went in
+    const k = def.drive * 60;
+    const makeup = add(ctx.createGain()); makeup.gain.value = (1 + k * 0.5) / (1 + k);
+    node.connect(ws); ws.connect(makeup); node = makeup;
+  }
+  // Tremolo: gain swings between 1 - depth and 1
+  if (def.tremolo) {
+    const trem = add(ctx.createGain());
+    trem.gain.value = 1 - def.tremolo.depth / 2;
+    const depth = add(ctx.createGain()); depth.gain.value = def.tremolo.depth / 2;
+    osc(def.tremolo.rate).connect(depth); depth.connect(trem.gain);
+    node.connect(trem); node = trem;
+  }
+  // Echo
+  if (def.echo) {
+    const out = add(ctx.createGain());
+    const d = add(ctx.createDelay(2)); d.delayTime.value = def.echo.time;
+    const damp = add(ctx.createBiquadFilter()); damp.type = 'lowpass'; damp.frequency.value = def.echo.damp || 4000;
+    const fb = add(ctx.createGain()); fb.gain.value = def.echo.fb;
+    const mix = add(ctx.createGain()); mix.gain.value = def.echo.mix;
+    node.connect(out);
+    node.connect(d); d.connect(damp); damp.connect(fb); fb.connect(d);
+    damp.connect(mix); mix.connect(out);
+    node = out;
+  }
+  node.connect(wet);
+  return chain;
+}
+
+function audSetVoiceMix(chain, amount, t, ramp) {
+  if (!chain) return;
+  const w = chain.active ? amount : 0;
+  if (t === undefined) {
+    chain.wet.gain.value = w;
+    chain.dry.gain.value = 1 - w;
+  } else {
+    chain.wet.gain.setTargetAtTime(w, t, ramp);
+    chain.dry.gain.setTargetAtTime(1 - w, t, ramp);
+  }
+}
+
+function audTeardownVoiceChain(chain) {
+  for (const o of chain.oscs) { try { o.stop(); } catch (e) {} }
+  for (const n of chain.nodes) { try { n.disconnect(); } catch (e) {} }
+}
+
+function audSetVoiceFilter(name, { rebuild = true } = {}) {
+  if (!VOICE_FILTERS[name]) name = 'none';
+  audVoiceFilter = name;
+  for (const b of audVoiceBar.querySelectorAll('button[data-voice]')) {
+    b.classList.toggle('on', b.dataset.voice === name);
+  }
+  if (rebuild) {
+    audRestartIfPlaying();
+    if (audTailAuto.checked) audUpdateTailUI();
+    updateAudioSizeEstimate();
+  }
+}
+audVoiceBar.addEventListener('click', e => {
+  const btn = e.target.closest('button[data-voice]');
+  if (!btn) return;
+  audSetVoiceFilter(btn.dataset.voice);
+  toast(btn.dataset.voice === 'none' ? 'Voice filter off' : `Voice: ${btn.textContent.trim()}`);
+});
+audVoiceMix.addEventListener('input', e => {
+  audVoiceMixVal.textContent = `${e.target.value}%`;
+  audSyncFx();
+});
+audVoicePitch.addEventListener('input', e => {
+  const v = +e.target.value;
+  audVoicePitchVal.textContent = `${v > 0 ? '+' : ''}${v} st`;
+  audSyncPitch();
+});
 
 /* ---- Presets ---- */
 const AUD_PRESETS = {
@@ -11882,6 +12504,17 @@ async function renderOffline(srcBuffer) {
   src.playbackRate.value = speed;
   if ('preservesPitch' in src) src.preservesPitch = audPreservePitch.checked;
 
+  let voiceIn = src;
+  const semis = audGlobalSemitones();
+  if (crusherReady && Math.abs(semis) > 1e-3) {
+    const pitch = new AudioWorkletNode(offline, 'voice-pitch', { outputChannelCount: [outChannels] });
+    pitch.parameters.get('semitones').value = semis;
+    src.connect(pitch); voiceIn = pitch;
+  }
+  const voice = buildVoiceChain(offline, audVoiceFilter, crusherReady, outChannels);
+  audSetVoiceMix(voice, (+audVoiceMix.value) / 100);
+  voiceIn.connect(voice.input);
+
   const ad = offline.createBiquadFilter();
   ad.type = 'lowpass';
   ad.frequency.value = adFreqFromSlider(+audAd.value, +audSr.value);
@@ -11910,7 +12543,7 @@ async function renderOffline(srcBuffer) {
   const g = offline.createGain();
   g.gain.value = Math.pow(10, (+audGain.value) / 20);
 
-  let node = src;
+  let node = voice.output;
   node.connect(ad); node = ad;
   if (crusher) { node.connect(crusher); node = crusher; }
   node.connect(da); node = da;
