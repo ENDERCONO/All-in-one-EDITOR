@@ -4091,7 +4091,15 @@
      canvas to the box (small pixel art gets scaled up); zoomed mode turns the
      box into a scroll area so the image can be panned. */
   .rem-canvas-wrap { min-width: 0; }
+  .rem-canvas-wrap.zoomable { position: relative; }
   .rem-canvas-wrap.zoomable canvas { max-width: none; max-height: none; flex: none; }
+  .zoom-grid {
+    position: absolute; pointer-events: none; display: none;
+    background-image:
+      linear-gradient(to right, rgba(255,255,255,0.35) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,0.35) 1px, transparent 1px);
+    mix-blend-mode: difference;
+  }
   .rem-canvas-wrap.zoomed { display: flex; overflow: auto; max-height: 80vh; }
   .rem-canvas-wrap.zoomed canvas { margin: auto; }
   .rem-canvas-wrap.panning, .rem-canvas-wrap.panning canvas { cursor: grabbing !important; }
@@ -4103,7 +4111,8 @@
     font-size: 10.5px; color: var(--text-faint);
   }
   .zoom-bar[hidden] { display: none; }
-  .zoom-bar button {
+  .scale-pick { display: flex; gap: 6px; flex-wrap: wrap; }
+  .zoom-bar button, .scale-pick button {
     cursor: pointer;
     min-width: 28px; height: 26px; padding: 0 9px;
     border-radius: 7px;
@@ -4112,8 +4121,57 @@
     color: var(--text-dim);
     font: inherit;
   }
-  .zoom-bar button:hover { border-color: var(--border-hover); color: var(--text); }
-  .zoom-bar button.on { background: var(--surface-3); border-color: var(--border-hover); color: var(--text); }
+  .zoom-bar button:hover, .scale-pick button:hover { border-color: var(--border-hover); color: var(--text); }
+  .zoom-bar button.on, .scale-pick button.on { background: var(--surface-3); border-color: var(--border-hover); color: var(--text); }
+  .scale-pick button { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; }
+  .rem-compare-btn {
+    cursor: pointer; user-select: none; -webkit-user-select: none;
+    padding: 5px 10px; border-radius: 7px;
+    border: 1px solid var(--border); background: var(--bg-2); color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.04em;
+  }
+  .rem-compare-btn:hover { color: var(--text); border-color: var(--border-hover); }
+  .rem-compare-btn.on { background: var(--surface-3); color: var(--text); }
+  .rem-compare-btn[hidden] { display: none; }
+
+  /* Mic recording chip in the audio player header */
+  .aud-chip.rec-live { border-color: #ff4d6a; color: #ff4d6a; }
+  .aud-chip .x { margin-left: 6px; opacity: 0.55; }
+  .aud-chip .x:hover { opacity: 1; }
+
+  /* Drop-anywhere hint */
+  .drop-anywhere {
+    position: fixed; inset: 0; z-index: 9998; pointer-events: none;
+    display: none; place-items: center;
+    background: rgba(0,0,0,0.45);
+    border: 3px dashed var(--border-hover);
+    font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--text);
+    letter-spacing: 0.06em;
+  }
+  .drop-anywhere.on { display: grid; }
+
+  /* Keyboard shortcuts overlay (press ?) */
+  .kbd-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0,0,0,0.55);
+    display: grid; place-items: center; padding: 16px;
+  }
+  .kbd-overlay[hidden] { display: none; }
+  .kbd-card {
+    width: min(860px, 100%); max-height: 86vh; overflow: auto;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+    padding: 22px 24px; color: var(--text);
+  }
+  .kbd-card h2 { font-family: 'Instrument Serif', serif; font-style: italic; font-weight: 400; font-size: 26px; margin-bottom: 4px; }
+  .kbd-card .sub { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--text-faint); margin-bottom: 16px; }
+  .kbd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 18px; }
+  .kbd-grid h3 { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 8px; font-weight: 500; }
+  .kbd-grid .row { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--text-dim); padding: 4px 0; border-bottom: 1px solid var(--border); }
+  .kbd-grid kbd {
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px; white-space: nowrap;
+    background: var(--bg-2); border: 1px solid var(--border); border-radius: 5px;
+    padding: 1px 6px; color: var(--text);
+  }
   .zoom-bar .zoom-pct { min-width: 52px; text-align: center; color: var(--text); }
   .zoom-bar .zoom-pos { margin-left: auto; letter-spacing: 0.04em; }
 
@@ -5877,6 +5935,10 @@
 
     <!-- Bottom of sidebar: theme toggles -->
     <div class="sidebar-bottom">
+      <button class="sb-theme" id="sidebarShortcuts" title="Keyboard shortcuts (?)">
+        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg></span>
+        <span class="sb-label">Shortcuts</span>
+      </button>
       <button class="sb-theme" id="sidebarFemboy" data-theme="femboy" title="Femboy theme">
         <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v6M12 16v6M22 12h-6M8 12H2M19.07 4.93l-4.24 4.24M9.17 14.83l-4.24 4.24M19.07 19.07l-4.24-4.24M9.17 9.17 4.93 4.93"/></svg></span>
         <span class="sb-label">Femboy</span>
@@ -5928,6 +5990,68 @@
   <img id="subaruMascotR" class="subaru-mascot right" alt=""
        src="assets/images/subaru_right.gif"
        onerror="this.style.display='none'">
+
+  <div class="drop-anywhere" id="dropAnywhere">Drop to open in the right tool</div>
+  <div class="kbd-overlay" id="kbdOverlay" hidden>
+    <div class="kbd-card" role="dialog" aria-label="Keyboard shortcuts">
+      <h2>Keyboard shortcuts</h2>
+      <div class="sub">Press ? anytime · Esc to close · shortcuts only fire while you're not typing in a box</div>
+      <div class="kbd-grid">
+        <div>
+          <h3>Everywhere</h3>
+          <div class="row"><span>Search tools</span><kbd>Ctrl K</kbd></div>
+          <div class="row"><span>This list</span><kbd>?</kbd></div>
+          <div class="row"><span>Paste an image / audio into the open tool</span><kbd>Ctrl V</kbd></div>
+          <div class="row"><span>Open a file in the right tool</span><kbd>drop anywhere</kbd></div>
+        </div>
+        <div>
+          <h3>Image previews</h3>
+          <div class="row"><span>Zoom in / out</span><kbd>+ / −</kbd></div>
+          <div class="row"><span>Fit to box</span><kbd>0</kbd></div>
+          <div class="row"><span>Zoom around cursor</span><kbd>Ctrl scroll</kbd></div>
+          <div class="row"><span>Pan</span><kbd>Space drag</kbd></div>
+          <div class="row"><span>Pan</span><kbd>middle drag</kbd></div>
+        </div>
+        <div>
+          <h3>Image editor</h3>
+          <div class="row"><span>Undo</span><kbd>Ctrl Z</kbd></div>
+          <div class="row"><span>Redo</span><kbd>Ctrl Y</kbd></div>
+          <div class="row"><span>Show the original (hold)</span><kbd>C</kbd></div>
+        </div>
+        <div>
+          <h3>Audio tools</h3>
+          <div class="row"><span>Play / pause</span><kbd>Space</kbd></div>
+          <div class="row"><span>Seek 5s (1s with Shift)</span><kbd>← / →</kbd></div>
+          <div class="row"><span>Volume</span><kbd>↑ / ↓</kbd></div>
+          <div class="row"><span>A/B bypass</span><kbd>B</kbd></div>
+          <div class="row"><span>Loop</span><kbd>L</kbd></div>
+          <div class="row"><span>Mute</span><kbd>M</kbd></div>
+          <div class="row"><span>Reverse</span><kbd>R</kbd></div>
+        </div>
+        <div>
+          <h3>Timeline</h3>
+          <div class="row"><span>Play / pause</span><kbd>Space</kbd></div>
+          <div class="row"><span>Split clip</span><kbd>S</kbd></div>
+          <div class="row"><span>Delete clip</span><kbd>Del</kbd></div>
+          <div class="row"><span>Undo / redo</span><kbd>Ctrl Z / Y</kbd></div>
+          <div class="row"><span>Duplicate</span><kbd>Ctrl D</kbd></div>
+          <div class="row"><span>Copy / paste</span><kbd>Ctrl C / V</kbd></div>
+          <div class="row"><span>Select all</span><kbd>Ctrl A</kbd></div>
+          <div class="row"><span>Zoom / fit</span><kbd>+ − 0</kbd></div>
+          <div class="row"><span>Back to start</span><kbd>Home</kbd></div>
+        </div>
+        <div>
+          <h3>Factory calculator</h3>
+          <div class="row"><span>Add machine / input / output</span><kbd>M / I / O</kbd></div>
+          <div class="row"><span>Add splitter / merger</span><kbd>S / G</kbd></div>
+          <div class="row"><span>Copy / paste / duplicate</span><kbd>Ctrl C / V / D</kbd></div>
+          <div class="row"><span>Delete node</span><kbd>Del</kbd></div>
+          <div class="row"><span>Pan</span><kbd>Space drag</kbd></div>
+          <div class="row"><span>Reset view</span><kbd>Home</kbd></div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- ================= COMPOSITOR ================= -->
   <main data-mode="compositor">
@@ -6012,6 +6136,7 @@
         <div class="rem-preview-head">
           <h3>Preview</h3>
           <div class="info" id="remInfo">No image</div>
+          <button type="button" class="rem-compare-btn" id="remCompareBtn" title="Hold to see the original (or hold C)" hidden>Hold to compare</button>
           <button class="clear-x" id="remClearBtn" title="Clear image and pick a new one" hidden>✕</button>
         </div>
         <div class="rem-canvas-wrap" id="remCanvasWrap">
@@ -6186,6 +6311,18 @@
               <span class="val" id="remJpegVal">92</span>
             </div>
             <input type="range" id="remJpeg" min="10" max="100" value="92" step="1">
+          </div>
+          <div class="export-slider">
+            <div class="slabel">
+              <span>Export size (sharp pixels)</span>
+              <span class="val" id="remScaleVal">—</span>
+            </div>
+            <div class="scale-pick" id="remScalePick">
+              <button type="button" data-scale="1" class="on">1×</button>
+              <button type="button" data-scale="2">2×</button>
+              <button type="button" data-scale="4">4×</button>
+              <button type="button" data-scale="8">8×</button>
+            </div>
           </div>
         </div>
         <div class="export-buttons">
@@ -6462,6 +6599,7 @@
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px">
           <h3>Player</h3>
           <div class="audio-meta" id="audInfo">No audio loaded</div>
+          <button type="button" class="aud-chip" id="audMicBtn" title="Record from your microphone — it loads into the player so the voice filters apply">● Record mic</button>
           <button class="clear-x" id="audClearBtn" title="Clear audio and pick a new one" hidden>✕</button>
         </div>
 
@@ -6544,10 +6682,14 @@
             <button type="button" class="aud-chip" data-preset="stadium">Stadium</button>
             <button type="button" class="aud-chip" data-preset="slapback">Slapback</button>
           </div>
+          <div class="aud-quickbar" id="audCustomBar">
+            <button type="button" class="aud-chip" id="audSavePreset" title="Save every current setting as your own preset (kept in this browser)">+ Save preset</button>
+          </div>
           <div class="aud-quickbar">
             <button type="button" class="aud-chip" id="audBypass" title="Compare with the untouched original (B)">A/B bypass</button>
             <button type="button" class="aud-chip" id="audLoop" title="Loop playback (L)">Loop</button>
             <button type="button" class="aud-chip" id="audLimiter" title="Catch peaks so boosted bass / reverb can't clip">Safety limiter</button>
+            <button type="button" class="aud-chip" id="audReverse" title="Play every file backwards (R)">Reverse</button>
           </div>
         </div>
 
@@ -7020,6 +7162,14 @@
                 <option value="timeMachine">Time machine (4.6-bit crunch)</option>
                 <option value="broken">Broken (glitch)</option>
               </select>
+            </div>
+            <div class="field-group">
+              <div class="field-label"><span>Voice filter</span></div>
+              <select class="color-input" id="pVoice"></select>
+            </div>
+            <div class="field-group">
+              <div class="field-label"><span>Pitch shift</span><span class="color-rgb-display" id="pPitchVal">0 st</span></div>
+              <input type="range" id="pPitch" min="-12" max="12" value="0" step="0.5">
             </div>
             <label class="pitch-toggle" title="Play the untouched original underneath this clip's processed sound — audible right here on the timeline and kept in the export">
               <input type="checkbox" id="pBlend">
@@ -8209,7 +8359,8 @@ function flattenForJpeg(imageData, bgColor) {
   return imageData;
 }
 
-async function copyCanvasToClipboard(canvas) {
+async function copyCanvasToClipboard(canvas, scale = 1) {
+  canvas = scaledCanvas(canvas, scale);
   return new Promise((resolve, reject) => {
     canvas.toBlob(async (blob) => {
       try {
@@ -8220,8 +8371,26 @@ async function copyCanvasToClipboard(canvas) {
   });
 }
 
+// Nearest-neighbour upscale (pixel art stays sharp). Clamps the factor so the
+// result stays inside what browsers can allocate for a canvas.
+function maxSafeScale(w, h, scale) {
+  let s = Math.max(1, scale | 0);
+  while (s > 1 && (w * s > 16384 || h * s > 16384 || w * h * s * s > 120e6)) s = s / 2 | 0;
+  return Math.max(1, s);
+}
+function scaledCanvas(src, scale) {
+  if (!scale || scale <= 1) return src;
+  const out = document.createElement('canvas');
+  out.width = src.width * scale;
+  out.height = src.height * scale;
+  const cx = out.getContext('2d');
+  cx.imageSmoothingEnabled = false;
+  cx.drawImage(src, 0, 0, out.width, out.height);
+  return out;
+}
+
 function downloadCanvas(canvas, opts) {
-  const { filename, type = 'image/png', quality = 0.92, levels = 256, jpegBg = [255,255,255] } = opts;
+  const { filename, type = 'image/png', quality = 0.92, levels = 256, jpegBg = [255,255,255], scale = 1 } = opts;
   const src = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
   const out = new ImageData(new Uint8ClampedArray(src.data), src.width, src.height);
 
@@ -8233,7 +8402,7 @@ function downloadCanvas(canvas, opts) {
   tmp.height = canvas.height;
   tmp.getContext('2d').putImageData(out, 0, 0);
 
-  tmp.toBlob(blob => {
+  scaledCanvas(tmp, scale).toBlob(blob => {
     if (!blob) { toast('Export failed'); return; }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -8258,8 +8427,109 @@ document.querySelectorAll('.sb-tab').forEach(tab => {
     });
     // Auto-collapse the sidebar after picking a tab
     document.getElementById('sidebar').classList.remove('expanded');
+    try { localStorage.setItem('lastTab', currentMode); } catch (e) {}
   });
 });
+
+// Reopen the tool you used last. The feed and codes tabs are skipped — the
+// feed autoplays and codes is a one-off.
+document.addEventListener('DOMContentLoaded', () => {
+  let last = null;
+  try { last = localStorage.getItem('lastTab'); } catch (e) {}
+  if (!last || last === currentMode || last === 'brainrot' || last === 'codes') return;
+  const btn = document.querySelector(`.sb-tab[data-tab="${last}"]`);
+  if (btn) btn.click();
+});
+
+/* ---- Paste & drop anywhere ----
+   Ctrl/⌘+V with an image or audio file on the clipboard, or a file dropped
+   anywhere that isn't a drop zone, goes to the file input of the open tool
+   that accepts it (the first empty slot when a tool has several). If the open
+   tool can't take it, images open in the Image Editor and audio / video in
+   Audio Tools. */
+(function setupPasteAndDrop() {
+  function accepts(input, file) {
+    const acc = (input.accept || '').trim();
+    if (!acc) return true;
+    const type = (file.type || '').toLowerCase();
+    const name = (file.name || '').toLowerCase();
+    return acc.split(',').some(a => {
+      a = a.trim().toLowerCase();
+      if (!a) return false;
+      if (a.startsWith('.')) return name.endsWith(a);
+      if (a.endsWith('/*')) return type.startsWith(a.slice(0, -1));
+      return type === a;
+    });
+  }
+  function inputsFor(mode, file) {
+    const main = document.querySelector(`main[data-mode="${mode}"]`);
+    if (!main) return [];
+    return [...main.querySelectorAll('input[type="file"]')].filter(i => accepts(i, file));
+  }
+  function feed(input, files) {
+    const dt = new DataTransfer();
+    (input.multiple ? files : files.slice(0, 1)).forEach(f => dt.items.add(f));
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  function route(files) {
+    files = files.filter(Boolean);
+    if (!files.length) return false;
+    const first = files[0];
+    let inputs = inputsFor(currentMode, first);
+    if (!inputs.length) {
+      const fallback = (first.type || '').startsWith('image/') ? 'remover'
+        : /^(audio|video)\//.test(first.type || '') ? 'audio' : null;
+      if (!fallback) { toast('The open tool can\'t take that file'); return false; }
+      const btn = document.querySelector(`.sb-tab[data-tab="${fallback}"]`);
+      if (btn) btn.click();
+      inputs = inputsFor(fallback, first);
+      if (!inputs.length) return false;
+    }
+    const target = inputs.find(i => !i.closest('.filled, .loaded, .has-image')) || inputs[0];
+    feed(target, files.filter(f => accepts(target, f)));
+    return true;
+  }
+
+  document.addEventListener('paste', e => {
+    const t = e.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA)$/.test(t.tagName))) return;
+    const files = [...(e.clipboardData ? e.clipboardData.files : [])];
+    if (!files.length) return;
+    if (route(files)) { e.preventDefault(); toast('Pasted ' + (files[0].name || 'from clipboard')); }
+  });
+
+  const hint = document.getElementById('dropAnywhere');
+  let depth = 0;
+  const hasFiles = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+  window.addEventListener('dragenter', e => { if (hasFiles(e)) { depth++; hint.classList.add('on'); } });
+  window.addEventListener('dragleave', e => { if (hasFiles(e) && --depth <= 0) { depth = 0; hint.classList.remove('on'); } });
+  // Allowing the drop everywhere also stops the browser from navigating away
+  // to the file when it misses a drop zone.
+  window.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
+  window.addEventListener('drop', e => {
+    depth = 0;
+    hint.classList.remove('on');
+    if (!hasFiles(e)) return;
+    if (e.defaultPrevented) return; // a tool's own drop zone handled it
+    e.preventDefault();
+    route([...e.dataTransfer.files]);
+  });
+})();
+
+/* ---- Keyboard shortcuts overlay (?) ---- */
+(function setupShortcutsOverlay() {
+  const ov = document.getElementById('kbdOverlay');
+  const open = on => { ov.hidden = !on; };
+  document.getElementById('sidebarShortcuts').addEventListener('click', () => open(ov.hidden));
+  ov.addEventListener('click', e => { if (e.target === ov) open(false); });
+  window.addEventListener('keydown', e => {
+    if (!ov.hidden && e.key === 'Escape') { open(false); return; }
+    const t = e.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); open(ov.hidden); }
+  });
+})();
 
 // Sidebar expand/collapse
 document.getElementById('sidebarToggle').addEventListener('click', () => {
@@ -8897,6 +9167,7 @@ const remLevels = document.getElementById('remLevels');
 const remLevelsVal = document.getElementById('remLevelsVal');
 const remJpeg = document.getElementById('remJpeg');
 const remJpegVal = document.getElementById('remJpegVal');
+const remCompareBtn = document.getElementById('remCompareBtn');
 
 const rem = {
   sourceImg: null,
@@ -8984,6 +9255,8 @@ document.getElementById('remClearBtn').addEventListener('click', () => {
   remCanvas.style.display = 'none';
   remUpload.style.display = '';
   remInfo.textContent = 'No image';
+  remCompareBtn.hidden = true;
+  remUpdateScaleLabel();
   remApply.disabled = true;
   remDownloadPng.disabled = true;
   remDownloadJpeg.disabled = true;
@@ -9024,6 +9297,8 @@ function remLoadFile(file) {
     remUpload.style.display = 'none';
     remCanvas.style.display = 'block';
     remInfo.textContent = `${rem.w} × ${rem.h} · ${file.name}`;
+    remCompareBtn.hidden = false;
+    remUpdateScaleLabel();
     remApply.disabled = false;
     remDownloadPng.disabled = false;
     remDownloadJpeg.disabled = false;
@@ -9240,26 +9515,47 @@ remJpeg.addEventListener('input', () => {
   scheduleSizeEstimate();
 });
 
+// Export size: 1× / 2× / 4× / 8× nearest-neighbour, clamped to a safe canvas size
+let remExportScale = 1;
+function remScaleNow() { return rem.w ? maxSafeScale(rem.w, rem.h, remExportScale) : 1; }
+function remUpdateScaleLabel() {
+  const el = document.getElementById('remScaleVal');
+  if (!rem.w) { el.textContent = '—'; return; }
+  const s = remScaleNow();
+  el.textContent = `${rem.w * s} × ${rem.h * s}` + (s < remExportScale ? ' (max)' : '');
+}
+document.getElementById('remScalePick').addEventListener('click', e => {
+  const b = e.target.closest('button[data-scale]');
+  if (!b) return;
+  remExportScale = +b.dataset.scale;
+  for (const x of e.currentTarget.querySelectorAll('button')) x.classList.toggle('on', x === b);
+  remUpdateScaleLabel();
+  scheduleSizeEstimate();
+});
+const remScaleSuffix = () => (remScaleNow() > 1 ? `@${remScaleNow()}x` : '');
+
 remDownloadPng.addEventListener('click', () => {
   downloadCanvas(remCanvas, {
-    filename: `color-removed-${Date.now()}.png`,
+    filename: `color-removed-${Date.now()}${remScaleSuffix()}.png`,
     type: 'image/png',
     levels: +remLevels.value,
+    scale: remScaleNow(),
   });
 });
 remDownloadJpeg.addEventListener('click', () => {
   // JPEG can't encode alpha. If BG is transparent, pick white (common default).
   const jpegBg = rem.bgMode === 'black' ? [0,0,0] : [255,255,255];
   downloadCanvas(remCanvas, {
-    filename: `color-removed-${Date.now()}.jpg`,
+    filename: `color-removed-${Date.now()}${remScaleSuffix()}.jpg`,
     type: 'image/jpeg',
     quality: (+remJpeg.value) / 100,
     levels: +remLevels.value,
     jpegBg,
+    scale: remScaleNow(),
   });
 });
 remCopyBtn.addEventListener('click', async () => {
-  try { await copyCanvasToClipboard(remCanvas); toast('Copied to clipboard'); }
+  try { await copyCanvasToClipboard(remCanvas, remScaleNow()); toast('Copied to clipboard'); }
   catch { toast('Copy failed — try Download'); }
 });
 
@@ -9402,8 +9698,11 @@ remCanvas.style.cursor = 'crosshair';
 (function setupCanvasZoom() {
   const LEVELS = [0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64];
   const FIT_MAX_H = 520;
+  const GRID_MIN_SCALE = 6;
   let crisp = true;
+  let grid = true;
   try { crisp = localStorage.getItem('previewZoomSmooth') !== '1'; } catch (e) {}
+  try { grid = localStorage.getItem('previewZoomGrid') !== '0'; } catch (e) {}
   const views = [];
   let spaceHeld = false;
 
@@ -9422,10 +9721,15 @@ remCanvas.style.cursor = 'crosshair';
       <button type="button" data-z="fit" title="Fit to the preview (0)">Fit</button>
       <button type="button" data-z="1" title="Actual pixels">1:1</button>
       <button type="button" data-z="crisp" title="Crisp pixels when zoomed in (great for pixel art) — click for smooth">Crisp</button>
+      <button type="button" data-z="grid" title="Pixel grid when zoomed in far enough (600%+)">Grid</button>
       <span class="zoom-pos" title="Ctrl/⌘ + scroll to zoom · middle-drag or Space + drag to pan">Ctrl + scroll to zoom</span>`;
     wrap.insertAdjacentElement('afterend', bar);
+    const gridEl = document.createElement('div');
+    gridEl.className = 'zoom-grid';
+    wrap.appendChild(gridEl);
     const v = {
-      wrap, canvas, bar,
+      wrap, canvas, bar, gridEl,
+      gridBtn: bar.querySelector('[data-z="grid"]'),
       pct: bar.querySelector('.zoom-pct'),
       pos: bar.querySelector('.zoom-pos'),
       crispBtn: bar.querySelector('[data-z="crisp"]'),
@@ -9445,6 +9749,10 @@ remCanvas.style.cursor = 'crosshair';
       else if (z === 'crisp') {
         crisp = !crisp;
         try { localStorage.setItem('previewZoomSmooth', crisp ? '0' : '1'); } catch (err) {}
+        views.forEach(apply);
+      } else if (z === 'grid') {
+        grid = !grid;
+        try { localStorage.setItem('previewZoomGrid', grid ? '1' : '0'); } catch (err) {}
         views.forEach(apply);
       }
     });
@@ -9522,6 +9830,7 @@ remCanvas.style.cursor = 'crosshair';
   function apply(v) {
     const { wrap, canvas } = v;
     if (!visible(v)) {
+      v.gridEl.style.display = 'none';
       v.bar.hidden = true;
       wrap.classList.remove('zoomed');
       wrap.style.height = '';
@@ -9548,6 +9857,22 @@ remCanvas.style.cursor = 'crosshair';
     v.fitBtn.classList.toggle('on', v.mode === 'fit');
     v.crispBtn.classList.toggle('on', crisp);
     v.crispBtn.textContent = crisp ? 'Crisp' : 'Smooth';
+    v.gridBtn.classList.toggle('on', grid);
+    placeGrid(v);
+  }
+
+  // The grid overlay sits over the canvas inside the scroll area, so it
+  // scrolls with the image; one cell per image pixel.
+  function placeGrid(v) {
+    const g = v.gridEl;
+    if (!grid || v.scale < GRID_MIN_SCALE || !visible(v)) { g.style.display = 'none'; return; }
+    const c = v.canvas;
+    g.style.display = 'block';
+    g.style.left = `${c.offsetLeft}px`;
+    g.style.top = `${c.offsetTop}px`;
+    g.style.width = c.style.width;
+    g.style.height = c.style.height;
+    g.style.backgroundSize = `${v.scale}px ${v.scale}px`;
   }
 
   function zoomTo(v, scale, clientX, clientY) {
@@ -9612,6 +9937,26 @@ remCanvas.style.cursor = 'crosshair';
 
   document.querySelectorAll('.rem-canvas-wrap').forEach(setup);
 })();
+
+// Hold to compare: show the untouched source while the button or C is held
+let remComparing = false;
+function remSetCompare(on) {
+  if (!rem.sourceData || on === remComparing) return;
+  remComparing = on;
+  remCompareBtn.classList.toggle('on', on);
+  if (on) remCanvas.getContext('2d').putImageData(rem.sourceData, 0, 0);
+  else renderPreview();
+}
+remCompareBtn.addEventListener('pointerdown', e => { e.preventDefault(); remCompareBtn.setPointerCapture(e.pointerId); remSetCompare(true); });
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => remCompareBtn.addEventListener(t, () => remSetCompare(false)));
+window.addEventListener('keydown', e => {
+  if (currentMode !== 'remover' || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  if (e.key === 'c' || e.key === 'C') remSetCompare(true);
+});
+window.addEventListener('keyup', e => { if (e.key === 'c' || e.key === 'C') remSetCompare(false); });
+window.addEventListener('blur', () => remSetCompare(false));
 
 // Ctrl/Cmd + Z / Y — remover only
 window.addEventListener('keydown', (e) => {
@@ -9947,7 +10292,7 @@ function formatBytes(n) {
 }
 
 // Estimate both PNG + JPEG sizes for a canvas. Produces real blobs by encoding.
-function estimateSizes(canvas, quality, levels, jpegBg, onDone) {
+function estimateSizes(canvas, quality, levels, jpegBg, onDone, scale = 1) {
   const src = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
 
   // PNG — use canvas data as-is (with posterization applied)
@@ -9967,8 +10312,8 @@ function estimateSizes(canvas, quality, levels, jpegBg, onDone) {
 
   let pngSize = null, jpegSize = null;
   const check = () => { if (pngSize != null && jpegSize != null) onDone(pngSize, jpegSize); };
-  pngCanvas.toBlob(b => { pngSize = b ? b.size : 0; check(); }, 'image/png');
-  jpgCanvas.toBlob(b => { jpegSize = b ? b.size : 0; check(); }, 'image/jpeg', quality);
+  scaledCanvas(pngCanvas, scale).toBlob(b => { pngSize = b ? b.size : 0; check(); }, 'image/png');
+  scaledCanvas(jpgCanvas, scale).toBlob(b => { jpegSize = b ? b.size : 0; check(); }, 'image/jpeg', quality);
 }
 
 // --- Compositor ---
@@ -10009,7 +10354,8 @@ function scheduleSizeEstimate() {
       (pngS, jpgS) => {
         document.getElementById('remPngSize').textContent = formatBytes(pngS);
         document.getElementById('remJpegSize').textContent = formatBytes(jpgS);
-      }
+      },
+      remScaleNow()
     );
   }, 220);
 }
@@ -10530,7 +10876,7 @@ function audAfterBufferChange() {
   updateAudioSizeEstimate();
 }
 
-async function audLoadFiles(files, append = false) {
+async function audLoadFiles(files, append = false, opts = {}) {
   files = Array.from(files || []);
   if (!files.length) return;
   await ensureAudioCtx();
@@ -10554,7 +10900,7 @@ async function audLoadFiles(files, append = false) {
   if (!append) {
     au.items = [];
     au.buffer = null;
-    resetAudioFxSliders();
+    if (!opts.keepFx) resetAudioFxSliders();
   }
 
   const added = [];
@@ -10564,6 +10910,7 @@ async function audLoadFiles(files, append = false) {
     try {
       const arrayBuffer = await file.arrayBuffer();
       const buffer = await au.ctx.decodeAudioData(arrayBuffer.slice(0));
+      if (au.reverse) audReverseBufferInPlace(buffer);
       au.items.push({ name: file.name, buffer, start: 0, duration: buffer.duration });
       added.push(file.name);
     } catch (err) {
@@ -10656,6 +11003,7 @@ function resetAudioFxSliders() {
   audSetSpatialMode('off', { keepAngle: true });
   if (!audTailAuto.checked) audTailAuto.checked = true;
   audSetTailMode('continue');
+  audSetReverse(false);
 }
 
 // Clear current audio so the dropzone is shown again and new files can be picked
@@ -12257,10 +12605,12 @@ const AUD_PRESET_SLIDERS = {
   dist: 'audDist', elev: 'audElev', orbit: 'audOrbit',
   sweepMin: 'audSweepMin', sweepMax: 'audSweepMax', sweepSpeed: 'audSweepSpeed',
   echoMix: 'audEchoMix', echoTime: 'audEchoTime', echoFb: 'audEchoFb', echoDamp: 'audEchoDamp',
+  voiceMix: 'audVoiceMix', voicePitch: 'audVoicePitch',
 };
-function audApplyPreset(name) {
-  const p = AUD_PRESETS[name];
+function audApplyPreset(nameOrPreset) {
+  const p = typeof nameOrPreset === 'string' ? AUD_PRESETS[nameOrPreset] : nameOrPreset;
   if (!p) return;
+  const prevVoice = audVoiceFilter;
   resetAudioFxSliders();
   for (const [key, id] of Object.entries(AUD_PRESET_SLIDERS)) {
     if (p[key] === undefined) continue;
@@ -12273,7 +12623,7 @@ function audApplyPreset(name) {
     audPreservePitch.checked = p.preservePitch;
     audPreservePitch.dispatchEvent(new Event('change', { bubbles: true }));
   }
-  for (const [key, el] of [['dither', audDither], ['mulaw', audMulaw]]) {
+  for (const [key, el] of [['dither', audDither], ['mulaw', audMulaw], ['echoPing', audEchoPing]]) {
     if (p[key] === undefined) continue;
     if (el.checked !== p[key]) {
       el.checked = p[key];
@@ -12282,6 +12632,10 @@ function audApplyPreset(name) {
   }
   if (p.angle !== undefined) au.spatialAngle = p.angle;
   audSetSpatialMode(p.spatial || 'off', { keepAngle: p.angle !== undefined });
+  audSetVoiceFilter(p.voice || 'none', { rebuild: false });
+  // The voice chain is built into the graph, so a different filter needs a rebuild
+  if (audVoiceFilter !== prevVoice) audRestartIfPlaying();
+  if (audTailAuto.checked) audUpdateTailUI();
   updateAudioSizeEstimate();
 }
 audPresetBar.addEventListener('click', e => {
@@ -12289,6 +12643,146 @@ audPresetBar.addEventListener('click', e => {
   if (!btn) return;
   audApplyPreset(btn.dataset.preset);
   toast(btn.dataset.preset === 'reset' ? 'Everything back to neutral' : `Preset: ${btn.textContent.trim()}`);
+});
+
+/* ---- Your own presets ----
+   "+ Save preset" snapshots every slider, switch, direction and voice filter
+   into localStorage; each saved one gets its own chip (× deletes it). */
+const AUD_CUSTOM_KEY = 'audCustomPresets';
+function audLoadCustomPresets() {
+  try { return JSON.parse(localStorage.getItem(AUD_CUSTOM_KEY) || '{}') || {}; } catch (e) { return {}; }
+}
+function audSaveCustomPresets(all) {
+  try { localStorage.setItem(AUD_CUSTOM_KEY, JSON.stringify(all)); return true; } catch (e) { return false; }
+}
+function audCaptureSettings() {
+  const p = {};
+  for (const [key, id] of Object.entries(AUD_PRESET_SLIDERS)) {
+    const el = document.getElementById(id);
+    if (el) p[key] = +el.value;
+  }
+  p.preservePitch = audPreservePitch.checked;
+  p.dither = audDither.checked;
+  p.mulaw = audMulaw.checked;
+  p.echoPing = audEchoPing.checked;
+  p.spatial = au.spatialMode;
+  p.angle = au.spatialAngle;
+  p.voice = audVoiceFilter;
+  return p;
+}
+function audRenderCustomPresets() {
+  const bar = document.getElementById('audCustomBar');
+  bar.querySelectorAll('[data-custom]').forEach(b => b.remove());
+  const saveBtn = document.getElementById('audSavePreset');
+  for (const name of Object.keys(audLoadCustomPresets())) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'aud-chip';
+    b.dataset.custom = name;
+    b.title = 'Your preset';
+    b.textContent = name;
+    const x = document.createElement('span');
+    x.className = 'x';
+    x.dataset.del = '1';
+    x.title = 'Delete this preset';
+    x.textContent = '×';
+    b.appendChild(x);
+    bar.insertBefore(b, saveBtn);
+  }
+}
+document.getElementById('audSavePreset').addEventListener('click', () => {
+  const name = (prompt('Name this preset:') || '').trim().slice(0, 32);
+  if (!name) return;
+  const all = audLoadCustomPresets();
+  if (all[name] && !confirm(`Replace your preset "${name}"?`)) return;
+  all[name] = audCaptureSettings();
+  if (!audSaveCustomPresets(all)) { toast('Could not save — browser storage is blocked'); return; }
+  audRenderCustomPresets();
+  toast(`Saved preset: ${name}`);
+});
+document.getElementById('audCustomBar').addEventListener('click', e => {
+  const b = e.target.closest('button[data-custom]');
+  if (!b) return;
+  const name = b.dataset.custom;
+  const all = audLoadCustomPresets();
+  if (e.target.closest('[data-del]')) {
+    if (!confirm(`Delete your preset "${name}"?`)) return;
+    delete all[name];
+    audSaveCustomPresets(all);
+    audRenderCustomPresets();
+    toast(`Deleted preset: ${name}`);
+    return;
+  }
+  if (!all[name]) return;
+  audApplyPreset(all[name]);
+  toast(`Preset: ${name}`);
+});
+audRenderCustomPresets();
+
+/* ---- Reverse ----
+   Flips every loaded file in place (the chain keeps its file order), so live
+   playback, the chained export and batch exports all hear the same thing. */
+function audReverseBufferInPlace(buffer) {
+  for (let c = 0; c < buffer.numberOfChannels; c++) buffer.getChannelData(c).reverse();
+}
+const audReverseBtn = document.getElementById('audReverse');
+function audSetReverse(on) {
+  on = !!on;
+  audReverseBtn.classList.toggle('on', on);
+  if (on === !!au.reverse) return;
+  au.reverse = on;
+  if (!au.items || !au.items.length) return;
+  for (const it of au.items) audReverseBufferInPlace(it.buffer);
+  audRebuildFromItems();
+  audAfterBufferChange();
+  audRestartIfPlaying();
+}
+audReverseBtn.addEventListener('click', () => {
+  audSetReverse(!au.reverse);
+  toast(au.reverse ? 'Reversed — playing backwards' : 'Playing forwards');
+});
+
+/* ---- Record from the microphone ----
+   Records with MediaRecorder, then loads the take into the player (keeping the
+   current effects) so the voice filters can be tried on it right away. */
+const audMicBtn = document.getElementById('audMicBtn');
+const audMic = { rec: null, stream: null, chunks: [], t0: 0, timer: 0 };
+async function audMicStart() {
+  if (!navigator.mediaDevices || !window.MediaRecorder) { toast('Recording is not supported in this browser'); return; }
+  try {
+    audMic.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    toast('Microphone blocked — allow mic access for this site');
+    return;
+  }
+  if (au.playing) audPause();
+  const mime = pickRecMime();
+  audMic.chunks = [];
+  audMic.rec = new MediaRecorder(audMic.stream, mime ? { mimeType: mime } : undefined);
+  audMic.rec.ondataavailable = e => { if (e.data && e.data.size) audMic.chunks.push(e.data); };
+  audMic.rec.onstop = async () => {
+    audMic.stream.getTracks().forEach(t => t.stop());
+    clearInterval(audMic.timer);
+    audMicBtn.classList.remove('rec-live');
+    audMicBtn.textContent = '● Record mic';
+    const type = audMic.rec.mimeType || 'audio/webm';
+    const blob = new Blob(audMic.chunks, { type });
+    if (!blob.size) { toast('Nothing was recorded'); return; }
+    const ext = /ogg/.test(type) ? 'ogg' : (/mp4|aac/.test(type) ? 'm4a' : 'webm');
+    const stamp = new Date().toTimeString().slice(0, 8).replace(/:/g, '-');
+    const file = new File([blob], `mic-${stamp}.${ext}`, { type });
+    await audLoadFiles([file], false, { keepFx: true });
+  };
+  audMic.rec.start();
+  audMic.t0 = Date.now();
+  audMicBtn.classList.add('rec-live');
+  const tick = () => { audMicBtn.textContent = `■ Stop · ${fmtTime((Date.now() - audMic.t0) / 1000)}`; };
+  tick();
+  audMic.timer = setInterval(tick, 250);
+}
+audMicBtn.addEventListener('click', () => {
+  if (audMic.rec && audMic.rec.state === 'recording') audMic.rec.stop();
+  else audMicStart();
 });
 
 /* ---- Export layout: processed only, fused, or both in a row ----
@@ -12461,6 +12955,7 @@ window.addEventListener('keydown', e => {
     case 'b': case 'B': audSetBypass(!au.bypass); break;
     case 'l': case 'L': audSetLoop(!au.loop); break;
     case 'm': case 'M': audSetMuted(!au.muted); break;
+    case 'r': case 'R': audSetReverse(!au.reverse); toast(au.reverse ? 'Reversed' : 'Forwards'); break;
     default: return;
   }
 });
@@ -13431,6 +13926,7 @@ function defaultClipParams() {
     dither: false, mulaw: false,
     bass: 0, reverb: 0, reverbSize: 1.5,
     preset: 'none',
+    voice: 'none', pitch: 0,
     // Fuse the untouched original under this clip's processed sound
     blend: false, blendProcDb: 0, blendOrigDb: -6,
   };
@@ -14265,7 +14761,21 @@ function buildClipGraph(sourceNode, clip, ctx = au.ctx) {
   bass.frequency.value = 120;
   bass.gain.value = p.bass || 0;
 
+  // Pitch shift + voice filter come first, same as in Audio Tools
+  const workletOk = au.crusherReady || ctx !== au.ctx;
+  let pitchNode = null;
   let node = sourceNode;
+  if (workletOk) {
+    try {
+      pitchNode = new AudioWorkletNode(ctx, 'voice-pitch', { outputChannelCount: [2] });
+      pitchNode.parameters.get('semitones').value = p.pitch || 0;
+      node.connect(pitchNode); node = pitchNode;
+    } catch (e) { pitchNode = null; }
+  }
+  const voice = buildVoiceChain(ctx, p.voice || 'none', workletOk && !!pitchNode);
+  audSetVoiceMix(voice, 1);
+  node.connect(voice.input); node = voice.output;
+
   node.connect(ad); node = ad;
   if (crusher) { node.connect(crusher); node = crusher; }
   node.connect(da); node = da;
@@ -14387,7 +14897,7 @@ function buildClipGraph(sourceNode, clip, ctx = au.ctx) {
     node = bus;
   }
 
-  return { out: node, ad, crusher, da, muffle, hp, clipVol, fadeGain, dryFade, bass, reverbAmount, reverbDry };
+  return { out: node, ad, crusher, da, muffle, hp, clipVol, fadeGain, dryFade, bass, reverbAmount, reverbDry, pitchNode, voice };
 }
 
 /* Fade envelope — linear ramp in at the start, out at the end. Applied to the
@@ -14560,6 +15070,11 @@ async function edStartPlayback() {
 }
 function edStopSources() {
   for (const s of editor.activeSources) { try { s.stop(); } catch(e) {} }
+  // voice-filter oscillators and pitch worklets would otherwise run forever
+  for (const { graph } of editor.activeParams || []) {
+    if (graph.voice) audTeardownVoiceChain(graph.voice);
+    if (graph.pitchNode) { try { graph.pitchNode.disconnect(); } catch (e) {} }
+  }
   editor.activeSources = [];
   editor.activeParams = [];
 }
@@ -15162,6 +15677,10 @@ function refreshPanelValues() {
   set('pReverbSize', rs);
   document.getElementById('pReverbSizeVal').textContent = `${rs.toFixed(1)}s`;
   document.getElementById('pPreset').value = p.preset;
+  document.getElementById('pVoice').value = p.voice || 'none';
+  const pitchSt = p.pitch || 0;
+  set('pPitch', pitchSt);
+  document.getElementById('pPitchVal').textContent = `${pitchSt > 0 ? '+' : ''}${pitchSt} st`;
   // Crusher switches + the fused-original blend (clips made before these
   // existed simply read as off / defaults)
   const dith = !!p.dither, mul = !!p.mulaw;
@@ -15237,6 +15756,9 @@ function updateLiveParam(clip, paramName, value) {
   }
 
   switch (paramName) {
+    case 'pitch':
+      if (graph.pitchNode) graph.pitchNode.parameters.get('semitones').setValueAtTime(value, now);
+      break;
     case 'volumeDb':
       rampParam(graph.clipVol.gain, Math.pow(10, value / 20));
       break;
@@ -15346,6 +15868,25 @@ wireParamSlider('pDa', 'pDaVal', 'da', v => `${v}%`);
 wireParamSlider('pBass', 'pBassVal', 'bass', v => `${v >= 0 ? '+' : ''}${v.toFixed(1)} dB`);
 wireParamSlider('pReverb', 'pReverbVal', 'reverb', v => `${v}%`);
 wireParamSlider('pReverbSize', 'pReverbSizeVal', 'reverbSize', v => `${v.toFixed(1)}s`);
+wireParamSlider('pPitch', 'pPitchVal', 'pitch', v => `${v > 0 ? '+' : ''}${v} st`);
+
+// Clip voice filter list mirrors the Audio Tools chips
+(function fillClipVoiceSelect() {
+  const sel = document.getElementById('pVoice');
+  for (const b of document.querySelectorAll('#audVoiceBar button[data-voice]')) {
+    const o = document.createElement('option');
+    o.value = b.dataset.voice;
+    o.textContent = b.textContent.trim();
+    sel.appendChild(o);
+  }
+  sel.addEventListener('change', e => {
+    const c = getSelectedClip();
+    if (!c) return;
+    c.params.voice = e.target.value;
+    edRebuildIfPlaying();
+    toast(`Voice filter → ${e.target.selectedOptions[0].textContent}`);
+  });
+})();
 
 document.getElementById('pPreset').addEventListener('change', (e) => {
   const c = getSelectedClip();
