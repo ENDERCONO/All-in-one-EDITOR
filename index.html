@@ -4104,6 +4104,52 @@
   .rem-canvas-wrap.zoomed canvas { margin: auto; }
   .rem-canvas-wrap.panning, .rem-canvas-wrap.panning canvas { cursor: grabbing !important; }
   .rem-canvas-wrap.pan-ready canvas { cursor: grab !important; }
+  /* Seamless Tile — overlays sit on top of the sheet canvas and follow its zoom */
+  .st-work-wrap canvas#stWorkCanvas { cursor: crosshair; touch-action: none; }
+  .st-work-wrap .st-overlay {
+    position: absolute; pointer-events: none; display: none;
+    image-rendering: pixelated;
+  }
+  .st-work-wrap.st-pick canvas#stWorkCanvas { cursor: copy; }
+  .st-out-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+    margin-top: 18px;
+  }
+  @media (max-width: 640px) { .st-out-row { grid-template-columns: 1fr; } }
+  .st-out { display: flex; flex-direction: column; min-width: 0; }
+  .st-out .rem-preview-head { margin-bottom: 10px; }
+  .st-out .rem-preview-head h3 { font-size: 20px; }
+  .st-small-wrap { min-height: 220px; padding: 10px; }
+  .st-select {
+    background: var(--bg-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 8px;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  }
+  .bgmode.st-two { grid-template-columns: repeat(2, 1fr); }
+  .bgmode.st-four { grid-template-columns: repeat(4, 1fr); }
+  .st-palette {
+    display: flex; flex-wrap: wrap; gap: 4px;
+    max-height: 96px; overflow-y: auto;
+  }
+  .st-palette button {
+    width: 18px; height: 18px; padding: 0;
+    border-radius: 4px; border: 1px solid var(--border);
+    cursor: pointer;
+    background-image: repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 0 0 / 6px 6px;
+    position: relative; overflow: hidden;
+  }
+  .st-palette button::after { content: ''; position: absolute; inset: 0; background: var(--c); }
+  .st-palette button:hover, .st-palette button.on { border-color: var(--text); }
+  .st-palette:empty::before {
+    content: 'Palette shows up when you load a texture';
+    color: var(--text-faint); font-size: 10px;
+  }
+  .st-note { font-size: 10px; line-height: 1.5; color: var(--text-faint); letter-spacing: 0.02em; }
+  .st-checks { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: var(--text-dim); }
+  .st-checks label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .ur-btn.on { background: var(--surface-3); color: var(--text); border-color: var(--border-hover); }
+
   .zoom-bar {
     display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
     margin-top: 10px;
@@ -5815,7 +5861,7 @@
 
       <!-- ===== IMAGES ===== -->
       <div class="sb-group" data-group="images">
-        <button class="sb-group-btn" title="Images — editor, compositor, gradient, resize &amp; crop">
+        <button class="sb-group-btn" title="Images — editor, compositor, gradient, resize &amp; crop, seamless tile">
           <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span>
           <span class="sb-label">Images</span>
           <span class="sb-caret">▶</span>
@@ -5836,6 +5882,10 @@
           <button class="sb-tab" data-tab="resizecrop" title="Resize &amp; Crop — fit images to an exact size (default 1920×1080), scale to cover then trim evenly">
             <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg></span>
             <span class="sb-label">Resize &amp; Crop</span>
+          </button>
+          <button class="sb-tab" data-tab="seamless" title="Seamless Tile — tile a texture 2×2, fix the + seams, grab the middle as one seamless tile">
+            <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18M3 12h18"/><rect x="7.5" y="7.5" width="9" height="9" stroke-dasharray="2 2"/></svg></span>
+            <span class="sb-label">Seamless Tile</span>
           </button>
         </div>
       </div>
@@ -6018,6 +6068,13 @@
           <div class="row"><span>Undo</span><kbd>Ctrl Z</kbd></div>
           <div class="row"><span>Redo</span><kbd>Ctrl Y</kbd></div>
           <div class="row"><span>Show the original (hold)</span><kbd>C</kbd></div>
+        </div>
+        <div>
+          <h3>Seamless tile</h3>
+          <div class="row"><span>Pencil / eraser / picker</span><kbd>B / E / I</kbd></div>
+          <div class="row"><span>Erase</span><kbd>right-click</kbd></div>
+          <div class="row"><span>Pick a color</span><kbd>Alt click</kbd></div>
+          <div class="row"><span>Undo / redo</span><kbd>Ctrl Z / Y</kbd></div>
         </div>
         <div>
           <h3>Audio tools</h3>
@@ -6575,6 +6632,187 @@
           <button class="ur-btn" id="nmSwap" disabled>↕ Swap base/detail</button>
           <button class="ur-btn" id="nmCopy" disabled>Copy to clipboard</button>
         </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ================= SEAMLESS TILE ================= -->
+  <main data-mode="seamless" hidden>
+    <header class="mode-header">
+      <div>
+        <div class="eyebrow">Mode 02d · Seamless texture maker</div>
+        <h1>Seamless <em>Tile</em></h1>
+        <p>Load a texture and it's tiled 2×2. Paint over the + shaped seams in the middle (here, or in your own editor) and the fixed middle parts are grabbed live into one seamless tile.</p>
+      </div>
+      <div class="legend">
+        <span class="pill">B pencil · E eraser · I picker · right-click erase · Alt-click pick</span>
+        <span class="pill">Ctrl Z / Y undo · Shift + scroll zoom</span>
+      </div>
+    </header>
+
+    <div class="remover-layout">
+      <div class="rem-preview">
+        <div class="rem-preview-head">
+          <h3>2×2 sheet</h3>
+          <div class="info" id="stInfo">No texture</div>
+          <button class="clear-x" id="stClearBtn" title="Clear and start over" hidden>✕</button>
+        </div>
+
+        <div class="grad-inputs">
+          <label class="grad-tile" id="stTileTile">
+            <div class="grad-tile-head">
+              <span><span class="role">Texture</span> — single tile</span>
+              <span class="meta" id="stTileMeta"></span>
+            </div>
+            <div class="grad-tile-body" id="stTileBody">
+              <div class="hint">Drop or click<span>gets tiled 2×2 for you</span></div>
+            </div>
+            <input type="file" accept="image/*" id="stTileInput">
+          </label>
+
+          <label class="grad-tile" id="stSheetTile">
+            <div class="grad-tile-head">
+              <span><span class="role">Sheet</span> — edited 2×2</span>
+              <span class="meta" id="stSheetMeta"></span>
+            </div>
+            <div class="grad-tile-body" id="stSheetBody">
+              <div class="hint">Drop or click<span>a 2×2 you fixed in another app</span></div>
+            </div>
+            <input type="file" accept="image/*" id="stSheetInput">
+          </label>
+        </div>
+
+        <div class="rem-canvas-wrap st-work-wrap" id="stWorkWrap">
+          <canvas id="stWorkCanvas"></canvas>
+          <canvas id="stMaskCanvas" class="st-overlay"></canvas>
+          <svg id="stGuides" class="st-overlay" preserveAspectRatio="none"></svg>
+          <div class="rem-upload" id="stEmptyHint">
+            <div>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <path d="M12 3v18M3 12h18"/>
+              </svg>
+              <div class="t">Drop a texture — or click to browse</div>
+              <div class="s">Pixel art friendly · tiled 2×2 · paint the + seams · seamless tile out</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="st-out-row">
+          <div class="st-out">
+            <div class="rem-preview-head"><h3>Result tile</h3><div class="info" id="stResultInfo">—</div></div>
+            <div class="rem-canvas-wrap st-small-wrap"><canvas id="stResultCanvas"></canvas></div>
+          </div>
+          <div class="st-out">
+            <div class="rem-preview-head">
+              <h3>Tiled check</h3>
+              <select class="st-select" id="stRepeat" title="How many times to repeat the result to check the seams">
+                <option value="2">2×2</option>
+                <option value="3" selected>3×3</option>
+                <option value="4">4×4</option>
+              </select>
+            </div>
+            <div class="rem-canvas-wrap st-small-wrap"><canvas id="stTiledCanvas"></canvas></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rem-panel">
+        <h3>Paint</h3>
+
+        <div class="field-group">
+          <div class="bgmode" id="stToolGroup">
+            <input type="radio" name="sttool" id="sttool-pen" value="pen" checked>
+            <label for="sttool-pen" title="Pencil (B)">Pencil</label>
+            <input type="radio" name="sttool" id="sttool-erase" value="erase">
+            <label for="sttool-erase" title="Eraser — makes pixels transparent (E)">Eraser</label>
+            <input type="radio" name="sttool" id="sttool-pick" value="pick">
+            <label for="sttool-pick" title="Eyedropper (I, or Alt-click)">Picker</label>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label"><span>Color</span><span class="color-rgb-display" id="stColorHex">#FFFFFF</span></div>
+          <div class="color-row">
+            <label class="color-swatch" id="stSwatch" style="--swatch-color:#ffffff">
+              <input type="color" id="stColor" value="#ffffff">
+            </label>
+            <div class="st-palette" id="stPalette" title="Colors in your texture — click to use"></div>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label"><span>Brush size</span><span class="color-rgb-display"><span id="stBrushDisp">1</span> px</span></div>
+          <div class="slider-row">
+            <input type="range" id="stBrush" min="1" max="16" value="1" step="1">
+            <input type="number" class="num-input" id="stBrushNum" min="1" max="16" value="1">
+          </div>
+        </div>
+
+        <div class="ur-row">
+          <button class="ur-btn" id="stUndo" disabled title="Ctrl Z">↶ Undo</button>
+          <button class="ur-btn" id="stRedo" disabled title="Ctrl Y">↷ Redo</button>
+        </div>
+
+        <h3 style="margin-top:8px">Grab</h3>
+
+        <div class="field-group">
+          <div class="field-label"><span>How to grab</span><span class="color-rgb-display" id="stModeHint">picks up your edits</span></div>
+          <div class="bgmode st-two">
+            <input type="radio" name="stmode" id="stmode-smart" value="smart" checked>
+            <label for="stmode-smart" title="For every pixel of the tile, use the copy you changed (closest to the middle wins). Catches edits on the whole + — even the arms out at the edges.">Smart</label>
+            <input type="radio" name="stmode" id="stmode-crop" value="crop">
+            <label for="stmode-crop" title="Plain center crop: take the middle tile-sized square of the sheet">Center crop</label>
+          </div>
+        </div>
+
+        <div class="field-group" id="stTolGroup">
+          <div class="field-label"><span>Tolerance</span><span class="color-rgb-display"><span id="stTolDisp">0</span> / 255</span></div>
+          <div class="slider-row">
+            <input type="range" id="stTol" min="0" max="255" value="0" step="1">
+            <input type="number" class="num-input" id="stTolNum" min="0" max="255" value="0">
+          </div>
+          <div class="st-note">How different a pixel must be to count as edited. Keep 0 for pixel art; raise it if your editor saved with tiny color shifts (JPEG, color profiles).</div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label"><span>Output position</span></div>
+          <div class="bgmode st-two">
+            <input type="radio" name="stalign" id="stalign-center" value="center" checked>
+            <label for="stalign-center" title="As cut from the middle — your fixed seams sit in the center of the tile">Middle cut</label>
+            <input type="radio" name="stalign" id="stalign-orig" value="orig">
+            <label for="stalign-orig" title="Shifted back by half so it lines up with your original texture">Original</label>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label"><span>Show</span></div>
+          <div class="st-checks">
+            <label><input type="checkbox" id="stShowGuides" checked> Seams + crop</label>
+            <label><input type="checkbox" id="stShowEdits" checked> Edited pixels</label>
+          </div>
+          <div class="st-note">Blue box = the middle cut · orange dashes = the seams. Edited pixels: blue ones go into the tile, orange ones lose to a copy closer to the middle.</div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label"><span>Export size</span></div>
+          <div class="bgmode st-four" id="stScale">
+            <input type="radio" name="stscale" id="stscale-1" value="1" checked><label for="stscale-1">1×</label>
+            <input type="radio" name="stscale" id="stscale-2" value="2"><label for="stscale-2">2×</label>
+            <input type="radio" name="stscale" id="stscale-4" value="4"><label for="stscale-4">4×</label>
+            <input type="radio" name="stscale" id="stscale-8" value="8"><label for="stscale-8">8×</label>
+          </div>
+        </div>
+
+        <button class="apply-btn grad-apply" id="stDownload" disabled>Download seamless tile</button>
+
+        <div class="ur-row">
+          <button class="ur-btn" id="stCopy" disabled>Copy tile</button>
+          <button class="ur-btn" id="stSheetDl" disabled title="Save the 2×2 to edit in Aseprite / Photoshop / etc.">Save 2×2 sheet</button>
+          <button class="ur-btn" id="stBake" disabled title="Put the result back into the sheet as a fresh 2×2 and keep going (shifts the next round of seams)">Re-tile result</button>
+          <button class="ur-btn" id="stLink" title="Pick the 2×2 file you're editing in another app — every time you save it, it reloads here">Live-link file</button>
+        </div>
+        <div class="st-note" id="stLinkNote" hidden></div>
       </div>
     </div>
   </main>
@@ -8594,6 +8832,7 @@ document.getElementById('sidebarToggle').addEventListener('click', () => {
     compositor: ['channel compositor', 'channels', 'rgba', 'pack textures', 'combine channels', 'texture packing', 'masks'],
     gradient:   ['gradient', 'blend images', 'mix two images', 'fade', 'transition', 'overlay'],
     resizecrop: ['resize', 'crop', 'cut image', 'scale', '1920x1080', 'fit size', 'wallpaper', 'thumbnail', 'dimensions', 'aspect ratio'],
+    seamless:   ['seamless tile', 'tileable', 'tiling', 'texture', 'pixel art', 'repeat', 'pattern', 'seams', 'wrap', 'offset'],
     audio:      ['audio tools', 'sound', 'music', 'wav', 'mp3', 'trim audio', 'volume', 'pitch', 'voice'],
     timeline:   ['timeline', 'video editor', 'clips', 'tracks', 'sequence', 'cut video', 'arrange'],
     normalmix:  ['normal mix', 'normal map', 'normals', 'bump map', 'blend normals', 'material'],
@@ -19193,6 +19432,642 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
   setTileEmpty(baseTile, baseBody, baseMeta, 'Drop or click', 'tangent-space normal map');
   setTileEmpty(detailTile, detailBody, detailMeta, 'Drop or click', 'resized to base size');
   updateInfo();
+})();
+</script>
+
+<!-- =====================================================
+     Seamless Tile — tile a texture 2×2, paint over the + seams, grab the
+     fixed middle parts back into one seamless tile, live
+     ===================================================== -->
+<script>
+(function seamlessTile() {
+  const $ = id => document.getElementById(id);
+  const tileInput  = $('stTileInput');
+  if (!tileInput) return; // panel not present
+  const sheetInput = $('stSheetInput');
+  const tileTile = $('stTileTile'), tileBody = $('stTileBody'), tileMeta = $('stTileMeta');
+  const sheetTile = $('stSheetTile'), sheetBody = $('stSheetBody'), sheetMeta = $('stSheetMeta');
+  const workWrap = $('stWorkWrap');
+  const work = $('stWorkCanvas'), maskCv = $('stMaskCanvas'), guides = $('stGuides');
+  const emptyHint = $('stEmptyHint');
+  const info = $('stInfo'), clearBtn = $('stClearBtn');
+  const resultCv = $('stResultCanvas'), tiledCv = $('stTiledCanvas');
+  const resultInfo = $('stResultInfo'), repeatSel = $('stRepeat');
+  const colorIn = $('stColor'), swatch = $('stSwatch'), colorHex = $('stColorHex'), paletteEl = $('stPalette');
+  const brush = $('stBrush'), brushNum = $('stBrushNum'), brushDisp = $('stBrushDisp');
+  const tol = $('stTol'), tolNum = $('stTolNum'), tolDisp = $('stTolDisp'), tolGroup = $('stTolGroup');
+  const modeHint = $('stModeHint');
+  const showGuides = $('stShowGuides'), showEdits = $('stShowEdits');
+  const undoBtn = $('stUndo'), redoBtn = $('stRedo');
+  const dlBtn = $('stDownload'), copyBtn = $('stCopy'), sheetDlBtn = $('stSheetDl'), bakeBtn = $('stBake');
+  const linkBtn = $('stLink'), linkNote = $('stLinkNote');
+
+  const MAX_SIDE = 2048;
+  const wctx = work.getContext('2d');
+  const mctx = maskCv.getContext('2d');
+  const rctx = resultCv.getContext('2d');
+  const tctx = tiledCv.getContext('2d');
+
+  // W×H is one tile; the sheet is 2W×2H. orig is the untouched tile when we
+  // know it (loaded as a single texture), otherwise null and the "untouched"
+  // value of each pixel is guessed from the four copies.
+  let W = 0, H = 0;
+  let sheet = null;     // ImageData 2W×2H — what you paint on
+  let orig = null;      // Uint8ClampedArray W×H×4 or null
+  let outData = null;   // ImageData W×H — the result as shown
+  let maskData = null;  // ImageData 2W×2H — edit highlight
+  let stem = 'texture';
+  let undoStack = [], redoStack = [];
+  let color = [255, 255, 255];
+  let editedCount = 0;
+
+  /* ---------- helpers ---------- */
+  const getRadio = name => { const c = document.querySelector(`input[name="${name}"]:checked`); return c ? c.value : null; };
+  const toHex = (r, g, b) => '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+
+  function readImage(file) {
+    return new Promise((resolve, reject) => {
+      if (!file || !(file.type || '').startsWith('image/')) { reject(new Error('Not an image')); return; }
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Decode failed')); };
+      img.src = url;
+    });
+  }
+  function pixelsOf(img, w, h) {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.drawImage(img, 0, 0);
+    return x.getImageData(0, 0, w, h);
+  }
+  function tile2x2(src, w, h) {
+    const out = new ImageData(w * 2, h * 2);
+    const d = out.data, sw = w * 2;
+    for (let y = 0; y < h * 2; y++) {
+      const sy = y % h;
+      for (let x = 0; x < sw; x++) {
+        const s = (sy * w + (x % w)) * 4, o = (y * sw + x) * 4;
+        d[o] = src[s]; d[o + 1] = src[s + 1]; d[o + 2] = src[s + 2]; d[o + 3] = src[s + 3];
+      }
+    }
+    return out;
+  }
+  function thumb(body, meta, src, text) {
+    body.innerHTML = '';
+    const t = document.createElement('img');
+    t.className = 'grad-tile-thumb';
+    t.style.imageRendering = 'pixelated';
+    t.style.height = '72px';  // scale small pixel art up so it's visible
+    t.style.width = 'auto';
+    t.src = src;
+    body.appendChild(t);
+    meta.textContent = text;
+  }
+  function emptySlot(tile, body, meta, a, b) {
+    tile.classList.remove('loaded');
+    body.innerHTML = `<div class="hint">${a}<span>${b}</span></div>`;
+    meta.textContent = '';
+  }
+  function canvasURL(data) {
+    const c = document.createElement('canvas');
+    c.width = data.width; c.height = data.height;
+    c.getContext('2d').putImageData(data, 0, 0);
+    return c.toDataURL();
+  }
+
+  /* ---------- loading ---------- */
+  function setSize(w, h) {
+    W = w; H = h;
+    work.width = maskCv.width = w * 2;
+    work.height = maskCv.height = h * 2;
+    resultCv.width = w; resultCv.height = h;
+    outData = new ImageData(w, h);
+    maskData = new ImageData(w * 2, h * 2);
+    guides.setAttribute('viewBox', `0 0 ${w * 2} ${h * 2}`);
+    drawGuides();
+    work.style.display = resultCv.style.display = tiledCv.style.display = 'block';
+    emptyHint.style.display = 'none';
+  }
+
+  function loadTile(img, name) {
+    const w = img.naturalWidth, h = img.naturalHeight;
+    if (w > MAX_SIDE || h > MAX_SIDE) { toast(`Too big — max ${MAX_SIDE}px per side`); return; }
+    const sameSize = sheet && w === W && h === H;
+    if (sameSize) pushUndo(); else { undoStack = []; redoStack = []; }
+    const px = pixelsOf(img, w, h);
+    if (!sameSize) setSize(w, h);
+    orig = px.data;
+    sheet = tile2x2(orig, w, h);
+    stem = (name || 'texture').replace(/\.[^.]+$/, '');
+    tileTile.classList.add('loaded');
+    thumb(tileBody, tileMeta, img.src, `${w}×${h}`);
+    emptySlot(sheetTile, sheetBody, sheetMeta, 'Drop or click', 'a 2×2 you fixed in another app');
+    buildPalette();
+    afterChange();
+  }
+
+  function loadSheet(img, name) {
+    let sw = img.naturalWidth, sh = img.naturalHeight;
+    if (sw < 2 || sh < 2) { toast('Sheet is too small'); return; }
+    if (sw > MAX_SIDE * 2 || sh > MAX_SIDE * 2) { toast(`Too big — max ${MAX_SIDE * 2}px per side`); return; }
+    const w = sw >> 1, h = sh >> 1;
+    if (sw % 2 || sh % 2) toast('Odd sheet size — the last row / column was dropped');
+    const sameSize = sheet && w === W && h === H;
+    if (sameSize) pushUndo(); else { undoStack = []; redoStack = []; }
+    const px = pixelsOf(img, sw, sh);
+    if (!sameSize) {
+      setSize(w, h);
+      // the original tile no longer matches — guess untouched pixels instead
+      orig = null;
+      emptySlot(tileTile, tileBody, tileMeta, 'Drop or click', 'gets tiled 2×2 for you');
+    }
+    sheet = new ImageData(w * 2, h * 2);
+    for (let y = 0; y < h * 2; y++) {
+      sheet.data.set(px.data.subarray(y * sw * 4, (y * sw + w * 2) * 4), y * w * 2 * 4);
+    }
+    if (!orig) stem = (name || 'texture').replace(/\.[^.]+$/, '').replace(/-2x2$/, '');
+    sheetTile.classList.add('loaded');
+    thumb(sheetBody, sheetMeta, img.src, `${sw}×${sh}`);
+    if (!sameSize || !paletteEl.children.length) buildPalette();
+    afterChange();
+  }
+
+  // A sheet is any image exactly twice the current tile; anything else is a new tile
+  function loadAuto(img, name) {
+    if (sheet && img.naturalWidth >> 1 === W && img.naturalHeight >> 1 === H &&
+        img.naturalWidth >= W * 2 && img.naturalHeight >= H * 2) loadSheet(img, name);
+    else loadTile(img, name);
+  }
+
+  async function fromFile(file, kind) {
+    try {
+      const img = await readImage(file);
+      if (kind === 'tile') loadTile(img, file.name);
+      else if (kind === 'sheet') loadSheet(img, file.name);
+      else loadAuto(img, file.name);
+    } catch (e) { toast('Could not load that image'); }
+  }
+
+  tileInput.addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) fromFile(f, 'tile'); });
+  sheetInput.addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) fromFile(f, 'sheet'); });
+  emptyHint.addEventListener('click', () => tileInput.click());
+
+  function dropZone(el, kind) {
+    el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('drag'); });
+    el.addEventListener('dragleave', () => el.classList.remove('drag'));
+    el.addEventListener('drop', e => {
+      e.preventDefault();
+      el.classList.remove('drag');
+      const f = e.dataTransfer.files[0];
+      if (f) fromFile(f, kind);
+    });
+  }
+  dropZone(tileTile, 'tile');
+  dropZone(sheetTile, 'sheet');
+  dropZone(workWrap, 'auto');
+
+  /* ---------- palette ---------- */
+  function buildPalette() {
+    const src = orig || (sheet && sheet.data);
+    paletteEl.innerHTML = '';
+    if (!src) return;
+    const counts = new Map();
+    for (let i = 0; i < src.length; i += 4) {
+      if (src[i + 3] === 0) continue;
+      const k = (src[i] << 16) | (src[i + 1] << 8) | src[i + 2];
+      counts.set(k, (counts.get(k) || 0) + 1);
+      if (counts.size > 4096) break; // a photo, not pixel art — top colors are enough
+    }
+    [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 48).forEach(([k]) => {
+      const hex = toHex(k >> 16, (k >> 8) & 255, k & 255);
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.title = hex.toUpperCase();
+      b.style.setProperty('--c', hex);
+      b.dataset.hex = hex;
+      paletteEl.appendChild(b);
+    });
+    markPalette();
+  }
+  function markPalette() {
+    const hex = toHex(...color);
+    paletteEl.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.hex === hex));
+  }
+  paletteEl.addEventListener('click', e => {
+    const b = e.target.closest('button[data-hex]');
+    if (b) setColorHex(b.dataset.hex);
+  });
+
+  function setColorHex(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    color = [n >> 16, (n >> 8) & 255, n & 255];
+    colorIn.value = hex;
+    swatch.style.setProperty('--swatch-color', hex);
+    colorHex.textContent = hex.toUpperCase();
+    markPalette();
+  }
+  colorIn.addEventListener('input', () => setColorHex(colorIn.value));
+
+  /* ---------- controls ---------- */
+  function linkSlider(range, num, disp, min, max, onChange) {
+    const set = v => {
+      v = Math.max(min, Math.min(max, Math.round(v)));
+      if (isNaN(v)) v = min;
+      range.value = num.value = v;
+      disp.textContent = v;
+      onChange && onChange();
+    };
+    range.addEventListener('input', () => set(+range.value));
+    num.addEventListener('input', () => { if (num.value !== '') set(+num.value); });
+    num.addEventListener('blur', () => set(+num.value));
+  }
+  linkSlider(brush, brushNum, brushDisp, 1, 16);
+  linkSlider(tol, tolNum, tolDisp, 0, 255, scheduleRender);
+
+  document.querySelectorAll('input[name="stmode"]').forEach(r => r.addEventListener('change', () => {
+    const smart = getRadio('stmode') === 'smart';
+    modeHint.textContent = smart ? 'picks up your edits' : 'plain middle square';
+    tolGroup.style.opacity = smart ? '' : '0.45';
+    scheduleRender();
+  }));
+  document.querySelectorAll('input[name="stalign"]').forEach(r => r.addEventListener('change', scheduleRender));
+  document.querySelectorAll('input[name="sttool"]').forEach(r => r.addEventListener('change', syncToolCursor));
+  showGuides.addEventListener('change', () => { drawGuides(); placeOverlays(); });
+  showEdits.addEventListener('change', scheduleRender);
+  repeatSel.addEventListener('change', scheduleRender);
+
+  function syncToolCursor() { workWrap.classList.toggle('st-pick', getRadio('sttool') === 'pick'); }
+  function setTool(t) { const r = $('sttool-' + t); if (r) { r.checked = true; syncToolCursor(); } }
+
+  /* ---------- the grab ----------
+     Every tile pixel (u, v) exists four times in the sheet. The copy nearest
+     the middle is the one a plain center crop would take. Smart mode instead
+     takes the copy you edited — compared to the original tile, or, without
+     one, to the copy farthest from the seams — so edits anywhere on
+     the + (arms out to the edges too) end up in the tile. Tolerance is how
+     far (max channel difference) a pixel may drift and still count as
+     untouched. */
+  function diff(a, i, b, j) {
+    if (a[i + 3] === 0 && b[j + 3] === 0) return 0; // both fully transparent
+    return Math.max(Math.abs(a[i] - b[j]), Math.abs(a[i + 1] - b[j + 1]),
+                    Math.abs(a[i + 2] - b[j + 2]), Math.abs(a[i + 3] - b[j + 3]));
+  }
+
+  function compute() {
+    const S = sheet.data, SW = W * 2;
+    const smart = getRadio('stmode') === 'smart';
+    const t = smart ? +tol.value : 0;
+    const centered = getRadio('stalign') === 'center';
+    const marking = showEdits.checked;
+    const M = maskData.data;
+    if (marking) M.fill(0);
+    const O = outData.data;
+    const cx0 = W >> 1, cy0 = H >> 1;
+    const off = [0, 0, 0, 0], dist = [0, 0, 0, 0], ed = [false, false, false, false];
+    editedCount = 0;
+
+    for (let v = 0; v < H; v++) {
+      for (let u = 0; u < W; u++) {
+        // nearest copy = the one inside the center crop
+        const k0 = (u >= cx0 ? 0 : 1) + (v >= cy0 ? 0 : 2);
+        for (let k = 0; k < 4; k++) {
+          const px = u + (k & 1) * W, py = v + (k >> 1) * H;
+          off[k] = (py * SW + px) * 4;
+          dist[k] = Math.max(Math.abs(px + 0.5 - W) / W, Math.abs(py + 0.5 - H) / H);
+        }
+        // reference "untouched" value: the original tile, or else the copy
+        // diagonally opposite the nearest one — it's always at least half a
+        // tile away from both seam lines, so it's never on the +
+        let ref, ri;
+        if (orig) { ref = orig; ri = (v * W + u) * 4; }
+        else { ref = S; ri = off[k0 ^ 3]; }
+        let pick = -1;
+        for (let k = 0; k < 4; k++) {
+          ed[k] = diff(S, off[k], ref, ri) > t;
+          if (ed[k] && (pick < 0 || dist[k] < dist[pick])) pick = k;
+        }
+        if (!smart || pick < 0) pick = k0;
+        if (ed[pick]) editedCount++;
+
+        const s = off[pick];
+        const ox = centered ? (u - cx0 + W) % W : u;
+        const oy = centered ? (v - cy0 + H) % H : v;
+        const o = (oy * W + ox) * 4;
+        O[o] = S[s]; O[o + 1] = S[s + 1]; O[o + 2] = S[s + 2]; O[o + 3] = S[s + 3];
+
+        if (marking) {
+          for (let k = 0; k < 4; k++) {
+            if (!ed[k]) continue;
+            const m = off[k];
+            if (k === pick) { M[m] = 60; M[m + 1] = 190; M[m + 2] = 255; M[m + 3] = 120; }
+            else { M[m] = 255; M[m + 1] = 110; M[m + 2] = 60; M[m + 3] = 120; }
+          }
+        }
+      }
+    }
+  }
+
+  /* ---------- render ---------- */
+  let queued = false;
+  function scheduleRender() {
+    if (queued || !sheet) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; render(); });
+  }
+
+  function render() {
+    if (!sheet) return;
+    wctx.putImageData(sheet, 0, 0);
+    compute();
+    rctx.putImageData(outData, 0, 0);
+    const n = +repeatSel.value || 3;
+    if (tiledCv.width !== W * n || tiledCv.height !== H * n) { tiledCv.width = W * n; tiledCv.height = H * n; }
+    tctx.clearRect(0, 0, tiledCv.width, tiledCv.height);
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) tctx.drawImage(resultCv, x * W, y * H);
+    if (showEdits.checked) mctx.putImageData(maskData, 0, 0);
+    maskCv.dataset.on = showEdits.checked ? '1' : '';
+    placeOverlays();
+
+    info.textContent = `${W}×${H} tile · ${W * 2}×${H * 2} sheet${orig ? '' : ' · no original'}`;
+    resultInfo.textContent = getRadio('stmode') === 'smart'
+      ? `${W}×${H} · ${editedCount} edited px grabbed`
+      : `${W}×${H} · center crop`;
+  }
+
+  function drawGuides() {
+    if (!W) { guides.innerHTML = ''; return; }
+    const sw = W * 2, sh = H * 2, cx0 = W >> 1, cy0 = H >> 1;
+    guides.innerHTML = `
+      <rect x="${cx0}" y="${cy0}" width="${W}" height="${H}" fill="none" stroke="#3cbeff" stroke-width="2" vector-effect="non-scaling-stroke"/>
+      <line x1="${W}" y1="0" x2="${W}" y2="${sh}" stroke="#ff6e3c" stroke-width="2" stroke-dasharray="6 5" vector-effect="non-scaling-stroke"/>
+      <line x1="0" y1="${H}" x2="${sw}" y2="${H}" stroke="#ff6e3c" stroke-width="2" stroke-dasharray="6 5" vector-effect="non-scaling-stroke"/>`;
+  }
+
+  // Overlays sit exactly on the sheet canvas, whatever the zoom
+  let placeQueued = false;
+  function placeOverlays() {
+    if (placeQueued) return;
+    placeQueued = true;
+    requestAnimationFrame(() => {
+      placeQueued = false;
+      const visible = sheet && work.style.display !== 'none';
+      [[maskCv, visible && maskCv.dataset.on === '1'], [guides, visible && showGuides.checked]].forEach(([el, on]) => {
+        el.style.display = on ? 'block' : 'none';
+        if (!on) return;
+        el.style.left = work.offsetLeft + 'px';
+        el.style.top = work.offsetTop + 'px';
+        el.style.width = work.offsetWidth + 'px';
+        el.style.height = work.offsetHeight + 'px';
+      });
+    });
+  }
+  new MutationObserver(placeOverlays).observe(work, { attributes: true, attributeFilter: ['style', 'width', 'height'] });
+  new ResizeObserver(placeOverlays).observe(workWrap);
+
+  /* ---------- undo ---------- */
+  function snapshot() { return { sheet: new Uint8ClampedArray(sheet.data), orig }; }
+  function restore(s) { sheet.data.set(s.sheet); orig = s.orig; }
+  function undoLimit() { return Math.max(8, Math.floor(256e6 / (sheet ? sheet.data.length : 1))); }
+  function pushUndo() {
+    if (!sheet) return;
+    undoStack.push(snapshot());
+    if (undoStack.length > undoLimit()) undoStack.shift();
+    redoStack = [];
+    syncButtons();
+  }
+  function undo() {
+    if (!undoStack.length) return;
+    redoStack.push(snapshot());
+    restore(undoStack.pop());
+    afterChange();
+  }
+  function redo() {
+    if (!redoStack.length) return;
+    undoStack.push(snapshot());
+    restore(redoStack.pop());
+    afterChange();
+  }
+  undoBtn.addEventListener('click', undo);
+  redoBtn.addEventListener('click', redo);
+
+  function syncButtons() {
+    const has = !!sheet;
+    undoBtn.disabled = !undoStack.length;
+    redoBtn.disabled = !redoStack.length;
+    [dlBtn, copyBtn, sheetDlBtn, bakeBtn].forEach(b => b.disabled = !has);
+    clearBtn.hidden = !has;
+  }
+  function afterChange() { syncButtons(); scheduleRender(); }
+
+  /* ---------- painting ---------- */
+  function sheetPos(e) {
+    const r = work.getBoundingClientRect();
+    return [Math.floor((e.clientX - r.left) * work.width / r.width),
+            Math.floor((e.clientY - r.top) * work.height / r.height)];
+  }
+  function stamp(cx, cy, erase) {
+    const n = +brush.value || 1, h = (n - 1) >> 1;
+    const d = sheet.data, SW = W * 2, SH = H * 2;
+    for (let y = cy - h; y < cy - h + n; y++) {
+      if (y < 0 || y >= SH) continue;
+      for (let x = cx - h; x < cx - h + n; x++) {
+        if (x < 0 || x >= SW) continue;
+        const i = (y * SW + x) * 4;
+        if (erase) { d[i] = d[i + 1] = d[i + 2] = d[i + 3] = 0; }
+        else { d[i] = color[0]; d[i + 1] = color[1]; d[i + 2] = color[2]; d[i + 3] = 255; }
+      }
+    }
+  }
+  function line(x0, y0, x1, y1, erase) {
+    const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0);
+    const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    let err = dx + dy;
+    for (;;) {
+      stamp(x0, y0, erase);
+      if (x0 === x1 && y0 === y1) break;
+      const e2 = 2 * err;
+      if (e2 >= dy) { err += dy; x0 += sx; }
+      if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+  }
+  function pickAt(x, y) {
+    if (x < 0 || y < 0 || x >= W * 2 || y >= H * 2) return;
+    const i = (y * W * 2 + x) * 4, d = sheet.data;
+    if (d[i + 3] === 0) { toast('That pixel is transparent'); return; }
+    setColorHex(toHex(d[i], d[i + 1], d[i + 2]));
+  }
+
+  work.addEventListener('contextmenu', e => e.preventDefault());
+  work.addEventListener('pointerdown', e => {
+    if (!sheet || (e.button !== 0 && e.button !== 2)) return;
+    e.preventDefault();
+    const [x, y] = sheetPos(e);
+    const tool = e.altKey ? 'pick' : (e.button === 2 ? 'erase' : getRadio('sttool'));
+    if (tool === 'pick') { pickAt(x, y); return; }
+    const erase = tool === 'erase';
+    pushUndo();
+    stamp(x, y, erase);
+    scheduleRender();
+    let lx = x, ly = y;
+    work.setPointerCapture(e.pointerId);
+    const move = ev => {
+      const [nx, ny] = sheetPos(ev);
+      if (nx === lx && ny === ly) return;
+      line(lx, ly, nx, ny, erase);
+      lx = nx; ly = ny;
+      scheduleRender();
+    };
+    const up = () => {
+      work.removeEventListener('pointermove', move);
+      work.removeEventListener('pointerup', up);
+      work.removeEventListener('pointercancel', up);
+    };
+    work.addEventListener('pointermove', move);
+    work.addEventListener('pointerup', up);
+    work.addEventListener('pointercancel', up);
+  });
+
+  window.addEventListener('keydown', e => {
+    if (currentMode !== 'seamless' || !sheet) return;
+    const t = e.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) && t.type !== 'radio' && t.type !== 'checkbox' && t.type !== 'range')) return;
+    const k = e.key.toLowerCase();
+    if (e.ctrlKey || e.metaKey) {
+      if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+      else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+      return;
+    }
+    if (e.altKey) return;
+    if (k === 'b' || k === 'p') setTool('pen');
+    else if (k === 'e') setTool('erase');
+    else if (k === 'i') setTool('pick');
+  });
+
+  /* ---------- output ---------- */
+  function scaledResult() {
+    const s = +getRadio('stscale') || 1;
+    if (s === 1) return resultCv;
+    const c = document.createElement('canvas');
+    c.width = W * s; c.height = H * s;
+    const x = c.getContext('2d');
+    x.imageSmoothingEnabled = false;
+    x.drawImage(resultCv, 0, 0, c.width, c.height);
+    return c;
+  }
+  function save(canvas, name) {
+    canvas.toBlob(blob => {
+      if (!blob) { toast('Export failed'); return; }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }, 'image/png');
+  }
+  dlBtn.addEventListener('click', () => {
+    if (!sheet) return;
+    render();
+    const s = +getRadio('stscale') || 1;
+    save(scaledResult(), `${stem}-seamless${s > 1 ? '@' + s + 'x' : ''}.png`);
+  });
+  sheetDlBtn.addEventListener('click', () => {
+    if (!sheet) return;
+    render();
+    save(work, `${stem}-2x2.png`);
+  });
+  copyBtn.addEventListener('click', async () => {
+    if (!sheet) return;
+    render();
+    try {
+      const blob = await new Promise(res => scaledResult().toBlob(res, 'image/png'));
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      toast('Copied to clipboard');
+    } catch (e) { toast('Copy failed — try Download'); }
+  });
+
+  // Put the result back as a fresh 2×2 (and the new original) for another pass.
+  // With "Middle cut" the new seams land on the old tile middles.
+  bakeBtn.addEventListener('click', () => {
+    if (!sheet) return;
+    render();
+    pushUndo();
+    orig = new Uint8ClampedArray(outData.data);
+    sheet.data.set(tile2x2(orig, W, H).data);
+    tileTile.classList.add('loaded');
+    thumb(tileBody, tileMeta, canvasURL(outData), `${W}×${H} · re-tiled`);
+    buildPalette();
+    afterChange();
+    toast('Result re-tiled — fix the new seams');
+  });
+
+  clearBtn.addEventListener('click', () => {
+    stopLink();
+    sheet = null; orig = null; W = H = 0;
+    undoStack = []; redoStack = [];
+    work.style.display = resultCv.style.display = tiledCv.style.display = 'none';
+    emptyHint.style.display = '';
+    emptySlot(tileTile, tileBody, tileMeta, 'Drop or click', 'gets tiled 2×2 for you');
+    emptySlot(sheetTile, sheetBody, sheetMeta, 'Drop or click', 'a 2×2 you fixed in another app');
+    paletteEl.innerHTML = '';
+    info.textContent = 'No texture';
+    resultInfo.textContent = '—';
+    drawGuides();
+    placeOverlays();
+    syncButtons();
+  });
+
+  /* ---------- live link ----------
+     Pick the file you're editing in Aseprite / Photoshop / etc. and it's
+     re-read every time it's saved (Chrome / Edge). A file the size of the
+     tile reloads as the tile; anything else as the 2×2 sheet. */
+  let link = null, linkTimer = 0, linkBusy = false;
+  async function pollLink() {
+    if (!link || linkBusy || document.hidden) return;
+    linkBusy = true;
+    try {
+      const f = await link.handle.getFile();
+      if (f.lastModified !== link.stamp || f.size !== link.size) {
+        link.stamp = f.lastModified; link.size = f.size;
+        const img = await readImage(f);
+        if (sheet && orig && img.naturalWidth === W && img.naturalHeight === H) loadTile(img, f.name);
+        else loadSheet(img, f.name);
+        linkNote.textContent = `Watching ${f.name} — updated ${new Date().toLocaleTimeString()}`;
+      }
+    } catch (e) {
+      // a half-written file fails to decode; the next save retries
+      if (e && e.name === 'NotFoundError') { stopLink(); toast('Linked file is gone'); }
+    }
+    linkBusy = false;
+  }
+  function stopLink() {
+    clearInterval(linkTimer);
+    link = null;
+    linkBtn.classList.remove('on');
+    linkBtn.textContent = 'Live-link file';
+    linkNote.hidden = true;
+  }
+  linkBtn.addEventListener('click', async () => {
+    if (link) { stopLink(); return; }
+    if (!window.showOpenFilePicker) { toast('Live-link needs Chrome or Edge — use the Sheet slot instead'); return; }
+    let handle;
+    try {
+      [handle] = await window.showOpenFilePicker({
+        types: [{ description: 'Images', accept: { 'image/*': ['.png', '.gif', '.bmp', '.webp', '.jpg', '.jpeg'] } }],
+      });
+    } catch (e) { return; } // cancelled
+    link = { handle, stamp: -1, size: -1 };
+    linkBtn.classList.add('on');
+    linkBtn.textContent = 'Stop live-link';
+    linkNote.hidden = false;
+    linkNote.textContent = `Watching ${handle.name} — save it in your editor and it updates here`;
+    await pollLink();
+    linkTimer = setInterval(pollLink, 700);
+  });
+
+  setColorHex('#ffffff');
+  syncButtons();
 })();
 </script>
 
