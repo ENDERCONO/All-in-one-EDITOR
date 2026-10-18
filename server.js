@@ -704,6 +704,15 @@ const IS_WIN = process.platform === 'win32';
 const YTDLP_PATH = path.join(BIN_DIR, IS_WIN ? 'yt-dlp.exe' : 'yt-dlp');
 const FFMPEG_LOCAL = path.join(BIN_DIR, IS_WIN ? 'ffmpeg.exe' : 'ffmpeg');
 const DL_DIR = path.join(os.tmpdir(), 'aio-editor-downloads');
+// Standalone builds (no Python needed). The plain "yt-dlp" asset is a Python
+// zipapp, which fails on machines without python3.
+const YTDLP_ASSET = IS_WIN ? 'yt-dlp.exe'
+  : process.platform === 'darwin' ? 'yt-dlp_macos'
+  : process.arch === 'arm64' ? 'yt-dlp_linux_aarch64' : 'yt-dlp_linux';
+// Optional: a cookies.txt exported from a signed-in browser. Lets YouTube
+// downloads work where YouTube asks for a sign-in (cloud / data-center IPs,
+// age-restricted videos).
+const COOKIES_PATH = process.env.YTDLP_COOKIES || path.join(__dirname, 'cookies.txt');
 
 // setup phase shared with clients so the first-ever download can show
 // "installing tools" progress instead of hanging silently
@@ -794,15 +803,78 @@ function ensureYtdlp() {
     ytdlpFetchPromise = (async () => {
       fs.mkdirSync(BIN_DIR, { recursive: true });
       dlSetup.phase = 'ytdlp'; dlSetup.pct = 0;
-      const asset = IS_WIN ? 'yt-dlp.exe' : (process.platform === 'darwin' ? 'yt-dlp_macos' : 'yt-dlp');
-      const tmp = YTDLP_PATH + '.tmp';
-      await httpsDownload('https://github.com/yt-dlp/yt-dlp/releases/latest/download/' + asset, tmp, p => dlSetup.pct = p);
-      fs.renameSync(tmp, YTDLP_PATH);
-      if (!IS_WIN) fs.chmodSync(YTDLP_PATH, 0o755);
+      await fetchYtdlpRelease(p => dlSetup.pct = p);
+      ytdlpUpdatedAt = Date.now(); // brand new — no need to check for updates
       console.log('[downloader] yt-dlp fetched');
     })().catch(e => { ytdlpFetchPromise = null; throw e; });
   }
   return ytdlpFetchPromise;
+}
+
+async function fetchYtdlpRelease(onProgress) {
+  const tmp = YTDLP_PATH + '.tmp';
+  await httpsDownload('https://github.com/yt-dlp/yt-dlp/releases/latest/download/' + YTDLP_ASSET, tmp, onProgress);
+  if (!IS_WIN) fs.chmodSync(tmp, 0o755);
+  fs.renameSync(tmp, YTDLP_PATH);
+  ytdlpInfo = null;
+}
+
+// Tag of the newest release, read from where /releases/latest redirects to
+function latestYtdlpTag() {
+  return new Promise((resolve, reject) => {
+    https.get('https://github.com/yt-dlp/yt-dlp/releases/latest', { headers: { 'User-Agent': 'aio-editor' } }, res => {
+      res.resume();
+      const m = String(res.headers.location || '').match(/\/tag\/([^/?#]+)/);
+      m ? resolve(m[1]) : reject(new Error('no tag'));
+    }).on('error', reject).setTimeout(15000, function () { this.destroy(new Error('timeout')); });
+  });
+}
+
+// Version + whether it knows --js-runtimes (added in 2025.11). Cached until
+// the binary changes.
+let ytdlpInfo = null;
+function getYtdlpInfo() {
+  if (ytdlpInfo) return ytdlpInfo;
+  let version = '';
+  try { version = execFileSync(YTDLP_PATH, ['--version'], { windowsHide: true, timeout: 30000 }).toString().trim(); } catch (e) {}
+  ytdlpInfo = { version, jsRuntimes: version >= '2025.11' };
+  return ytdlpInfo;
+}
+
+// YouTube breaks old yt-dlp versions every few weeks, so keep it fresh: at
+// boot, every 12 hours, and (at most every 30 min) when a download fails.
+let ytdlpUpdate = null;
+let ytdlpUpdatedAt = 0;
+function updateYtdlp() {
+  if (ytdlpUpdate) return ytdlpUpdate;
+  if (Date.now() - ytdlpUpdatedAt < 30 * 60 * 1000) return Promise.resolve(false);
+  ytdlpUpdate = (async () => {
+    await ensureYtdlp();
+    const before = getYtdlpInfo().version;
+    const selfUpdated = await new Promise(resolve => {
+      const p = spawn(YTDLP_PATH, ['-U'], { windowsHide: true });
+      const t = setTimeout(() => { try { p.kill(); } catch (e) {} }, 120000);
+      p.on('error', () => { clearTimeout(t); resolve(false); });
+      p.on('close', code => { clearTimeout(t); resolve(code === 0); });
+    });
+    ytdlpInfo = null;
+    // Old installs used the Python zipapp, which can't always update itself —
+    // swap it for the standalone build when a newer release is out (and
+    // nothing is running it)
+    if (!selfUpdated && dlRunning === 0) {
+      const latest = await latestYtdlpTag().catch(() => '');
+      if (latest && latest !== before) await fetchYtdlpRelease();
+    }
+    ytdlpUpdatedAt = Date.now();
+    const after = getYtdlpInfo().version;
+    if (after !== before) console.log(`[downloader] yt-dlp updated ${before || '?'} → ${after}`);
+    return after !== before;
+  })().catch(e => {
+    console.warn('[downloader] yt-dlp update failed:', e.message);
+    ytdlpUpdatedAt = Date.now();
+    return false;
+  }).finally(() => { ytdlpUpdate = null; });
+  return ytdlpUpdate;
 }
 
 let dlSetupPromise = null;
@@ -825,6 +897,48 @@ function ensureDlTools() {
   return dlSetupPromise;
 }
 
+// Runs at most `n` tasks at once; the rest wait their turn
+function makeLimiter(n) {
+  let active = 0;
+  const queue = [];
+  const next = () => {
+    while (active < n && queue.length) {
+      const { fn, resolve, reject } = queue.shift();
+      active++;
+      Promise.resolve().then(fn).then(resolve, reject).finally(() => { active--; next(); });
+    }
+  };
+  return fn => new Promise((resolve, reject) => { queue.push({ fn, resolve, reject }); next(); });
+}
+const dlLimit = makeLimiter(3);
+const cvLimit = makeLimiter(Math.max(1, Math.min(4, Math.floor(os.cpus().length / 2))));
+// How many yt-dlp processes are running (the binary isn't swapped under them)
+let dlRunning = 0;
+function trackRunning() {
+  dlRunning++;
+  let done = false;
+  return () => { if (!done) { done = true; dlRunning--; } };
+}
+
+// Args every yt-dlp call gets. The cookie file is copied into the job's own
+// folder because yt-dlp writes cookies back on exit.
+function ytdlpCommonArgs(dir) {
+  const a = ['--no-warnings', '--ignore-config'];
+  // YouTube now needs a JavaScript runtime to unlock its formats. yt-dlp only
+  // looks for Deno by default — point it at the Node running this server.
+  if (getYtdlpInfo().jsRuntimes) a.push('--js-runtimes', 'node:' + process.execPath);
+  const ff = ffmpegPath();
+  if (ff && ff !== 'ffmpeg') a.push('--ffmpeg-location', ff);
+  if (fs.existsSync(COOKIES_PATH)) {
+    try {
+      const c = path.join(dir, 'cookies.txt');
+      fs.copyFileSync(COOKIES_PATH, c);
+      a.push('--cookies', c);
+    } catch (e) {}
+  }
+  return a;
+}
+
 function cleanYtdlpError(stderr) {
   const lines = String(stderr).split(/\r?\n/).filter(l => l.startsWith('ERROR:'));
   if (!lines.length) return null;
@@ -833,89 +947,211 @@ function cleanYtdlpError(stderr) {
     .slice(0, 300);
 }
 
+// Errors no update or retry will fix
+const PERMANENT_DL_ERROR = /private video|video unavailable|this video is not available|unsupported url|members-only|join this channel|confirm your age|age-restricted|copyright|has been removed|does not exist|is not a valid url|HTTP Error 404/i;
+
+function friendlyDlError(msg) {
+  msg = String(msg || '');
+  if (/not a bot|sign in to confirm you/i.test(msg))
+    return 'YouTube wants this server to sign in — it blocks a lot of cloud / data-center IPs. Run the site on your own PC (START-SERVER.bat), or put a cookies.txt exported from your browser next to server.js.';
+  if (/confirm your age|age-restricted/i.test(msg))
+    return 'Age-restricted — put a cookies.txt exported from a signed-in browser next to server.js.';
+  if (/private video/i.test(msg)) return 'That video is private.';
+  if (/members-only|join this channel/i.test(msg)) return 'That video is members-only.';
+  if (/video unavailable|this video is not available/i.test(msg)) return 'That video is unavailable (removed, private or region-locked).';
+  if (/unsupported url/i.test(msg)) return "That site or link isn't supported.";
+  if (/HTTP Error 404/i.test(msg)) return 'Nothing at that link (404) — check the URL.';
+  if (/HTTP Error 403/i.test(msg)) return 'The site refused the download (403). It usually works again after a minute — hit Retry.';
+  if (/requested format is not available/i.test(msg))
+    return 'No downloadable format came back. The downloader was just updated — try once more; if it still fails, YouTube changed something the downloader hasn\'t caught up with yet.';
+  return msg;
+}
+
 const dlJobs = new Map();
 let dlSeq = 0;
+const AUDIO_FORMATS = ['mp3', 'm4a', 'opus', 'wav', 'flac'];
 
-async function runDlJob(job, url, kind, quality) {
-  await ensureDlTools();
-  job.state = 'starting';
-  fs.mkdirSync(job.dir, { recursive: true });
-  const ff = ffmpegPath();
+function ytdlpOnce(job, o, withCover) {
   const args = [
-    '--newline', '--no-playlist', '--no-warnings', '--no-mtime',
+    ...ytdlpCommonArgs(job.dir),
+    '--newline', '--no-playlist', '--no-mtime',
     '-N', '8', // parallel fragment downloads — saturates the connection
     '-o', path.join(job.dir, '%(title).150B.%(ext)s'),
   ];
-  if (ff && ff !== 'ffmpeg') args.push('--ffmpeg-location', ff);
-  if (kind === 'audio') {
-    args.push('-f', 'bestaudio/best', '-x', '--audio-format', 'mp3');
-    const kbps = parseInt(quality, 10);
-    if (kbps) args.push('--audio-quality', kbps + 'K');
+  if (o.kind === 'audio') {
+    args.push('-f', 'bestaudio/best', '-x', '--audio-format', o.format);
+    const kbps = parseInt(o.quality, 10);
+    if (kbps && !['wav', 'flac'].includes(o.format)) args.push('--audio-quality', kbps + 'K');
+    args.push('--embed-metadata');
+    if (withCover && ['mp3', 'm4a'].includes(o.format)) args.push('--embed-thumbnail', '--convert-thumbnails', 'jpg');
   } else {
-    const h = parseInt(quality, 10);
+    const h = parseInt(o.quality, 10);
     const cap = h ? `[height<=${h}]` : '';
-    if (kind === 'mute') args.push('-f', `bv*${cap}[ext=mp4]/bv*${cap}/bv*`);
+    if (o.kind === 'mute') args.push('-f', `bv*${cap}[ext=mp4]/bv*${cap}/bv*`);
     else args.push('-f', `bv*${cap}[ext=mp4]+ba[ext=m4a]/bv*${cap}+ba/b${cap}/b`, '--merge-output-format', 'mp4');
+    args.push('--embed-metadata');
   }
-  args.push(url);
+  args.push('--', o.url);
 
-  await new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const proc = spawn(YTDLP_PATH, args, { windowsHide: true });
     job.proc = proc;
+    const release = trackRunning();
     let errBuf = '';
     proc.stdout.on('data', chunk => {
       for (const line of chunk.toString().split(/\r?\n/)) {
         const m = line.match(/\[download\]\s+([\d.]+)%\s+of\s+~?\s*[\d.]+\w+(?:\s+at\s+([\d.]+\s*\w+\/s))?(?:\s+ETA\s+([\d:]+))?/);
         if (m) { job.state = 'downloading'; job.pct = +m[1]; job.speed = m[2] || ''; job.eta = m[3] || ''; }
-        else if (/^\[(Merger|ExtractAudio|VideoConvertor|Fixup)/.test(line.trim())) { job.state = 'processing'; job.pct = 99; }
+        else if (/^\[(Merger|ExtractAudio|VideoConvertor|Fixup|EmbedThumbnail|Metadata|ThumbnailsConvertor)/.test(line.trim())) { job.state = 'processing'; job.pct = 99; }
         const dm = line.match(/\[download\] Destination: (.+)$/);
-        if (dm) job.title = path.basename(dm[1].trim()).replace(/\.[^.]+$/, '');
+        if (dm && !/\.(jpe?g|webp|png)$/i.test(dm[1].trim())) job.title = path.basename(dm[1].trim()).replace(/\.[^.]+$/, '');
       }
     });
     proc.stderr.on('data', d => { errBuf += d; if (errBuf.length > 8000) errBuf = errBuf.slice(-8000); });
-    proc.on('error', reject);
+    proc.on('error', e => { release(); job.proc = null; reject(e); });
     proc.on('close', code => {
+      release();
       job.proc = null;
+      if (job.cancelled) return reject(new Error('Cancelled'));
       if (code === 0) resolve();
       else reject(new Error(cleanYtdlpError(errBuf) || ('downloader exited with code ' + code)));
     });
   });
+}
 
-  const files = fs.readdirSync(job.dir).filter(f => !/\.(part|ytdl|temp)$/i.test(f));
-  if (!files.length) throw new Error('Download finished but produced no file');
-  files.sort((a, b) => fs.statSync(path.join(job.dir, b)).size - fs.statSync(path.join(job.dir, a)).size);
-  job.file = path.join(job.dir, files[0]);
+async function runDlJob(job, o) {
+  await ensureDlTools();
+  if (ytdlpUpdate) { job.state = 'updating'; await ytdlpUpdate; }
+  await dlLimit(async () => {
+    if (job.cancelled) throw new Error('Cancelled');
+    let lastErr = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      job.state = 'starting'; job.pct = 0;
+      fs.rmSync(job.dir, { recursive: true, force: true });
+      fs.mkdirSync(job.dir, { recursive: true });
+      try {
+        // the retry skips the cover art in case embedding it was the problem
+        await ytdlpOnce(job, o, attempt === 0);
+        lastErr = null;
+        break;
+      } catch (e) {
+        lastErr = e;
+        if (job.cancelled || attempt > 0 || PERMANENT_DL_ERROR.test(e.message)) break;
+        // most YouTube failures are fixed by the newest yt-dlp
+        job.state = 'updating';
+        await updateYtdlp();
+      }
+    }
+    if (lastErr) throw new Error(friendlyDlError(lastErr.message));
+  });
+
+  const media = fs.readdirSync(job.dir).filter(f => !/\.(part|ytdl|temp|jpe?g|webp|png|txt)$/i.test(f) && !/\.part-Frag/i.test(f));
+  if (!media.length) throw new Error('Download finished but produced no file');
+  media.sort((a, b) => fs.statSync(path.join(job.dir, b)).size - fs.statSync(path.join(job.dir, a)).size);
+  job.file = path.join(job.dir, media[0]);
   job.pct = 100;
   job.state = 'done';
 }
 
 function cleanupDlJob(job) {
   dlJobs.delete(job.id);
+  job.cancelled = true;
   try { if (job.proc) job.proc.kill(); } catch (e) {}
   fs.rm(job.dir, { recursive: true, force: true }, () => {});
 }
 
+// Run a command and collect stdout (for playlist listing)
+function runCapture(cmd, args, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const p = spawn(cmd, args, { windowsHide: true });
+    const release = trackRunning();
+    p.on('error', release);
+    p.on('close', release);
+    let out = '', err = '';
+    const t = setTimeout(() => { try { p.kill(); } catch (e) {} reject(new Error('Timed out')); }, timeoutMs);
+    p.stdout.on('data', d => { out += d; });
+    p.stderr.on('data', d => { err += d; if (err.length > 8000) err = err.slice(-8000); });
+    p.on('error', e => { clearTimeout(t); reject(e); });
+    p.on('close', code => {
+      clearTimeout(t);
+      if (code === 0) resolve(out);
+      else reject(new Error(cleanYtdlpError(err) || ('exited with code ' + code)));
+    });
+  });
+}
+
 app.get('/api/dl/ping', (req, res) => {
-  res.json({ ok: true, setup: dlSetup.phase, ytdlp: fs.existsSync(YTDLP_PATH), ffmpeg: !!ffmpegPath() });
+  res.json({
+    ok: true, setup: dlSetup.phase, ytdlp: fs.existsSync(YTDLP_PATH), ffmpeg: !!ffmpegPath(),
+    version: fs.existsSync(YTDLP_PATH) ? getYtdlpInfo().version : null,
+    cookies: fs.existsSync(COOKIES_PATH),
+  });
+});
+
+// Turn a playlist / channel link into its videos (titles included, nothing
+// downloaded). A plain video link comes back as a list of one.
+app.get('/api/dl/expand', async (req, res) => {
+  const url = String(req.query.url || '').trim();
+  if (!/^https?:\/\/\S+$/i.test(url)) return res.status(400).json({ error: 'That does not look like a link' });
+  const max = Math.max(1, Math.min(1000, parseInt(req.query.max, 10) || 300));
+  const dir = path.join(DL_DIR, 'x' + (++dlSeq) + Math.random().toString(36).slice(2, 8));
+  try {
+    await ensureYtdlp();
+    if (ytdlpUpdate) await ytdlpUpdate;
+    fs.mkdirSync(dir, { recursive: true });
+    const run = () => runCapture(YTDLP_PATH,
+      [...ytdlpCommonArgs(dir), '--flat-playlist', '--yes-playlist', '--playlist-end', String(max), '-J', '--', url], 120000);
+    let out;
+    try { out = await run(); }
+    catch (e) {
+      if (PERMANENT_DL_ERROR.test(e.message)) throw e;
+      await updateYtdlp();
+      out = await run();
+    }
+    const j = JSON.parse(out);
+    const entries = [];
+    const walk = list => {
+      for (const e of list || []) {
+        if (!e || entries.length >= max) continue;
+        // a channel lists its tabs (Videos, Shorts…) as nested playlists
+        if (Array.isArray(e.entries)) { walk(e.entries); continue; }
+        // url is the video itself; webpage_url can be the page that lists it
+        let u = /^https?:\/\//i.test(e.url || '') ? e.url : e.webpage_url;
+        if (!u && e.url && e.ie_key === 'Youtube') u = 'https://www.youtube.com/watch?v=' + e.url;
+        if (!u && e.id && /youtube/i.test(j.extractor_key || '')) u = 'https://www.youtube.com/watch?v=' + e.id;
+        if (u && /^https?:\/\//i.test(u)) entries.push({ url: u, title: e.title || e.id || u });
+      }
+    };
+    if (Array.isArray(j.entries)) walk(j.entries);
+    else entries.push({ url: j.webpage_url || url, title: j.title || url });
+    res.json({ title: j.title || '', playlist: Array.isArray(j.entries), entries });
+  } catch (e) {
+    res.status(500).json({ error: friendlyDlError(e.message) });
+  } finally {
+    fs.rm(dir, { recursive: true, force: true }, () => {});
+  }
 });
 
 app.get('/api/dl/start', (req, res) => {
   const url = String(req.query.url || '').trim();
   if (!/^https?:\/\/\S+$/i.test(url)) return res.status(400).json({ error: 'That does not look like a link' });
   const kind = ['audio', 'video', 'mute'].includes(req.query.kind) ? req.query.kind : 'video';
+  const format = AUDIO_FORMATS.includes(req.query.format) ? req.query.format : 'mp3';
   const quality = String(req.query.quality || '').replace(/[^0-9a-z]/gi, '').slice(0, 8);
   const id = 'j' + (++dlSeq) + Math.random().toString(36).slice(2, 8);
   const job = {
-    id, state: 'setup', pct: 0, speed: '', eta: '', title: '',
-    file: null, error: null, proc: null,
+    id, state: 'queued', pct: 0, speed: '', eta: '', title: '',
+    file: null, error: null, proc: null, cancelled: false,
     dir: path.join(DL_DIR, id), createdAt: Date.now(),
   };
+  if (dlSetup.phase !== 'ready' && !(fs.existsSync(YTDLP_PATH) && ffmpegPath())) job.state = 'setup';
   dlJobs.set(id, job);
   res.json({ id });
-  runDlJob(job, url, kind, quality).catch(e => {
+  runDlJob(job, { url, kind, format, quality }).catch(e => {
+    if (job.cancelled) return;
     job.state = 'error';
-    job.error = String(e && e.message || e).slice(0, 300);
-    console.error('[downloader]', job.error);
+    job.error = String(e && e.message || e).slice(0, 400);
+    console.error('[downloader]', url, '—', job.error);
   });
 });
 
@@ -937,6 +1173,12 @@ app.get('/api/dl/file/:id', (req, res) => {
   res.download(job.file, path.basename(job.file), () => cleanupDlJob(job));
 });
 
+app.post('/api/dl/cancel/:id', (req, res) => {
+  const job = dlJobs.get(req.params.id);
+  if (job) cleanupDlJob(job);
+  res.json({ ok: true });
+});
+
 /* ===================================================================
    FILE CONVERTER — native ffmpeg backend for the Universal Converter.
    The browser POSTs the raw file; we convert with the same ffmpeg the
@@ -954,7 +1196,8 @@ function ffprobePath() {
 // Still-image inputs need special handling: they have a single frame with
 // no duration, so fps filters output nothing and video targets need -loop.
 const STILL_RE = /\.(png|jpe?g|jfif|pjpe?g|pjp|webp|bmp|tiff?|avif|heic|heif|ico|tga|dds)$/i;
-function cvArgs(inPath, outPath, ext, still) {
+function cvArgs(inPath, outPath, ext, still, abr) {
+  const br = def => ['-b:a', (abr || def) + 'k'];
   const a = ['-y'];
   if (still && ['mp4','webm','mov','mkv','avi'].includes(ext)) a.push('-loop','1','-t','3');
   a.push('-i', inPath);
@@ -970,13 +1213,13 @@ function cvArgs(inPath, outPath, ext, still) {
       if (still) a.push('-frames:v','1'); // single-frame GIF straight from the image
       else a.push('-vf','fps=12,scale=480:-2:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse');
       break;
-    case 'mp3':  a.push('-vn','-c:a','libmp3lame','-b:a','192k'); break;
+    case 'mp3':  a.push('-vn','-c:a','libmp3lame', ...br(192)); break;
     case 'wav':  a.push('-vn','-c:a','pcm_s16le'); break;
-    case 'ogg':  a.push('-vn','-c:a','libvorbis'); break;
-    case 'opus': a.push('-vn','-c:a','libopus'); break;
+    case 'ogg':  a.push('-vn','-c:a','libvorbis', ...(abr ? br(abr) : [])); break;
+    case 'opus': a.push('-vn','-c:a','libopus', ...br(160)); break;
     case 'flac': a.push('-vn','-c:a','flac'); break;
-    case 'aac':  a.push('-vn','-c:a','aac','-b:a','192k'); break;
-    case 'm4a':  a.push('-vn','-c:a','aac','-b:a','192k'); break;
+    case 'aac':  a.push('-vn','-c:a','aac', ...br(192)); break;
+    case 'm4a':  a.push('-vn','-c:a','aac', ...br(192)); break;
     case 'png': case 'jpg': case 'jpeg': case 'webp': case 'bmp':
       a.push('-vframes','1'); break;
     default: break; // best-effort: let ffmpeg guess from the extension
@@ -990,12 +1233,19 @@ let cvSeq = 0;
 
 function cleanupCvJob(job) {
   cvJobs.delete(job.id);
+  job.cancelled = true;
   try { if (job.proc) job.proc.kill(); } catch (e) {}
   fs.rm(job.dir, { recursive: true, force: true }, () => {});
 }
 
-async function runCvJob(job, inPath, target) {
+async function runCvJob(job, inPath, target, abr) {
   await ensureDlTools(); // makes sure ffmpeg exists (auto-fetch on very first use)
+  job.state = 'queued';
+  await cvLimit(() => convertNow(job, inPath, target, abr));
+}
+
+async function convertNow(job, inPath, target, abr) {
+  if (job.cancelled) throw new Error('Cancelled');
   job.state = 'converting';
   // Probe duration (for % progress) and stream layout (to detect still
   // images by content — the extension alone misses .jfif, .avif, etc.,
@@ -1017,7 +1267,7 @@ async function runCvJob(job, inPath, target) {
   const still = STILL_RE.test(inPath) || (hasVideo && !hasAudio && duration <= 0.05);
   const base = path.basename(inPath).replace(/^in_/, '').replace(/\.[^.]+$/, '') || 'output';
   const outPath = path.join(job.dir, base + '.' + target);
-  const args = cvArgs(inPath, outPath, target, still);
+  const args = cvArgs(inPath, outPath, target, still, abr);
   args.splice(1, 0, '-progress', 'pipe:1', '-nostats'); // after -y
 
   await new Promise((resolve, reject) => {
@@ -1035,6 +1285,7 @@ async function runCvJob(job, inPath, target) {
     proc.on('error', reject);
     proc.on('close', code => {
       job.proc = null;
+      if (job.cancelled) return reject(new Error('Cancelled'));
       if (code === 0) return resolve();
       const lines = errBuf.split(/\r?\n/).filter(l => l.trim() && !/^\s*(frame=|size=)/.test(l));
       // "Conversion failed!" is ffmpeg's generic last line — prefer the
@@ -1055,9 +1306,11 @@ app.post('/api/convert/start', (req, res) => {
   const name = path.basename(String(req.query.name || 'input.bin')).replace(/[\\/:*?"<>|]/g, '_');
   const target = String(req.query.target || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8);
   if (!target) return res.status(400).json({ error: 'No target format' });
+  const abrIn = parseInt(req.query.abr, 10);
+  const abr = abrIn > 0 ? Math.max(32, Math.min(512, abrIn)) : 0; // 0 = format default
   const id = 'c' + (++cvSeq) + Math.random().toString(36).slice(2, 8);
   const job = {
-    id, state: 'setup', pct: 0, file: null, error: null, proc: null,
+    id, state: 'setup', pct: 0, file: null, error: null, proc: null, cancelled: false,
     dir: path.join(CV_DIR, id), createdAt: Date.now(),
   };
   cvJobs.set(id, job);
@@ -1068,7 +1321,8 @@ app.post('/api/convert/start', (req, res) => {
   ws.on('error', e => { job.state = 'error'; job.error = String(e.message || e); res.status(500).json({ error: job.error }); });
   ws.on('finish', () => {
     res.json({ id });
-    runCvJob(job, inPath, target).catch(e => {
+    runCvJob(job, inPath, target, abr).catch(e => {
+      if (job.cancelled) return;
       job.state = 'error';
       job.error = String(e && e.message || e).slice(0, 300);
       console.error('[converter]', job.error);
@@ -1090,6 +1344,12 @@ app.get('/api/convert/file/:id', (req, res) => {
   res.download(job.file, path.basename(job.file), () => cleanupCvJob(job));
 });
 
+app.post('/api/convert/cancel/:id', (req, res) => {
+  const job = cvJobs.get(req.params.id);
+  if (job) cleanupCvJob(job);
+  res.json({ ok: true });
+});
+
 // Janitor: kill abandoned jobs after 30 minutes
 setInterval(() => {
   const now = Date.now();
@@ -1103,7 +1363,8 @@ setInterval(() => {
 
 // Warm up yt-dlp in the background at boot (small, ~18MB) so the first
 // download doesn't stall; ffmpeg (~170MB, one-time) fetches on first job.
-ensureYtdlp().catch(e => console.warn('[downloader] yt-dlp prefetch failed:', e.message));
+ensureYtdlp().then(updateYtdlp).catch(e => console.warn('[downloader] yt-dlp prefetch failed:', e.message));
+setInterval(() => { updateYtdlp(); }, 12 * 60 * 60 * 1000).unref();
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Claude Arena running on http://localhost:${PORT}`));

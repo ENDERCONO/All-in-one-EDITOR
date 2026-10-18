@@ -10,3 +10,6 @@ node_modules/
 # Downloader temp output
 *.part
 *.ytdl
+
+# Optional YouTube sign-in cookies for the downloader — private, never commit
+cookies.txt
