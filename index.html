@@ -1873,6 +1873,17 @@
   }
   .vdl-detect b { color: var(--text-dim); font-weight: 500; }
   .vdl-check { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--text-dim); cursor: pointer; }
+  .srv-box {
+    border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
+    background: var(--bg-2); display: flex; flex-direction: column; gap: 10px;
+  }
+  .srv-box[hidden] { display: none; }
+  .srv-title { font-weight: 600; font-size: 14px; color: var(--text); }
+  .srv-text { font-size: 12.5px; line-height: 1.55; color: var(--text-dim); margin: 0; }
+  ol.srv-text { padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+  .srv-text code { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text); }
+  .srv-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+  .srv-row .dl-btn { min-width: 0; }
   .vdl-status { font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.5; color: var(--text-dim); word-break: break-word; }
   .job-list { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; max-height: 460px; overflow-y: auto; }
   .job-row {
@@ -7756,6 +7767,19 @@
           <div class="progress-text" id="vdlText">0%</div>
         </div>
         <div id="vdlStatus" hidden class="vdl-status"></div>
+
+        <div class="srv-box" id="vdlServerBox" hidden>
+          <div class="srv-title">No download server answered</div>
+          <div class="srv-text">This page is hosted on GitHub Pages, which can only serve files — downloading needs a server. Either one works:</div>
+          <ol class="srv-text">
+            <li><b>Online server:</b> paste its address (your Render service, e.g. <code>https://your-app.onrender.com</code>) and hit Connect. Deploy one for free on Render with this repo — the included <code>render.yaml</code> sets it up.</li>
+            <li><b>Your PC:</b> run <code>START-SERVER.bat</code> in the site folder and hit Connect — best for YouTube, since it uses your home connection.</li>
+          </ol>
+          <div class="srv-row">
+            <input type="text" id="vdlServerUrl" class="color-input cv-select" placeholder="https://your-app.onrender.com" spellcheck="false">
+            <button class="dl-btn" id="vdlServerGo">Connect</button>
+          </div>
+        </div>
 
         <div class="job-list" id="vdlList" hidden></div>
 
@@ -17056,32 +17080,70 @@ updatePanelForSelection();
 if (typeof setActiveTrack === 'function') setActiveTrack(0);
 
 /* ============================================================
-   API BASE RESOLVER — finds this site's backend (server.js) no
-   matter how the page was opened: served by it (same origin),
-   or double-clicked from disk (file://) with the server running
-   separately at http://localhost:3000. Result is cached.
+   API BASE RESOLVER — finds a backend (server.js) for the
+   downloader / converter, wherever the page is opened:
+   1. the page is served by it (same origin — Render or localhost)
+   2. a server running on this PC (http://localhost:3000) — the
+      best one for YouTube, it uses your home connection
+   3. the online server: an address saved in the downloader, or
+      the Render deploy from render.yaml. GitHub Pages only hosts
+      files, so this is what the Pages site talks to. Render's free
+      plan sleeps when idle; waking it takes up to a minute.
+   A found server is remembered; "none found" is not, so starting
+   a server and trying again works without reloading.
    ============================================================ */
+window.DEFAULT_ONLINE_API = 'https://all-in-one-editor.onrender.com';
+window.getSavedApiBase = function() {
+  try { return (localStorage.getItem('apiBase') || '').trim().replace(/\/+$/, ''); } catch (e) { return ''; }
+};
+window.setSavedApiBase = function(url) {
+  url = String(url || '').trim().replace(/\/+$/, '');
+  if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url;
+  try { url ? localStorage.setItem('apiBase', url) : localStorage.removeItem('apiBase'); } catch (e) {}
+  window._apiBase = null;
+  window._apiBasePromise = null;
+  return url;
+};
+window._apiBase = null;
 window._apiBasePromise = null;
-window.resolveApiBase = function() {
+async function apiPing(base, ms) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch(base + '/api/dl/ping', { signal: ctrl.signal, cache: 'no-store' });
+    const j = await r.json();
+    if (j && j.ok) return base;
+  } catch (e) {} finally { clearTimeout(t); }
+  throw new Error('no server at ' + (base || location.origin));
+}
+// Same origin or this PC only — quick, never waits on the online server
+window.findLocalApiBase = async function() {
+  const local = [];
+  if (/^https?:$/.test(location.protocol)) local.push('');
+  for (const c of ['http://localhost:3000', 'http://127.0.0.1:3000']) if (location.origin !== c) local.push(c);
+  try { return await Promise.any(local.map(b => apiPing(b, 1500))); } catch (e) { return null; }
+};
+// onStatus(msg) is told when it has to wait for a sleeping online server
+window.resolveApiBase = function(onStatus) {
+  if (window._apiBase !== null) return Promise.resolve(window._apiBase);
+  if (onStatus) (window._apiStatusCbs = window._apiStatusCbs || []).push(onStatus);
   if (!window._apiBasePromise) {
+    const say = msg => (window._apiStatusCbs || []).forEach(cb => { try { cb(msg); } catch (e) {} });
     window._apiBasePromise = (async () => {
-      const cands = [];
-      if (/^https?:$/.test(location.protocol)) cands.push('');
-      for (const c of ['http://localhost:3000', 'http://127.0.0.1:3000']) {
-        if (location.origin !== c) cands.push(c);
+      const local = await window.findLocalApiBase();
+      if (local !== null) return local;
+      const online = [...new Set([window.getSavedApiBase(), window.DEFAULT_ONLINE_API].filter(b => b && b !== location.origin))];
+      for (const base of online) {
+        const slow = setTimeout(() => say('Waking up the online server — free hosting sleeps when nobody uses it, this takes up to a minute…'), 2500);
+        try { return await apiPing(base, 90000); } catch (e) {} finally { clearTimeout(slow); }
       }
-      for (const base of cands) {
-        try {
-          const ctrl = new AbortController();
-          const t = setTimeout(() => ctrl.abort(), 1500);
-          const r = await fetch(base + '/api/dl/ping', { signal: ctrl.signal });
-          clearTimeout(t);
-          const j = await r.json();
-          if (j && j.ok) return base;
-        } catch (e) {}
-      }
-      return null; // no backend reachable
-    })();
+      return null;
+    })().then(base => {
+      window._apiBase = base;
+      window._apiBasePromise = null;
+      window._apiStatusCbs = [];
+      return base;
+    });
   }
   return window._apiBasePromise;
 };
@@ -17090,7 +17152,7 @@ window.resolveApiBase = function() {
 // hop straight to the served version — same origin, everything just works.
 if (location.protocol === 'file:') {
   window.resolveApiBase().then(base => {
-    if (base) location.replace(base + '/');
+    if (base && /^http:\/\/(localhost|127\.0\.0\.1):/.test(base)) location.replace(base + '/');
   });
 }
 
@@ -17434,11 +17496,13 @@ window.escHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').rep
     const links = parseLinks(urlInput.value);
     if (!links.length) { setStatus('Paste a link first — it should start with http(s)://', true); urlInput.focus(); return; }
     setStatus('');
-    apiBase = await window.resolveApiBase();
-    if (apiBase === null) {
-      setStatus('The downloader needs the built-in server. Double-click START-SERVER.bat in the site folder (or run "npm start"), then try again.', true);
-      return;
-    }
+    serverBox.hidden = true;
+    goBtn.disabled = true;
+    apiBase = await window.resolveApiBase(msg => setStatus(msg));
+    goBtn.disabled = false;
+    setStatus('');
+    if (apiBase === null) { showServerBox(); return; }
+    showEngine();
     const opts = { kind: kindNow(), format: af.value, quality: kindNow() === 'audio' ? ab.value : vq.value };
     stopped = false;
     zipBlob = null;
@@ -17448,7 +17512,6 @@ window.escHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').rep
     urlInput.value = '';
     updateDetect();
     render();
-    refreshEngine();
     // playlists turn into their videos (in place, so the order stays)
     for (const it of items.filter(i => i.state === 'expanding')) {
       try {
@@ -17567,19 +17630,56 @@ window.escHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').rep
     if (failed && !done) setStatus(items.find(i => i.state === 'error').error, true);
   }
 
-  // Which yt-dlp the server has (it updates itself)
-  async function refreshEngine() {
-    const base = apiBase !== null ? apiBase : await window.resolveApiBase();
-    if (base === null) { engineEl.textContent = 'Server not running — start it with START-SERVER.bat (or "npm start")'; return; }
+  /* ---------- which server ---------- */
+  const serverBox = $('vdlServerBox'), serverUrl = $('vdlServerUrl'), serverGo = $('vdlServerGo');
+  function serverLabel(base) {
+    if (base === '') return /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? "this PC's server" : 'this site\'s server';
+    if (/^http:\/\/(localhost|127\.0\.0\.1):/.test(base)) return "this PC's server";
+    return 'online server ' + base.replace(/^https?:\/\//, '');
+  }
+  function showServerBox() {
+    serverBox.hidden = false;
+    serverUrl.value = window.getSavedApiBase();
+    engineEl.textContent = '';
+  }
+  async function showEngine() {
+    if (apiBase === null) return;
     try {
-      const p = await getJson(base + '/api/dl/ping');
-      engineEl.textContent = (p.version ? `yt-dlp ${p.version} · updates itself` : 'yt-dlp installs on the first download')
-        + (p.cookies ? ' · using cookies.txt' : '');
+      const p = await getJson(apiBase + '/api/dl/ping');
+      engineEl.textContent = 'Using ' + serverLabel(apiBase) + ' · '
+        + (p.version ? `yt-dlp ${p.version}, updates itself` : 'downloader installs on the first download')
+        + (p.cookies ? ' · cookies.txt on' : '');
     } catch (e) {}
   }
+  serverGo.addEventListener('click', async () => {
+    const url = window.setSavedApiBase(serverUrl.value);
+    serverGo.disabled = true;
+    engineEl.textContent = url ? 'Connecting to ' + url + '…' : 'Looking for a server…';
+    apiBase = await window.resolveApiBase(msg => { engineEl.textContent = msg; });
+    serverGo.disabled = false;
+    if (apiBase === null) {
+      engineEl.textContent = url ? 'No answer from ' + url + ' — check the address (and that the service is deployed).' : 'Still no server found.';
+      return;
+    }
+    serverBox.hidden = true;
+    showEngine();
+    toast('Connected to ' + serverLabel(apiBase));
+    if (parseLinks(urlInput.value).length) start();
+  });
+  serverUrl.addEventListener('keydown', e => { if (e.key === 'Enter') serverGo.click(); });
+
+  // Look for the server as soon as the tab opens, so a sleeping online
+  // server is already waking up while you paste links
+  async function warmUp() {
+    if (apiBase !== null) return showEngine();
+    engineEl.textContent = 'Looking for a download server…';
+    apiBase = await window.resolveApiBase(msg => { engineEl.textContent = msg; });
+    if (apiBase === null) engineEl.textContent = 'No download server found yet — hit Download to see your options.';
+    else showEngine();
+  }
   const tab = document.querySelector('[data-tab="convert"]');
-  if (tab) tab.addEventListener('click', refreshEngine);
-  if (typeof currentMode !== 'undefined' && currentMode === 'convert') refreshEngine();
+  if (tab) tab.addEventListener('click', warmUp);
+  if (typeof currentMode !== 'undefined' && currentMode === 'convert') warmUp();
   updateDetect();
 })();
 
@@ -17911,35 +18011,33 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
     items.forEach(it => { it.batch = false; });
     queued.forEach(it => { it.batch = true; it.status = 'queued'; it.error = null; it.pct = 0; });
 
-    // Prefer this site's own server (native ffmpeg — many times faster than
-    // wasm and no CDN needed). Works even when the page was opened straight
-    // from disk, as long as the server is running (START-SERVER.bat).
-    const apiBase = await window.resolveApiBase();
-    const useServer = apiBase !== null;
+    // A server on this PC (or the one serving the page) converts natively —
+    // many times faster than wasm. Otherwise convert in the browser; the
+    // online server is only the last resort (uploading big videos to it is
+    // slow).
+    let apiBase = await window.findLocalApiBase();
     let ff = null;
-    if (!useServer) {
-      // No server → in-browser ffmpeg.wasm. On file:// pages browsers block
-      // the wasm engine's workers, so the server is required there.
-      const fail = (label, msg) => {
-        bulkText.textContent = label;
-        notify(msg);
-        running = false;
-        bulkConvert.disabled = false;
-        render();
-      };
-      if (location.protocol === 'file:') {
-        return fail('Server not running', 'Start the server first: double-click START-SERVER.bat in the site folder (or run "npm start"), then hit Convert again.');
-      }
-      bulkText.textContent = 'Loading engine…';
+    if (apiBase === null) {
+      bulkText.textContent = 'Loading the in-browser engine…';
       try {
+        if (location.protocol === 'file:') throw new Error('wasm engine is blocked on file:// pages');
         ff = await window.loadSharedFFmpeg((pct, msg) => { if (msg) bulkText.textContent = msg; });
+        window._sharedFFmpegProgressCb = null;
+        window._sharedFFmpegLogCb = null;
       } catch (e) {
-        console.error('[converter] wasm engine failed:', e);
-        return fail('Engine failed to load', 'Could not load the conversion engine — double-click START-SERVER.bat in the site folder (or run "npm start"), then try again.');
+        console.warn('[converter] wasm engine unavailable, trying the online server:', e);
+        apiBase = await window.resolveApiBase(msg => { bulkText.textContent = msg; });
+        if (apiBase === null) {
+          bulkText.textContent = 'No conversion engine available';
+          notify('Could not load the in-browser engine and no server answered — check your connection, or run START-SERVER.bat on your PC.');
+          running = false;
+          bulkConvert.disabled = false;
+          render();
+          return;
+        }
       }
-      window._sharedFFmpegProgressCb = null;
-      window._sharedFFmpegLogCb = null;
     }
+    const useServer = apiBase !== null;
 
     const abr = abrSel.value;
     const fetchFile = (window.FFmpegUtil && window.FFmpegUtil.fetchFile) || (async f => new Uint8Array(await f.arrayBuffer()));

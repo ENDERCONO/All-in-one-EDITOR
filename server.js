@@ -712,7 +712,16 @@ const YTDLP_ASSET = IS_WIN ? 'yt-dlp.exe'
 // Optional: a cookies.txt exported from a signed-in browser. Lets YouTube
 // downloads work where YouTube asks for a sign-in (cloud / data-center IPs,
 // age-restricted videos).
-const COOKIES_PATH = process.env.YTDLP_COOKIES || path.join(__dirname, 'cookies.txt');
+let COOKIES_PATH = process.env.YTDLP_COOKIES || path.join(__dirname, 'cookies.txt');
+// Hosts like Render have no place to drop a file — take the cookies.txt
+// contents from an environment variable instead (plain or base64)
+const cookieEnv = process.env.YTDLP_COOKIES_TEXT || process.env.YTDLP_COOKIES_B64;
+if (cookieEnv) {
+  let text = cookieEnv;
+  if (!/\t/.test(text)) { try { text = Buffer.from(text, 'base64').toString('utf8'); } catch (e) {} }
+  COOKIES_PATH = path.join(os.tmpdir(), 'aio-yt-cookies.txt');
+  try { fs.writeFileSync(COOKIES_PATH, text.replace(/\\n/g, '\n')); } catch (e) { console.warn('[downloader] could not write cookies:', e.message); }
+}
 
 // setup phase shared with clients so the first-ever download can show
 // "installing tools" progress instead of hanging silently
@@ -1364,6 +1373,9 @@ setInterval(() => {
 // Warm up yt-dlp in the background at boot (small, ~18MB) so the first
 // download doesn't stall; ffmpeg (~170MB, one-time) fetches on first job.
 ensureYtdlp().then(updateYtdlp).catch(e => console.warn('[downloader] yt-dlp prefetch failed:', e.message));
+// On Render the disk is wiped on every restart — fetch ffmpeg now instead
+// of making the first download wait for it
+if (process.env.RENDER) ensureDlTools().catch(e => console.warn('[downloader] tool prefetch failed:', e.message));
 setInterval(() => { updateYtdlp(); }, 12 * 60 * 60 * 1000).unref();
 
 const PORT = process.env.PORT || 3000;
