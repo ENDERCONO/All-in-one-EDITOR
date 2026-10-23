@@ -4191,6 +4191,32 @@
   .st-checks label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
   .ur-btn.on { background: var(--surface-3); color: var(--text); border-color: var(--border-hover); }
 
+  /* Gradient Blur */
+  .gb-wrap.gb-centered canvas#gbCanvas { cursor: crosshair; touch-action: none; }
+  .gb-dir-row { display: flex; gap: 14px; align-items: flex-start; }
+  .gb-dir {
+    display: grid; grid-template-columns: repeat(3, 34px); gap: 4px;
+    background: var(--bg-2); padding: 4px;
+    border-radius: 8px; border: 1px solid var(--border);
+    flex: none;
+  }
+  .gb-dir button {
+    height: 30px; padding: 0;
+    background: transparent; border: none; border-radius: 6px;
+    font-family: 'JetBrains Mono', monospace; font-size: 14px; line-height: 1;
+    color: var(--text-dim); cursor: pointer;
+    transition: all 0.15s;
+  }
+  .gb-dir button:hover { color: var(--text); }
+  .gb-dir button.on {
+    background: var(--surface-3); color: var(--text);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset;
+  }
+  .gb-dir .gb-dir-mid { font-size: 12px; color: var(--text-faint); }
+  .gb-dir-angle { flex: 1; min-width: 0; }
+  .gb-dir-angle .field-label { margin-bottom: 6px; }
+
+
   .zoom-bar {
     display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
     margin-top: 10px;
@@ -5902,7 +5928,7 @@
 
       <!-- ===== IMAGES ===== -->
       <div class="sb-group" data-group="images">
-        <button class="sb-group-btn" title="Images — editor, compositor, gradient, resize &amp; crop, seamless tile">
+        <button class="sb-group-btn" title="Images — editor, compositor, gradient, resize &amp; crop, seamless tile, gradient blur">
           <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span>
           <span class="sb-label">Images</span>
           <span class="sb-caret">▶</span>
@@ -5927,6 +5953,10 @@
           <button class="sb-tab" data-tab="seamless" title="Seamless Tile — tile a texture 2×2, fix the + seams, grab the middle as one seamless tile">
             <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18M3 12h18"/><rect x="7.5" y="7.5" width="9" height="9" stroke-dasharray="2 2"/></svg></span>
             <span class="sb-label">Seamless Tile</span>
+          </button>
+          <button class="sb-tab" data-tab="gradblur" title="Gradient Blur — blur that fades from full to sharp along a direction, a band or out from the center">
+            <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 14h18" stroke-dasharray="1.5 2"/><path d="M3 17.5h18" stroke-dasharray="3 1.5" opacity="0.6"/><circle cx="12" cy="8.5" r="2.5"/></svg></span>
+            <span class="sb-label">Gradient Blur</span>
           </button>
         </div>
       </div>
@@ -6116,6 +6146,11 @@
           <div class="row"><span>Erase</span><kbd>right-click</kbd></div>
           <div class="row"><span>Pick a color</span><kbd>Alt click</kbd></div>
           <div class="row"><span>Undo / redo</span><kbd>Ctrl Z / Y</kbd></div>
+        </div>
+        <div>
+          <h3>Gradient blur</h3>
+          <div class="row"><span>Show the original (hold)</span><kbd>C</kbd></div>
+          <div class="row"><span>Move the center</span><kbd>click / drag</kbd></div>
         </div>
         <div>
           <h3>Audio tools</h3>
@@ -6854,6 +6889,209 @@
           <button class="ur-btn" id="stLink" title="Pick the 2×2 file you're editing in another app — every time you save it, it reloads here">Live-link file</button>
         </div>
         <div class="st-note" id="stLinkNote" hidden></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ================= GRADIENT BLUR ================= -->
+  <main data-mode="gradblur" hidden>
+    <header class="mode-header">
+      <div>
+        <div class="eyebrow">Mode 02e · Blur that fades in</div>
+        <h1>Gradient <em>Blur</em></h1>
+        <p>Blur one side of an image and fade it back to sharp. Full blur at the end you pick, easing off until it's normal again — choose the blur type, the direction, how strong it gets and where it starts and stops.</p>
+      </div>
+      <div class="legend">
+        <span class="pill">Click / drag the preview to move the center</span>
+        <span class="pill">Hold C to compare · Shift + scroll zoom</span>
+      </div>
+    </header>
+
+    <div class="remover-layout">
+      <div class="rem-preview">
+        <div class="rem-preview-head">
+          <h3>Preview</h3>
+          <div class="info" id="gbInfo">No image</div>
+          <button class="clear-x" id="gbClearBtn" title="Clear the image" hidden>✕</button>
+        </div>
+
+        <div class="rem-canvas-wrap gb-wrap" id="gbCanvasWrap">
+          <canvas id="gbCanvas" style="display:none"></canvas>
+          <label class="rem-upload" id="gbEmptyHint" for="gbInput">
+            <div>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <path d="M3 15h18" stroke-dasharray="2 2"/><path d="M3 18.5h18" stroke-dasharray="1 2"/>
+              </svg>
+              <div class="t">Drop an image — or click to browse</div>
+              <div class="s">Gaussian · square · motion · zoom · spin — fading by direction or from the center</div>
+            </div>
+          </label>
+          <input type="file" accept="image/*" id="gbInput" hidden>
+        </div>
+      </div>
+
+      <div class="rem-panel">
+        <h3>Blur</h3>
+
+        <div class="field-group">
+          <div class="field-label"><span>Type</span><span class="color-rgb-display" id="gbTypeHint">soft, natural</span></div>
+          <div class="bgmode" id="gbType">
+            <input type="radio" name="gbtype" id="gbtype-gauss" value="gauss" checked>
+            <label for="gbtype-gauss" title="Gaussian — soft, natural blur (like a camera out of focus)">Gaussian</label>
+            <input type="radio" name="gbtype" id="gbtype-box" value="box">
+            <label for="gbtype-box" title="Square — box blur, every pixel in a square averaged evenly">Square</label>
+            <input type="radio" name="gbtype" id="gbtype-motion" value="motion">
+            <label for="gbtype-motion" title="Motion — streaks along one angle">Motion</label>
+            <input type="radio" name="gbtype" id="gbtype-zoom" value="zoom">
+            <label for="gbtype-zoom" title="Radial zoom — streaks out from the center">Radial</label>
+            <input type="radio" name="gbtype" id="gbtype-spin" value="spin">
+            <label for="gbtype-spin" title="Spin — swirls around the center">Spin</label>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label"><span>Intensity</span><span class="color-rgb-display"><span id="gbIntDisp">24</span> px</span></div>
+          <div class="slider-row">
+            <input type="range" id="gbInt" min="0" max="300" value="24" step="1">
+            <input type="number" class="num-input" id="gbIntNum" min="0" max="300" value="24">
+          </div>
+          <div class="st-note">How blurry it gets where the gradient is full — measured on the original image size.</div>
+        </div>
+
+        <div class="field-group" id="gbMotionGroup" hidden>
+          <div class="field-label"><span>Streak angle</span><span class="color-rgb-display"><span id="gbMAngDisp">0</span>°</span></div>
+          <div class="slider-row">
+            <input type="range" id="gbMAng" min="0" max="179" value="0" step="1">
+            <input type="number" class="num-input" id="gbMAngNum" min="0" max="179" value="0">
+          </div>
+          <div class="st-note">0° = sideways streaks, 90° = up and down.</div>
+        </div>
+
+        <h3 style="margin-top:8px">Gradient</h3>
+
+        <div class="field-group">
+          <div class="field-label"><span>Shape</span><span class="color-rgb-display" id="gbShapeHint">blurry on one side</span></div>
+          <div class="bgmode" id="gbShape">
+            <input type="radio" name="gbshape" id="gbshape-linear" value="linear" checked>
+            <label for="gbshape-linear" title="Linear — blurry at one side, sharp at the other">Linear</label>
+            <input type="radio" name="gbshape" id="gbshape-mirror" value="mirror">
+            <label for="gbshape-mirror" title="Mirrored — blurry on both sides, sharp band through the center (tilt-shift)">Mirrored</label>
+            <input type="radio" name="gbshape" id="gbshape-radial" value="radial">
+            <label for="gbshape-radial" title="Radial — sharp around the center, blurry toward the edges (vignette)">Radial</label>
+          </div>
+        </div>
+
+        <div class="field-group" id="gbDirGroup">
+          <div class="field-label"><span>Blurry side</span><span class="color-rgb-display" id="gbDirHint">bottom</span></div>
+          <div class="gb-dir-row">
+            <div class="gb-dir" id="gbDir">
+              <button type="button" data-a="225" title="Top left">↖</button>
+              <button type="button" data-a="270" title="Top">↑</button>
+              <button type="button" data-a="315" title="Top right">↗</button>
+              <button type="button" data-a="180" title="Left">←</button>
+              <button type="button" class="gb-dir-mid" data-flip title="Flip to the opposite side">⇅</button>
+              <button type="button" data-a="0" title="Right">→</button>
+              <button type="button" data-a="135" title="Bottom left">↙</button>
+              <button type="button" data-a="90" class="on" title="Bottom">↓</button>
+              <button type="button" data-a="45" title="Bottom right">↘</button>
+            </div>
+            <div class="gb-dir-angle">
+              <div class="field-label"><span>Angle</span><span class="color-rgb-display"><span id="gbAngDisp">90</span>°</span></div>
+              <div class="slider-row">
+                <input type="range" id="gbAng" min="0" max="359" value="90" step="1">
+                <input type="number" class="num-input" id="gbAngNum" min="0" max="359" value="90">
+              </div>
+              <div class="st-note">The arrow points at the blurriest side. 0° right · 90° down · 180° left · 270° up.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label"><span>Starts at</span><span class="color-rgb-display"><span id="gbStartDisp">30</span>%</span></div>
+          <div class="slider-row">
+            <input type="range" id="gbStart" min="0" max="100" value="30" step="1">
+            <input type="number" class="num-input" id="gbStartNum" min="0" max="100" value="30">
+          </div>
+          <div class="field-label" style="margin-top:10px"><span>Full blur at</span><span class="color-rgb-display"><span id="gbEndDisp">100</span>%</span></div>
+          <div class="slider-row">
+            <input type="range" id="gbEnd" min="0" max="100" value="100" step="1">
+            <input type="number" class="num-input" id="gbEndNum" min="0" max="100" value="100">
+          </div>
+          <div class="st-note" id="gbRangeNote">Measured from the sharp side (0%) to the blurry side (100%). Sharp before the start, fading in between, maxed after the end.</div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label"><span>Falloff</span></div>
+          <div class="bgmode st-four" id="gbCurve">
+            <input type="radio" name="gbcurve" id="gbcurve-linear" value="linear">
+            <label for="gbcurve-linear" title="Even fade">Linear</label>
+            <input type="radio" name="gbcurve" id="gbcurve-smooth" value="smooth" checked>
+            <label for="gbcurve-smooth" title="Eases in and out — no visible edge where it starts or ends">Smooth</label>
+            <input type="radio" name="gbcurve" id="gbcurve-in" value="in">
+            <label for="gbcurve-in" title="Stays sharp longer, then ramps up quickly">Ease in</label>
+            <input type="radio" name="gbcurve" id="gbcurve-out" value="out">
+            <label for="gbcurve-out" title="Gets blurry quickly, then levels off">Ease out</label>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label"><span>Blur on the sharp side</span><span class="color-rgb-display"><span id="gbBaseDisp">0</span>%</span></div>
+          <div class="slider-row">
+            <input type="range" id="gbBase" min="0" max="100" value="0" step="1">
+            <input type="number" class="num-input" id="gbBaseNum" min="0" max="100" value="0">
+          </div>
+          <div class="st-note">0% = the sharp side stays fully normal. Raise it to soften the whole image a bit.</div>
+        </div>
+
+        <div class="field-group" id="gbCenterGroup" hidden>
+          <div class="field-label"><span>Center</span><span class="color-rgb-display"><span id="gbCxDisp">50</span>% · <span id="gbCyDisp">50</span>%</span></div>
+          <div class="slider-row">
+            <input type="range" id="gbCx" min="0" max="100" value="50" step="1" title="Center X">
+            <input type="number" class="num-input" id="gbCxNum" min="0" max="100" value="50">
+          </div>
+          <div class="slider-row" style="margin-top:6px">
+            <input type="range" id="gbCy" min="0" max="100" value="50" step="1" title="Center Y">
+            <input type="number" class="num-input" id="gbCyNum" min="0" max="100" value="50">
+          </div>
+          <div class="st-note">Or click / drag on the preview.</div>
+        </div>
+
+        <div class="field-group">
+          <div class="st-checks">
+            <label><input type="checkbox" id="gbInvert"> Invert</label>
+            <label id="gbCircleWrap" hidden><input type="checkbox" id="gbCircle"> Perfect circle</label>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label"><span>Show</span></div>
+          <div class="st-checks">
+            <label><input type="checkbox" id="gbShowGuides" checked> Start / end lines</label>
+            <label><input type="checkbox" id="gbShowMask"> Blur mask</label>
+            <label title="Render the preview at the full image size (slower on big images)"><input type="checkbox" id="gbFullRes"> Full-res preview</label>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label"><span>Output format</span></div>
+          <div class="bgmode">
+            <input type="radio" name="gbfmt" id="gbfmt-png" value="png" checked>
+            <label for="gbfmt-png">PNG</label>
+            <input type="radio" name="gbfmt" id="gbfmt-jpeg" value="jpeg">
+            <label for="gbfmt-jpeg">JPEG</label>
+            <input type="radio" name="gbfmt" id="gbfmt-webp" value="webp">
+            <label for="gbfmt-webp">WEBP</label>
+          </div>
+        </div>
+
+        <button class="apply-btn grad-apply" id="gbDownload" disabled>Download</button>
+
+        <div class="ur-row">
+          <button class="ur-btn" id="gbCopy" disabled>Copy to clipboard</button>
+          <button class="ur-btn" id="gbCompare" disabled title="Hold to see the original (or hold C)">Hold to compare</button>
+          <button class="ur-btn" id="gbReset" title="Put every setting back to its default">Reset settings</button>
+        </div>
       </div>
     </div>
   </main>
@@ -8950,6 +9188,7 @@ document.getElementById('sidebarToggle').addEventListener('click', () => {
     gradient:   ['gradient', 'blend images', 'mix two images', 'fade', 'transition', 'overlay'],
     resizecrop: ['resize', 'crop', 'cut image', 'scale', '1920x1080', 'fit size', 'wallpaper', 'thumbnail', 'dimensions', 'aspect ratio'],
     seamless:   ['seamless tile', 'tileable', 'tiling', 'texture', 'pixel art', 'repeat', 'pattern', 'seams', 'wrap', 'offset'],
+    gradblur:   ['gradient blur', 'blur', 'tilt shift', 'tilt-shift', 'fade blur', 'gaussian', 'box blur', 'motion blur', 'radial blur', 'zoom blur', 'spin blur', 'vignette', 'depth of field', 'soften'],
     audio:      ['audio tools', 'sound', 'music', 'wav', 'mp3', 'trim audio', 'volume', 'pitch', 'voice'],
     timeline:   ['timeline', 'video editor', 'clips', 'tracks', 'sequence', 'cut video', 'arrange'],
     normalmix:  ['normal mix', 'normal map', 'normals', 'bump map', 'blend normals', 'material'],
@@ -20693,6 +20932,662 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
   syncButtons();
 })();
 </script>
+
+<!-- =====================================================
+     Gradient Blur — blur that fades from full to none along a direction,
+     a mirrored band or out from a center
+     ===================================================== -->
+<script>
+// The blur math lives in one self-contained function so the same code runs
+// on the page and inside a Web Worker (built from its source text).
+function gradBlurEngine() {
+  const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+  const CURVES = {
+    linear: t => t,
+    smooth: t => t * t * (3 - 2 * t),
+    in:     t => t * t,
+    out:    t => 1 - (1 - t) * (1 - t),
+  };
+
+  // Where the gradient sits (0 = sharp side, 1 = blurry side), before the
+  // start / end points are applied. Coordinates are in pixels, centers at +0.5.
+  function geometry(W, H, p) {
+    const a = p.angle * Math.PI / 180;
+    const dx = Math.cos(a), dy = Math.sin(a);
+    const cx = p.cx * W, cy = p.cy * H;
+    let pmin = Infinity, pmax = -Infinity;
+    for (const [x, y] of [[0, 0], [W, 0], [0, H], [W, H]]) {
+      const q = x * dx + y * dy;
+      if (q < pmin) pmin = q;
+      if (q > pmax) pmax = q;
+    }
+    const span = Math.max(1e-6, pmax - pmin);
+    const halfDiag = Math.hypot(W, H) / 2;
+    return { dx, dy, cx, cy, pmin, span, halfDiag };
+  }
+
+  function rawT(g, W, H, p, px, py) {
+    if (p.shape === 'linear') return (px * g.dx + py * g.dy - g.pmin) / g.span;
+    if (p.shape === 'mirror') return Math.abs((px - g.cx) * g.dx + (py - g.cy) * g.dy) / (g.span / 2);
+    if (p.circle) return Math.hypot(px - g.cx, py - g.cy) / g.halfDiag;
+    return Math.hypot((px - g.cx) / (W / 2), (py - g.cy) / (H / 2)) / Math.SQRT2;
+  }
+
+  // Blur amount per pixel, 0..1
+  function makeMask(W, H, p) {
+    const m = new Float32Array(W * H);
+    const g = geometry(W, H, p);
+    const s = p.start, e = p.end, f = CURVES[p.curve] || CURVES.linear;
+    const base = p.base;
+    for (let y = 0, i = 0; y < H; y++) {
+      const py = y + 0.5;
+      for (let x = 0; x < W; x++, i++) {
+        const t = rawT(g, W, H, p, x + 0.5, py);
+        let v = e === s ? (t >= s ? 1 : 0) : clamp01((t - s) / (e - s));
+        v = f(v);
+        if (p.invert) v = 1 - v;
+        m[i] = base + (1 - base) * v;
+      }
+    }
+    return m;
+  }
+
+  // Premultiplied float copy so transparent pixels don't bleed their color
+  function premul(d) {
+    const out = new Float32Array(d.length);
+    for (let i = 0; i < d.length; i += 4) {
+      const a = d[i + 3] / 255;
+      out[i] = d[i] * a; out[i + 1] = d[i + 1] * a; out[i + 2] = d[i + 2] * a; out[i + 3] = d[i + 3];
+    }
+    return out;
+  }
+  function unpremul(f) {
+    const out = new Uint8ClampedArray(f.length);
+    for (let i = 0; i < f.length; i += 4) {
+      const a = f[i + 3];
+      if (a > 0.001) {
+        const k = 255 / a;
+        out[i] = f[i] * k; out[i + 1] = f[i + 1] * k; out[i + 2] = f[i + 2] * k;
+      }
+      out[i + 3] = a;
+    }
+    return out;
+  }
+
+  // One box-blur pass along rows or columns where every pixel has its own
+  // (fractional) radius. A prefix sum over the edge-extended line makes each
+  // pixel O(1) whatever its radius.
+  function boxPass(src, dst, W, H, rad, horizontal) {
+    let maxR = 0;
+    for (let i = 0; i < rad.length; i++) if (rad[i] > maxR) maxR = rad[i];
+    const P = Math.ceil(maxR) + 1;
+    const len = horizontal ? W : H, lines = horizontal ? H : W, stride = horizontal ? 1 : W;
+    const L = len + 2 * P;
+    const pre = new Float64Array((L + 1) * 4);
+    for (let line = 0; line < lines; line++) {
+      const start = horizontal ? line * W : line;
+      let s0 = 0, s1 = 0, s2 = 0, s3 = 0;
+      for (let k = 0; k < L; k++) {
+        const idx = k < P ? 0 : k - P >= len ? len - 1 : k - P;
+        const o = (start + idx * stride) * 4;
+        s0 += src[o]; s1 += src[o + 1]; s2 += src[o + 2]; s3 += src[o + 3];
+        const q = (k + 1) * 4;
+        pre[q] = s0; pre[q + 1] = s1; pre[q + 2] = s2; pre[q + 3] = s3;
+      }
+      for (let k = 0; k < len; k++) {
+        const pi = start + k * stride, o = pi * 4;
+        const r = rad[pi];
+        if (r < 0.01) {
+          dst[o] = src[o]; dst[o + 1] = src[o + 1]; dst[o + 2] = src[o + 2]; dst[o + 3] = src[o + 3];
+          continue;
+        }
+        const a = k - r + P, b = k + r + 1 + P;
+        const ia = Math.floor(a), fa = a - ia, ib = Math.floor(b), fb = b - ib;
+        const qa = ia * 4, qb = ib * 4;
+        const inv = 1 / (2 * r + 1);
+        for (let c = 0; c < 4; c++) {
+          const A = pre[qa + c] + (pre[qa + 4 + c] - pre[qa + c]) * fa;
+          const B = pre[qb + c] + (pre[qb + 4 + c] - pre[qb + c]) * fb;
+          dst[o + c] = (B - A) * inv;
+        }
+      }
+    }
+  }
+
+  function boxBlur(buf, W, H, rad, passes) {
+    let a = buf, b = new Float32Array(buf.length);
+    for (let n = 0; n < passes; n++) {
+      boxPass(a, b, W, H, rad, true);
+      boxPass(b, a, W, H, rad, false);
+    }
+    return a;
+  }
+
+  // Motion / zoom / spin: each pass averages a pixel with two copies shifted
+  // forward and back, halving the shift every pass — K passes give 2^K evenly
+  // spaced samples along the streak, cheaply.
+  function streakBlur(buf, W, H, m, p) {
+    const len = 2 * p.intensity;
+    const K = Math.min(11, Math.max(1, Math.ceil(Math.log2(Math.max(1, len))) + 1));
+    const cx = p.cx * W, cy = p.cy * H;
+    let maxDist = 1;
+    for (const [x, y] of [[0, 0], [W, 0], [0, H], [W, H]]) maxDist = Math.max(maxDist, Math.hypot(x - cx, y - cy));
+    const ma = p.motionAngle * Math.PI / 180;
+    const mx = Math.cos(ma) * len, my = Math.sin(ma) * len;
+    const k = len / maxDist; // zoom: streak length per px from center · spin: radians
+    const type = p.type;
+    let src = buf, dst = new Float32Array(buf.length);
+    const W1 = W - 1, H1 = H - 1;
+    for (let j = 1; j <= K; j++) {
+      const frac = Math.pow(2, -j) / 2;
+      for (let y = 0, i = 0; y < H; y++) {
+        for (let x = 0; x < W; x++, i++) {
+          const o = i * 4, mm = m[i];
+          if (mm <= 0.001) {
+            dst[o] = src[o]; dst[o + 1] = src[o + 1]; dst[o + 2] = src[o + 2]; dst[o + 3] = src[o + 3];
+            continue;
+          }
+          let ax, ay, bx, by;
+          if (type === 'motion') {
+            const ox = mx * mm * frac, oy = my * mm * frac;
+            ax = x + ox; ay = y + oy; bx = x - ox; by = y - oy;
+          } else {
+            const rx = x + 0.5 - cx, ry = y + 0.5 - cy;
+            if (type === 'zoom') {
+              const s = k * mm * frac;
+              ax = x + rx * s; ay = y + ry * s; bx = x - rx * s; by = y - ry * s;
+            } else {
+              const ang = k * mm * frac, co = Math.cos(ang), si = Math.sin(ang);
+              ax = cx + rx * co - ry * si - 0.5; ay = cy + rx * si + ry * co - 0.5;
+              bx = cx + rx * co + ry * si - 0.5; by = cy - rx * si + ry * co - 0.5;
+            }
+          }
+          // two bilinear samples, clamped to the edges
+          for (let t = 0; t < 2; t++) {
+            let u = t ? bx : ax, v = t ? by : ay;
+            u = u < 0 ? 0 : u > W1 ? W1 : u;
+            v = v < 0 ? 0 : v > H1 ? H1 : v;
+            const x0 = u | 0, y0 = v | 0;
+            const x1 = x0 < W1 ? x0 + 1 : x0, y1 = y0 < H1 ? y0 + 1 : y0;
+            const fx = u - x0, fy = v - y0;
+            const w00 = (1 - fx) * (1 - fy) * 0.5, w10 = fx * (1 - fy) * 0.5, w01 = (1 - fx) * fy * 0.5, w11 = fx * fy * 0.5;
+            const o00 = (y0 * W + x0) * 4, o10 = (y0 * W + x1) * 4, o01 = (y1 * W + x0) * 4, o11 = (y1 * W + x1) * 4;
+            for (let c = 0; c < 4; c++) {
+              const val = src[o00 + c] * w00 + src[o10 + c] * w10 + src[o01 + c] * w01 + src[o11 + c] * w11;
+              dst[o + c] = t ? dst[o + c] + val : val;
+            }
+          }
+        }
+      }
+      const tmp = src; src = dst; dst = tmp;
+    }
+    return src;
+  }
+
+  // data: RGBA bytes, W×H. p.intensity is in pixels of THIS image size.
+  function process(data, W, H, p) {
+    const m = makeMask(W, H, p);
+    let any = false;
+    for (let i = 0; i < m.length; i++) if (m[i] > 0.001) { any = true; break; }
+    if (!any || p.intensity <= 0) return new Uint8ClampedArray(data);
+    let buf = premul(data);
+    if (p.type === 'gauss' || p.type === 'box') {
+      const rad = new Float32Array(W * H);
+      if (p.type === 'box') {
+        for (let i = 0; i < rad.length; i++) rad[i] = p.intensity * m[i];
+      } else {
+        // three boxes of half-width r ≈ a gaussian with sigma² = r² + r
+        for (let i = 0; i < rad.length; i++) {
+          const sigma = p.intensity * m[i] / 2;
+          rad[i] = (Math.sqrt(1 + 4 * sigma * sigma) - 1) / 2;
+        }
+      }
+      buf = boxBlur(buf, W, H, rad, p.type === 'box' ? 1 : 3);
+    } else {
+      buf = streakBlur(buf, W, H, m, p);
+    }
+    return unpremul(buf);
+  }
+
+  return { process, makeMask, geometry };
+}
+
+(function gradientBlur() {
+  const $ = id => document.getElementById(id);
+  const input = $('gbInput');
+  if (!input) return; // panel not present
+  const wrap = $('gbCanvasWrap'), canvas = $('gbCanvas'), emptyHint = $('gbEmptyHint');
+  const info = $('gbInfo'), clearBtn = $('gbClearBtn');
+  const typeHint = $('gbTypeHint'), shapeHint = $('gbShapeHint'), dirHint = $('gbDirHint');
+  const dirPad = $('gbDir'), dirGroup = $('gbDirGroup'), motionGroup = $('gbMotionGroup');
+  const centerGroup = $('gbCenterGroup'), circleWrap = $('gbCircleWrap'), rangeNote = $('gbRangeNote');
+  const invertCb = $('gbInvert'), circleCb = $('gbCircle');
+  const guidesCb = $('gbShowGuides'), maskCb = $('gbShowMask'), fullCb = $('gbFullRes');
+  const dlBtn = $('gbDownload'), copyBtn = $('gbCopy'), cmpBtn = $('gbCompare'), resetBtn = $('gbReset');
+  const ctx = canvas.getContext('2d');
+  const engine = gradBlurEngine();
+
+  const PREVIEW_MAX = 1000;
+  const TYPE_HINTS = { gauss: 'soft, natural', box: 'square kernel', motion: 'streaks one way', zoom: 'out from the center', spin: 'swirls around the center' };
+  const SHAPE_HINTS = { linear: 'blurry on one side', mirror: 'sharp band, blurry both sides', radial: 'sharp center, blurry edges' };
+  const SIDE_NAMES = { 0: 'right', 45: 'bottom right', 90: 'bottom', 135: 'bottom left', 180: 'left', 225: 'top left', 270: 'top', 315: 'top right' };
+  const RANGE_NOTES = {
+    linear: 'Measured from the sharp side (0%) to the blurry side (100%). Sharp before the start, fading in between, maxed after the end.',
+    mirror: 'Measured from the center line (0%) out to the edges (100%). Sharp before the start, fading in between, maxed after the end.',
+    radial: 'Measured from the center (0%) out to the corners (100%). Sharp before the start, fading in between, maxed after the end.',
+  };
+
+  let img = null, name = 'image';
+  let srcData = null;     // ImageData at preview size
+  let outData = null;     // blurred preview
+  let maskOverlay = null; // ImageData tint of the blur mask
+  let comparing = false;
+  let busy = false, pending = false, jobId = 0, renderStart = 0;
+
+  /* ---------- sliders (range + number kept in sync) ---------- */
+  const sliders = {};
+  function slider(key, id, def, min, max) {
+    const r = $(id), n = $(id + 'Num'), d = $(id + 'Disp');
+    const set = (v, quiet) => {
+      v = Math.round(+v);
+      if (!isFinite(v)) v = def;
+      v = Math.max(min, Math.min(max, v));
+      r.value = v; n.value = v; if (d) d.textContent = v;
+      if (!quiet) onChange();
+    };
+    r.addEventListener('input', () => set(r.value));
+    n.addEventListener('input', () => { if (n.value !== '') set(n.value); });
+    n.addEventListener('blur', () => set(n.value));
+    sliders[key] = { get: () => +r.value, set, def };
+  }
+  slider('intensity', 'gbInt', 24, 0, 300);
+  slider('motionAngle', 'gbMAng', 0, 0, 179);
+  slider('angle', 'gbAng', 90, 0, 359);
+  slider('start', 'gbStart', 30, 0, 100);
+  slider('end', 'gbEnd', 100, 0, 100);
+  slider('base', 'gbBase', 0, 0, 100);
+  slider('cx', 'gbCx', 50, 0, 100);
+  slider('cy', 'gbCy', 50, 0, 100);
+
+  const radio = n => { const c = document.querySelector(`input[name="${n}"]:checked`); return c ? c.value : null; };
+
+  function params() {
+    return {
+      type: radio('gbtype') || 'gauss',
+      shape: radio('gbshape') || 'linear',
+      curve: radio('gbcurve') || 'smooth',
+      intensity: sliders.intensity.get(),
+      motionAngle: sliders.motionAngle.get(),
+      angle: sliders.angle.get(),
+      start: sliders.start.get() / 100,
+      end: sliders.end.get() / 100,
+      base: sliders.base.get() / 100,
+      cx: sliders.cx.get() / 100,
+      cy: sliders.cy.get() / 100,
+      invert: invertCb.checked,
+      circle: circleCb.checked,
+    };
+  }
+  const needsCenter = p => p.shape !== 'linear' || p.type === 'zoom' || p.type === 'spin';
+
+  function syncUi() {
+    const p = params();
+    typeHint.textContent = TYPE_HINTS[p.type];
+    shapeHint.textContent = SHAPE_HINTS[p.shape];
+    motionGroup.hidden = p.type !== 'motion';
+    dirGroup.hidden = p.shape === 'radial';
+    circleWrap.hidden = p.shape !== 'radial';
+    centerGroup.hidden = !needsCenter(p);
+    wrap.classList.toggle('gb-centered', needsCenter(p));
+    rangeNote.textContent = RANGE_NOTES[p.shape];
+    const side = SIDE_NAMES[p.angle];
+    dirHint.textContent = p.shape === 'mirror'
+      ? (side ? `${side} + ${SIDE_NAMES[(p.angle + 180) % 360]}` : `${p.angle}° both ways`)
+      : (side || `${p.angle}°`);
+    dirPad.querySelectorAll('button[data-a]').forEach(b => b.classList.toggle('on', +b.dataset.a === p.angle));
+  }
+
+  function onChange() {
+    syncUi();
+    schedule();
+  }
+
+  /* ---------- rendering ---------- */
+  // A worker keeps the page responsive while dragging sliders; the latest
+  // settings win, anything requested mid-render is folded into one re-render.
+  function makeWorker() {
+    try {
+      const src = `const E = (${gradBlurEngine.toString()})();
+        onmessage = e => {
+          const { id, buf, W, H, p } = e.data;
+          const out = E.process(new Uint8ClampedArray(buf), W, H, p);
+          postMessage({ id, buf: out.buffer }, [out.buffer]);
+        };`;
+      return new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+    } catch (e) { return null; }
+  }
+  let worker = makeWorker();
+
+  function runJob(data, W, H, p, w) {
+    return new Promise((resolve, reject) => {
+      if (!w) {
+        try { resolve(engine.process(data, W, H, p)); } catch (e) { reject(e); }
+        return;
+      }
+      const id = ++jobId;
+      const copy = new Uint8ClampedArray(data);
+      const onMsg = e => {
+        if (e.data.id !== id) return;
+        w.removeEventListener('message', onMsg);
+        w.removeEventListener('error', onErr);
+        resolve(new Uint8ClampedArray(e.data.buf));
+      };
+      const onErr = err => {
+        w.removeEventListener('message', onMsg);
+        w.removeEventListener('error', onErr);
+        reject(err);
+      };
+      w.addEventListener('message', onMsg);
+      w.addEventListener('error', onErr);
+      w.postMessage({ id, buf: copy.buffer, W, H, p }, [copy.buffer]);
+    });
+  }
+
+  const previewScale = () => srcData ? srcData.width / img.naturalWidth : 1;
+
+  function scaledParams(scale) {
+    const p = params();
+    p.intensity *= scale;
+    return p;
+  }
+
+  async function schedule() {
+    if (!srcData) return;
+    if (busy) { pending = true; return; }
+    busy = true; pending = false;
+    const p = scaledParams(previewScale());
+    renderStart = performance.now();
+    if (!outData) draw(); // nothing to show yet — show the source meanwhile
+    try {
+      const W = srcData.width, H = srcData.height;
+      const out = await runJob(srcData.data, W, H, p, worker);
+      if (srcData && srcData.width === W && srcData.height === H) {
+        outData = new ImageData(out, W, H);
+        maskOverlay = null;
+        updateInfo(Math.round(performance.now() - renderStart));
+        draw();
+      }
+    } catch (e) {
+      console.error(e);
+      if (worker) { worker.terminate(); worker = null; busy = false; schedule(); return; }
+      toast('Blur failed');
+    }
+    busy = false;
+    if (pending) schedule();
+  }
+
+  function buildMaskOverlay() {
+    const W = srcData.width, H = srcData.height;
+    const m = engine.makeMask(W, H, params());
+    const o = new ImageData(W, H), d = o.data;
+    for (let i = 0; i < m.length; i++) {
+      d[i * 4] = 255; d[i * 4 + 1] = 60; d[i * 4 + 2] = 110; d[i * 4 + 3] = m[i] * 170;
+    }
+    maskOverlay = o;
+  }
+
+  function draw() {
+    if (!srcData) return;
+    const W = srcData.width, H = srcData.height;
+    if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+    ctx.putImageData(comparing || !outData ? srcData : outData, 0, 0);
+    if (comparing) return;
+    if (maskCb.checked) {
+      if (!maskOverlay) buildMaskOverlay();
+      const t = document.createElement('canvas');
+      t.width = W; t.height = H;
+      t.getContext('2d').putImageData(maskOverlay, 0, 0);
+      ctx.drawImage(t, 0, 0);
+    }
+    if (guidesCb.checked) drawGuides(W, H);
+  }
+
+  function drawGuides(W, H) {
+    const p = params();
+    const g = engine.geometry(W, H, p);
+    const lw = Math.max(1, Math.max(W, H) / 500);
+    ctx.save();
+    ctx.lineWidth = lw;
+    ctx.setLineDash([lw * 6, lw * 4]);
+    const stroke = (t, color) => {
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      if (p.shape === 'radial') {
+        const rx = p.circle ? t * g.halfDiag : t * Math.SQRT2 * W / 2;
+        const ry = p.circle ? t * g.halfDiag : t * Math.SQRT2 * H / 2;
+        if (rx > 0 && ry > 0) ctx.ellipse(g.cx, g.cy, rx, ry, 0, 0, Math.PI * 2);
+      } else {
+        // a line perpendicular to the gradient, long enough to cross the image
+        const L = Math.hypot(W, H);
+        const qs = p.shape === 'linear' ? [g.pmin + t * g.span] : [
+          g.cx * g.dx + g.cy * g.dy + t * g.span / 2,
+          g.cx * g.dx + g.cy * g.dy - t * g.span / 2,
+        ];
+        for (const q of qs) {
+          const px = g.dx * q, py = g.dy * q; // a point on the line (q along the direction)
+          ctx.moveTo(px - g.dy * L * 2, py + g.dx * L * 2);
+          ctx.lineTo(px + g.dy * L * 2, py - g.dx * L * 2);
+        }
+      }
+      ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = lw * 2;
+      ctx.stroke();
+    };
+    stroke(p.start, 'rgba(120,200,255,0.95)');
+    stroke(p.end, 'rgba(255,140,90,0.95)');
+    if (needsCenter(p)) {
+      const r = lw * 8;
+      ctx.setLineDash([]);
+      ctx.strokeStyle = '#fff';
+      ctx.beginPath();
+      ctx.moveTo(g.cx - r, g.cy); ctx.lineTo(g.cx + r, g.cy);
+      ctx.moveTo(g.cx, g.cy - r); ctx.lineTo(g.cx, g.cy + r);
+      ctx.stroke();
+      ctx.beginPath(); ctx.arc(g.cx, g.cy, r * 0.5, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function updateInfo(ms) {
+    if (!img) { info.textContent = 'No image'; return; }
+    const W = img.naturalWidth, H = img.naturalHeight;
+    const pw = srcData ? srcData.width : W;
+    info.textContent = `${W}×${H}` + (pw !== W ? ` · preview ${srcData.width}×${srcData.height}` : '') + (ms !== undefined ? ` · ${ms} ms` : '');
+  }
+
+  /* ---------- loading ---------- */
+  function prepareSource() {
+    const W = img.naturalWidth, H = img.naturalHeight;
+    const s = fullCb.checked ? 1 : Math.min(1, PREVIEW_MAX / Math.max(W, H));
+    const w = Math.max(1, Math.round(W * s)), h = Math.max(1, Math.round(H * s));
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.imageSmoothingQuality = 'high';
+    x.drawImage(img, 0, 0, w, h);
+    srcData = x.getImageData(0, 0, w, h);
+    outData = null; maskOverlay = null;
+  }
+
+  function loadFile(file) {
+    if (!file || !(file.type || '').startsWith('image/')) { toast('That isn\'t an image'); return; }
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => {
+      if (img && img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+      img = im;
+      name = (file.name || 'image').replace(/\.[^.]+$/, '') || 'image';
+      prepareSource();
+      canvas.style.display = 'block';
+      emptyHint.style.display = 'none';
+      clearBtn.hidden = false;
+      dlBtn.disabled = copyBtn.disabled = cmpBtn.disabled = false;
+      updateInfo();
+      schedule();
+    };
+    im.onerror = () => { URL.revokeObjectURL(url); toast('Could not load that image'); };
+    im.src = url;
+  }
+
+  input.addEventListener('change', () => {
+    const f = input.files && input.files[0];
+    if (f) loadFile(f);
+    input.value = '';
+  });
+  wrap.addEventListener('dragover', e => { e.preventDefault(); emptyHint.classList.add('drag'); });
+  wrap.addEventListener('dragleave', () => emptyHint.classList.remove('drag'));
+  wrap.addEventListener('drop', e => {
+    e.preventDefault();
+    emptyHint.classList.remove('drag');
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
+
+  clearBtn.addEventListener('click', () => {
+    if (img && img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+    img = null; srcData = null; outData = null; maskOverlay = null;
+    canvas.style.display = 'none';
+    emptyHint.style.display = '';
+    clearBtn.hidden = true;
+    dlBtn.disabled = copyBtn.disabled = cmpBtn.disabled = true;
+    updateInfo();
+  });
+
+  /* ---------- controls ---------- */
+  document.querySelectorAll('input[name="gbtype"], input[name="gbshape"], input[name="gbcurve"]')
+    .forEach(r => r.addEventListener('change', onChange));
+  [invertCb, circleCb].forEach(c => c.addEventListener('change', onChange));
+  guidesCb.addEventListener('change', draw);
+  maskCb.addEventListener('change', draw);
+  fullCb.addEventListener('change', () => { if (img) { prepareSource(); updateInfo(); schedule(); } });
+
+  dirPad.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.hasAttribute('data-flip')) sliders.angle.set((sliders.angle.get() + 180) % 360);
+    else sliders.angle.set(+b.dataset.a);
+  });
+
+  // Click / drag on the preview to place the center
+  function setCenterFrom(e) {
+    const r = canvas.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    sliders.cx.set(((e.clientX - r.left) / r.width) * 100, true);
+    sliders.cy.set(((e.clientY - r.top) / r.height) * 100, true);
+    onChange();
+  }
+  canvas.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || !srcData || !needsCenter(params())) return;
+    e.preventDefault();
+    canvas.setPointerCapture(e.pointerId);
+    setCenterFrom(e);
+    const move = ev => setCenterFrom(ev);
+    const up = () => {
+      canvas.removeEventListener('pointermove', move);
+      canvas.removeEventListener('pointerup', up);
+      canvas.removeEventListener('pointercancel', up);
+    };
+    canvas.addEventListener('pointermove', move);
+    canvas.addEventListener('pointerup', up);
+    canvas.addEventListener('pointercancel', up);
+  });
+
+  // Compare: hold the button or C
+  const setCompare = on => { if (comparing === on) return; comparing = on; draw(); };
+  cmpBtn.addEventListener('pointerdown', () => setCompare(true));
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => cmpBtn.addEventListener(t, () => setCompare(false)));
+  const typing = t => t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+  window.addEventListener('keydown', e => {
+    if (currentMode !== 'gradblur' || !srcData || typing(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === 'c' || e.key === 'C') { e.preventDefault(); setCompare(true); }
+  });
+  window.addEventListener('keyup', e => { if (e.key === 'c' || e.key === 'C') setCompare(false); });
+  window.addEventListener('blur', () => setCompare(false));
+
+  resetBtn.addEventListener('click', () => {
+    Object.values(sliders).forEach(s => s.set(s.def, true));
+    $('gbtype-gauss').checked = true;
+    $('gbshape-linear').checked = true;
+    $('gbcurve-smooth').checked = true;
+    invertCb.checked = false; circleCb.checked = false;
+    onChange();
+  });
+
+  /* ---------- export ---------- */
+  // Full-size render in its own worker so the page doesn't freeze on big images
+  async function renderFull() {
+    const W = img.naturalWidth, H = img.naturalHeight;
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.drawImage(img, 0, 0);
+    if (fullCb.checked && outData && outData.width === W && outData.height === H) {
+      x.putImageData(outData, 0, 0);
+      return c;
+    }
+    const data = x.getImageData(0, 0, W, H);
+    const w = worker ? makeWorker() : null;
+    try {
+      const out = await runJob(data.data, W, H, scaledParams(1), w);
+      x.putImageData(new ImageData(out, W, H), 0, 0);
+    } finally {
+      if (w) w.terminate();
+    }
+    return c;
+  }
+
+  let exporting = false;
+  async function withFull(label, fn) {
+    if (!img || exporting) return;
+    exporting = true;
+    const big = img.naturalWidth * img.naturalHeight > 1.5e6 && !fullCb.checked;
+    if (big) toast(`Rendering full size (${img.naturalWidth}×${img.naturalHeight})…`);
+    dlBtn.disabled = copyBtn.disabled = true;
+    try { await fn(await renderFull()); }
+    catch (e) { console.error(e); toast(label + ' failed'); }
+    finally { exporting = false; dlBtn.disabled = copyBtn.disabled = !img; }
+  }
+
+  dlBtn.addEventListener('click', () => withFull('Export', c => new Promise(resolve => {
+    const fmt = radio('gbfmt') || 'png';
+    const mime = fmt === 'jpeg' ? 'image/jpeg' : fmt === 'webp' ? 'image/webp' : 'image/png';
+    const ext = fmt === 'jpeg' ? 'jpg' : fmt;
+    c.toBlob(blob => {
+      if (!blob) { toast('Export failed'); resolve(); return; }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${name}-blur.${ext}`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      resolve();
+    }, mime, 0.92);
+  })));
+
+  copyBtn.addEventListener('click', () => withFull('Copy', c => new Promise((resolve, reject) => {
+    c.toBlob(async b => {
+      if (!b) { reject(new Error('no blob')); return; }
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]);
+        toast('Copied to clipboard');
+        resolve();
+      } catch (e) { reject(e); }
+    }, 'image/png');
+  })));
+
+  syncUi();
+  updateInfo();
+})();
+</script>
+
 
 <!-- =====================================================
      3D Modeling — heightmap plane from image
