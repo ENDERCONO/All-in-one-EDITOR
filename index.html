@@ -1949,6 +1949,28 @@
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px; letter-spacing: 0.04em;
   }
+  /* Vertical Video tab */
+  .vv-styles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .vv-style {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    padding: 12px 8px; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--bg-2); color: var(--text-dim);
+    font-size: 12px; text-align: center; transition: border-color 0.15s, color 0.15s;
+  }
+  .vv-style:hover { border-color: var(--border-hover); color: var(--text); }
+  .vv-style.active { border-color: var(--text); color: var(--text); }
+  .vv-style small { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--text-faint); letter-spacing: 0.03em; }
+  .vv-icon { width: 27px; height: 48px; border: 1.5px solid currentColor; border-radius: 4px; position: relative; overflow: hidden; }
+  .vv-icon i { position: absolute; left: -1px; right: -1px; top: 34%; height: 32%; background: currentColor; opacity: 0.85; }
+  .vv-icon.crop i { left: -40%; right: -40%; top: -1px; height: auto; bottom: -1px; opacity: 0.5; }
+  .vv-icon.blur { background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(127,127,127,0.25) 3px 6px); }
+  .vv-icon.pad { background: #000; }
+  .vv-row { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: start; }
+  .vv-preview { width: 162px; aspect-ratio: 9 / 16; border-radius: 10px; border: 1px solid var(--border); background: #000; display: block; }
+  .vv-opts { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .vv-note { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--text-faint); line-height: 1.5; }
+  @media (max-width: 520px) { .vv-row { grid-template-columns: 1fr; } .vv-preview { width: 140px; } }
+
   .convert-info {
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
@@ -6005,6 +6027,12 @@
         <span class="sb-label">Converter</span>
       </button>
 
+      <!-- ===== VERTICAL VIDEO (single) ===== -->
+      <button class="sb-tab" data-tab="vertical" title="Vertical Video — turn horizontal videos into 9:16 for TikTok, YouTube Shorts and Reels, in bulk">
+        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M10 10l4 2-4 2z" fill="currentColor"/></svg></span>
+        <span class="sb-label">Vertical Video</span>
+      </button>
+
       <!-- ===== TEXT ===== -->
       <div class="sb-group" data-group="text">
         <button class="sb-group-btn" title="Text — case converter and file names">
@@ -7837,7 +7865,7 @@
       <!-- BULK CONVERTER — many files → any format, individual or ZIP download -->
       <section class="convert-card" style="grid-column: 1 / -1">
         <h3>Universal Converter</h3>
-        <p class="desc">Drop one file or a whole batch — <strong>anything → anything</strong> (audio · video · image). Mixed batches get their own target per kind, so the images, songs and clips in one drop each go where they make sense. Converts on this site's server with native ffmpeg (several files at once), or in your browser via ffmpeg.wasm when no server is running.</p>
+        <p class="desc">Drop one file or a whole batch — <strong>anything → anything</strong> (audio · video · image). Mixed batches get their own target per kind, so the images, songs and clips in one drop each go where they make sense. <strong>Make clips vertical for TikTok / Shorts</strong> with the <em>Video shape</em> option. Converts on this site's server with native ffmpeg (several files at once), or in your browser via ffmpeg.wasm when no server is running.</p>
 
         <div class="convert-drop" id="bulkUpload">
           <div>
@@ -8048,6 +8076,75 @@
   </main>
 
   <!-- ================= 3D MODEL (height-displaced plane from image) ================= -->
+<!-- ================= VERTICAL VIDEO ================= -->
+  <main data-mode="vertical" hidden>
+    <header class="mode-header">
+      <div>
+        <div class="eyebrow">Video · 9:16</div>
+        <h1>Vertical <em>Video</em></h1>
+        <p>Turn horizontal videos into vertical 1080×1920 for TikTok, YouTube Shorts and Reels, all at once.</p>
+      </div>
+    </header>
+
+    <div class="converter-grid">
+      <section class="convert-card">
+        <h3>Horizontal → Vertical</h3>
+        <p class="desc">Drop all your videos. Each one shows if it's already vertical, then <strong>Make all vertical</strong> turns the rest into <strong>1080×1920 MP4</strong>, ready for TikTok and YouTube Shorts.</p>
+
+        <div class="convert-drop" id="vvDrop">
+          <div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M10 10l4 2-4 2z"/></svg>
+            <div class="t">Drop videos — or click to browse (as many as you want)</div>
+            <div class="s">mp4 · mov · mkv · webm · avi</div>
+            <input type="file" id="vvFile" accept="video/*,.mkv,.mov,.avi,.m4v,.webm" multiple style="display:none">
+          </div>
+        </div>
+
+        <div class="vv-note" id="vvSummary" hidden></div>
+        <div class="job-list" id="vvList" hidden></div>
+
+        <div class="progress-row" id="vvProgressRow" hidden>
+          <div class="progress-bar"><div class="progress-fill" id="vvFill"></div></div>
+          <div class="progress-text" id="vvText">0%</div>
+        </div>
+
+        <div class="export-buttons" id="vvActions" hidden style="justify-content:flex-start">
+          <button class="dl-btn" id="vvZip">Download all as ZIP <span class="tag" id="vvZipSize">—</span></button>
+          <button class="dl-btn" id="vvRetry" hidden>Retry failed</button>
+          <button class="dl-btn" id="vvClear">Clear list</button>
+        </div>
+      </section>
+
+      <section class="convert-card">
+        <h3>Style</h3>
+        <div class="vv-styles" id="vvStyles">
+          <button class="vv-style active" data-style="blur"><span class="vv-icon blur"><i></i></span>Blur fill<small>whole video, blurred bg</small></button>
+          <button class="vv-style" data-style="crop"><span class="vv-icon crop"><i></i></span>Crop<small>fills screen, cuts sides</small></button>
+          <button class="vv-style" data-style="pad"><span class="vv-icon pad"><i style="background:#fff"></i></span>Black bars<small>whole video, black bg</small></button>
+        </div>
+
+        <div class="vv-row">
+          <canvas class="vv-preview" id="vvPreview" width="270" height="480" title="Preview of the selected video"></canvas>
+          <div class="vv-opts">
+            <label class="vdl-check"><input type="checkbox" id="vvSkip" checked> Skip videos that are already vertical</label>
+            <div class="export-slider">
+              <div class="slabel"><span>Sideways clips?</span></div>
+              <select id="vvRotate" class="color-input cv-select">
+                <option value="">No — they're horizontal videos</option>
+                <option value="cw">Filmed vertical, shows sideways → rotate 90° right</option>
+                <option value="ccw">Filmed vertical, shows sideways → rotate 90° left</option>
+              </select>
+            </div>
+            <div class="vv-note" id="vvPreviewNote">Drop a video to see a preview. Click a video in the list to preview it.</div>
+          </div>
+        </div>
+
+        <button class="apply-btn" id="vvGo">Make all vertical →</button>
+        <div class="vv-note">Fastest with START-SERVER.bat running on your PC. Without it, videos convert right in your browser (slower, and nothing gets uploaded).</div>
+      </section>
+    </div>
+  </main>
+
   <main data-mode="model3d" hidden>
     <div class="m3d-layout">
 
@@ -9208,6 +9305,7 @@ document.getElementById('sidebarToggle').addEventListener('click', () => {
     timeline:   ['timeline', 'video editor', 'clips', 'tracks', 'sequence', 'cut video', 'arrange'],
     normalmix:  ['normal mix', 'normal map', 'normals', 'bump map', 'blend normals', 'material'],
     model3d:    ['3d model', 'displacement', 'height map', 'heightmap', 'plane', 'mesh', 'depth', 'relief'],
+    vertical:   ['vertical video', 'vertical', '9:16', '9x16', 'portrait', 'tiktok', 'shorts', 'youtube shorts', 'reels', 'horizontal to vertical', 'rotate video', 'sideways', 'aspect ratio', '1080x1920'],
     convert:    ['converter', 'convert files', 'video downloader', 'download video', 'youtube', 'tiktok', 'instagram', 'mp3', 'mp4', 'wav', 'ogg', 'gif', 'extract audio', 'zip'],
     textcase:   ['text case', 'uppercase', 'lowercase', 'capital letters', 'caps', 'case converter'],
     filenames:  ['file names', 'filenames', 'list files', 'copy names', 'batch names'],
@@ -18092,8 +18190,8 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
     }
     bulkCustomRow.hidden = !custom;
     abrRow.hidden = !lossy;
-    // Reshaping only applies to video → video
-    frameRow.hidden = !counts.video || !VIDEO_OUT.includes(targetFor('video'));
+    // Always offered for videos — picking a shape switches audio/image targets to MP4
+    frameRow.hidden = !counts.video;
     const sized = items.filter(it => it.kind === 'video' && it.dims);
     const flat = sized.filter(it => it.dims.w >= it.dims.h).length;
     frameInfo.textContent = !sized.length ? '' : flat ? flat + ' of ' + sized.length + ' not vertical' : 'all vertical ✓';
@@ -18101,7 +18199,11 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
   }
   Object.values(KINDS).forEach(k => k.sel.addEventListener('change', () => { syncSettings(); remember(); }));
   abrSel.addEventListener('change', remember);
-  frameSel.addEventListener('change', () => { remember(); render(); });
+  frameSel.addEventListener('change', () => {
+    if (frameSel.value && !VIDEO_OUT.includes(targetFor('video'))) { KINDS.video.sel.value = 'mp4'; syncSettings(); }
+    remember(); render();
+  });
+  KINDS.video.sel.addEventListener('change', () => { if (!VIDEO_OUT.includes(targetFor('video'))) frameSel.value = ''; });
 
   // ffmpeg -vf for the "Video shape" choice (same on the server). Phone
   // rotation metadata is applied by ffmpeg on decode, so it gets baked in.
@@ -18256,12 +18358,12 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
     }
   });
 
-  /* ---------- server path (native ffmpeg) ---------- */
-  async function serverConvertFile(apiBase, it, ext, abr, frame) {
-    const q = new URLSearchParams({ name: it.file.name, target: ext });
+  /* ---------- engine: native ffmpeg server or ffmpeg.wasm ---------- */
+  async function serverConvertFile(apiBase, file, ext, abr, frame, onProgress, onMsg) {
+    const q = new URLSearchParams({ name: file.name, target: ext });
     if (abr) q.set('abr', abr);
     if (frame) q.set('frame', frame);
-    const res = await fetch(apiBase + '/api/convert/start?' + q, { method: 'POST', body: it.file });
+    const res = await fetch(apiBase + '/api/convert/start?' + q, { method: 'POST', body: file });
     const start = await res.json();
     if (start.error) throw new Error(start.error);
     let misses = 0;
@@ -18271,17 +18373,67 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
       try { p = await (await fetch(apiBase + '/api/convert/progress/' + start.id)).json(); misses = 0; }
       catch (e) { if (++misses > 20) throw new Error('Lost contact with the server'); continue; }
       if (p.state === 'error' || (p.error && p.state !== 'done')) throw new Error(p.error || 'Conversion failed');
-      it.msg = p.state === 'setup' ? 'one-time setup: fetching ffmpeg… ' + (p.setupPct || 0) + '%'
-        : p.state === 'queued' ? 'waiting for a free slot…' : '';
+      onMsg(p.state === 'setup' ? 'one-time setup: fetching ffmpeg… ' + (p.setupPct || 0) + '%'
+        : p.state === 'queued' ? 'waiting for a free slot…' : '');
       if (p.state === 'done') break;
-      if (p.pct) it.pct = Math.min(0.99, p.pct / 100);
-      render();
-      overall();
+      if (p.pct) onProgress(Math.min(0.99, p.pct / 100));
     }
     const fileRes = await fetch(apiBase + '/api/convert/file/' + start.id);
     if (!fileRes.ok) throw new Error('Could not fetch converted file');
     return await fileRes.blob();
   }
+
+  // A server on this PC (or the one serving the page) converts natively —
+  // many times faster than wasm. Otherwise convert in the browser; the
+  // online server is only the last resort (uploading big videos to it is
+  // slow). Resolves { apiBase, ff, lanes } or null when nothing works.
+  async function pickEngine(onMsg) {
+    let apiBase = await window.findLocalApiBase();
+    let ff = null;
+    if (apiBase === null) {
+      onMsg('Loading the in-browser engine…');
+      try {
+        if (location.protocol === 'file:') throw new Error('wasm engine is blocked on file:// pages');
+        ff = await window.loadSharedFFmpeg((pct, msg) => { if (msg) onMsg(msg); });
+        window._sharedFFmpegProgressCb = null;
+        window._sharedFFmpegLogCb = null;
+      } catch (e) {
+        console.warn('[converter] wasm engine unavailable, trying the online server:', e);
+        apiBase = await window.resolveApiBase(onMsg);
+        if (apiBase === null) return null;
+      }
+    }
+    // A few at once on the server; the wasm engine is single-threaded
+    return { apiBase, ff, lanes: apiBase !== null ? SERVER_PARALLEL : 1 };
+  }
+
+  let wasmSeq = 0;
+  async function convertWith(engine, file, ext, opts, onProgress, onMsg) {
+    const { isImage = false, abr = '', frame = '' } = opts || {};
+    const n = ++wasmSeq;
+    const inExt = (file.name.match(/\.[^.]+$/) || ['.bin'])[0];
+    const inputName = 'cv_in_' + n + inExt, outputName = 'cv_out_' + n + '.' + ext;
+    const { args, mime } = ffArgs(inputName, outputName, ext, isImage, abr, frame);
+    if (engine.apiBase !== null) {
+      const blob = await serverConvertFile(engine.apiBase, file, ext, abr, frame, onProgress, onMsg);
+      return blob.type && blob.type !== 'application/octet-stream' ? blob : new Blob([blob], { type: mime });
+    }
+    const ff = engine.ff;
+    const fetchFile = (window.FFmpegUtil && window.FFmpegUtil.fetchFile) || (async f => new Uint8Array(await f.arrayBuffer()));
+    try {
+      await ff.writeFile(inputName, await fetchFile(file));
+      window._sharedFFmpegProgressCb = p => onProgress(Math.max(0, Math.min(0.99, p || 0)));
+      const code = await ff.exec(args);
+      if (code !== 0 && code !== undefined) throw new Error('ffmpeg exit ' + code);
+      const out = await ff.readFile(outputName);
+      return new Blob([out.buffer], { type: mime });
+    } finally {
+      window._sharedFFmpegProgressCb = null;
+      try { await ff.deleteFile(inputName); } catch (e) {}
+      try { await ff.deleteFile(outputName); } catch (e) {}
+    }
+  }
+  window.aioConvert = { pickEngine, convertWith, frameFilter };
 
   function frameFor(it) {
     return it.kind === 'video' && VIDEO_OUT.includes(targetFor('video')) ? frameSel.value : '';
@@ -18322,78 +18474,40 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
     items.forEach(it => { it.batch = false; });
     queued.forEach(it => { it.batch = true; it.status = 'queued'; it.error = null; it.pct = 0; });
 
-    // A server on this PC (or the one serving the page) converts natively —
-    // many times faster than wasm. Otherwise convert in the browser; the
-    // online server is only the last resort (uploading big videos to it is
-    // slow).
-    let apiBase = await window.findLocalApiBase();
-    let ff = null;
-    if (apiBase === null) {
-      bulkText.textContent = 'Loading the in-browser engine…';
-      try {
-        if (location.protocol === 'file:') throw new Error('wasm engine is blocked on file:// pages');
-        ff = await window.loadSharedFFmpeg((pct, msg) => { if (msg) bulkText.textContent = msg; });
-        window._sharedFFmpegProgressCb = null;
-        window._sharedFFmpegLogCb = null;
-      } catch (e) {
-        console.warn('[converter] wasm engine unavailable, trying the online server:', e);
-        apiBase = await window.resolveApiBase(msg => { bulkText.textContent = msg; });
-        if (apiBase === null) {
-          bulkText.textContent = 'No conversion engine available';
-          notify('Could not load the in-browser engine and no server answered — check your connection, or run START-SERVER.bat on your PC.');
-          running = false;
-          bulkConvert.disabled = false;
-          render();
-          return;
-        }
-      }
+    const engine = await pickEngine(msg => { bulkText.textContent = msg; });
+    if (!engine) {
+      bulkText.textContent = 'No conversion engine available';
+      notify('Could not load the in-browser engine and no server answered — check your connection, or run START-SERVER.bat on your PC.');
+      running = false;
+      bulkConvert.disabled = false;
+      render();
+      return;
     }
-    const useServer = apiBase !== null;
-
     const abr = abrSel.value;
-    const fetchFile = (window.FFmpegUtil && window.FFmpegUtil.fetchFile) || (async f => new Uint8Array(await f.arrayBuffer()));
 
     async function convertOne(it) {
       const ext = targetFor(it.kind);
-      const isImage = it.kind === 'image';
       const frame = frameFor(it);
       it.status = 'working';
       it.pct = 0;
       it.msg = '';
       render();
-      const inExt = (it.file.name.match(/\.[^.]+$/) || ['.bin'])[0];
-      const inputName = 'bulk_in_' + it.id + inExt;
-      const outputName = 'bulk_out_' + it.id + '.' + ext;
-      const { args, mime } = ffArgs(inputName, outputName, ext, isImage, abr, frame);
       try {
-        if (useServer) {
-          const blob = await serverConvertFile(apiBase, it, ext, abr, frame);
-          it.outBlob = blob.type && blob.type !== 'application/octet-stream' ? blob : new Blob([blob], { type: mime });
-        } else {
-          await ff.writeFile(inputName, await fetchFile(it.file));
-          window._sharedFFmpegProgressCb = p => { it.pct = Math.max(0, Math.min(0.99, p || 0)); render(); overall(); };
-          const code = await ff.exec(args);
-          window._sharedFFmpegProgressCb = null;
-          if (code !== 0 && code !== undefined) throw new Error('ffmpeg exit ' + code);
-          const out = await ff.readFile(outputName);
-          it.outBlob = new Blob([out.buffer], { type: mime });
-          try { await ff.deleteFile(inputName); } catch (e) {}
-          try { await ff.deleteFile(outputName); } catch (e) {}
-        }
+        it.outBlob = await convertWith(engine, it.file, ext, { isImage: it.kind === 'image', abr, frame },
+          p => { it.pct = p; render(); overall(); },
+          msg => { it.msg = msg; render(); });
         it.outName = outNameFor(it, ext, frame);
         it.status = 'done';
       } catch (err) {
         it.status = 'error';
         it.error = (err && err.message) ? err.message : String(err);
-        if (ff) { try { await ff.deleteFile(inputName); } catch (e) {} }
       }
       it.msg = '';
       render();
       overall();
     }
 
-    // A few at once on the server; the wasm engine is single-threaded
-    const lanes = useServer ? SERVER_PARALLEL : 1;
+    const lanes = engine.lanes;
     const queue = queued.slice();
     await Promise.all(Array.from({ length: Math.min(lanes, queue.length) }, async () => {
       while (queue.length) {
@@ -18442,6 +18556,303 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
     items = [];
     bulkProgRow.hidden = true;
     syncSettings();
+    render();
+  });
+})();
+
+/* ============================================================
+   VERTICAL VIDEO — horizontal clips → 1080×1920 MP4 in bulk, for
+   TikTok / Shorts / Reels. Blurred-background fill, crop or black
+   bars (+ 90° rotate for sideways clips). Uses the converter's
+   engine (native server or ffmpeg.wasm) via window.aioConvert.
+   ============================================================ */
+(function setupVerticalVideo() {
+  const $ = id => document.getElementById(id);
+  const drop = $('vvDrop');
+  if (!drop) return;
+  const fileIn = $('vvFile'), list = $('vvList'), summary = $('vvSummary');
+  const progRow = $('vvProgressRow'), fill = $('vvFill'), text = $('vvText');
+  const actions = $('vvActions'), zipBtn = $('vvZip'), zipSize = $('vvZipSize');
+  const retryBtn = $('vvRetry'), clearBtn = $('vvClear'), goBtn = $('vvGo');
+  const skipChk = $('vvSkip'), rotSel = $('vvRotate'), canvas = $('vvPreview'), note = $('vvPreviewNote');
+  const ctx = canvas.getContext('2d');
+  const esc = window.escHtml;
+  const notify = msg => { if (typeof toast === 'function') toast(msg); };
+
+  let style = 'blur';
+  let items = [];   // { id, file, dims, status:'queued'|'skipped'|'working'|'done'|'error', pct, msg, outBlob, outName, error }
+  let nextId = 1, running = false, previewId = null;
+  const previewVid = document.createElement('video');
+  previewVid.muted = true;
+  previewVid.playsInline = true;
+
+  try {
+    const saved = JSON.parse(localStorage.getItem('vvPrefs') || 'null');
+    if (saved) {
+      if (['blur', 'crop', 'pad'].includes(saved.style)) style = saved.style;
+      skipChk.checked = saved.skip !== false;
+    }
+  } catch (e) {}
+  const remember = () => { try { localStorage.setItem('vvPrefs', JSON.stringify({ style, skip: skipChk.checked })); } catch (e) {} };
+
+  const isVertical = d => d && d.h > d.w;
+  // Rotating swaps the sides, so sideways clips count as horizontal until rotated
+  const needsWork = it => rotSel.value || !skipChk.checked || !isVertical(it.dims);
+  const frameFor = () => rotSel.value || style;
+
+  /* ---------- style picker ---------- */
+  function syncStyles() {
+    document.querySelectorAll('#vvStyles .vv-style').forEach(b => b.classList.toggle('active', b.dataset.style === style));
+    $('vvStyles').style.opacity = rotSel.value ? 0.4 : 1;
+  }
+  $('vvStyles').addEventListener('click', e => {
+    const b = e.target.closest('.vv-style');
+    if (!b) return;
+    style = b.dataset.style;
+    rotSel.value = '';
+    syncStyles(); remember(); drawPreview(); render();
+  });
+  rotSel.addEventListener('change', () => { syncStyles(); drawPreview(); render(); });
+  skipChk.addEventListener('change', () => { remember(); render(); });
+  syncStyles();
+
+  /* ---------- preview (canvas mimics the ffmpeg filters) ---------- */
+  function drawPreview() {
+    const W = canvas.width, H = canvas.height;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+    const vw = previewVid.videoWidth, vh = previewVid.videoHeight;
+    if (!previewId || !vw) return;
+    const rot = rotSel.value;
+    if (rot) {
+      // rotated clip, scaled to fit the 9:16 frame
+      const s = Math.min(W / vh, H / vw);
+      ctx.save();
+      ctx.translate(W / 2, H / 2);
+      ctx.rotate(rot === 'cw' ? Math.PI / 2 : -Math.PI / 2);
+      ctx.drawImage(previewVid, -vw * s / 2, -vh * s / 2, vw * s, vh * s);
+      ctx.restore();
+      return;
+    }
+    const cover = Math.max(W / vw, H / vh), contain = Math.min(W / vw, H / vh);
+    const draw = k => ctx.drawImage(previewVid, (W - vw * k) / 2, (H - vh * k) / 2, vw * k, vh * k);
+    if (style === 'crop') return draw(cover);
+    if (style === 'blur') {
+      ctx.save();
+      ctx.filter = 'blur(10px)';
+      draw(cover * 1.05);
+      ctx.restore();
+    }
+    draw(contain);
+  }
+  function setPreview(it) {
+    if (!it) { previewId = null; previewVid.removeAttribute('src'); drawPreview(); note.textContent = 'Drop a video to see a preview. Click a video in the list to preview it.'; return; }
+    if (previewId === it.id) return;
+    previewId = it.id;
+    if (previewVid.src) URL.revokeObjectURL(previewVid.src);
+    previewVid.src = URL.createObjectURL(it.file);
+    previewVid.onloadedmetadata = () => { previewVid.currentTime = Math.min(1, (previewVid.duration || 2) / 2); };
+    previewVid.onseeked = drawPreview;
+    note.textContent = 'Preview: ' + it.file.name;
+    render();
+  }
+
+  /* ---------- intake ---------- */
+  function probe(it) {
+    const v = document.createElement('video');
+    const url = URL.createObjectURL(it.file);
+    const done = () => { clearTimeout(t); URL.revokeObjectURL(url); v.removeAttribute('src'); v.load(); };
+    const t = setTimeout(done, 15000);
+    v.preload = 'metadata';
+    v.muted = true;
+    v.onloadedmetadata = () => { if (v.videoWidth) it.dims = { w: v.videoWidth, h: v.videoHeight }; done(); render(); };
+    v.onerror = () => { done(); render(); };
+    v.src = url;
+  }
+  function addFiles(fl) {
+    const have = new Set(items.map(it => it.file.name + '|' + it.file.size));
+    let first = null;
+    for (const f of Array.from(fl || [])) {
+      const k = f.name + '|' + f.size;
+      if (have.has(k)) continue;
+      if (!(f.type || '').startsWith('video/') && !/\.(mp4|m4v|mov|mkv|webm|avi|wmv|flv|mpe?g|3gp|ts|mts)$/i.test(f.name)) continue;
+      have.add(k);
+      const it = { id: nextId++, file: f, dims: null, status: 'queued', pct: 0, msg: '', outBlob: null, outName: null, error: null };
+      items.push(it);
+      probe(it);
+      first = first || it;
+    }
+    if (first && !previewId) setPreview(first);
+    render();
+  }
+  drop.addEventListener('click', e => { if (e.target.tagName !== 'INPUT') fileIn.click(); });
+  fileIn.addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+  drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('drag'); addFiles(e.dataTransfer.files); });
+
+  /* ---------- list ---------- */
+  function shape(d) {
+    if (!d) return 'reading size…';
+    const r = d.w / d.h;
+    return d.w + '×' + d.h + ' · ' + (r < 0.6 ? 'vertical ✓' : r < 0.95 ? 'portrait (not quite 9:16)' : r <= 1.05 ? 'square' : 'horizontal');
+  }
+  let queuedRender = false;
+  function render() {
+    if (queuedRender) return;
+    queuedRender = true;
+    requestAnimationFrame(() => { queuedRender = false; renderNow(); });
+  }
+  function renderNow() {
+    list.hidden = summary.hidden = !items.length;
+    const sized = items.filter(it => it.dims);
+    const vert = sized.filter(it => isVertical(it.dims)).length;
+    summary.textContent = items.length + ' video' + (items.length === 1 ? '' : 's')
+      + (sized.length ? ' · ' + (sized.length - vert) + ' horizontal · ' + vert + ' already vertical' : '');
+    const done = items.filter(it => it.status === 'done').length;
+    const failed = items.filter(it => it.status === 'error').length;
+    actions.hidden = !done && !failed;
+    zipBtn.hidden = !done;
+    retryBtn.hidden = !failed || running;
+    zipSize.textContent = done + ' file' + (done === 1 ? '' : 's');
+
+    list.innerHTML = items.map(it => {
+      let sub, acts = '', cls = '';
+      if (it.status === 'done') {
+        cls = 'ok';
+        sub = '✓ ' + it.outName + ' · ' + fmtBytes(it.outBlob.size);
+        acts += `<button data-act="save" data-id="${it.id}">Download</button>`;
+      } else if (it.status === 'error') {
+        cls = 'err';
+        sub = it.error || 'failed';
+        if (!running) acts += `<button data-act="retry" data-id="${it.id}">Retry</button>`;
+      } else if (it.status === 'working') {
+        sub = it.msg || 'making vertical · ' + Math.round(it.pct * 100) + '%';
+      } else if (it.status === 'skipped') {
+        sub = shape(it.dims) + ' · skipped (already vertical)';
+      } else {
+        sub = fmtBytes(it.file.size) + ' · ' + shape(it.dims) + (it.dims && !needsWork(it) ? ' · will be skipped' : '');
+      }
+      if (it.status !== 'working') acts += `<button class="x" data-act="remove" data-id="${it.id}" title="Remove">✕</button>`;
+      const bar = it.status === 'working' ? `<div class="job-bar"><i style="width:${Math.max(2, Math.round(it.pct * 100))}%"></i></div>` : '';
+      const sel = it.id === previewId ? ' style="background:var(--bg-2)"' : '';
+      return `<div class="job-row ${cls}" data-id="${it.id}"${sel}><div class="job-name" style="cursor:pointer" title="Preview">${esc(it.file.name)}</div>`
+        + `<div class="job-acts">${acts}</div>${bar}<div class="job-sub" title="${esc(sub)}">${esc(sub)}</div></div>`;
+    }).join('');
+  }
+  list.addEventListener('click', e => {
+    const b = e.target.closest('button[data-act]');
+    const row = e.target.closest('.job-row');
+    const it = row && items.find(x => x.id === +row.dataset.id);
+    if (!it) return;
+    if (!b) { setPreview(it); return; }
+    if (b.dataset.act === 'save' && it.outBlob) saveBlobAs(it.outBlob, it.outName);
+    else if (b.dataset.act === 'retry') { it.status = 'queued'; it.error = null; render(); }
+    else if (b.dataset.act === 'remove') {
+      items = items.filter(x => x !== it);
+      if (previewId === it.id) setPreview(items[0]);
+      if (!items.length) progRow.hidden = true;
+      render();
+    }
+  });
+
+  /* ---------- convert ---------- */
+  function outName(it, frame) {
+    const base = it.file.name.replace(/\.[^.]+$/, '') || 'video';
+    return base + (frame === 'cw' || frame === 'ccw' ? '-rotated' : '-vertical') + '.mp4';
+  }
+  function overall(todo) {
+    const sum = todo.reduce((s, it) => s + (it.status === 'done' || it.status === 'error' ? 1 : it.status === 'working' ? it.pct : 0), 0);
+    fill.style.width = Math.round(sum / todo.length * 100) + '%';
+    const fin = todo.filter(it => it.status === 'done' || it.status === 'error').length;
+    text.textContent = `Making vertical · ${fin}/${todo.length} finished`;
+  }
+
+  goBtn.addEventListener('click', async () => {
+    if (running) return;
+    if (!items.length) { notify('Drop some videos first'); return; }
+    if (!window.aioConvert) { notify('Converter engine missing — reload the page'); return; }
+    const todo = [];
+    for (const it of items) {
+      if (it.status === 'done' || it.status === 'working') continue;
+      if (needsWork(it)) { it.status = 'queued'; it.error = null; it.pct = 0; todo.push(it); }
+      else it.status = 'skipped';
+    }
+    render();
+    if (!todo.length) { notify(items.some(it => it.status === 'done') ? 'Everything is already done' : 'All of these are already vertical'); return; }
+
+    running = true;
+    goBtn.disabled = true;
+    progRow.hidden = false;
+    fill.style.width = '0%';
+    text.textContent = 'Starting…';
+    const engine = await window.aioConvert.pickEngine(msg => { text.textContent = msg; });
+    if (!engine) {
+      text.textContent = 'No conversion engine available';
+      notify('Could not load the in-browser engine and no server answered — check your connection, or run START-SERVER.bat on your PC.');
+      running = false;
+      goBtn.disabled = false;
+      render();
+      return;
+    }
+    const frame = frameFor();
+    const queue = todo.slice();
+    await Promise.all(Array.from({ length: Math.min(engine.lanes, queue.length) }, async () => {
+      while (queue.length) {
+        const it = queue.shift();
+        if (!items.includes(it)) continue; // removed meanwhile
+        it.status = 'working'; it.pct = 0; it.msg = '';
+        render();
+        try {
+          it.outBlob = await window.aioConvert.convertWith(engine, it.file, 'mp4', { frame },
+            p => { it.pct = p; render(); overall(todo); },
+            msg => { it.msg = msg; render(); });
+          it.outName = outName(it, frame);
+          it.status = 'done';
+        } catch (err) {
+          it.status = 'error';
+          it.error = (err && err.message) ? err.message : String(err);
+        }
+        it.msg = '';
+        render();
+        overall(todo);
+      }
+    }));
+    running = false;
+    goBtn.disabled = false;
+    fill.style.width = '100%';
+    const ok = todo.filter(it => it.status === 'done').length;
+    const bad = todo.filter(it => it.status === 'error').length;
+    text.textContent = 'Done · ' + ok + ' made vertical' + (bad ? ' · ' + bad + ' failed' : '');
+    notify(ok + ' video' + (ok === 1 ? '' : 's') + ' ready' + (bad ? ', ' + bad + ' failed' : '') + ' — hit Download all as ZIP');
+    render();
+  });
+
+  retryBtn.addEventListener('click', () => {
+    items.forEach(it => { if (it.status === 'error') it.status = 'queued'; });
+    goBtn.click();
+  });
+  zipBtn.addEventListener('click', async () => {
+    const ready = items.filter(it => it.status === 'done' && it.outBlob);
+    if (!ready.length) return;
+    zipBtn.disabled = true;
+    const label = zipBtn.firstChild, orig = label.textContent;
+    label.textContent = 'Zipping… ';
+    try {
+      const blob = await zipBlobs(ready.map(it => ({ name: it.outName, blob: it.outBlob })), 'vertical_' + ready.length + '_videos.zip');
+      notify('ZIP ready — ' + ready.length + ' videos · ' + fmtBytes(blob.size));
+    } catch (e) {
+      notify('ZIP failed: ' + (e.message || e));
+    } finally {
+      zipBtn.disabled = false;
+      label.textContent = orig;
+    }
+  });
+  clearBtn.addEventListener('click', () => {
+    if (running) { notify('Wait for the current batch to finish'); return; }
+    items = [];
+    progRow.hidden = true;
+    setPreview(null);
     render();
   });
 })();
