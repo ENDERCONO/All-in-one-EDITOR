@@ -1204,14 +1204,24 @@ function ffprobePath() {
 // Codec args per target extension (mirrors the browser-side mapping).
 // Still-image inputs need special handling: they have a single frame with
 // no duration, so fps filters output nothing and video targets need -loop.
+// "Video shape" filters — keep in sync with frameFilter() in index.html
+const FRAME_FILTERS = {
+  crop: 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1',
+  pad:  'scale=1080:1920:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,setsar=1',
+  blur: 'split[a][b];[a]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=10:2,scale=1080:1920[bg];'
+      + '[b]scale=1080:1920:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1',
+  cw:   'transpose=1,scale=trunc(iw/2)*2:trunc(ih/2)*2',
+  ccw:  'transpose=2,scale=trunc(iw/2)*2:trunc(ih/2)*2',
+};
 const STILL_RE = /\.(png|jpe?g|jfif|pjpe?g|pjp|webp|bmp|tiff?|avif|heic|heif|ico|tga|dds)$/i;
-function cvArgs(inPath, outPath, ext, still, abr) {
+function cvArgs(inPath, outPath, ext, still, abr, frame) {
   const br = def => ['-b:a', (abr || def) + 'k'];
   const a = ['-y'];
   if (still && ['mp4','webm','mov','mkv','avi'].includes(ext)) a.push('-loop','1','-t','3');
   a.push('-i', inPath);
   // libx264/mpeg4 refuse odd dimensions — images often have them
   if (still && ['mp4','mov','mkv','avi'].includes(ext)) a.push('-vf','scale=trunc(iw/2)*2:trunc(ih/2)*2');
+  else if (frame && Object.hasOwn(FRAME_FILTERS, frame) && ['mp4','webm','mov','mkv','avi'].includes(ext)) a.push('-vf', FRAME_FILTERS[frame]);
   switch (ext) {
     case 'mp4':  a.push('-c:v','libx264','-preset','fast','-crf','21','-c:a','aac','-b:a','160k','-pix_fmt','yuv420p','-movflags','+faststart'); break;
     case 'webm': a.push('-c:v','libvpx-vp9','-deadline','good','-cpu-used','4','-c:a','libopus'); break;
@@ -1247,13 +1257,13 @@ function cleanupCvJob(job) {
   fs.rm(job.dir, { recursive: true, force: true }, () => {});
 }
 
-async function runCvJob(job, inPath, target, abr) {
+async function runCvJob(job, inPath, target, abr, frame) {
   await ensureDlTools(); // makes sure ffmpeg exists (auto-fetch on very first use)
   job.state = 'queued';
-  await cvLimit(() => convertNow(job, inPath, target, abr));
+  await cvLimit(() => convertNow(job, inPath, target, abr, frame));
 }
 
-async function convertNow(job, inPath, target, abr) {
+async function convertNow(job, inPath, target, abr, frame) {
   if (job.cancelled) throw new Error('Cancelled');
   job.state = 'converting';
   // Probe duration (for % progress) and stream layout (to detect still
@@ -1276,7 +1286,7 @@ async function convertNow(job, inPath, target, abr) {
   const still = STILL_RE.test(inPath) || (hasVideo && !hasAudio && duration <= 0.05);
   const base = path.basename(inPath).replace(/^in_/, '').replace(/\.[^.]+$/, '') || 'output';
   const outPath = path.join(job.dir, base + '.' + target);
-  const args = cvArgs(inPath, outPath, target, still, abr);
+  const args = cvArgs(inPath, outPath, target, still, abr, frame);
   args.splice(1, 0, '-progress', 'pipe:1', '-nostats'); // after -y
 
   await new Promise((resolve, reject) => {
@@ -1317,6 +1327,7 @@ app.post('/api/convert/start', (req, res) => {
   if (!target) return res.status(400).json({ error: 'No target format' });
   const abrIn = parseInt(req.query.abr, 10);
   const abr = abrIn > 0 ? Math.max(32, Math.min(512, abrIn)) : 0; // 0 = format default
+  const frame = Object.hasOwn(FRAME_FILTERS, req.query.frame) ? String(req.query.frame) : '';
   const id = 'c' + (++cvSeq) + Math.random().toString(36).slice(2, 8);
   const job = {
     id, state: 'setup', pct: 0, file: null, error: null, proc: null, cancelled: false,
@@ -1330,7 +1341,7 @@ app.post('/api/convert/start', (req, res) => {
   ws.on('error', e => { job.state = 'error'; job.error = String(e.message || e); res.status(500).json({ error: job.error }); });
   ws.on('finish', () => {
     res.json({ id });
-    runCvJob(job, inPath, target, abr).catch(e => {
+    runCvJob(job, inPath, target, abr, frame).catch(e => {
       if (job.cancelled) return;
       job.state = 'error';
       job.error = String(e && e.message || e).slice(0, 300);

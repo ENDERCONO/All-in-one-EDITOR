@@ -7902,6 +7902,21 @@
                 <option value="__custom__">Custom extension…</option>
               </select>
             </div>
+            <div class="export-slider" id="bulkRowFrame" hidden>
+              <div class="slabel"><span>Video shape</span><span class="val" id="bulkFrameInfo"></span></div>
+              <select id="bulkFrame" class="color-input cv-select">
+                <option value="">Keep as is</option>
+                <optgroup label="Vertical 9:16 (1080×1920) — TikTok · Shorts · Reels">
+                  <option value="blur">Vertical · blurred background fill</option>
+                  <option value="crop">Vertical · crop to fill (zooms in)</option>
+                  <option value="pad">Vertical · black bars</option>
+                </optgroup>
+                <optgroup label="Fix sideways clips">
+                  <option value="cw">Rotate 90° clockwise</option>
+                  <option value="ccw">Rotate 90° counter-clockwise</option>
+                </optgroup>
+              </select>
+            </div>
             <div class="export-slider" id="bulkRowAbr" hidden>
               <div class="slabel"><span>Audio bitrate</span></div>
               <select id="bulkAbr" class="color-input cv-select">
@@ -18013,12 +18028,14 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
   const bulkZip = $('bulkZip'), bulkZipSize = $('bulkZipSize');
   const bulkRetry = $('bulkRetry'), bulkClear = $('bulkClear');
   const abrRow = $('bulkRowAbr'), abrSel = $('bulkAbr');
+  const frameRow = $('bulkRowFrame'), frameSel = $('bulkFrame'), frameInfo = $('bulkFrameInfo');
   const KINDS = {
     audio: { row: $('bulkRowAudio'), sel: $('bulkFmtAudio'), cnt: $('bulkCntAudio') },
     video: { row: $('bulkRowVideo'), sel: $('bulkFmtVideo'), cnt: $('bulkCntVideo') },
     image: { row: $('bulkRowImage'), sel: $('bulkFmtImage'), cnt: $('bulkCntImage') },
   };
   const LOSSY_AUDIO = ['mp3', 'ogg', 'opus', 'aac', 'm4a'];
+  const VIDEO_OUT = ['mp4', 'webm', 'mov', 'mkv', 'avi'];
   const SERVER_PARALLEL = 3;
   const esc = window.escHtml;
   const notify = msg => { if (typeof toast === 'function') toast(msg); };
@@ -18051,13 +18068,14 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
       for (const k of Object.keys(KINDS)) if (saved[k] && KINDS[k].sel.querySelector(`option[value="${saved[k]}"]`)) KINDS[k].sel.value = saved[k];
       if (saved.abr !== undefined) abrSel.value = saved.abr;
       if (saved.custom) bulkCustomExt.value = saved.custom;
+      if (saved.frame && frameSel.querySelector(`option[value="${saved.frame}"]`)) frameSel.value = saved.frame;
     }
   } catch (e) {}
   function remember() {
     try {
       localStorage.setItem('cvTargets', JSON.stringify({
         audio: KINDS.audio.sel.value, video: KINDS.video.sel.value, image: KINDS.image.sel.value,
-        abr: abrSel.value, custom: bulkCustomExt.value,
+        abr: abrSel.value, custom: bulkCustomExt.value, frame: frameSel.value,
       }));
     } catch (e) {}
   }
@@ -18074,21 +18092,66 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
     }
     bulkCustomRow.hidden = !custom;
     abrRow.hidden = !lossy;
+    // Reshaping only applies to video → video
+    frameRow.hidden = !counts.video || !VIDEO_OUT.includes(targetFor('video'));
+    const sized = items.filter(it => it.kind === 'video' && it.dims);
+    const flat = sized.filter(it => it.dims.w >= it.dims.h).length;
+    frameInfo.textContent = !sized.length ? '' : flat ? flat + ' of ' + sized.length + ' not vertical' : 'all vertical ✓';
     bulkSettings.hidden = !items.length;
   }
   Object.values(KINDS).forEach(k => k.sel.addEventListener('change', () => { syncSettings(); remember(); }));
   abrSel.addEventListener('change', remember);
+  frameSel.addEventListener('change', () => { remember(); render(); });
+
+  // ffmpeg -vf for the "Video shape" choice (same on the server). Phone
+  // rotation metadata is applied by ffmpeg on decode, so it gets baked in.
+  const VW = 1080, VH = 1920;
+  function frameFilter(frame) {
+    switch (frame) {
+      case 'crop': return `scale=${VW}:${VH}:force_original_aspect_ratio=increase,crop=${VW}:${VH},setsar=1`;
+      case 'pad':  return `scale=${VW}:${VH}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,pad=${VW}:${VH}:(ow-iw)/2:(oh-ih)/2:black,setsar=1`;
+      // blur the background small (cheap), then scale it back up
+      case 'blur': return `split[a][b];[a]scale=${VW/4}:${VH/4}:force_original_aspect_ratio=increase,crop=${VW/4}:${VH/4},boxblur=10:2,scale=${VW}:${VH}[bg];`
+        + `[b]scale=${VW}:${VH}:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1`;
+      case 'cw':   return 'transpose=1,scale=trunc(iw/2)*2:trunc(ih/2)*2';
+      case 'ccw':  return 'transpose=2,scale=trunc(iw/2)*2:trunc(ih/2)*2';
+      default: return '';
+    }
+  }
+
+  // Read each clip's real (rotation-aware) size so the list can show
+  // which ones aren't vertical yet
+  function probeDims(it) {
+    const v = document.createElement('video');
+    const url = URL.createObjectURL(it.file);
+    const done = () => { clearTimeout(t); URL.revokeObjectURL(url); v.removeAttribute('src'); v.load(); };
+    const t = setTimeout(done, 15000);
+    v.preload = 'metadata';
+    v.muted = true;
+    v.onloadedmetadata = () => {
+      if (v.videoWidth && v.videoHeight) { it.dims = { w: v.videoWidth, h: v.videoHeight }; syncSettings(); render(); }
+      done();
+    };
+    v.onerror = done;
+    v.src = url;
+  }
+  function shapeOf(d) {
+    if (!d) return '';
+    const r = d.w / d.h;
+    return d.w + '×' + d.h + ' · ' + (r < 0.6 ? 'vertical 9:16' : r < 0.95 ? 'portrait (not 9:16)' : r <= 1.05 ? 'square' : 'horizontal');
+  }
   bulkCustomExt.addEventListener('input', () => { syncSettings(); remember(); });
 
   // Same arg mapping as the server converter, for the in-browser fallback.
   // isImage: still images have one frame and no duration — fps filters
   // output nothing and video targets need -loop, so they get special args.
-  function ffArgs(inputName, outputName, ext, isImage, abr) {
+  function ffArgs(inputName, outputName, ext, isImage, abr, frame) {
     const args = ['-y'];
     const br = def => ['-b:a', (abr || def) + 'k'];
     if (isImage && ['mp4','webm','mov','mkv','avi'].includes(ext)) args.push('-loop','1','-t','3');
     args.push('-i', inputName);
     if (isImage && ['mp4','mov','mkv','avi'].includes(ext)) args.push('-vf','scale=trunc(iw/2)*2:trunc(ih/2)*2');
+    else if (frame && VIDEO_OUT.includes(ext)) args.push('-vf', frameFilter(frame));
     let mime = 'application/octet-stream';
     switch (ext) {
       case 'mp4':  args.push('-c:v','libx264','-preset','ultrafast','-crf','23','-c:a','aac','-b:a','128k','-pix_fmt','yuv420p','-movflags','+faststart'); mime='video/mp4'; break;
@@ -18125,7 +18188,9 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
       const key = f.name + '|' + f.size + '|' + f.lastModified;
       if (have.has(key)) { dup++; continue; }
       have.add(key);
-      items.push({ id: nextId++, file: f, kind: kindOf(f), status: 'queued', pct: 0, outBlob: null, outName: null, error: null });
+      const it = { id: nextId++, file: f, kind: kindOf(f), status: 'queued', pct: 0, outBlob: null, outName: null, error: null, dims: null };
+      items.push(it);
+      if (it.kind === 'video') probeDims(it);
     }
     if (dup) notify(`${dup} file${dup > 1 ? 's were' : ' was'} already in the list`);
     syncSettings();
@@ -18166,7 +18231,8 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
       } else if (it.status === 'working') {
         sub = it.msg || ('converting → ' + (targetFor(it.kind) || '?').toUpperCase() + ' · ' + Math.round(it.pct * 100) + '%');
       } else {
-        sub = `${it.kind} · ${fmtBytes(it.file.size)} → ${(targetFor(it.kind) || '?').toUpperCase()}`;
+        sub = `${it.kind} · ${fmtBytes(it.file.size)}${it.dims ? ' · ' + shapeOf(it.dims) : ''} → ${(targetFor(it.kind) || '?').toUpperCase()}`
+          + (frameFor(it) ? ' · ' + frameSel.options[frameSel.selectedIndex].text.toLowerCase() : '');
       }
       if (it.status !== 'working') acts += `<button class="x" data-act="remove" data-id="${it.id}" title="Remove">✕</button>`;
       const bar = it.status === 'working' ? `<div class="job-bar"><i style="width:${Math.max(2, Math.round(it.pct * 100))}%"></i></div>` : '';
@@ -18191,9 +18257,10 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
   });
 
   /* ---------- server path (native ffmpeg) ---------- */
-  async function serverConvertFile(apiBase, it, ext, abr) {
+  async function serverConvertFile(apiBase, it, ext, abr, frame) {
     const q = new URLSearchParams({ name: it.file.name, target: ext });
     if (abr) q.set('abr', abr);
+    if (frame) q.set('frame', frame);
     const res = await fetch(apiBase + '/api/convert/start?' + q, { method: 'POST', body: it.file });
     const start = await res.json();
     if (start.error) throw new Error(start.error);
@@ -18216,9 +18283,14 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
     return await fileRes.blob();
   }
 
-  function outNameFor(it, ext) {
+  function frameFor(it) {
+    return it.kind === 'video' && VIDEO_OUT.includes(targetFor('video')) ? frameSel.value : '';
+  }
+
+  function outNameFor(it, ext, frame) {
     const base = it.file.name.replace(/\.[^.]+$/, '') || 'output';
     const inExt = (it.file.name.match(/\.([^.]+)$/) || [, ''])[1].toLowerCase();
+    if (frame) return base + (frame === 'cw' || frame === 'ccw' ? '-rotated' : '-vertical') + '.' + ext;
     // same format in and out (e.g. re-encoding an MP3 to 128 kbps) — don't clash with the original
     return base + (inExt === ext ? '-converted' : '') + '.' + ext;
   }
@@ -18284,6 +18356,7 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
     async function convertOne(it) {
       const ext = targetFor(it.kind);
       const isImage = it.kind === 'image';
+      const frame = frameFor(it);
       it.status = 'working';
       it.pct = 0;
       it.msg = '';
@@ -18291,10 +18364,10 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
       const inExt = (it.file.name.match(/\.[^.]+$/) || ['.bin'])[0];
       const inputName = 'bulk_in_' + it.id + inExt;
       const outputName = 'bulk_out_' + it.id + '.' + ext;
-      const { args, mime } = ffArgs(inputName, outputName, ext, isImage, abr);
+      const { args, mime } = ffArgs(inputName, outputName, ext, isImage, abr, frame);
       try {
         if (useServer) {
-          const blob = await serverConvertFile(apiBase, it, ext, abr);
+          const blob = await serverConvertFile(apiBase, it, ext, abr, frame);
           it.outBlob = blob.type && blob.type !== 'application/octet-stream' ? blob : new Blob([blob], { type: mime });
         } else {
           await ff.writeFile(inputName, await fetchFile(it.file));
@@ -18307,7 +18380,7 @@ window.loadSharedFFmpeg = async function loadSharedFFmpeg(onLoadProgress) {
           try { await ff.deleteFile(inputName); } catch (e) {}
           try { await ff.deleteFile(outputName); } catch (e) {}
         }
-        it.outName = outNameFor(it, ext);
+        it.outName = outNameFor(it, ext, frame);
         it.status = 'done';
       } catch (err) {
         it.status = 'error';
