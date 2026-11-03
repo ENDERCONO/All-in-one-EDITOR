@@ -22,6 +22,7 @@ Last updated by the build session that created the editor.
 
 ## Known limitations / next ideas
 
+* Material editor hold-key shortcuts follow Unreal (1-4 constants, A D E I L M N O P S T U V; C = Component Mask, R Rotator, F Frac, B Blend, X Noise, K Clamp, W Time, G Desaturation, H Append).
 * Keyframe animation per property (Filmora's ◇ buttons) — not yet.
 * Opus only encodes at 48 kHz (44.1 kHz choice applies to WAV / MP3 / AAC).
 * PNG-sequence export not implemented.

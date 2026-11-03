@@ -983,9 +983,16 @@ const clone = o => JSON.parse(JSON.stringify(o));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const DETAILS_ONLY = DETAILS_ONLY_PARAMS;
 // UE-style "hold key + click" shortcuts
-const KEY_NODES = { '1': 'constant', '2': 'constant2', '3': 'constant3', '4': 'constant4', m: 'multiply', a: 'add',
-  l: 'lerp', t: 'textureSample', s: 'scalarParameter', v: 'vectorParameter', u: 'texCoord', d: 'divide', o: 'oneMinus',
-  p: 'panner', e: 'power', n: 'noise' };
+const KEY_NODES = {
+  // Unreal Engine defaults
+  '1': 'constant', '2': 'constant2', '3': 'constant3', '4': 'constant4',
+  a: 'add', d: 'divide', e: 'power', i: 'if', l: 'lerp', m: 'multiply', n: 'normalize', o: 'oneMinus',
+  p: 'panner', s: 'scalarParameter', t: 'textureSample', u: 'texCoord', v: 'vectorParameter',
+  // UE keys whose node doesn't exist here, mapped to the closest one
+  c: 'componentMask', r: 'rotator', f: 'frac', b: 'blend',
+  // extras
+  x: 'noise', k: 'clamp', w: 'time', g: 'desaturation', h: 'append',
+};
 let editorClipboard = null;
 let openEditor = null;
 
@@ -1035,7 +1042,7 @@ export function openMaterialEditor({ store, mediaRuntime, materialId }) {
     tplSelect,
     statusEl,
     h('div', { class: 'mat-grow' }),
-    h('span', { class: 'mat-hint' }, 'Right-click / Tab: add node · Drag pins to wire · Alt+click: break · Hold 1/2/3/M/A/L/T + click'),
+    h('span', { class: 'mat-hint' }, 'Right-click / Tab: add node · Drag pins to wire · Alt+click: break · Hold a key + click to add (Unreal keys: 1-4, A D E I L M N O P S T U V, C mask)'),
     h('button', { class: 'mat-tb icon', 'data-act': 'close', title: 'Close (Esc)', html: icon('close', 16) }));
 
   const prevCanvas = h('canvas', { class: 'mat-preview' });
@@ -1496,7 +1503,7 @@ export function openMaterialEditor({ store, mediaRuntime, materialId }) {
     details.append(sec('Shortcuts', h('div', { class: 'mat-dim mat-keys', html:
       'Right-click / Tab — node palette<br>Right/middle drag, Space+drag — pan<br>Wheel — zoom<br>Drag on empty — box select<br>' +
       'Alt+click pin — break links<br>Del — delete · Ctrl+D duplicate<br>Ctrl+C / Ctrl+V — copy / paste<br>Ctrl+Z / Ctrl+Y — undo / redo<br>' +
-      'Hold 1 2 3 4 · M A D L · S V U T P E N O + click — quick add<br>Home — frame all · Esc — close' })));
+      '<b>Hold key + click</b> (Unreal layout):<br>1 Constant · 2 Constant2Vector · 3 Constant3Vector · 4 Constant4Vector<br>A Add · D Divide · E Power · I If · L Lerp · M Multiply · N Normalize · O OneMinus<br>P Panner · S Scalar Param · T Texture Sample · U TexCoord · V Vector Param<br>C Component Mask · R Rotator · F Frac · B Blend · X Noise · K Clamp · W Time · G Desaturation · H Append<br>Home — frame all · Esc — close' })));
     updateDetailsCode();
   }
 
