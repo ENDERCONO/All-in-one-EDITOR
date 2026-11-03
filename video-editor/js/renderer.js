@@ -1,4 +1,4 @@
-// WebGL2 compositor: per-layer chroma key → color → filters → material, then
+// WebGL2 compositor: per-layer chroma key → hue match → color → filters → material, then
 // crop + transform + blend modes into the frame, transitions between layers.
 // Texture convention: GL style everywhere — uv (0,0) = BOTTOM-left of the image
 // (sources are uploaded with UNPACK_FLIP_Y, FBO row 0 = image bottom), matching
@@ -26,6 +26,11 @@ const DEFINES = [
 const FILTER_INDEX = new Map(FILTERS.map((f, i) => [f.id, i]));
 const TRANSITION_INDEX = new Map(TRANSITIONS.map((f, i) => [f.id, i]));
 const BLEND_INDEX = new Map(BLEND_MODES.map((f, i) => [f.id, i]));
+// Effects from the "v2 additions" onwards run in a second program (FS_FILTER2 / FS_TRANSITION2).
+const FILTER_V2 = FILTER_INDEX.get('deep_fry') ?? FILTERS.length;
+const TRANSITION_V2 = TRANSITION_INDEX.get('cube_left') ?? TRANSITIONS.length;
+const COLOR_KEYS = ['brightness', 'contrast', 'saturation', 'hue', 'exposure', 'temperature', 'tint', 'highlights', 'shadows', 'vignette', 'sharpen',
+  'gamma', 'vibrance', 'noise', 'fade', 'clarity', 'blacks', 'whites', 'red', 'green', 'blue'];
 
 const VS = `#version 300 es
 in vec2 a_pos; out vec2 v_uv;
@@ -549,7 +554,7 @@ void main() {
   outColor = ao > 1e-5 ? vec4(co / ao, ao) : vec4(0.0);
 }`;
 
-const FS_TRANSITION = HEAD + `
+const TR_COMMON = `
 uniform sampler2D u_a, u_b; uniform float u_p, u_asp; uniform int u_type; uniform vec2 u_res;
 // uv here is top-down (y = 0 at the top of the frame); textures are GL (y up).
 vec4 A(vec2 uv) { return (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) ? vec4(0.0) : texture(u_a, vec2(uv.x, 1.0 - uv.y)); }
@@ -569,6 +574,8 @@ vec4 blurB(vec2 uv, float rad) {
     acc += premul(B(uv + vec2(cos(ang), sin(ang) * u_asp) * r)); n += 1.0; }
   return unpremul(acc / n);
 }
+`;
+const FS_TRANSITION = HEAD + TR_COMMON + `
 void main() {
   vec2 uv = vec2(v_uv.x, 1.0 - v_uv.y); float p = u_p; vec4 o; float e = 0.015;
   vec2 asp = vec2(u_asp, 1.0);
@@ -641,6 +648,283 @@ void main() {
   outColor = o;
 }`;
 
+// v2 transitions (3D, meme, shapes). Same uniforms/helpers as FS_TRANSITION.
+const FS_TRANSITION2 = HEAD + TR_COMMON + `
+const float CAMF = 2.0; // camera distance; the frame plane z = 0 exactly fills the view
+vec4 BG;
+vec3 rotY(vec3 v, float a) { float c = cos(a), s = sin(a); return vec3(c * v.x + s * v.z, v.y, -s * v.x + c * v.z); }
+vec3 rotX(vec3 v, float a) { float c = cos(a), s = sin(a); return vec3(v.x, c * v.y - s * v.z, s * v.y + c * v.z); }
+vec3 rayDir(vec2 uv) { return vec3((uv.x - 0.5) * u_asp, 0.5 - uv.y, CAMF); }
+vec3 safeInv(vec3 d) { return 1.0 / (d + vec3(equal(d, vec3(0.0))) * 1e-6); }
+vec4 AM(vec2 uv) { return A(1.0 - abs(1.0 - mod(uv, 2.0))); }
+vec4 BM(vec2 uv) { return B(1.0 - abs(1.0 - mod(uv, 2.0))); }
+// axis 0 = spin around Y (dir +1 left, -1 right), axis 1 = spin around X (up)
+vec4 cube(vec2 uv, int axis, float dir, float p) {
+  vec3 h = vec3(u_asp * 0.5, 0.5, axis == 0 ? u_asp * 0.5 : 0.5);
+  float ang = p * 1.5707963 * dir;
+  float push = sin(p * 3.14159) * (axis == 0 ? 1.1 : 0.7);
+  vec3 ctr = vec3(0.0, 0.0, h.z + push);
+  vec3 ro = vec3(0.0, 0.0, -CAMF) - ctr, rd = rayDir(uv);
+  if (axis == 0) { ro = rotY(ro, -ang); rd = rotY(rd, -ang); } else { ro = rotX(ro, -ang); rd = rotX(rd, -ang); }
+  vec3 iv = safeInv(rd);
+  vec3 t0 = (-h - ro) * iv, t1 = (h - ro) * iv;
+  vec3 tmin = min(t0, t1), tmax = max(t0, t1);
+  float tn = max(max(tmin.x, tmin.y), tmin.z), tf = min(min(tmax.x, tmax.y), tmax.z);
+  if (tn > tf || tf < 0.0) return BG;
+  vec3 hp = ro + rd * tn;
+  vec3 n = tn == tmin.x ? vec3(sign(hp.x), 0.0, 0.0) : (tn == tmin.y ? vec3(0.0, sign(hp.y), 0.0) : vec3(0.0, 0.0, sign(hp.z)));
+  vec4 col;
+  if (n.z < -0.5) col = A(vec2(hp.x / (2.0 * h.x) + 0.5, 0.5 - hp.y / (2.0 * h.y)));
+  else if (axis == 0 && n.x * dir > 0.5) col = B(vec2(dir * hp.z / (2.0 * h.z) + 0.5, 0.5 - hp.y / (2.0 * h.y)));
+  else if (axis == 1 && n.y < -0.5) col = B(vec2(hp.x / (2.0 * h.x) + 0.5, 0.5 + hp.z / (2.0 * h.z)));
+  else col = vec4(0.1, 0.1, 0.12, 1.0);
+  vec3 nw = axis == 0 ? rotY(n, ang) : rotX(n, ang);
+  col.rgb *= 0.35 + 0.65 * max(0.0, -nw.z);
+  return over(col, BG);
+}
+vec4 flipCard(vec2 uv, float p) {
+  float ang = p * 3.14159;
+  vec3 ro = vec3(0.0, 0.0, -CAMF) - vec3(0.0, 0.0, sin(p * 3.14159) * 0.8), rd = rayDir(uv);
+  ro = rotY(ro, -ang); rd = rotY(rd, -ang);
+  if (abs(rd.z) < 1e-6) return BG;
+  float tt = -ro.z / rd.z; if (tt < 0.0) return BG;
+  vec3 hp = ro + rd * tt;
+  vec2 q = vec2(hp.x / u_asp + 0.5, 0.5 - hp.y);
+  if (q.x < 0.0 || q.y < 0.0 || q.x > 1.0 || q.y > 1.0) return BG;
+  vec4 col = rd.z > 0.0 ? A(q) : B(vec2(1.0 - q.x, q.y));
+  col.rgb *= 0.45 + 0.55 * abs(cos(ang));
+  return over(col, BG);
+}
+// one door: hinge at world x = hx; covers A's x range [x0, x1] (world units)
+void door(vec2 uv, float hx, float ang, float x0, float x1, inout float best, inout vec4 res) {
+  vec3 ro = vec3(-hx, 0.0, -CAMF), rd = rayDir(uv);
+  ro = rotY(ro, -ang); rd = rotY(rd, -ang);
+  if (abs(rd.z) < 1e-6) return;
+  float tt = -ro.z / rd.z; if (tt < 0.0 || tt > best) return;
+  vec3 hp = ro + rd * tt; float wx = hp.x + hx;
+  if (wx < x0 || wx > x1 || abs(hp.y) > 0.5) return;
+  vec4 col = A(vec2(wx / u_asp + 0.5, 0.5 - hp.y));
+  col.rgb *= 0.4 + 0.6 * cos(ang);
+  best = tt; res = col;
+}
+vec4 doorOpen(vec2 uv, float p) {
+  float e = p * p * (3.0 - 2.0 * p);
+  float ang = e * 1.62;
+  float sc = 0.85 + 0.15 * e;
+  vec4 back = B((uv - 0.5) / sc + 0.5); back.rgb *= 0.55 + 0.45 * e;
+  back = over(back, BG);
+  float best = 1e9; vec4 d = vec4(0.0);
+  float hw = u_asp * 0.5;
+  door(uv, -hw, ang, -hw, 0.0, best, d);
+  door(uv, hw, -ang, 0.0, hw, best, d);
+  return over(d, back);
+}
+vec4 pageTurn(vec2 uv, float p) {
+  vec2 sz = vec2(u_asp, 1.0);
+  vec2 q = uv * sz;
+  vec2 n = normalize(sz);
+  float Lp = length(sz), R = 0.12, PI = 3.14159265;
+  float s0 = mix(Lp + 0.01, -PI * R * 0.5 - 0.06, p);
+  float s = dot(q, n);
+  vec4 res = B(uv);
+  if (s > s0) res.rgb *= 1.0 - 0.5 * (1.0 - smoothstep(0.0, 2.5 * R, s - s0 - R * 0.3)) * smoothstep(0.0, 0.05, Lp - s0);
+  if (s < s0) res = over(A(uv), res);
+  else if (s < s0 + R) {
+    float a1 = R * asin(clamp((s - s0) / R, 0.0, 1.0));
+    vec4 fc = A((q + n * (s0 + a1 - s)) / sz);
+    fc.rgb *= 1.0 - 0.45 * (s - s0) / R;
+    res = over(fc, res);
+  }
+  if (s < s0 + R) {
+    float a2 = s >= s0 ? PI * R - R * asin(clamp((s - s0) / R, 0.0, 1.0)) : PI * R + (s0 - s);
+    vec4 bc = A((q + n * (s0 + a2 - s)) / sz);
+    float lit = s >= s0 ? 0.75 + 0.25 * (s - s0) / R : 1.0;
+    bc.rgb = mix(bc.rgb, vec3(0.96), 0.65) * lit;
+    res = over(bc, res);
+  }
+  return res;
+}
+vec4 radialA(vec2 uv, float sc, float blur) { // zoom about the center + radial blur
+  vec4 acc = vec4(0.0);
+  for (int i = 0; i < 12; i++) acc += premul(AM((uv - 0.5) / (sc * (1.0 + blur * float(i) / 11.0)) + 0.5));
+  return unpremul(acc / 12.0);
+}
+vec4 radialB(vec2 uv, float sc, float blur) {
+  vec4 acc = vec4(0.0);
+  for (int i = 0; i < 12; i++) acc += premul(BM((uv - 0.5) / (sc * (1.0 + blur * float(i) / 11.0)) + 0.5));
+  return unpremul(acc / 12.0);
+}
+vec4 spinA(vec2 uv, float ang, float sc, float smear) {
+  vec4 acc = vec4(0.0); vec2 asp = vec2(u_asp, 1.0);
+  for (int i = 0; i < 8; i++) acc += premul(AM(rot2((uv - 0.5) * asp, -(ang - smear * float(i) / 7.0)) / sc / asp + 0.5));
+  return unpremul(acc / 8.0);
+}
+vec4 spinB(vec2 uv, float ang, float sc, float smear) {
+  vec4 acc = vec4(0.0); vec2 asp = vec2(u_asp, 1.0);
+  for (int i = 0; i < 8; i++) acc += premul(BM(rot2((uv - 0.5) * asp, -(ang - smear * float(i) / 7.0)) / sc / asp + 0.5));
+  return unpremul(acc / 8.0);
+}
+vec4 pushS(vec2 uv, float x) { return over(B(uv - vec2(1.0 - x, 0.0)), A(uv + vec2(x, 0.0))); }
+float sdStar5(vec2 p, float r, float rf) {
+  const vec2 k1 = vec2(0.809016994375, -0.587785252292);
+  const vec2 k2 = vec2(-k1.x, k1.y);
+  p.x = abs(p.x);
+  p -= 2.0 * max(dot(k1, p), 0.0) * k1;
+  p -= 2.0 * max(dot(k2, p), 0.0) * k2;
+  p.x = abs(p.x);
+  p.y -= r;
+  vec2 ba = rf * vec2(-k1.y, k1.x) - vec2(0.0, 1.0);
+  float h = clamp(dot(p, ba) / dot(ba, ba), 0.0, r);
+  return length(p - ba * h) * sign(p.y * ba.x - p.x * ba.y);
+}
+float dot2(vec2 v) { return dot(v, v); }
+float sdHeart(vec2 p) {
+  p.x = abs(p.x);
+  if (p.y + p.x > 1.0) return sqrt(dot2(p - vec2(0.25, 0.75))) - sqrt(2.0) / 4.0;
+  return sqrt(min(dot2(p - vec2(0.0, 1.0)), dot2(p - 0.5 * max(p.x + p.y, 0.0)))) * sign(p.x - p.y);
+}
+float easeBounce(float x) {
+  const float n1 = 7.5625, d1 = 2.75;
+  if (x < 1.0 / d1) return n1 * x * x;
+  if (x < 2.0 / d1) { x -= 1.5 / d1; return n1 * x * x + 0.75; }
+  if (x < 2.5 / d1) { x -= 2.25 / d1; return n1 * x * x + 0.9375; }
+  x -= 2.625 / d1; return n1 * x * x + 0.984375;
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+void main() {
+  vec2 uv = vec2(v_uv.x, 1.0 - v_uv.y); float p = u_p; vec4 o; float e = 0.01;
+  vec2 asp = vec2(u_asp, 1.0);
+  float amt = 1.0 - abs(2.0 * p - 1.0);
+  int t = u_type;
+  BG = vec4(0.04, 0.04, 0.05, max(A(uv).a, B(uv).a));
+  if (t == T_cube_left) o = cube(uv, 0, 1.0, p);
+  else if (t == T_cube_right) o = cube(uv, 0, -1.0, p);
+  else if (t == T_cube_up) o = cube(uv, 1, 1.0, p);
+  else if (t == T_flip_card) o = flipCard(uv, p);
+  else if (t == T_door_open) o = doorOpen(uv, p);
+  else if (t == T_page_turn) o = pageTurn(uv, p);
+  else if (t == T_white_flash) {
+    float w = exp(-pow((p - 0.5) / 0.07, 2.0));
+    vec4 base = p < 0.5 ? A(uv) : B(uv);
+    base.rgb *= 1.0 + 1.5 * w;
+    o = vec4(mix(clamp(base.rgb, 0.0, 1.0), vec3(1.0), w), max(base.a, w));
+  }
+  else if (t == T_flashbang) {
+    float white = p < 0.1 ? smoothstep(0.0, 0.1, p) : 1.0 - smoothstep(0.25, 0.9, p);
+    float boost = 1.0 + 5.0 * white;
+    vec4 base = p < 0.18 ? A(uv) : B(uv);
+    vec3 col = base.rgb * boost;
+    float ghost = p >= 0.18 ? (1.0 - smoothstep(0.2, 0.95, p)) : 0.0;
+    float ring = 0.6 + 0.4 * cos(p * 40.0);
+    vec4 after = blurA(uv + vec2(sin(p * 50.0) * 0.004, 0.0), 0.01 + 0.03 * p);
+    col += after.rgb * after.a * ghost * 0.9 * ring;
+    col = mix(col, vec3(1.0), white * white);
+    o = vec4(clamp(col, 0.0, 1.0), max(max(base.a, white), after.a * ghost));
+  }
+  else if (t == T_zoom_punch) {
+    if (p < 0.5) { float q = p * 2.0; o = radialA(uv, 1.0 + 2.5 * q * q, q * q * 0.35); }
+    else { float q = (p - 0.5) * 2.0; float k = 1.0 - pow(1.0 - q, 3.0); o = radialB(uv, mix(2.4, 1.0, k), (1.0 - k) * 0.35); }
+  }
+  else if (t == T_spin_zoom) {
+    if (p < 0.5) { float q = p * 2.0; float ea = q * q; o = spinA(uv, ea * 6.2831853, 1.0 + 3.0 * ea, q * 0.9); }
+    else { float q = (p - 0.5) * 2.0; float k = 1.0 - pow(1.0 - q, 2.0); o = spinB(uv, -(1.0 - k) * 6.2831853, mix(4.0, 1.0, k), (1.0 - q) * 0.9); }
+  }
+  else if (t == T_star_wipe || t == T_heart_wipe) {
+    vec2 d = (uv - 0.5) * asp; d.y = -d.y;
+    float sdf;
+    if (t == T_star_wipe) { float r = p * 3.3; d = rot2(d, p * 0.8); sdf = sdStar5(d, r, 0.45); }
+    else { float sc = p * 2.8 + 1e-4; sdf = sdHeart(d / sc + vec2(0.0, 0.5)) * sc; }
+    o = mixS(B(uv), A(uv), smoothstep(-0.004, 0.004, sdf));
+  }
+  else if (t == T_shake_cut) {
+    float k = p < 0.5 ? smoothstep(0.3, 0.5, p) : exp(-(p - 0.5) * 7.0);
+    float st = floor(p * 45.0);
+    vec2 off = (vec2(hash(vec2(st, 1.3)), hash(vec2(st, 7.1))) - 0.5) * 0.12 * k;
+    float ang = (hash(vec2(st, 3.7)) - 0.5) * 0.12 * k;
+    vec2 u2 = rot2((uv - 0.5) * asp, ang) / (1.0 + 0.15 * k) / asp + 0.5 + off;
+    vec2 sp = vec2(0.012 * k, 0.0);
+    if (p < 0.5) { vec4 c = AM(u2); o = vec4(AM(u2 + sp).r, c.g, AM(u2 - sp).b, c.a); }
+    else { vec4 c = BM(u2); o = vec4(BM(u2 + sp).r, c.g, BM(u2 - sp).b, c.a); }
+  }
+  else if (t == T_whip_pan) {
+    float x = p < 0.5 ? 4.0 * p * p * p : 1.0 - pow(-2.0 * p + 2.0, 3.0) / 2.0;
+    float bl = amt * amt * 0.25;
+    vec4 acc = vec4(0.0);
+    for (int i = -10; i <= 10; i++) acc += premul(pushS(uv + vec2(float(i) / 10.0 * bl, 0.0), x));
+    o = unpremul(acc / 21.0);
+  }
+  else if (t == T_bounce) o = over(B(uv + vec2(0.0, 1.0 - easeBounce(p))), A(uv));
+  else if (t == T_clock_wipe) {
+    vec2 d = (uv - 0.5) * asp;
+    float a01 = fract(atan(d.x, -d.y) / 6.2831853 + 1.0);
+    float q = p * (1.0 + 2.0 * e) - e;
+    o = mixS(B(uv), A(uv), smoothstep(q - e, q + e, a01));
+  }
+  else if (t == T_radial_wipe) {
+    float r = length((uv - 0.5) * asp) / (length(asp) * 0.5);
+    float q = p * 1.3;
+    o = mixS(A(uv), B(uv), 1.0 - smoothstep(q - 0.3, q, r));
+  }
+  else if (t == T_cross_zoom) {
+    float str = amt * 0.45; vec4 acc = vec4(0.0);
+    float m = smoothstep(0.35, 0.65, p);
+    float sa = 1.0 + 0.6 * smoothstep(0.0, 1.0, p), sb = 1.6 - 0.6 * smoothstep(0.0, 1.0, p);
+    for (int i = 0; i < 16; i++) {
+      float f = 1.0 - str * float(i) / 15.0;
+      vec2 u2 = 0.5 + (uv - 0.5) * f;
+      acc += mix(premul(AM((u2 - 0.5) / sa + 0.5)), premul(BM((u2 - 0.5) / sb + 0.5)), m);
+    }
+    o = unpremul(acc / 16.0);
+  }
+  else if (t == T_film_burn) {
+    o = mixS(A(uv), B(uv), smoothstep(0.4, 0.6, p));
+    vec2 ctr = vec2(mix(-0.3, 1.3, p), 0.5 + 0.15 * sin(p * 6.0));
+    vec2 d = (uv - ctr) * asp;
+    float nz = vnoise(uv * 5.0 + p * 3.0) * 0.6 + vnoise(uv * 13.0 - p * 5.0) * 0.4;
+    float rad = 0.15 + 0.55 * amt;
+    float g = 1.0 - smoothstep(0.0, rad, length(d) + (nz - 0.5) * 0.35);
+    vec3 burn = mix(vec3(0.9, 0.25, 0.02), vec3(1.0, 0.75, 0.3), smoothstep(0.2, 0.6, g));
+    burn = mix(burn, vec3(1.0, 0.98, 0.9), smoothstep(0.6, 0.9, g));
+    vec3 col = o.rgb + burn * smoothstep(0.0, 0.6, g) * 1.4;
+    col = mix(col, vec3(1.0, 0.98, 0.92), smoothstep(0.75, 1.0, g));
+    o = vec4(clamp(col, 0.0, 1.0), max(o.a, smoothstep(0.0, 0.5, g)));
+  }
+  else if (t == T_luma_fade) {
+    float la = luma(A(uv).rgb);
+    float q = p * 1.2 - 0.1;
+    o = mixS(A(uv), B(uv), smoothstep(la - 0.1, la, q));
+  }
+  else if (t == T_rgb_split) {
+    float x = p * p * (3.0 - 2.0 * p);
+    float sp = amt * 0.12;
+    vec4 g = pushS(uv, x);
+    o = vec4(pushS(uv + vec2(sp, 0.0), x).r, g.g, pushS(uv - vec2(sp, 0.0), x).b, g.a);
+  }
+  else if (t == T_mosaic_tiles) {
+    vec2 grid = vec2(floor(9.0 * u_asp + 0.5), 9.0);
+    vec2 g = uv * grid; vec2 id = floor(g); vec2 lc = fract(g) - 0.5;
+    float lp = clamp((p - hash(id) * 0.6) / 0.4, 0.0, 1.0);
+    float cw = abs(cos(lp * 3.14159));
+    if (abs(lc.x) > cw * 0.5 - 0.002) o = vec4(BG.rgb, max(A(uv).a, B(uv).a));
+    else {
+      vec2 su = (id + 0.5 + vec2(lc.x / max(cw, 1e-3), lc.y)) / grid;
+      o = lp < 0.5 ? A(su) : B(su);
+      o.rgb *= 0.6 + 0.4 * cw;
+    }
+  }
+  else if (t == T_dreamy) {
+    vec2 u2 = uv + vec2(sin(uv.y * 18.0 + p * 12.0) * 0.03, sin(uv.x * 12.0 + p * 9.0) * 0.01) * amt;
+    float rad = amt * 0.02;
+    o = mixS(blurA(u2, rad), blurB(u2, rad), smoothstep(0.2, 0.8, p));
+    o.rgb = mix(o.rgb, vec3(1.0), amt * 0.15);
+  }
+  else o = mixS(A(uv), B(uv), p);
+  outColor = o;
+}`;
+
 function hexToRgb(hex, fallback = [0, 0, 0]) {
   if (typeof hex !== 'string') return fallback;
   let h = hex.trim().replace('#', '');
@@ -691,6 +975,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     copy: makeProgram(FS_COPY), fill: makeProgram(FS_FILL), chroma: makeProgram(FS_CHROMA),
     color: makeProgram(FS_COLOR), blur: makeProgram(FS_BLUR), filter: makeProgram(FS_FILTER),
     composite: makeProgram(FS_COMPOSITE), transition: makeProgram(FS_TRANSITION),
+    hue: makeProgram(FS_HUE), filter2: makeProgram(FS_FILTER2), transition2: makeProgram(FS_TRANSITION2),
   };
 
   // ---------- geometry ----------
@@ -925,12 +1210,24 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
   }
 
   // ---------- per-layer processing ----------
-  function colorNeutral(col) {
-    if (!col) return true;
-    for (const k of ['brightness', 'contrast', 'saturation', 'hue', 'exposure', 'temperature', 'tint', 'highlights', 'shadows', 'vignette', 'sharpen', 'blur']) {
-      if (col[k]) return false;
-    }
-    return true;
+  const posterLevels = col => { const v = Math.round(Number(col && col.posterize) || 0); return v >= 2 ? Math.min(64, v) : 0; };
+  // Uber color pass needed (everything except blur, which runs separately).
+  function colorUber(col) {
+    if (!col) return false;
+    return COLOR_KEYS.some(k => Number(col[k])) || posterLevels(col) > 0 || !!col.invert || !!col.grayscale;
+  }
+  function colorNeutral(col) { return !col || (!colorUber(col) && !Number(col.blur)); }
+  // Blurred copy of `srcTex` (w×h) at reduced resolution; caller releases the result.
+  function blurCopy(srcTex, w, h, sigmaFrac) {
+    const sigmaPx = sigmaFrac * Math.max(w, h);
+    const ds = Math.max(1, Math.floor(sigmaPx / 4));
+    const bw = Math.max(1, Math.round(w / ds)), bh = Math.max(1, Math.round(h / ds));
+    const r1 = acquire(bw, bh);
+    pass(P.blur, r1, pr => { bindTex(0, srcTex); u1i(pr, 'u_tex', 0); u2f(pr, 'u_dir', 1, 0); u1f(pr, 'u_sigma', sigmaPx / w); });
+    const r2 = acquire(bw, bh);
+    pass(P.blur, r2, pr => { bindTex(0, r1.tex); u1i(pr, 'u_tex', 0); u2f(pr, 'u_dir', 0, 1); u1f(pr, 'u_sigma', sigmaPx / h); });
+    release(r1);
+    return r2;
   }
 
   // Returns { tex, rt (owned or null), sw, sh } or null if not drawable.
@@ -953,6 +1250,8 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     const chroma = clip.chroma && clip.chroma.enabled && clip.type !== 'color' && clip.type !== 'material';
     const col = clip.color;
     const colorOn = !colorNeutral(col);
+    const hm = clip.hueMatch;
+    const hueOn = !!(hm && hm.enabled && clip.type !== 'material' && (hm.colorize || (Number(hm.range) || 0) > 0));
     const filters = (clip.filters || []).filter(f => f && FILTER_INDEX.has(f.type) && (f.amount ?? 1) > 0);
     let mat = null;
     if (clip.materialId && materialsMod) {
@@ -961,7 +1260,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     } else if (clip.materialId && !materialsMod) loadMaterials();
     if (clip.type === 'material' && !mat) return null;
 
-    if (!chroma && !colorOn && !filters.length && !mat) return { tex: srcTex, rt: null, sw, sh };
+    if (!chroma && !hueOn && !colorOn && !filters.length && !mat) return { tex: srcTex, rt: null, sw, sh };
 
     // Layer resolution: about the displayed size, never above the source size.
     const [bw, bh] = baseSize(clip, sw, sh);
@@ -1043,11 +1342,30 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
       });
     }
 
+    if (hueOn) {
+      const [fr, fg, fb] = hexToRgb(hm.from, [1, 0, 0]);
+      const [tr2, tg, tb] = hexToRgb(hm.to, [0, 0.4, 1]);
+      step(P.hue, pr => {
+        gl.uniform3f(pr.loc('u_from'), fr, fg, fb);
+        gl.uniform3f(pr.loc('u_to'), tr2, tg, tb);
+        u1f(pr, 'u_range', Math.max(0, Math.min(180, Number(hm.range) || 0)));
+        u1i(pr, 'u_colorize', hm.colorize ? 1 : 0);
+      });
+    }
+
     if (colorOn) {
-      const n = k => (Number(col[k]) || 0) / 100;
-      const needUber = ['brightness', 'contrast', 'saturation', 'hue', 'exposure', 'temperature', 'tint', 'highlights', 'shadows', 'vignette', 'sharpen'].some(k => col[k]);
-      if (needUber) {
+      const n = k => Math.max(-1, Math.min(1, (Number(col[k]) || 0) / 100));
+      if (colorUber(col)) {
+        const clar = n('clarity');
+        const low = clar ? blurCopy(cur.tex, lw, lh, 0.025) : null;
         step(P.color, pr => {
+          bindTex(1, low ? low.tex : transparentTex); u1i(pr, 'u_low', 1);
+          u1f(pr, 'u_gamma', n('gamma')); u1f(pr, 'u_vib', n('vibrance')); u1f(pr, 'u_noise', Math.max(0, n('noise')));
+          u1f(pr, 'u_fade', Math.max(0, n('fade'))); u1f(pr, 'u_clar', clar);
+          u1f(pr, 'u_blacks', n('blacks')); u1f(pr, 'u_whites', n('whites'));
+          gl.uniform3f(pr.loc('u_gain'), n('red'), n('green'), n('blue'));
+          u1f(pr, 'u_post', posterLevels(col)); u1f(pr, 'u_inv', col.invert ? 1 : 0); u1f(pr, 'u_gray', col.grayscale ? 1 : 0);
+          u1f(pr, 'u_time', Math.max(0, t - clip.start));
           u2f(pr, 'u_texel', 1 / lw, 1 / lh);
           u1f(pr, 'u_bri', n('brightness')); u1f(pr, 'u_con', n('contrast')); u1f(pr, 'u_sat', n('saturation'));
           u1f(pr, 'u_hue', (Number(col.hue) || 0) * Math.PI / 180); u1f(pr, 'u_exp', n('exposure'));
@@ -1055,6 +1373,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
           u1f(pr, 'u_hi', n('highlights')); u1f(pr, 'u_sh', n('shadows'));
           u1f(pr, 'u_vig', Math.max(0, n('vignette'))); u1f(pr, 'u_sharp', Math.max(0, n('sharpen')));
         });
+        if (low) release(low);
       }
       const blur = Math.max(0, Math.min(100, Number(col.blur) || 0));
       if (blur > 0) {
@@ -1067,9 +1386,10 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     }
 
     for (const f of filters) {
-      step(P.filter, pr => {
+      const fi = FILTER_INDEX.get(f.type);
+      step(fi >= FILTER_V2 ? P.filter2 : P.filter, pr => {
         u2f(pr, 'u_res', lw, lh);
-        u1i(pr, 'u_type', FILTER_INDEX.get(f.type));
+        u1i(pr, 'u_type', fi);
         u1f(pr, 'u_amt', Math.max(0, Math.min(1, f.amount ?? 1)));
         u1f(pr, 'u_time', Math.max(0, t - clip.start));
       });
@@ -1154,13 +1474,14 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
           const rtB = layerToFrameRT(clip, t);
           const rtA = layerToFrameRT(tr.other, t);
           const rtT = acquire(canvasW, canvasH);
-          pass(P.transition, rtT, pr => {
+          const ti = TRANSITION_INDEX.get(tr.type);
+          pass(ti >= TRANSITION_V2 ? P.transition2 : P.transition, rtT, pr => {
             bindTex(0, rtA.tex); u1i(pr, 'u_a', 0);
             bindTex(1, rtB.tex); u1i(pr, 'u_b', 1);
             u1f(pr, 'u_p', Math.max(0, Math.min(1, tr.progress)));
             u1f(pr, 'u_asp', st.width / st.height);
             u2f(pr, 'u_res', canvasW, canvasH);
-            u1i(pr, 'u_type', TRANSITION_INDEX.get(tr.type));
+            u1i(pr, 'u_type', ti);
           });
           release(rtA); release(rtB);
           composite(rtT.tex, identityInv(), [0, 0, 1, 1], 1, mode, frameA.tex, frameB);

@@ -18,7 +18,12 @@ Last updated by the build session that created the editor.
 | `renderer.js` / `gizmo.js` | ✅ | WebGL2 compositor: 25 filters, 25 transitions, 12 blend modes, chroma key, materials; move / scale / rotate gizmo with snapping |
 | `materials.js` | ✅ | Unreal-style node editor (≈55 nodes, templates, live preview) → GLSL; Scalar/Vector Parameters become inspector sliders |
 | Project files | ✅ | `.aioproj` (JSON + embedded media), autosave to IndexedDB with restore prompt |
-| Main site | ✅ | **Video Editor** tab (iframe, lazy loaded) |
+| Main site | ✅ | **Video Editor** tab (iframe, lazy loaded, full window) |
+| Opened from disk | ✅ | `file://` loads `dist/editor.js` (build with `node video-editor/build.mjs`) |
+| GIFs | ✅ | animated GIF / WebP clips decoded with ImageDecoder, looping |
+| Voice & audio fx | ✅ | 19 voice filters + 13 presets + reverb / echo / crush / muffle / high-pass / bass / 8D, ported from Audio Tools |
+| Image adjustments | ✅ | Image Editor set (hue, sat, exposure, contrast, sharpen, noise, invert, grayscale, color levels, auto hue match) + gamma, vibrance, levels, RGB, fade, clarity |
+| QoL hotkeys | ✅ | see `SHORTCUTS.md` → Quality-of-life |
 
 ## Known limitations / next ideas
 

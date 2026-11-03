@@ -10,7 +10,8 @@
 Standalone Filmora-style editor, embedded in the main site as the **Video Editor** tab through an iframe.
 Start with `video-editor/docs/PLAN.md` and `video-editor/docs/ARCHITECTURE.md` (data model + every module's contract), shortcuts in `video-editor/docs/SHORTCUTS.md`, progress in `video-editor/docs/STATUS.md`.
 
-* No build step: plain ES modules, CDN libraries with exact versions.
+* Plain ES modules (no build needed on a server). Libraries are vendored in `video-editor/vendor/`.
+* **After changing anything in `video-editor/js/`, run `node video-editor/build.mjs`** — it regenerates `video-editor/dist/editor.js`, the bundle used when `index.html` is opened from disk (`file://` blocks modules). Commit the bundle too.
 * Mutate project data only through `store.transact` / `store.update`.
 * Only `js/app.js` adds global key listeners.
 * Test: `node server.js` then open `http://localhost:3000/video-editor/` (or the Playwright smoke test `video-editor/tests/smoke.mjs`).
