@@ -43,7 +43,7 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
           <div class="tl-snap" hidden></div>
           <div class="tl-blade" hidden></div>
           <div class="tl-band" hidden></div>
-          <div class="tl-ph-line"></div>
+          <div class="tl-ph-line"><div class="tl-ph-ball" title="Drag to move the playhead · click to split here">${icon('split', 15)}</div></div>
         </div>
       </div>
     </div>`;
@@ -52,7 +52,7 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
   const markersEl = $('.tl-markers'), phHead = $('.tl-ph-head'), phKnob = $('.tl-ph-knob');
   const heads = $('.tl-heads'), headsInner = $('.tl-heads-inner'), scroll = $('.tl-scroll'), content = $('.tl-content');
   const lanesEl = $('.tl-lanes'), clipsEl = $('.tl-clips'), dropEl = $('.tl-drop'), snapEl = $('.tl-snap');
-  const bladeEl = $('.tl-blade'), bandEl = $('.tl-band'), phLine = $('.tl-ph-line');
+  const bladeEl = $('.tl-blade'), bandEl = $('.tl-band'), phLine = $('.tl-ph-line'), phBall = $('.tl-ph-ball');
 
   // ---------------------------------------------------------------- state
   let layout = [];            // [{ track, y, h, idxInKind }]
@@ -908,6 +908,36 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
     const up = () => { drag = null; stopAutoScroll(); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
     ev.preventDefault();
+  });
+
+  // Filmora-style scissor ball on the playhead line: drag = scrub, click = split at the playhead
+  const placeBall = () => { phBall.style.transform = `translate(-50%, ${scroll.scrollTop + 8}px)`; };
+  scroll.addEventListener('scroll', placeBall); placeBall();
+  phBall.addEventListener('pointerdown', ev => {
+    if (ev.button !== 0) return;
+    ev.preventDefault(); ev.stopPropagation(); closeMenu();
+    const x0 = ev.clientX; let moved = false;
+    phBall.setPointerCapture?.(ev.pointerId);
+    const move = e => {
+      if (!moved && Math.abs(e.clientX - x0) < 3) return;
+      moved = true; phBall.classList.add('drag');
+      const r = content.getBoundingClientRect();
+      let t = Math.max(0, T(e.clientX - r.left));
+      if (store.snap) { const sn = findSnap([t], snapTargets(null).slice(2).concat(store.project.markers.map(m => m.time))); t = sn ? sn.at : store.snapTime(t); }
+      else t = store.snapTime(t);
+      store.setPlayhead(t);
+      if (!drag) drag = { move };
+      drag.lastEv = e; autoScroll(e);
+    };
+    const up = () => {
+      phBall.classList.remove('drag'); stopAutoScroll(); if (drag && drag.move === move) drag = null;
+      phBall.removeEventListener('pointermove', move); phBall.removeEventListener('pointerup', up);
+      if (!moved) {
+        const ok = ops?.splitAt?.(store.playhead);
+        if (!ok) window.dispatchEvent(new CustomEvent('ve:toast', { detail: 'Move the playhead over a clip to split it' }));
+      }
+    };
+    phBall.addEventListener('pointermove', move); phBall.addEventListener('pointerup', up);
   });
 
   function startMarkerDrag(ev, id) {

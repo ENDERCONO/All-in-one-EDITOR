@@ -117,3 +117,9 @@
 .tl-drop.clip { border: 2px solid var(--accent); border-radius: var(--tl-clip-r); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .tl-drop.clip::after { content: ''; position: absolute; top: 0; bottom: 0; left: var(--ex); width: 40px; max-width: 50%; background: color-mix(in srgb, var(--accent) 35%, transparent); }
 .tl-menu { z-index: 2600; }
+
+/* Scissor ball on the playhead line (Filmora): drag to scrub, click to split */
+.tl-ph-ball { position: absolute; left: 1px; top: 0; width: 26px; height: 26px; border-radius: 50%; background: var(--playhead); color: #fff;
+  display: flex; align-items: center; justify-content: center; pointer-events: auto; cursor: pointer; box-shadow: 0 2px 6px #0009; z-index: 21; transition: box-shadow .12s; }
+.tl-ph-ball:hover { box-shadow: 0 0 0 3px #ff4d4d55, 0 2px 6px #0009; }
+.tl-ph-ball.drag { cursor: ew-resize; }

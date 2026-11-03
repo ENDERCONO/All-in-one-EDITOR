@@ -12,11 +12,11 @@ Last updated by the build session that created the editor.
 | `sources.js` | ✅ | one `<video>` per clip, text → canvas, exact seeking for export |
 | `media.js` | ✅ | import (picker / drop / **Ctrl+V**), filmstrips, library tabs (Media, Audio, Titles, Transitions, Effects, Filters, Elements, Materials) |
 | `inspector.js` | ✅ | Video (transform, crop, compositing, chroma key with eyedropper, material + params, transitions), Titles, Audio (volume, balance, pitch, fades), Color, Speed, Effects |
-| `timeline.js` | ✅ | drag across tracks with snapping, trim, blade, rubber band, context menu, fades, volume line, transitions, markers, zoom |
+| `timeline.js` | ✅ | Filmora scissor ball on the playhead (drag = scrub, click = split), drag across tracks with snapping, trim, blade, rubber band, context menu, fades, volume line, transitions, markers, zoom |
 | `audio.js` | ✅ | Web Audio mix, WSOLA pitch shift in a Worker (independent of speed), offline mixdown, meter |
 | `export.js` | ✅ | MP4 (H.264 + AAC/Opus), WebM (VP9 + Opus), MKV, WAV 16/24-bit, MP3; MOV / AVI / GIF via ffmpeg.wasm from the main site |
-| `renderer.js` / `gizmo.js` | see git log | WebGL2 compositor, filters, chroma key, blend modes, transitions, materials; move / scale / rotate gizmo |
-| `materials.js` | see git log | Unreal-style node editor → GLSL |
+| `renderer.js` / `gizmo.js` | ✅ | WebGL2 compositor: 25 filters, 25 transitions, 12 blend modes, chroma key, materials; move / scale / rotate gizmo with snapping |
+| `materials.js` | ✅ | Unreal-style node editor (≈55 nodes, templates, live preview) → GLSL; Scalar/Vector Parameters become inspector sliders |
 | Project files | ✅ | `.aioproj` (JSON + embedded media), autosave to IndexedDB with restore prompt |
 | Main site | ✅ | **Video Editor** tab (iframe, lazy loaded) |
 
