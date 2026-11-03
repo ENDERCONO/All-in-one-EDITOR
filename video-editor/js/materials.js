@@ -908,3 +908,935 @@ export function makeMaterialFromTemplate(key, name) {
   if (!t) return makeDefaultMaterial(name);
   return { id: uid('mat'), name: name || t.name, ...t.build() };
 }
+
+/* ============================================================================
+ * Editor UI
+ * ========================================================================== */
+
+const clone = o => JSON.parse(JSON.stringify(o));
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const DETAILS_ONLY = { scalarParameter: ['min', 'max'], vectorParameter: ['alpha'], if: ['threshold'] };
+// UE-style "hold key + click" shortcuts
+const KEY_NODES = { '1': 'constant', '2': 'constant2', '3': 'constant3', '4': 'constant4', m: 'multiply', a: 'add',
+  l: 'lerp', t: 'textureSample', s: 'scalarParameter', v: 'vectorParameter', u: 'texCoord', d: 'divide', o: 'oneMinus',
+  p: 'panner', e: 'power', n: 'noise' };
+let editorClipboard = null;
+let openEditor = null;
+
+function h(tag, attrs = {}, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === undefined || v === null || v === false) continue;
+    if (k === 'class') el.className = v;
+    else if (k === 'html') el.innerHTML = v;
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (k in el && typeof v !== 'string') el[k] = v;
+    else el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of kids.flat()) if (c != null && c !== false) el.append(c.nodeType ? c : document.createTextNode(String(c)));
+  return el;
+}
+
+export function openMaterialEditor({ store, mediaRuntime, materialId }) {
+  const src = store.getMaterial(materialId);
+  if (!src) { console.warn('[materials] no material', materialId); return null; }
+  if (openEditor) openEditor.close();
+
+  const id = src.id;
+  let mat = clone(src);
+  let lastJSON = JSON.stringify(src);
+  let compiled = null;
+  let selected = new Set();
+  const view = { x: 0, y: 0, z: 1 };
+  const keys = new Set();
+  const mouse = { x: 200, y: 200 };
+  let palette = null, closed = false;
+
+  const imageMedia = () => (store.project.media || []).filter(m => m.kind === 'image');
+  const mediaById = mid => store.getMedia(mid);
+
+  /* ---------------- DOM ---------------- */
+  const tplSelect = h('select', { class: 'mat-templates', title: 'Replace the graph with a starter template' },
+    h('option', { value: '' }, 'Templates…'),
+    ...Object.entries(MATERIAL_TEMPLATES).map(([k, t]) => h('option', { value: k }, t.name)));
+  const statusEl = h('div', { class: 'mat-status' });
+  const nameEl = h('span', { class: 'mat-tname' });
+  const toolbar = h('div', { class: 'mat-toolbar' },
+    h('div', { class: 'mat-title', html: icon('materials', 18) }, h('b', {}, 'Material Editor'), nameEl),
+    h('button', { class: 'mat-tb primary', 'data-act': 'apply', title: 'Apply / save (Ctrl+S)', html: icon('save', 15) + '<span>Apply</span>' }),
+    h('button', { class: 'mat-tb', 'data-act': 'home', title: 'Frame all nodes (Home)', html: icon('fit', 15) + '<span>Home</span>' }),
+    tplSelect,
+    statusEl,
+    h('div', { class: 'mat-grow' }),
+    h('span', { class: 'mat-hint' }, 'Right-click / Tab: add node · Drag pins to wire · Alt+click: break · Hold 1/2/3/M/A/L/T + click'),
+    h('button', { class: 'mat-tb icon', 'data-act': 'close', title: 'Close (Esc)', html: icon('close', 16) }));
+
+  const prevCanvas = h('canvas', { class: 'mat-preview' });
+  const prevSrcSel = h('select', { class: 'mat-prev-src', title: 'Preview source (u_src)' });
+  const palSearch = h('input', { type: 'text', placeholder: 'Search nodes…', class: 'mat-pal-search' });
+  const palList = h('div', { class: 'mat-pal-list' });
+  const left = h('div', { class: 'mat-left' },
+    h('div', { class: 'mat-panel mat-prev-panel' },
+      h('div', { class: 'mat-ph' }, h('span', {}, 'Viewport'), prevSrcSel),
+      h('div', { class: 'mat-prev-wrap' }, prevCanvas)),
+    h('div', { class: 'mat-panel mat-pal-panel' },
+      h('div', { class: 'mat-ph' }, h('span', {}, 'Palette')),
+      h('div', { class: 'mat-pal-search-wrap', html: icon('search', 13) }, palSearch), palList));
+
+  const wires = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  wires.setAttribute('class', 'mat-wires');
+  const nodesC = h('div', { class: 'mat-nodes' });
+  const world = h('div', { class: 'mat-world' }, wires, nodesC);
+  const boxEl = h('div', { class: 'mat-box', hidden: true });
+  const graphEl = h('div', { class: 'mat-graph', tabindex: '-1' }, world, boxEl, h('div', { class: 'mat-watermark' }, 'MATERIAL'),
+    h('div', { class: 'mat-zoom' }));
+  const details = h('div', { class: 'mat-details' });
+  const right = h('div', { class: 'mat-right' }, h('div', { class: 'mat-panel mat-det-panel' }, h('div', { class: 'mat-ph' }, h('span', {}, 'Details')), details));
+  const editor = h('div', { class: 'mat-editor', tabindex: '-1' }, toolbar, h('div', { class: 'mat-main' }, left, graphEl, right));
+  const back = h('div', { class: 'mat-back' }, editor);
+  (document.getElementById('modalRoot') || document.body).append(back);
+
+  /* ---------------- Preview ---------------- */
+  const preview = createPreview(prevCanvas, {
+    store, mediaRuntime,
+    onGlError: msg => { if (compiled?.ok) setStatus(false, 'GLSL: ' + msg); },
+  });
+  function fillPrevSrc() {
+    const imgs = imageMedia();
+    const cur = prevSrcSel.value;
+    prevSrcSel.innerHTML = '';
+    prevSrcSel.append(h('option', { value: 'sample' }, 'Sample gradient'), h('option', { value: 'checker' }, 'Checker'));
+    for (const m of imgs) prevSrcSel.append(h('option', { value: 'media:' + m.id }, m.name));
+    prevSrcSel.value = cur && [...prevSrcSel.options].some(o => o.value === cur) ? cur : (imgs[0] ? 'media:' + imgs[0].id : 'sample');
+    preview.setSource(prevSrcSel.value);
+  }
+  prevSrcSel.addEventListener('change', () => preview.setSource(prevSrcSel.value));
+
+  /* ---------------- Coordinates ---------------- */
+  const gRect = () => graphEl.getBoundingClientRect();
+  const toWorld = (sx, sy) => ({ x: (sx - view.x) / view.z, y: (sy - view.y) / view.z }); // sx/sy relative to graph
+  function applyView() {
+    world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.z})`;
+    const m = 128 * view.z, s = 16 * view.z;
+    graphEl.style.backgroundSize = `${m}px ${m}px, ${m}px ${m}px, ${s}px ${s}px, ${s}px ${s}px`;
+    graphEl.style.backgroundPosition = `${view.x}px ${view.y}px`;
+    graphEl.querySelector('.mat-zoom').textContent = `Zoom ${view.z >= 1 ? '+' : ''}${Math.round((view.z - 1) * 10)}`;
+  }
+
+  /* ---------------- Status / compile ---------------- */
+  function setStatus(ok, msg) {
+    statusEl.className = 'mat-status ' + (ok ? 'ok' : 'bad');
+    statusEl.textContent = (ok ? '✓ ' : '✕ ') + msg;
+    statusEl.title = msg;
+  }
+  function recompile() {
+    compiled = compileMaterial(mat);
+    if (compiled.ok) setStatus(true, `Compiled · ${mat.nodes.length} nodes · ${compiled.uniforms.length} params`);
+    else setStatus(false, compiled.error);
+    preview.set(compiled);
+  }
+
+  /* ---------------- Saving ---------------- */
+  function commit(label = 'Edit material', force = false) {
+    const j = JSON.stringify(mat);
+    if (j === lastJSON && !force) return;
+    lastJSON = j;
+    store.update(label, p => {
+      const i = p.materials.findIndex(m => m.id === id);
+      const c = JSON.parse(j);
+      if (i >= 0) p.materials[i] = c; else p.materials.push(c);
+    }, { coalesce: 'mat-' + id });
+    store.emit('materials', { id });
+  }
+  function changed(label) {
+    recompile(); renderNodes(); renderWires(); renderDetails(); commit(label);
+  }
+  const onProject = () => {
+    if (closed) return;
+    const m = store.getMaterial(id);
+    if (!m) { close(); return; }
+    const j = JSON.stringify(m);
+    if (j !== lastJSON) {
+      mat = clone(m); lastJSON = j;
+      selected = new Set([...selected].filter(nid => mat.nodes.some(n => n.id === nid)));
+      recompile(); renderNodes(); renderWires(); renderDetails();
+    }
+    nameEl.textContent = mat.name;
+  };
+  const onMedia = () => { if (!closed) { fillPrevSrc(); renderPalette(); } };
+  store.on('project', onProject);
+  store.on('media', onMedia);
+
+  /* ---------------- Param widgets ---------------- */
+  function widget(def, value, onChange, { disabled } = {}) {
+    const num = (v, cb) => {
+      const i = h('input', { type: 'number', step: def.step ?? 0.01, value: v ?? 0, disabled: !!disabled });
+      if (def.min !== undefined) i.min = def.min;
+      if (def.max !== undefined) i.max = def.max;
+      i.addEventListener('input', () => { const x = parseFloat(i.value); if (isFinite(x)) cb(x); });
+      return i;
+    };
+    switch (def.type) {
+      case 'float': return num(value, onChange);
+      case 'vec2': {
+        const v = Array.isArray(value) ? [...value] : [0, 0];
+        return h('div', { class: 'mat-vec2' }, num(v[0], x => { v[0] = x; onChange([...v]); }), num(v[1], x => { v[1] = x; onChange([...v]); }));
+      }
+      case 'color': {
+        const i = h('input', { type: 'color', value: value || '#ffffff', disabled: !!disabled });
+        i.addEventListener('input', () => onChange(i.value));
+        return i;
+      }
+      case 'text': {
+        const i = h('input', { type: 'text', value: value ?? '', disabled: !!disabled, spellcheck: false });
+        i.addEventListener('input', () => onChange(i.value));
+        return i;
+      }
+      case 'select': {
+        const s = h('select', { disabled: !!disabled }, ...def.options.map(([v, l]) => h('option', { value: v }, l)));
+        s.value = value;
+        s.addEventListener('change', () => onChange(s.value));
+        return s;
+      }
+      case 'media': {
+        const s = h('select', { disabled: !!disabled }, h('option', { value: '' }, 'Source (clip frame)'),
+          ...imageMedia().map(m => h('option', { value: m.id }, m.name)));
+        if (value && ![...s.options].some(o => o.value === value)) s.append(h('option', { value }, '(missing image)'));
+        s.value = value || '';
+        s.addEventListener('change', () => onChange(s.value));
+        return s;
+      }
+      case 'bool': {
+        const c = h('input', { type: 'checkbox', checked: !!value, disabled: !!disabled });
+        c.addEventListener('change', () => onChange(c.checked));
+        return h('label', { class: 'mat-chk' }, c, h('span', {}, def.label));
+      }
+    }
+    return h('span', {}, String(value));
+  }
+  function setParam(node, name, v, from, typing) {
+    node.params[name] = v;
+    recompile();
+    if (from === 'details' || !typing) renderNodes();
+    else {
+      const el = nodesC.querySelector(`.mat-node[data-id="${node.id}"]`);
+      if (el) el.querySelector('.mat-node-head').replaceWith(nodeHead(node));
+      markErrors();
+    }
+    if (!details.contains(document.activeElement)) renderDetails(); else updateDetailsCode();
+    renderWires();
+    commit('Edit ' + NODE_TYPES[node.type].title);
+  }
+
+  /* ---------------- Nodes ---------------- */
+  const pinType = (n, pin, dir) => {
+    const d = NODE_TYPES[n.type];
+    if (dir === 'out') return compiled?.types?.[n.id]?.[pin] || d.outputs.find(o => o.name === pin)?.type || 'any';
+    const l = mat.links.find(l => l.to.node === n.id && l.to.pin === pin);
+    if (l) { const fn = mat.nodes.find(x => x.id === l.from.node); if (fn) return pinType(fn, l.from.pin, 'out'); }
+    return d.inputs.find(i => i.name === pin)?.type || 'any';
+  };
+  function nodeHead(n) {
+    const d = NODE_TYPES[n.type];
+    const sub = d.subtitle ? d.subtitle(n, mediaById) : '';
+    return h('div', { class: 'mat-node-head' }, h('div', { class: 'mat-node-title' }, d.titleOf ? d.titleOf(n) : d.title),
+      sub ? h('div', { class: 'mat-node-sub' }, sub) : null);
+  }
+  function nodeEl(n) {
+    const d = NODE_TYPES[n.type];
+    if (!d) return h('div', { class: 'mat-node err', 'data-id': n.id, style: `left:${n.x}px;top:${n.y}px` }, 'Unknown: ' + n.type);
+    const el = h('div', { class: 'mat-node cat-' + d.category.toLowerCase() + (n.type === 'output' ? ' output' : '') + (selected.has(n.id) ? ' sel' : ''), 'data-id': n.id });
+    el.style.left = n.x + 'px'; el.style.top = n.y + 'px';
+    el.style.setProperty('--hc', d.color);
+    el.append(nodeHead(n));
+    const ins = h('div', { class: 'mat-col in' }), outs = h('div', { class: 'mat-col out' });
+    for (const inp of d.inputs) {
+      const linked = mat.links.some(l => l.to.node === n.id && l.to.pin === inp.name);
+      const t = pinType(n, inp.name, 'in');
+      const row = h('div', { class: 'mat-pin in' + (linked ? ' linked' : ''), 'data-pin': inp.name, 'data-dir': 'in', title: `${inp.label} (${inp.type})` },
+        h('i', { class: 'dot', style: `--pc:${PIN_COLORS[t]}` }), h('span', { class: 'lbl' }, inp.label));
+      const pd = d.params.find(p => p.name === inp.name);
+      if (pd && !linked) row.append(widget(pd, n.params[pd.name], v => setParam(n, pd.name, v, 'node', true)));
+      ins.append(row);
+    }
+    for (const o of d.outputs) {
+      const t = pinType(n, o.name, 'out');
+      outs.append(h('div', { class: 'mat-pin out', 'data-pin': o.name, 'data-dir': 'out', title: `${o.label || 'Out'} (${t})` },
+        h('span', { class: 'lbl' }, o.label), h('i', { class: 'dot', style: `--pc:${PIN_COLORS[t]}` })));
+    }
+    el.append(h('div', { class: 'mat-pins' }, ins, outs));
+    const inline = d.params.filter(p => !d.inputs.some(i => i.name === p.name) && p.type !== 'text' && !(DETAILS_ONLY[n.type] || []).includes(p.name));
+    if (inline.length) {
+      const box = h('div', { class: 'mat-node-params' });
+      const bools = inline.filter(p => p.type === 'bool');
+      if (bools.length) box.append(h('div', { class: 'mat-bools' }, ...bools.map(p => widget(p, n.params[p.name], v => setParam(n, p.name, v, 'node', false)))));
+      for (const p of inline.filter(p => p.type !== 'bool')) {
+        box.append(h('div', { class: 'mat-prow' }, h('span', {}, p.label),
+          widget(p, n.params[p.name], v => setParam(n, p.name, v, 'node', p.type === 'float' || p.type === 'vec2'))));
+      }
+      el.append(box);
+    }
+    return el;
+  }
+  function renderNodes() {
+    nodesC.replaceChildren(...mat.nodes.map(nodeEl));
+    markErrors();
+  }
+  function markErrors() {
+    for (const el of nodesC.children) el.classList.toggle('err', !!compiled && !compiled.ok && compiled.nodeId === el.dataset.id);
+  }
+  function markSelection() {
+    for (const el of nodesC.children) el.classList.toggle('sel', selected.has(el.dataset.id));
+    renderWires();
+  }
+
+  /* ---------------- Wires ---------------- */
+  function pinPos(nodeId, pin, dir) {
+    const dot = nodesC.querySelector(`.mat-node[data-id="${nodeId}"] .mat-pin.${dir}[data-pin="${pin}"] .dot`);
+    if (!dot) return null;
+    const r = dot.getBoundingClientRect(), g = gRect();
+    return toWorld(r.left + r.width / 2 - g.left, r.top + r.height / 2 - g.top);
+  }
+  const bez = (a, b) => {
+    const dx = Math.max(40, Math.abs(b.x - a.x) * 0.5);
+    return `M${a.x},${a.y} C${a.x + dx},${a.y} ${b.x - dx},${b.y} ${b.x},${b.y}`;
+  };
+  let pendingPath = null;
+  function renderWires() {
+    const NS = 'http://www.w3.org/2000/svg';
+    const frag = document.createDocumentFragment();
+    for (const l of mat.links) {
+      const a = pinPos(l.from.node, l.from.pin, 'out'), b = pinPos(l.to.node, l.to.pin, 'in');
+      if (!a || !b) continue;
+      const fn = mat.nodes.find(n => n.id === l.from.node);
+      const p = document.createElementNS(NS, 'path');
+      p.setAttribute('d', bez(a, b));
+      p.setAttribute('class', 'mat-wire' + (selected.has(l.from.node) || selected.has(l.to.node) ? ' hot' : ''));
+      p.style.stroke = PIN_COLORS[pinType(fn, l.from.pin, 'out')] || PIN_COLORS.any;
+      frag.append(p);
+    }
+    if (pendingPath) frag.append(pendingPath);
+    wires.replaceChildren(frag);
+  }
+
+  /* ---------------- Graph editing ---------------- */
+  function connect(fromNode, fromPin, toNode, toPin) {
+    if (fromNode === toNode) return false;
+    mat.links = mat.links.filter(l => !(l.to.node === toNode && l.to.pin === toPin));
+    mat.links.push(makeLink(fromNode, fromPin, toNode, toPin));
+    return true;
+  }
+  function addNode(type, wx, wy, pending) {
+    const d = NODE_TYPES[type];
+    if (!d) return null;
+    if (d.unique && mat.nodes.some(n => n.type === type)) { setStatus(false, 'Only one Output node is allowed'); return null; }
+    const n = makeNode(type, wx, wy);
+    if (pending?.dir === 'in') n.x -= 170;
+    mat.nodes.push(n);
+    if (pending) {
+      if (pending.dir === 'out' && d.inputs.length) connect(pending.node, pending.pin, n.id, d.inputs[0].name);
+      if (pending.dir === 'in' && d.outputs.length) connect(n.id, d.outputs[0].name, pending.node, pending.pin);
+    }
+    selected = new Set([n.id]);
+    changed('Add ' + d.title);
+    return n;
+  }
+  function deleteSelected() {
+    const ids = new Set([...selected].filter(nid => mat.nodes.find(n => n.id === nid)?.type !== 'output'));
+    if (!ids.size) return;
+    mat.nodes = mat.nodes.filter(n => !ids.has(n.id));
+    mat.links = mat.links.filter(l => !ids.has(l.from.node) && !ids.has(l.to.node));
+    selected = new Set([...selected].filter(x => !ids.has(x)));
+    changed('Delete nodes');
+  }
+  function copyNodes() {
+    const ns = mat.nodes.filter(n => selected.has(n.id) && n.type !== 'output');
+    if (!ns.length) return null;
+    const ids = new Set(ns.map(n => n.id));
+    return clone({ nodes: ns, links: mat.links.filter(l => ids.has(l.from.node) && ids.has(l.to.node)) });
+  }
+  function pasteNodes(clip, at) {
+    if (!clip?.nodes?.length) return;
+    const map = new Map();
+    const minX = Math.min(...clip.nodes.map(n => n.x)), minY = Math.min(...clip.nodes.map(n => n.y));
+    const off = at ? { x: at.x - minX, y: at.y - minY } : { x: 30, y: 30 };
+    const fresh = clip.nodes.filter(n => NODE_TYPES[n.type] && n.type !== 'output').map(n => {
+      const c = { ...clone(n), id: uid('node'), x: Math.round(n.x + off.x), y: Math.round(n.y + off.y) };
+      map.set(n.id, c.id); return c;
+    });
+    mat.nodes.push(...fresh);
+    for (const l of clip.links) if (map.has(l.from.node) && map.has(l.to.node)) mat.links.push(makeLink(map.get(l.from.node), l.from.pin, map.get(l.to.node), l.to.pin));
+    selected = new Set(fresh.map(n => n.id));
+    changed('Paste nodes');
+  }
+  function breakPin(nodeId, pin, dir) {
+    const before = mat.links.length;
+    mat.links = mat.links.filter(l => !(dir === 'in' ? l.to.node === nodeId && l.to.pin === pin : l.from.node === nodeId && l.from.pin === pin));
+    if (mat.links.length !== before) changed('Break links');
+  }
+  function frameAll() {
+    const els = [...nodesC.children];
+    if (!els.length) return;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const el of els) {
+      const n = mat.nodes.find(m => m.id === el.dataset.id); if (!n) continue;
+      x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y);
+      x1 = Math.max(x1, n.x + el.offsetWidth); y1 = Math.max(y1, n.y + el.offsetHeight);
+    }
+    const r = gRect(), pad = 50;
+    const bw = Math.max(1, x1 - x0), bh = Math.max(1, y1 - y0);
+    view.z = Math.max(0.15, Math.min(1, (r.width - pad * 2) / bw, (r.height - pad * 2) / bh));
+    view.x = r.width / 2 - (x0 + bw / 2) * view.z;
+    view.y = r.height / 2 - (y0 + bh / 2) * view.z;
+    applyView(); renderWires();
+  }
+
+  /* ---------------- Node palette popup ---------------- */
+  function matches(q) {
+    q = q.trim().toLowerCase();
+    const all = Object.values(NODE_TYPES).filter(d => d.type !== 'output');
+    if (!q) return all;
+    const score = d => {
+      const t = d.title.toLowerCase();
+      if (t === q) return 0;
+      if (t.startsWith(q)) return 1;
+      if (t.split(/[\s/]+/).some(w => w.startsWith(q))) return 2;
+      if (t.includes(q) || d.type.toLowerCase().includes(q)) return 3;
+      if (d.category.toLowerCase().includes(q)) return 4;
+      return 9;
+    };
+    return all.map(d => [score(d), d]).filter(x => x[0] < 9).sort((a, b) => a[0] - b[0]).map(x => x[1]);
+  }
+  function closePalette() { if (palette) { palette.remove(); palette = null; } }
+  function openPalette(sx, sy, pending = null) {
+    closePalette();
+    const at = toWorld(sx, sy);
+    const input = h('input', { type: 'text', placeholder: pending ? 'Add & connect…' : 'Search all actions…' });
+    const list = h('div', { class: 'mat-pop-list' });
+    let items = [], active = 0;
+    const choose = d => { closePalette(); addNode(d.type, at.x, at.y, pending); editor.focus(); };
+    const render = () => {
+      const q = input.value;
+      items = matches(q).filter(d => !pending || (pending.dir === 'out' ? d.inputs.length : d.outputs.length));
+      active = Math.min(active, Math.max(0, items.length - 1));
+      list.replaceChildren();
+      let cat = null;
+      items.forEach((d, i) => {
+        if (!q.trim() && d.category !== cat) { cat = d.category; list.append(h('div', { class: 'mat-pop-cat' }, cat)); }
+        list.append(h('div', { class: 'mat-pop-item' + (i === active ? ' active' : ''), style: `--hc:${d.color}`,
+          onpointerdown: e => { e.preventDefault(); choose(d); } }, h('i'), d.title));
+      });
+      if (!items.length) list.append(h('div', { class: 'mat-pop-empty' }, 'No matching nodes'));
+      list.querySelector('.active')?.scrollIntoView({ block: 'nearest' });
+    };
+    input.addEventListener('input', () => { active = 0; render(); });
+    input.addEventListener('keydown', e => {
+      if (e.key === 'ArrowDown') { active = Math.min(items.length - 1, active + 1); render(); e.preventDefault(); }
+      else if (e.key === 'ArrowUp') { active = Math.max(0, active - 1); render(); e.preventDefault(); }
+      else if (e.key === 'Enter') { if (items[active]) choose(items[active]); e.preventDefault(); }
+      else if (e.key === 'Escape') { closePalette(); editor.focus(); e.preventDefault(); }
+      else if (e.key === 'Tab') { e.preventDefault(); }
+    });
+    palette = h('div', { class: 'mat-pop', onpointerdown: e => e.stopPropagation(), onwheel: e => e.stopPropagation() },
+      h('div', { class: 'mat-pop-head' }, pending ? 'Add node & connect' : 'All Possible Actions'), input, list);
+    graphEl.append(palette);
+    const r = gRect();
+    palette.style.left = Math.max(4, Math.min(sx, r.width - 250)) + 'px';
+    palette.style.top = Math.max(4, Math.min(sy, r.height - 360)) + 'px';
+    render();
+    input.focus();
+  }
+
+  /* ---------------- Left palette (categories) ---------------- */
+  function renderPalette() {
+    const q = palSearch.value;
+    const list = matches(q);
+    palList.replaceChildren();
+    const byCat = new Map();
+    for (const d of list) { if (!byCat.has(d.category)) byCat.set(d.category, []); byCat.get(d.category).push(d); }
+    const cats = q.trim() ? [...byCat.keys()] : Object.keys(CATEGORIES).filter(c => byCat.has(c));
+    for (const c of cats) {
+      palList.append(h('div', { class: 'mat-pal-cat', style: `--hc:${CATEGORIES[c].color}` }, c));
+      for (const d of byCat.get(c)) {
+        palList.append(h('div', { class: 'mat-pal-item', draggable: 'true', title: d.desc || 'Click to add, or drag into the graph',
+          ondragstart: e => { e.dataTransfer.setData('text/x-aio-node', d.type); e.dataTransfer.effectAllowed = 'copy'; },
+          onclick: () => { const r = gRect(); const w = toWorld(r.width / 2 - 70, r.height / 2 - 30); addNode(d.type, w.x, w.y); } },
+        d.title));
+      }
+    }
+  }
+  palSearch.addEventListener('input', renderPalette);
+  palSearch.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { const d = matches(palSearch.value)[0]; if (d) { const r = gRect(); const w = toWorld(r.width / 2 - 70, r.height / 2 - 30); addNode(d.type, w.x, w.y); } }
+  });
+  graphEl.addEventListener('dragover', e => { if (e.dataTransfer.types.includes('text/x-aio-node')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+  graphEl.addEventListener('drop', e => {
+    const t = e.dataTransfer.getData('text/x-aio-node'); if (!t) return;
+    e.preventDefault();
+    const r = gRect(); const w = toWorld(e.clientX - r.left, e.clientY - r.top);
+    addNode(t, w.x, w.y);
+  });
+
+  /* ---------------- Details panel ---------------- */
+  let codePre = null, paramsBox = null;
+  function updateDetailsCode() {
+    if (codePre) codePre.textContent = compiled?.ok ? compiled.code : '// ' + (compiled?.error || '');
+    if (paramsBox) fillParamsBox();
+  }
+  function fillParamsBox() {
+    paramsBox.replaceChildren();
+    const us = compiled?.uniforms || [];
+    if (!us.length) paramsBox.append(h('div', { class: 'mat-dim' }, 'No Scalar / Vector Parameters. Add them to expose sliders in the clip inspector.'));
+    for (const u of us) paramsBox.append(h('div', { class: 'mat-kv' }, h('span', {}, u.param),
+      h('code', {}, u.type === 'float' ? `${(+u.value).toFixed(3)}  [${u.min}…${u.max}]` : rgbToHex(...u.value) + ' a=' + (+u.value[3]).toFixed(2))));
+  }
+  function sec(title, ...kids) {
+    const s = h('div', { class: 'mat-sec' }, h('div', { class: 'mat-sec-head', onclick: () => s.classList.toggle('collapsed') }, title), h('div', { class: 'mat-sec-body' }, ...kids));
+    return s;
+  }
+  function renderDetails() {
+    details.replaceChildren();
+    const nameIn = h('input', { type: 'text', value: mat.name || '', spellcheck: false });
+    nameIn.addEventListener('input', () => { mat.name = nameIn.value; nameEl.textContent = mat.name; commit('Rename material'); });
+    details.append(sec('Material', h('div', { class: 'mat-drow' }, h('label', {}, 'Name'), nameIn)));
+    const selNodes = mat.nodes.filter(n => selected.has(n.id));
+    if (selNodes.length === 1) {
+      const n = selNodes[0], d = NODE_TYPES[n.type];
+      const rows = [];
+      if (d.desc) rows.push(h('div', { class: 'mat-dim' }, d.desc));
+      for (const p of d.params) {
+        const linked = d.inputs.some(i => i.name === p.name) && mat.links.some(l => l.to.node === n.id && l.to.pin === p.name);
+        rows.push(h('div', { class: 'mat-drow' }, h('label', { title: p.name }, p.label + (linked ? ' (linked)' : '')),
+          widget(p, n.params[p.name], v => setParam(n, p.name, v, 'details', true), { disabled: linked })));
+      }
+      if (!d.params.length) rows.push(h('div', { class: 'mat-dim' }, 'This node has no properties.'));
+      details.append(sec(d.title + (d.titleOf ? ' — ' + d.titleOf(n) : ''), ...rows));
+    } else if (selNodes.length > 1) {
+      details.append(sec('Selection', h('div', { class: 'mat-dim' }, `${selNodes.length} nodes selected`)));
+    } else {
+      details.append(sec('Selection', h('div', { class: 'mat-dim' }, 'Select a node to edit its properties.')));
+    }
+    paramsBox = h('div', { class: 'mat-params-list' });
+    details.append(sec('Parameters', paramsBox));
+    codePre = h('pre', { class: 'mat-code' });
+    const cs = sec('Generated GLSL', codePre); cs.classList.add('collapsed');
+    details.append(cs);
+    details.append(sec('Shortcuts', h('div', { class: 'mat-dim mat-keys', html:
+      'Right-click / Tab — node palette<br>Right/middle drag, Space+drag — pan<br>Wheel — zoom<br>Drag on empty — box select<br>' +
+      'Alt+click pin — break links<br>Del — delete · Ctrl+D duplicate<br>Ctrl+C / Ctrl+V — copy / paste<br>Ctrl+Z / Ctrl+Y — undo / redo<br>' +
+      'Hold 1 2 3 4 · M A D L · S V U T P E N O + click — quick add<br>Home — frame all · Esc — close' })));
+    updateDetailsCode();
+  }
+
+  /* ---------------- Pointer interaction ---------------- */
+  function drag(e, move, up) {
+    const mm = ev => move(ev);
+    const uu = ev => { window.removeEventListener('pointermove', mm); window.removeEventListener('pointerup', uu); window.removeEventListener('pointercancel', uu); up(ev); };
+    window.addEventListener('pointermove', mm);
+    window.addEventListener('pointerup', uu);
+    window.addEventListener('pointercancel', uu);
+  }
+  graphEl.addEventListener('contextmenu', e => e.preventDefault());
+  graphEl.addEventListener('pointermove', e => { const r = gRect(); mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top; });
+  graphEl.addEventListener('wheel', e => {
+    if (palette && palette.contains(e.target)) return;
+    e.preventDefault();
+    const r = gRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+    const w = toWorld(mx, my);
+    const z = Math.max(0.1, Math.min(2.5, view.z * Math.exp(-e.deltaY * 0.0015)));
+    view.z = z; view.x = mx - w.x * z; view.y = my - w.y * z;
+    applyView();
+  }, { passive: false });
+
+  graphEl.addEventListener('pointerdown', e => {
+    if (palette && palette.contains(e.target)) return;
+    closePalette();
+    const widgetEl = e.target.closest('input, select, textarea, button, label.mat-chk');
+    if (widgetEl) return;
+    if (document.activeElement && !graphEl.contains(document.activeElement)) document.activeElement.blur?.();
+    graphEl.focus({ preventScroll: true });
+    const r = gRect();
+    const sx = e.clientX - r.left, sy = e.clientY - r.top;
+    if (e.button === 1 || e.button === 2 || (e.button === 0 && keys.has(' '))) {
+      e.preventDefault();
+      const start = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y }; let moved = false;
+      graphEl.classList.add('panning');
+      drag(e, ev => {
+        const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
+        if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+        view.x = start.vx + dx; view.y = start.vy + dy; applyView();
+      }, () => {
+        graphEl.classList.remove('panning');
+        if (!moved && e.button === 2) openPalette(sx, sy);
+      });
+      return;
+    }
+    if (e.button !== 0) return;
+    const pinEl = e.target.closest('.mat-pin');
+    const nodeElm = e.target.closest('.mat-node');
+    if (pinEl) {
+      e.preventDefault();
+      const nid = nodeElm.dataset.id, pin = pinEl.dataset.pin, dir = pinEl.dataset.dir;
+      if (e.altKey) { breakPin(nid, pin, dir); return; }
+      startWire(e, nid, pin, dir);
+      return;
+    }
+    if (nodeElm) { startNodeDrag(e, nodeElm.dataset.id); return; }
+    // empty canvas
+    const quick = [...keys].map(k => KEY_NODES[k]).find(Boolean);
+    if (quick) { const w = toWorld(sx, sy); addNode(quick, w.x, w.y); return; }
+    startBox(e, sx, sy);
+  });
+
+  function startWire(e, nid, pin, dir) {
+    let fixed = { node: nid, pin, dir }, detached = null;
+    if (dir === 'in') {
+      const l = mat.links.find(l => l.to.node === nid && l.to.pin === pin);
+      if (l) { mat.links = mat.links.filter(x => x !== l); detached = l; fixed = { node: l.from.node, pin: l.from.pin, dir: 'out' }; }
+    }
+    const fixedPos = pinPos(fixed.node, fixed.pin, fixed.dir);
+    if (!fixedPos) return;
+    const fn = mat.nodes.find(n => n.id === fixed.node);
+    pendingPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    pendingPath.setAttribute('class', 'mat-wire pending');
+    pendingPath.style.stroke = PIN_COLORS[pinType(fn, fixed.pin, fixed.dir)] || PIN_COLORS.any;
+    let hover = null;
+    const update = ev => {
+      const r = gRect();
+      const p = toWorld(ev.clientX - r.left, ev.clientY - r.top);
+      pendingPath.setAttribute('d', fixed.dir === 'out' ? bez(fixedPos, p) : bez(p, fixedPos));
+      const t = document.elementFromPoint(ev.clientX, ev.clientY)?.closest?.('.mat-pin');
+      if (hover && hover !== t) hover.classList.remove('hover', 'bad');
+      hover = t || null;
+      if (hover) hover.classList.add(hover.dataset.dir !== fixed.dir && hover.closest('.mat-node').dataset.id !== fixed.node ? 'hover' : 'bad');
+    };
+    if (detached) renderWires(); else wires.append(pendingPath);
+    update(e);
+    drag(e, update, ev => {
+      hover?.classList.remove('hover', 'bad');
+      pendingPath = null;
+      const t = document.elementFromPoint(ev.clientX, ev.clientY);
+      const pinT = t?.closest?.('.mat-pin'), nodeT = pinT?.closest('.mat-node');
+      if (pinT && nodeT && graphEl.contains(pinT)) {
+        const tn = nodeT.dataset.id, tp = pinT.dataset.pin, td = pinT.dataset.dir;
+        if (td !== fixed.dir && tn !== fixed.node) {
+          if (fixed.dir === 'out') connect(fixed.node, fixed.pin, tn, tp); else connect(tn, tp, fixed.node, fixed.pin);
+          changed('Connect');
+          return;
+        }
+        if (detached) changed('Disconnect'); else renderWires();
+        return;
+      }
+      if (detached) changed('Disconnect'); else renderWires();
+      if (t && graphEl.contains(t) && !t.closest('.mat-node')) {
+        const r = gRect();
+        openPalette(ev.clientX - r.left, ev.clientY - r.top, fixed);
+      }
+    });
+  }
+
+  function startNodeDrag(e, nid) {
+    const additive = e.shiftKey || e.ctrlKey || e.metaKey;
+    let toggledOff = false;
+    if (additive) {
+      if (selected.has(nid)) { selected.delete(nid); toggledOff = true; } else selected.add(nid);
+    } else if (!selected.has(nid)) selected = new Set([nid]);
+    markSelection(); renderDetails();
+    if (toggledOff) return;
+    const start = { x: e.clientX, y: e.clientY };
+    const items = mat.nodes.filter(n => selected.has(n.id)).map(n => ({ n, x: n.x, y: n.y, el: nodesC.querySelector(`.mat-node[data-id="${n.id}"]`) }));
+    let moved = false;
+    drag(e, ev => {
+      const dx = (ev.clientX - start.x) / view.z, dy = (ev.clientY - start.y) / view.z;
+      if (!moved && Math.abs(dx) + Math.abs(dy) < 3 / view.z) return;
+      moved = true;
+      for (const it of items) { it.n.x = Math.round(it.x + dx); it.n.y = Math.round(it.y + dy); it.el.style.left = it.n.x + 'px'; it.el.style.top = it.n.y + 'px'; }
+      renderWires();
+    }, () => {
+      if (moved) commit('Move nodes');
+      else if (!additive && selected.size > 1) { selected = new Set([nid]); markSelection(); renderDetails(); }
+    });
+  }
+
+  function startBox(e, sx, sy) {
+    const additive = e.shiftKey || e.ctrlKey || e.metaKey;
+    const base = additive ? new Set(selected) : new Set();
+    let moved = false;
+    drag(e, ev => {
+      const r = gRect();
+      const x = ev.clientX - r.left, y = ev.clientY - r.top;
+      if (!moved && Math.abs(x - sx) + Math.abs(y - sy) < 4) return;
+      moved = true;
+      const bx = Math.min(x, sx), by = Math.min(y, sy), bw = Math.abs(x - sx), bh = Math.abs(y - sy);
+      Object.assign(boxEl.style, { left: bx + 'px', top: by + 'px', width: bw + 'px', height: bh + 'px' });
+      boxEl.hidden = false;
+      const sel = new Set(base);
+      for (const el of nodesC.children) {
+        const nr = el.getBoundingClientRect();
+        const nx = nr.left - r.left, ny = nr.top - r.top;
+        if (nx < bx + bw && nx + nr.width > bx && ny < by + bh && ny + nr.height > by) sel.add(el.dataset.id);
+      }
+      selected = sel; markSelection();
+    }, () => {
+      boxEl.hidden = true;
+      if (!moved && !additive) selected = new Set();
+      markSelection(); renderDetails();
+    });
+  }
+
+  /* ---------------- Keyboard (only while open) ---------------- */
+  const typingIn = t => t && t.closest && t.closest('input, textarea, select') && !(t.type === 'checkbox');
+  function handleKey(e) {
+    const k = e.key, lk = k.length === 1 ? k.toLowerCase() : k;
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (k === 'Escape') {
+      e.preventDefault();
+      if (palette) { closePalette(); editor.focus(); }
+      else if (typingIn(e.target)) e.target.blur();
+      else close();
+      return;
+    }
+    if (ctrl && lk === 's') { e.preventDefault(); commit('Apply material', true); setStatus(compiled.ok, compiled.ok ? 'Applied' : compiled.error); return; }
+    if (typingIn(e.target)) return;
+    if (ctrl) {
+      if (lk === 'z' && !e.shiftKey) { e.preventDefault(); store.undo(); }
+      else if (lk === 'y' || (lk === 'z' && e.shiftKey)) { e.preventDefault(); store.redo(); }
+      else if (lk === 'c') { e.preventDefault(); editorClipboard = copyNodes() || editorClipboard; }
+      else if (lk === 'x') { e.preventDefault(); const c = copyNodes(); if (c) { editorClipboard = c; deleteSelected(); } }
+      else if (lk === 'v') { e.preventDefault(); pasteNodes(editorClipboard, toWorld(mouse.x, mouse.y)); }
+      else if (lk === 'd') { e.preventDefault(); pasteNodes(copyNodes()); }
+      else if (lk === 'a') { e.preventDefault(); selected = new Set(mat.nodes.map(n => n.id)); markSelection(); renderDetails(); }
+      return;
+    }
+    if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); deleteSelected(); return; }
+    if (k === 'Tab') { e.preventDefault(); openPalette(mouse.x, mouse.y); return; }
+    if (k === 'Home') { e.preventDefault(); frameAll(); return; }
+    if (k === ' ') { e.preventDefault(); keys.add(' '); graphEl.classList.add('space'); return; }
+    if (!e.altKey && k.length === 1) keys.add(lk);
+  }
+  function handleKeyUp(e) {
+    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    keys.delete(k);
+    if (k === ' ') graphEl.classList.remove('space');
+  }
+  const onEditorKey = e => { handleKey(e); e.stopPropagation(); };
+  const onEditorKeyUp = e => { handleKeyUp(e); e.stopPropagation(); };
+  // Fallback for key events whose target is outside the editor (focus lost to <body>)
+  const onWinKey = e => { if (!editor.contains(e.target)) { handleKey(e); e.stopImmediatePropagation(); e.stopPropagation(); } };
+  const onWinKeyUp = e => { if (!editor.contains(e.target)) { handleKeyUp(e); e.stopImmediatePropagation(); e.stopPropagation(); } };
+  const onBlur = () => { keys.clear(); graphEl.classList.remove('space'); };
+  editor.addEventListener('keydown', onEditorKey);
+  editor.addEventListener('keyup', onEditorKeyUp);
+  window.addEventListener('keydown', onWinKey, true);
+  window.addEventListener('keyup', onWinKeyUp, true);
+  window.addEventListener('blur', onBlur);
+  // Keep paste/copy events from reaching the app's media-import handler
+  const stopClip = e => e.stopPropagation();
+  editor.addEventListener('paste', stopClip);
+  editor.addEventListener('copy', stopClip);
+
+  /* ---------------- Toolbar ---------------- */
+  toolbar.addEventListener('click', e => {
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    if (act === 'close') close();
+    else if (act === 'home') frameAll();
+    else if (act === 'apply') { commit('Apply material', true); setStatus(compiled.ok, compiled.ok ? 'Applied · ' + compiled.uniforms.length + ' params' : compiled.error); }
+  });
+  tplSelect.addEventListener('change', () => {
+    const t = MATERIAL_TEMPLATES[tplSelect.value];
+    tplSelect.value = '';
+    if (!t) return;
+    const g = t.build();
+    mat.nodes = g.nodes; mat.links = g.links;
+    if (!mat.name || /^(New material|Material( \d+)?)$/i.test(mat.name)) mat.name = t.name;
+    nameEl.textContent = mat.name;
+    selected = new Set();
+    changed('Material template: ' + t.name);
+    requestAnimationFrame(frameAll);
+  });
+  back.addEventListener('pointerdown', e => { if (e.target === back) { /* click outside does nothing (UE-like) */ } });
+
+  /* ---------------- Close ---------------- */
+  function close() {
+    if (closed) return;
+    closed = true;
+    commit('Edit material');
+    store.off('project', onProject);
+    store.off('media', onMedia);
+    window.removeEventListener('keydown', onWinKey, true);
+    window.removeEventListener('keyup', onWinKeyUp, true);
+    window.removeEventListener('blur', onBlur);
+    preview.dispose();
+    back.remove();
+    if (openEditor === api) openEditor = null;
+  }
+  const api = { close, get material() { return mat; }, frameAll };
+  openEditor = api;
+
+  /* ---------------- Boot ---------------- */
+  nameEl.textContent = mat.name;
+  fillPrevSrc();
+  renderPalette();
+  recompile();
+  renderNodes();
+  renderDetails();
+  applyView();
+  requestAnimationFrame(() => { if (!closed) { frameAll(); renderWires(); } });
+  editor.focus({ preventScroll: true });
+  return api;
+}
+
+/* ============================================================================
+ * Live preview (WebGL2)
+ * ========================================================================== */
+
+const PREVIEW_VS = `#version 300 es
+in vec2 a_pos;
+out vec2 v_uv;
+void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
+
+function makeSampleCanvas(kind, w = 512, h = 288) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  if (kind === 'checker') {
+    const s = 32;
+    for (let y = 0; y < h; y += s) for (let x = 0; x < w; x += s) { g.fillStyle = ((x + y) / s) % 2 ? '#d8d8d8' : '#5a5a5a'; g.fillRect(x, y, s, s); }
+  } else {
+    const gr = g.createLinearGradient(0, 0, w, h);
+    gr.addColorStop(0, '#1b2a6b'); gr.addColorStop(0.45, '#c2367a'); gr.addColorStop(1, '#f6b23c');
+    g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    g.globalAlpha = 0.18; g.fillStyle = '#fff';
+    for (let x = 0; x < w; x += 32) g.fillRect(x, 0, 1, h);
+    for (let y = 0; y < h; y += 32) g.fillRect(0, y, w, 1);
+    g.globalAlpha = 1;
+    g.fillStyle = '#ffffffdd'; g.beginPath(); g.arc(w * 0.32, h * 0.5, h * 0.26, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#16c7a8'; g.fillRect(w * 0.56, h * 0.26, h * 0.48, h * 0.48);
+    g.fillStyle = '#111'; g.font = `bold ${Math.round(h * 0.16)}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('AIO', w * 0.32, h * 0.5);
+  }
+  return c;
+}
+
+function createPreview(canvas, { store, mediaRuntime, onGlError }) {
+  const st = store.project.settings || { width: 1920, height: 1080 };
+  const aspect = (st.width || 16) / (st.height || 9);
+  const cssW = 300, cssH = Math.round(Math.min(300, cssW / aspect));
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  canvas.width = Math.round(cssW * dpr); canvas.height = Math.round(cssH * dpr);
+  canvas.style.aspectRatio = `${cssW} / ${cssH}`;
+  const gl = canvas.getContext('webgl2', { premultipliedAlpha: false, alpha: true, antialias: false });
+  const noop = { set() {}, setSource() {}, dispose() {} };
+  if (!gl) { onGlError?.('WebGL2 is not available'); return noop; }
+
+  const vs = gl.createShader(gl.VERTEX_SHADER);
+  gl.shaderSource(vs, PREVIEW_VS); gl.compileShader(vs);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+  const newTex = () => {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([128, 128, 128, 255]));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  };
+  const upload = (tex, img) => {
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    try { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img); } catch (e) { console.warn('[materials] preview upload', e); }
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  };
+  const srcTex = newTex();
+  const mediaTex = new Map(); // mediaId -> tex
+  function mediaTexture(mid) {
+    if (mediaTex.has(mid)) return mediaTex.get(mid);
+    const tex = newTex(); mediaTex.set(mid, tex);
+    const rt = mediaRuntime?.get?.(mid);
+    const img = rt?.image;
+    if (img && img.complete && img.naturalWidth) upload(tex, img);
+    else if (rt?.url) { const im = new Image(); im.onload = () => upload(tex, im); im.src = rt.url; }
+    return tex;
+  }
+  function setSource(key) {
+    if (key && key.startsWith('media:')) {
+      const mid = key.slice(6);
+      const rt = mediaRuntime?.get?.(mid);
+      if (rt?.image?.complete && rt.image.naturalWidth) upload(srcTex, rt.image);
+      else if (rt?.url) { const im = new Image(); im.onload = () => upload(srcTex, im); im.src = rt.url; upload(srcTex, makeSampleCanvas('sample')); }
+      else upload(srcTex, makeSampleCanvas('sample'));
+    } else upload(srcTex, makeSampleCanvas(key === 'checker' ? 'checker' : 'sample'));
+  }
+
+  let prog = null, locs = null, current = null, lastCode = null;
+  function build(code) {
+    const fs = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(fs, buildMaterialFragment(code)); gl.compileShader(fs);
+    if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+      const log = gl.getShaderInfoLog(fs); gl.deleteShader(fs);
+      return { error: (log || 'compile failed').trim().split('\n')[0] };
+    }
+    const p = gl.createProgram();
+    gl.attachShader(p, vs); gl.attachShader(p, fs);
+    gl.bindAttribLocation(p, 0, 'a_pos');
+    gl.linkProgram(p);
+    gl.deleteShader(fs);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { const log = gl.getProgramInfoLog(p); gl.deleteProgram(p); return { error: log || 'link failed' }; }
+    return { prog: p };
+  }
+  function set(res) {
+    current = res;
+    if (res.code === lastCode) return;
+    lastCode = res.code;
+    const b = build(res.code);
+    if (b.error) { onGlError?.(b.error); return; }
+    if (prog) gl.deleteProgram(prog);
+    prog = b.prog;
+    locs = { src: gl.getUniformLocation(prog, 'u_src'), time: gl.getUniformLocation(prog, 'u_time'), res: gl.getUniformLocation(prog, 'u_resolution'), u: {} };
+    for (const u of res.uniforms) locs.u[u.name] = gl.getUniformLocation(prog, u.name);
+    for (const t of res.textures) locs.u[t.uniform] = gl.getUniformLocation(prog, t.uniform);
+  }
+  const t0 = performance.now();
+  let raf = 0;
+  function frame() {
+    raf = requestAnimationFrame(frame);
+    if (!prog || !current) return;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(prog);
+    gl.bindVertexArray(vao);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, srcTex);
+    gl.uniform1i(locs.src, 0);
+    gl.uniform1f(locs.time, (performance.now() - t0) / 1000);
+    gl.uniform2f(locs.res, st.width || canvas.width, st.height || canvas.height);
+    for (const u of current.uniforms) {
+      const l = locs.u[u.name]; if (!l) continue;
+      const v = u.value;
+      if (u.type === 'float') gl.uniform1f(l, +v || 0);
+      else if (u.type === 'vec2') gl.uniform2fv(l, v);
+      else if (u.type === 'vec3') gl.uniform3fv(l, v);
+      else gl.uniform4fv(l, v);
+    }
+    current.textures.forEach((t, i) => {
+      gl.activeTexture(gl.TEXTURE1 + i);
+      gl.bindTexture(gl.TEXTURE_2D, mediaTexture(t.mediaId));
+      gl.uniform1i(locs.u[t.uniform], 1 + i);
+    });
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  raf = requestAnimationFrame(frame);
+  return {
+    set, setSource,
+    dispose() {
+      cancelAnimationFrame(raf);
+      gl.getExtension('WEBGL_lose_context')?.loseContext();
+    },
+  };
+}
