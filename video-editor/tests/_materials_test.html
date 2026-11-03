@@ -1,0 +1,23 @@
+<!doctype html><html data-theme="filmora"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../css/editor.css"><link rel="stylesheet" href="../css/materials.css"></head>
+<body><div id="modalRoot"></div>
+<script type="module">
+import { store, mediaRuntime, uid } from '../js/state.js';
+import * as M from '../js/materials.js';
+window.M = M; window.store = store; window.mediaRuntime = mediaRuntime;
+const theme = new URLSearchParams(location.search).get('theme'); if (theme) document.documentElement.dataset.theme = theme;
+// image media
+const c = document.createElement('canvas'); c.width = 64; c.height = 64; const g = c.getContext('2d');
+g.fillStyle = '#f00'; g.fillRect(0,0,32,64); g.fillStyle = '#00f'; g.fillRect(32,0,32,64);
+const url = c.toDataURL(); const img = new Image(); img.src = url; await img.decode();
+const mid = 'media_img1';
+store.project.media.push({ id: mid, name: 'red-blue.png', kind: 'image', mime: 'image/png', duration: 0, width: 64, height: 64 });
+mediaRuntime.set(mid, { url, image: img });
+window.MID = mid;
+const tpl = new URLSearchParams(location.search).get('tpl') || 'hologram';
+const mat = M.makeMaterialFromTemplate(tpl);
+store.project.materials.push(mat);
+window.materialsEvents = 0; store.on('materials', () => window.materialsEvents++);
+if (!new URLSearchParams(location.search).has('noopen')) window.ed = M.openMaterialEditor({ store, mediaRuntime, materialId: mat.id });
+window.ready = true;
+</script></body></html>

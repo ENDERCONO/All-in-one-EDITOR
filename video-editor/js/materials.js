@@ -772,7 +772,73 @@ function graph(build) {
     l(a, ap, b, bp) { links.push(makeLink(a.id, ap, b.id, bp)); },
   };
   build(g);
+  autoLayout(nodes, links);
   return { nodes, links };
+}
+
+// Rough node size (used when the DOM is not available)
+function estimateNodeSize(n) {
+  const d = NODE_TYPES[n.type];
+  if (!d) return { w: 160, h: 60 };
+  const inline = d.params.filter(p => !d.inputs.some(i => i.name === p.name) && p.type !== 'text' && !(DETAILS_ONLY_PARAMS[n.type] || []).includes(p.name));
+  const bools = inline.some(p => p.type === 'bool') ? 1 : 0;
+  const h = 30 + (d.subtitle ? 12 : 0) + 10 + Math.max(d.inputs.length, d.outputs.length) * 23 + (inline.length - (bools ? inline.filter(p => p.type === 'bool').length : 0) + bools) * 24 + (inline.length ? 8 : 0);
+  return { w: n.type === 'output' ? 200 : 190, h };
+}
+const DETAILS_ONLY_PARAMS = { scalarParameter: ['min', 'max'], vectorParameter: ['alpha'], if: ['threshold'] };
+
+// Layered layout: column = longest path to the Output node, rows ordered by consumers (barycenter).
+export function autoLayout(nodes, links, sizeOf = estimateNodeSize) {
+  const out = nodes.find(n => n.type === 'output');
+  if (!out) return;
+  const depth = new Map(nodes.map(n => [n.id, n === out ? 0 : -1]));
+  for (let it = 0; it < nodes.length + 1; it++) {
+    let changedAny = false;
+    for (const l of links) {
+      const dt = depth.get(l.to.node);
+      if (dt === undefined || dt < 0) continue;
+      if ((depth.get(l.from.node) ?? -2) < dt + 1 && depth.has(l.from.node)) { depth.set(l.from.node, dt + 1); changedAny = true; }
+    }
+    if (!changedAny) break;
+  }
+  const maxD = Math.max(0, ...depth.values());
+  for (const n of nodes) if (depth.get(n.id) < 0 || depth.get(n.id) > nodes.length) depth.set(n.id, maxD + 1); // unconnected: far left
+  const cols = new Map();
+  for (const n of nodes) { const d = depth.get(n.id); if (!cols.has(d)) cols.set(d, []); cols.get(d).push(n); }
+  const colX = new Map(); let x = 0;
+  const keys = [...cols.keys()].sort((a, b) => a - b);
+  const center = new Map();
+  for (const d of keys) {
+    const col = cols.get(d);
+    const w = Math.max(...col.map(n => sizeOf(n).w));
+    if (d === 0) x = 0; else x -= w + 70;
+    colX.set(d, x);
+    // order by the mean y of consumers (+ pin index for stability)
+    const key = n => {
+      const ys = [];
+      for (const l of links) if (l.from.node === n.id && center.has(l.to.node)) {
+        const tn = nodes.find(m => m.id === l.to.node);
+        const pi = NODE_TYPES[tn.type].inputs.findIndex(i => i.name === l.to.pin);
+        ys.push(center.get(l.to.node) + pi * 22);
+      }
+      return ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : 1e6;
+    };
+    col.sort((a, b) => key(a) - key(b));
+    const gap = 26;
+    const total = col.reduce((s, n) => s + sizeOf(n).h, 0) + gap * (col.length - 1);
+    // try to keep each node near its consumer, but never overlap
+    let y = -total / 2;
+    const want = col.map(n => { const k = key(n); return k < 1e5 ? k - sizeOf(n).h / 2 : null; });
+    let cursor = -Infinity;
+    col.forEach((n, i) => {
+      const hgt = sizeOf(n).h;
+      let ny = want[i] !== null ? want[i] : y;
+      ny = Math.max(ny, cursor);
+      n.x = Math.round(x + (w - sizeOf(n).w)); n.y = Math.round(ny);
+      cursor = ny + hgt + gap; y = cursor;
+      center.set(n.id, ny + 10);
+    });
+  }
 }
 
 export const MATERIAL_TEMPLATES = {
@@ -915,7 +981,7 @@ export function makeMaterialFromTemplate(key, name) {
 
 const clone = o => JSON.parse(JSON.stringify(o));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const DETAILS_ONLY = { scalarParameter: ['min', 'max'], vectorParameter: ['alpha'], if: ['threshold'] };
+const DETAILS_ONLY = DETAILS_ONLY_PARAMS;
 // UE-style "hold key + click" shortcuts
 const KEY_NODES = { '1': 'constant', '2': 'constant2', '3': 'constant3', '4': 'constant4', m: 'multiply', a: 'add',
   l: 'lerp', t: 'textureSample', s: 'scalarParameter', v: 'vectorParameter', u: 'texCoord', d: 'divide', o: 'oneMinus',
@@ -965,6 +1031,7 @@ export function openMaterialEditor({ store, mediaRuntime, materialId }) {
     h('div', { class: 'mat-title', html: icon('materials', 18) }, h('b', {}, 'Material Editor'), nameEl),
     h('button', { class: 'mat-tb primary', 'data-act': 'apply', title: 'Apply / save (Ctrl+S)', html: icon('save', 15) + '<span>Apply</span>' }),
     h('button', { class: 'mat-tb', 'data-act': 'home', title: 'Frame all nodes (Home)', html: icon('fit', 15) + '<span>Home</span>' }),
+    h('button', { class: 'mat-tb', 'data-act': 'arrange', title: 'Auto-arrange nodes', html: icon('elements', 15) + '<span>Arrange</span>' }),
     tplSelect,
     statusEl,
     h('div', { class: 'mat-grow' }),
@@ -1640,6 +1707,11 @@ export function openMaterialEditor({ store, mediaRuntime, materialId }) {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'close') close();
     else if (act === 'home') frameAll();
+    else if (act === 'arrange') {
+      const sizes = new Map([...nodesC.children].map(el => [el.dataset.id, { w: el.offsetWidth, h: el.offsetHeight }]));
+      autoLayout(mat.nodes, mat.links, n => sizes.get(n.id) || estimateNodeSize(n));
+      changed('Arrange nodes'); frameAll();
+    }
     else if (act === 'apply') { commit('Apply material', true); setStatus(compiled.ok, compiled.ok ? 'Applied · ' + compiled.uniforms.length + ' params' : compiled.error); }
   });
   tplSelect.addEventListener('change', () => {
