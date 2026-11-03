@@ -1,0 +1,36 @@
+<!doctype html><html data-theme="filmora"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../css/editor.css"><link rel="stylesheet" href="../css/timeline.css">
+<style>#timelinePanel{position:absolute;left:0;top:0;width:1280px;height:420px}</style></head>
+<body><section id="timelinePanel" class="panel"><div id="timeline"></div></section>
+<script type="module">
+import { store, mediaRuntime, makeClip, makeTrack } from '../js/state.js';
+import { ops } from '../js/ops.js';
+import { createTimeline } from '../js/timeline.js';
+function frame(i){const c=document.createElement('canvas');c.width=96;c.height=54;const g=c.getContext('2d');g.fillStyle=`hsl(${i*30},60%,45%)`;g.fillRect(0,0,96,54);g.fillStyle='#fff';g.font='20px sans-serif';g.fillText(i,30,35);return c.toDataURL();}
+const p = store.project;
+const v2 = makeTrack('video','Video 2'); p.tracks.unshift(v2);
+const a2 = makeTrack('audio','Audio 2'); p.tracks.push(a2);
+const [V2,V1,A1,A2] = p.tracks;
+p.media.push({id:'m1',name:'beach.mp4',kind:'video',duration:20,width:1920,height:1080,hasAudio:true});
+p.media.push({id:'m2',name:'song.mp3',kind:'audio',duration:60,hasAudio:true});
+p.media.push({id:'m3',name:'photo.jpg',kind:'image',duration:0,width:800,height:800});
+const rate=50, n=60*rate, mn=new Float32Array(n), mx=new Float32Array(n);
+for(let i=0;i<n;i++){const a=Math.abs(Math.sin(i/37))*0.8*(0.5+0.5*Math.sin(i/400));mx[i]=a;mn[i]=-a*0.9;}
+mediaRuntime.set('m1',{filmstrip:Array.from({length:20},(_,i)=>({t:i,url:frame(i)})),peaks:{rate,min:mn,max:mx}});
+mediaRuntime.set('m2',{peaks:{rate,min:mn,max:mx}});
+mediaRuntime.set('m3',{thumb:frame(7)});
+p.clips.push(makeClip({id:'c1',trackId:V1.id,type:'video',mediaId:'m1',name:'beach.mp4',start:0,duration:6,in:0,transitionOut:{type:'dissolve',duration:1}}));
+p.clips.push(makeClip({id:'c2',trackId:V1.id,type:'video',mediaId:'m1',name:'beach.mp4',start:6,duration:5,in:8,speed:2,filters:[{id:'f',type:'sepia',amount:1}],audio:{fadeIn:1}}));
+p.clips.push(makeClip({id:'c3',trackId:V2.id,type:'text',name:'Title',start:2,duration:3,text:{content:'Hello world'}}));
+p.clips.push(makeClip({id:'c4',trackId:V2.id,type:'image',mediaId:'m3',name:'photo.jpg',start:7,duration:4}));
+p.clips.push(makeClip({id:'c5',trackId:A1.id,type:'audio',mediaId:'m2',name:'song.mp3',start:1,duration:12,audio:{fadeIn:1.5,fadeOut:2,volume:-6}}));
+p.clips.push(makeClip({id:'c6',trackId:A2.id,type:'color',name:'x',start:0,duration:2,fill:'#f00'}));
+p.clips.pop();
+p.clips.push(makeClip({id:'c7',trackId:V2.id,type:'color',name:'Color',start:12,duration:3,fill:'#c33'}));
+p.markers.push({id:'mk1',time:4,color:'#ffcc00',label:'A'});
+store.setPlayhead(3.5);
+window.tl = createTimeline({ root: document.getElementById('timeline'), store, mediaRuntime, ops });
+window.store = store; window.ops = ops;
+window.addEventListener('ve:openClip', e => window.__opened = e.detail.id);
+window.__ready = true;
+</script></body></html>

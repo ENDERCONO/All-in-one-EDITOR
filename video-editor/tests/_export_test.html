@@ -1,0 +1,36 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link rel="stylesheet" href="../css/editor.css"><link rel="stylesheet" href="../css/export.css"></head>
+<body><div id="modalRoot"></div>
+<script type="module">
+import { store, mediaRuntime, makeClip, makeTrack } from '../js/state.js';
+import { createAudioEngine } from '../js/audio.js';
+import { openExportDialog } from '../js/export.js';
+
+function sineWav(freq, dur, sr = 44100, nch = 2) {
+  const n = Math.round(dur * sr), ab = new ArrayBuffer(44 + n * nch * 2), v = new DataView(ab);
+  const s = (o, t) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  s(0,'RIFF'); v.setUint32(4, 36 + n*nch*2, true); s(8,'WAVE'); s(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true);
+  v.setUint16(22,nch,true); v.setUint32(24,sr,true); v.setUint32(28,sr*nch*2,true); v.setUint16(32,nch*2,true); v.setUint16(34,16,true); s(36,'data'); v.setUint32(40,n*nch*2,true);
+  for (let i = 0; i < n; i++) for (let c = 0; c < nch; c++) v.setInt16(44 + (i*nch + c)*2, Math.round(Math.sin(2*Math.PI*freq*i/sr) * 0.5 * 32767), true);
+  return new Blob([ab], { type: 'audio/wav' });
+}
+const blob = sineWav(440, 3);
+mediaRuntime.set('m1', { file: blob, url: URL.createObjectURL(blob) });
+const a1 = makeTrack('audio', 'A1'), v1 = makeTrack('video', 'V1');
+store.load({ version: 1, name: 'Test project', settings: { width: 640, height: 360, fps: 30, aspect: '16:9', background: '#000', sampleRate: 48000, channels: 2, masterVolume: 0 },
+  media: [{ id: 'm1', name: 'sine', kind: 'audio', mime: 'audio/wav', duration: 3, hasAudio: true }],
+  tracks: [v1, a1], clips: [makeClip({ id: 'c1', trackId: a1.id, type: 'audio', mediaId: 'm1', start: 0, duration: 3 }),
+                            makeClip({ id: 'cv', trackId: v1.id, type: 'color', fill: '#ff0000', start: 0, duration: 3 })], materials: [], markers: [] });
+const audio = createAudioEngine({ store, mediaRuntime });
+const sources = { prepare: async () => {} };
+function createRenderer({ canvas }) {
+  const g = canvas.getContext('2d');
+  return { render(t) { g.fillStyle = `hsl(${(t*120)%360} 80% 50%)`; g.fillRect(0,0,canvas.width,canvas.height); g.fillStyle='#fff'; g.font='40px sans-serif'; g.fillText(t.toFixed(2), 20, 60); }, setSize(w,h){ canvas.width=w; canvas.height=h; }, dispose(){} };
+}
+window.T = { store, audio, mediaRuntime,
+  open: () => openExportDialog({ store, mediaRuntime, sources, audio, createRenderer }),
+  freq(buf, ch = 0) { const d = buf.getChannelData(ch); let z = 0; for (let i = 1; i < d.length; i++) if (d[i-1] < 0 && d[i] >= 0) z++; return z / buf.duration; },
+  rms(buf, ch=0, a=0, b=1) { const d = buf.getChannelData(ch); const s=Math.floor(a*d.length), e=Math.floor(b*d.length); let x=0; for (let i=s;i<e;i++) x+=d[i]*d[i]; return Math.sqrt(x/(e-s)); },
+};
+window.ready = true;
+</script></body></html>

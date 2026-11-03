@@ -1,0 +1,280 @@
+// Data-level edit operations. Every op is one undo step.
+import { store, makeClip, makeTrack, uid, FRAME_EPS } from './state.js';
+import { TITLE_PRESETS } from './catalog.js';
+
+const deep = o => JSON.parse(JSON.stringify(o));
+const VISUAL = new Set(['video', 'image', 'text', 'color', 'material']);
+const kindForType = type => (type === 'audio' ? 'audio' : 'video');
+const end = c => c.start + c.duration;
+
+function isFree(p, trackId, start, dur, exclude = new Set()) {
+  return !p.clips.some(c => c.trackId === trackId && !exclude.has(c.id) && c.start < start + dur - FRAME_EPS && end(c) > start + FRAME_EPS);
+}
+
+// Pick a track of `kind` where [start, start+dur) is free; prefer `preferId`, else create one.
+function trackFor(p, kind, start, dur, preferId, exclude) {
+  const pref = p.tracks.find(t => t.id === preferId && t.kind === kind && !t.locked);
+  if (pref && isFree(p, pref.id, start, dur, exclude)) return pref.id;
+  const list = p.tracks.filter(t => t.kind === kind && !t.locked);
+  // video: search bottom-up (Video 1 first); audio: top-down
+  const order = kind === 'video' ? [...list].reverse() : list;
+  for (const t of order) if (isFree(p, t.id, start, dur, exclude)) return t.id;
+  return insertTrack(p, kind).id;
+}
+
+function insertTrack(p, kind, index) {
+  const n = p.tracks.filter(t => t.kind === kind).length + 1;
+  const t = makeTrack(kind, (kind === 'video' ? 'Video ' : 'Audio ') + n);
+  if (index == null) index = kind === 'video' ? 0 : p.tracks.length; // new video tracks go on top
+  p.tracks.splice(index, 0, t);
+  return t;
+}
+
+function targetClips(t) {
+  const sel = store.selectedClips();
+  if (sel.length) return sel;
+  return store.project.clips.filter(c => t > c.start + FRAME_EPS && t < end(c) - FRAME_EPS && !store.getTrack(c.trackId)?.locked);
+}
+
+function splitClip(p, c, t) {
+  if (!(t > c.start + FRAME_EPS && t < end(c) - FRAME_EPS)) return null;
+  const d1 = t - c.start, d2 = c.duration - d1;
+  const right = deep(c);
+  right.id = uid('clip'); right.start = t; right.duration = d2;
+  if (c.reverse) { right.in = c.in; c.in = c.in + d2 * c.speed; }
+  else right.in = c.in + d1 * c.speed;
+  c.duration = d1;
+  c.transitionOut = null; right.transitionIn = null;
+  c.audio.fadeOut = 0; right.audio.fadeIn = 0;
+  p.clips.push(right);
+  return right;
+}
+
+function rippleShift(p, trackId, from, delta, exclude = new Set()) {
+  for (const c of p.clips) if (c.trackId === trackId && !exclude.has(c.id) && c.start >= from - FRAME_EPS) c.start = Math.max(0, c.start + delta);
+}
+
+export const ops = {
+  isFree: (trackId, start, dur, exclude) => isFree(store.project, trackId, start, dur, exclude),
+  trackFor: (kind, start, dur, preferId) => trackFor(store.project, kind, start, dur, preferId),
+
+  insertMedia(mediaId, { time = store.playhead, trackId = null, select = true } = {}) {
+    const m = store.getMedia(mediaId); if (!m) return null;
+    const type = m.kind === 'audio' ? 'audio' : m.kind === 'image' ? 'image' : 'video';
+    const dur = type === 'image' ? 5 : Math.max(store.frame(), m.duration || 5);
+    let clip;
+    store.transact('Add ' + m.name, p => {
+      const tid = trackFor(p, kindForType(type), time, dur, trackId);
+      clip = makeClip({ trackId: tid, type, mediaId, name: m.name, start: time, duration: dur });
+      p.clips.push(clip);
+    });
+    if (select) store.select([clip.id]);
+    return clip;
+  },
+
+  addTextClip({ time = store.playhead, preset = 'basic', trackId = null, text } = {}) {
+    const pr = TITLE_PRESETS.find(x => x.id === preset) || TITLE_PRESETS[0];
+    const { width, height } = store.project.settings;
+    let clip;
+    store.transact('Add title', p => {
+      const tid = trackFor(p, 'video', time, 5, trackId);
+      clip = makeClip({
+        trackId: tid, type: 'text', name: pr.label, start: time, duration: 5,
+        text: { content: 'Title', font: 'Inter', size: 96, color: '#ffffff', bold: true, italic: false, align: 'center', stroke: 0, strokeColor: '#000000', background: '', shadow: true, lineHeight: 1.15, ...pr.text, ...(text || {}) },
+        transform: { x: (pr.x || 0) * width, y: (pr.y || 0) * height },
+      });
+      p.clips.push(clip);
+    });
+    store.select([clip.id]);
+    return clip;
+  },
+
+  addColorClip({ time = store.playhead, fill = '#2a6df4', trackId = null } = {}) {
+    let clip;
+    store.transact('Add color', p => {
+      const tid = trackFor(p, 'video', time, 5, trackId);
+      clip = makeClip({ trackId: tid, type: 'color', name: 'Color ' + fill, fill, start: time, duration: 5 });
+      p.clips.push(clip);
+    });
+    store.select([clip.id]);
+    return clip;
+  },
+
+  addMaterialClip({ time = store.playhead, materialId, trackId = null } = {}) {
+    const mat = store.getMaterial(materialId); if (!mat) return null;
+    let clip;
+    store.transact('Add material clip', p => {
+      const tid = trackFor(p, 'video', time, 5, trackId);
+      clip = makeClip({ trackId: tid, type: 'material', name: mat.name, materialId, start: time, duration: 5 });
+      p.clips.push(clip);
+    });
+    store.select([clip.id]);
+    return clip;
+  },
+
+  splitAt(t = store.playhead, clipIds) {
+    const targets = clipIds ? clipIds.map(store.getClip).filter(Boolean) : targetClips(t);
+    if (!targets.length) return false;
+    const newIds = [];
+    store.transact('Split', p => {
+      for (const c0 of targets) {
+        const c = p.clips.find(x => x.id === c0.id);
+        if (c && !store.getTrack(c.trackId)?.locked) { const r = splitClip(p, c, t); if (r) newIds.push(r.id); }
+      }
+    });
+    return newIds.length > 0;
+  },
+
+  deleteSelected({ ripple = false } = {}) {
+    const sel = store.selectedClips().filter(c => !store.getTrack(c.trackId)?.locked);
+    if (!sel.length) return;
+    store.transact(ripple ? 'Ripple delete' : 'Delete', p => {
+      const ids = new Set(sel.map(c => c.id));
+      p.clips = p.clips.filter(c => !ids.has(c.id));
+      if (ripple) for (const c of [...sel].sort((a, b) => b.start - a.start)) rippleShift(p, c.trackId, end(c), -c.duration);
+    });
+    store.select([]);
+  },
+
+  copy() {
+    const sel = store.selectedClips(); if (!sel.length) return false;
+    const t0 = Math.min(...sel.map(c => c.start));
+    store.clipboard = sel.map(c => ({ ...deep(c), _off: c.start - t0 }));
+    return true;
+  },
+  cut() { if (ops.copy()) ops.deleteSelected(); },
+  paste(t = store.playhead) {
+    if (!store.clipboard?.length) return false;
+    const ids = [];
+    store.transact('Paste', p => {
+      const groupMap = {};
+      for (const src of store.clipboard) {
+        const c = deep(src); delete c._off;
+        c.id = uid('clip'); c.start = t + src._off;
+        if (c.groupId) c.groupId = groupMap[c.groupId] ||= uid('grp');
+        if (!p.tracks.some(tr => tr.id === c.trackId)) c.trackId = null;
+        c.trackId = trackFor(p, kindForType(c.type), c.start, c.duration, c.trackId);
+        p.clips.push(c); ids.push(c.id);
+      }
+    });
+    store.select(ids);
+    return true;
+  },
+  duplicate() {
+    const sel = store.selectedClips(); if (!sel.length) return;
+    ops.copy(); ops.paste(Math.max(...sel.map(end)));
+  },
+
+  trimStartTo(t = store.playhead) {
+    const cs = targetClips(t).filter(c => t > c.start && t < end(c)); if (!cs.length) return;
+    store.transact('Trim start', p => cs.forEach(c0 => {
+      const c = p.clips.find(x => x.id === c0.id); const d = t - c.start;
+      if (!c.reverse) c.in += d * c.speed;
+      c.start = t; c.duration -= d;
+    }));
+  },
+  trimEndTo(t = store.playhead) {
+    const cs = targetClips(t).filter(c => t > c.start && t < end(c)); if (!cs.length) return;
+    store.transact('Trim end', p => cs.forEach(c0 => {
+      const c = p.clips.find(x => x.id === c0.id); const d = end(c) - t;
+      if (c.reverse) c.in += d * c.speed;
+      c.duration -= d;
+    }));
+  },
+
+  detachAudio() {
+    const cs = store.selectedClips().filter(c => c.type === 'video' && store.getMedia(c.mediaId)?.hasAudio && !c.audio.detached);
+    if (!cs.length) return false;
+    const ids = [];
+    store.transact('Detach audio', p => cs.forEach(c0 => {
+      const c = p.clips.find(x => x.id === c0.id);
+      const a = makeClip({ type: 'audio', mediaId: c.mediaId, name: c.name, start: c.start, duration: c.duration, in: c.in, speed: c.speed, reverse: c.reverse, audio: { ...c.audio, detached: false } });
+      a.trackId = trackFor(p, 'audio', a.start, a.duration);
+      c.audio.detached = true;
+      if (!c.groupId) c.groupId = null;
+      p.clips.push(a); ids.push(a.id);
+    }));
+    return true;
+  },
+
+  moveClip(id, { start, trackId }) {
+    store.transact('Move', p => {
+      const c = p.clips.find(x => x.id === id); if (!c) return;
+      c.start = Math.max(0, start ?? c.start);
+      const kind = kindForType(c.type);
+      c.trackId = trackFor(p, kind, c.start, c.duration, trackId ?? c.trackId, new Set([c.id]));
+    });
+  },
+
+  setSpeed(speed, clipIds) {
+    const cs = (clipIds ? clipIds.map(store.getClip) : store.selectedClips()).filter(c => c && c.type !== 'text' && c.type !== 'color' && c.type !== 'material');
+    if (!cs.length) return;
+    store.transact('Speed ' + speed + 'x', p => cs.forEach(c0 => {
+      const c = p.clips.find(x => x.id === c0.id);
+      const oldEnd = end(c);
+      if (c.type !== 'image') c.duration = c.duration * c.speed / speed;
+      c.speed = speed;
+      rippleShift(p, c.trackId, oldEnd, end(c) - oldEnd, new Set([c.id]));
+    }));
+  },
+
+  setTransition(clipId, side, val) {
+    store.transact(val ? 'Add transition' : 'Remove transition', p => {
+      const c = p.clips.find(x => x.id === clipId); if (!c) return;
+      const key = side === 'out' ? 'transitionOut' : 'transitionIn';
+      c[key] = val ? { type: val.type, duration: Math.min(val.duration ?? 1, c.duration / 2) } : null;
+    });
+  },
+
+  addTrack(kind = 'video', index) {
+    let t; store.transact('Add track', p => { t = insertTrack(p, kind, index); }); return t;
+  },
+  removeTrack(id) {
+    const tr = store.getTrack(id); if (!tr) return;
+    if (store.project.tracks.filter(t => t.kind === tr.kind).length <= 1) return;
+    store.transact('Delete track', p => {
+      p.tracks = p.tracks.filter(t => t.id !== id);
+      p.clips = p.clips.filter(c => c.trackId !== id);
+    });
+  },
+
+  addMarker(t = store.playhead) {
+    store.transact('Add marker', p => p.markers.push({ id: uid('mk'), time: t, color: '#2ee6c5', label: '' }));
+  },
+
+  freezeFrame(t = store.playhead, len = 2) {
+    const c0 = store.selectedClips().find(c => c.type === 'video' && t >= c.start && t < end(c))
+      || store.project.clips.find(c => c.type === 'video' && t >= c.start && t < end(c));
+    if (!c0) return false;
+    store.transact('Freeze frame', p => {
+      const c = p.clips.find(x => x.id === c0.id);
+      const st = store.sourceTime(c, t);
+      const right = splitClip(p, c, t);
+      rippleShift(p, c.trackId, t + FRAME_EPS, len, new Set([c.id]));
+      const fr = deep(c);
+      Object.assign(fr, { id: uid('clip'), start: t, duration: len, in: st, speed: 0, reverse: false, transitionIn: null, transitionOut: null, name: c.name + ' (freeze)' });
+      fr.audio = { ...fr.audio, mute: true };
+      p.clips.push(fr);
+      if (!right) { /* playhead at clip edge: freeze still added */ }
+    });
+    return true;
+  },
+
+  group() {
+    const sel = store.selectedClips(); if (sel.length < 2) return;
+    const g = uid('grp'); store.transact('Group', p => sel.forEach(s => { p.clips.find(c => c.id === s.id).groupId = g; }));
+  },
+  ungroup() {
+    const sel = store.selectedClips(); if (!sel.length) return;
+    store.transact('Ungroup', p => sel.forEach(s => { p.clips.find(c => c.id === s.id).groupId = null; }));
+  },
+  selectAll() { store.select(store.project.clips.map(c => c.id)); },
+
+  // Edit points (clip starts/ends + 0) for ↑/↓ navigation
+  editPoints() {
+    const s = new Set([0]);
+    for (const c of store.project.clips) { s.add(+c.start.toFixed(5)); s.add(+end(c).toFixed(5)); }
+    return [...s].sort((a, b) => a - b);
+  },
+  isVisual: c => VISUAL.has(c.type),
+};

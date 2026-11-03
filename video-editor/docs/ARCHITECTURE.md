@@ -32,7 +32,7 @@ needed.
 * **Coordinates**: project pixels. `(0,0)` is the frame center, +x right, +y down.
 * Never mutate `store.project` outside `store.transact` / `store.update` (they snapshot for undo and emit events).
 * Modules must not add global `keydown` listeners — `app.js` owns shortcuts and calls into modules. Local listeners on your own elements are fine (wheel, pointer, keydown inside an input).
-* Style: CSS variables from `css/editor.css` (`--bg`, `--panel`, `--panel-2`, `--border`, `--text`, `--text-dim`, `--accent`, `--accent-2`, `--danger`, `--clip-video`, `--clip-audio`, `--clip-title`, `--clip-material`, `--playhead`). Add module-specific CSS to `css/editor.css` under a commented section with your module name.
+* Style: CSS variables from `css/editor.css` (`--bg`, `--panel`, `--panel-2`, `--border`, `--text`, `--text-dim`, `--accent`, `--accent-2`, `--danger`, `--clip-video`, `--clip-audio`, `--clip-title`, `--clip-material`, `--playhead`). Module-specific CSS goes in its own file: `css/timeline.css`, `css/gizmo.css`, `css/materials.css`, `css/export.css` (already linked).
 
 ## Data model (`store.project`, pure JSON)
 

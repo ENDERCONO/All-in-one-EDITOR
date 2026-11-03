@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en" data-theme="filmora">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Editor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/editor.css">
+<link rel="stylesheet" href="css/timeline.css">
+<link rel="stylesheet" href="css/gizmo.css">
+<link rel="stylesheet" href="css/materials.css">
+<link rel="stylesheet" href="css/export.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ===== Top bar: logo, menus, project name, export ===== -->
+  <header id="topbar">
+    <div class="logo"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 3l16 9-16 9z" fill="var(--accent)"/><path d="M4 3l8 9-8 9z" fill="var(--accent-2)"/></svg><span>AIO Video Editor</span></div>
+    <nav id="menubar"></nav>
+    <div class="proj-name"><span id="projName">Untitled project</span> <span id="saveState" class="save-state" title="Saved">✓</span></div>
+    <div class="top-actions">
+      <button class="icon-btn" data-act="save" data-icon="save" title="Save project (Ctrl+S)"></button>
+      <button class="icon-btn" data-act="projectSettings" data-icon="gear" title="Project settings"></button>
+      <button id="btnExport" class="export-btn" data-act="export" title="Export (Ctrl+E)">Export</button>
+    </div>
+  </header>
+
+  <!-- ===== Workspace: resizable panels ===== -->
+  <div id="workspace">
+    <div id="upper" class="row">
+      <!-- Library (media, audio, titles, transitions, effects, filters, elements, materials) -->
+      <section id="library" class="panel" style="flex-basis:36%">
+        <div id="libTabs" class="lib-tabs">
+          <button class="lib-tab active" data-lib="media" data-icon="media" data-icon-size="20"><span>Media</span></button>
+          <button class="lib-tab" data-lib="audio" data-icon="audio" data-icon-size="20"><span>Audio</span></button>
+          <button class="lib-tab" data-lib="titles" data-icon="titles" data-icon-size="20"><span>Titles</span></button>
+          <button class="lib-tab" data-lib="transitions" data-icon="transitions" data-icon-size="20"><span>Transitions</span></button>
+          <button class="lib-tab" data-lib="effects" data-icon="effects" data-icon-size="20"><span>Effects</span></button>
+          <button class="lib-tab" data-lib="filters" data-icon="filters" data-icon-size="20"><span>Filters</span></button>
+          <button class="lib-tab" data-lib="elements" data-icon="elements" data-icon-size="20"><span>Elements</span></button>
+          <button class="lib-tab" data-lib="materials" data-icon="materials" data-icon-size="20"><span>Materials</span></button>
+        </div>
+        <div class="lib-body">
+          <aside id="libSide" class="lib-side"></aside>
+          <div class="lib-main">
+            <div class="lib-toolbar">
+              <div id="libActions" class="lib-actions"></div>
+              <label class="search"><span data-icon="search"></span><input id="libSearch" placeholder="Search" spellcheck="false"></label>
+            </div>
+            <div id="libGrid" class="lib-grid"></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="splitter v" data-split="library"></div>
+
+      <!-- Player -->
+      <section id="player" class="panel" style="flex:1 1 auto">
+        <div class="panel-head">
+          <div class="ph-tabs"><button class="ph-tab active">Player</button></div>
+          <div class="ph-right">
+            <select id="previewQuality" title="Preview quality">
+              <option value="1">Full Quality</option><option value="0.5" selected>1/2</option><option value="0.25">1/4</option>
+            </select>
+          </div>
+        </div>
+        <div id="previewWrap">
+          <div id="previewStage">
+            <canvas id="previewCanvas" width="960" height="540"></canvas>
+            <div id="gizmoLayer"></div>
+          </div>
+          <div id="previewDrop" class="drop-hint" hidden>Drop to add to the timeline</div>
+        </div>
+        <div class="player-scrub">
+          <input type="range" id="scrub" min="0" max="1000" value="0" step="1">
+          <button class="mini" id="btnMarkIn" title="Mark in ( { )">{</button>
+          <button class="mini" id="btnMarkOut" title="Mark out ( } )">}</button>
+          <span class="tc"><span id="tcCur">00:00:00:00</span> <span class="dim">/</span> <span id="tcDur" class="dim">00:00:00:00</span></span>
+        </div>
+        <div class="player-controls">
+          <div class="pc-left">
+            <button class="icon-btn" id="btnPrevFrame" data-icon="prevFrame" title="Previous frame (←)"></button>
+            <button class="icon-btn" id="btnNextFrame" data-icon="nextFrame" title="Next frame (→)"></button>
+            <button class="icon-btn big" id="btnPlay" title="Play (Space)"></button>
+            <button class="icon-btn" id="btnStop" data-icon="stop" title="Stop"></button>
+          </div>
+          <div class="pc-right">
+            <select id="aspectSelect" title="Project aspect ratio"></select>
+            <button class="icon-btn" id="btnSnapshot" data-icon="camera" title="Snapshot (save frame as PNG)"></button>
+            <button class="icon-btn" id="btnVolume" data-icon="volume" title="Preview volume"></button>
+            <div id="meter" class="meter" title="Output level"><i></i><i></i></div>
+            <button class="icon-btn" id="btnFullscreen" data-icon="fullscreen" title="Full screen (Alt+Enter)"></button>
+          </div>
+        </div>
+      </section>
+
+      <div class="splitter v" data-split="inspector"></div>
+
+      <!-- Inspector -->
+      <section id="inspector" class="panel" style="flex-basis:24%"></section>
+    </div>
+
+    <div class="splitter h" data-split="upper"></div>
+
+    <!-- Timeline -->
+    <section id="timelinePanel" class="panel">
+      <div id="tlToolbar" class="tl-toolbar">
+        <div class="tb-group">
+          <button class="icon-btn tool active" data-act="toolSelect" data-icon="select" title="Selection tool (V)"></button>
+          <button class="icon-btn tool" data-act="toolBlade" data-icon="split" title="Blade tool (C)"></button>
+          <span class="tb-sep"></span>
+          <button class="icon-btn" data-act="undo" data-icon="undo" title="Undo (Ctrl+Z)"></button>
+          <button class="icon-btn" data-act="redo" data-icon="redo" title="Redo (Ctrl+Y)"></button>
+          <button class="icon-btn" data-act="delete" data-icon="trash" title="Delete (Del) · Shift+Del ripple delete"></button>
+          <button class="icon-btn" data-act="split" data-icon="split" title="Split (Ctrl+B)"></button>
+          <button class="icon-btn" data-act="addTitle" data-icon="text" title="Add title (Ctrl+T)"></button>
+          <button class="icon-btn" data-act="crop" data-icon="crop" title="Crop &amp; zoom"></button>
+          <button class="icon-btn" data-act="speed" data-icon="speed" title="Speed"></button>
+          <button class="icon-btn" data-act="freeze" data-icon="freeze" title="Freeze frame (Alt+F)"></button>
+          <button class="icon-btn" data-act="detach" data-icon="detach" title="Detach audio (Ctrl+Alt+D)"></button>
+          <button class="icon-btn" data-act="chroma" data-icon="chroma" title="Green screen"></button>
+          <button class="icon-btn" data-act="newMaterial" data-icon="materials" title="New material (Ctrl+Shift+M)"></button>
+        </div>
+        <div class="tb-group">
+          <button class="icon-btn" data-act="marker" data-icon="marker" title="Add marker (M)"></button>
+          <button class="icon-btn" data-act="record" data-icon="mic" title="Record voiceover"></button>
+          <button class="icon-btn toggle active" data-act="snap" data-icon="snap" title="Snapping (N)"></button>
+          <span class="tb-sep"></span>
+          <button class="icon-btn" data-act="zoomOut" data-icon="zoomOut" title="Zoom out (Ctrl+-)"></button>
+          <input type="range" id="zoomSlider" min="0" max="1000" value="500" title="Timeline zoom">
+          <button class="icon-btn" data-act="zoomIn" data-icon="zoomIn" title="Zoom in (Ctrl+=)"></button>
+          <button class="icon-btn" data-act="zoomFit" data-icon="fit" title="Zoom to fit (Shift+Z)"></button>
+        </div>
+      </div>
+      <div id="timeline"></div>
+    </section>
+  </div>
+
+  <footer id="statusBar">
+    <span id="statusMsg">Ready</span>
+    <span class="grow"></span>
+    <span id="statusInfo"></span>
+  </footer>
+</div>
+
+<div id="modalRoot"></div>
+<div id="toast"></div>
+<input type="file" id="importInput" multiple accept="video/*,audio/*,image/*" hidden>
+<input type="file" id="openInput" accept=".aioproj,.json,application/json" hidden>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
