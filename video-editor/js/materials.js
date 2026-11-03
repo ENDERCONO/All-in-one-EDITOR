@@ -783,7 +783,7 @@ function estimateNodeSize(n) {
   const inline = d.params.filter(p => !d.inputs.some(i => i.name === p.name) && p.type !== 'text' && !(DETAILS_ONLY_PARAMS[n.type] || []).includes(p.name));
   const bools = inline.some(p => p.type === 'bool') ? 1 : 0;
   const h = 30 + (d.subtitle ? 12 : 0) + 10 + Math.max(d.inputs.length, d.outputs.length) * 23 + (inline.length - (bools ? inline.filter(p => p.type === 'bool').length : 0) + bools) * 24 + (inline.length ? 8 : 0);
-  return { w: n.type === 'output' ? 200 : 190, h };
+  return { w: n.type === 'output' ? 190 : 150, h };
 }
 const DETAILS_ONLY_PARAMS = { scalarParameter: ['min', 'max'], vectorParameter: ['alpha'], if: ['threshold'] };
 
@@ -811,7 +811,7 @@ export function autoLayout(nodes, links, sizeOf = estimateNodeSize) {
   for (const d of keys) {
     const col = cols.get(d);
     const w = Math.max(...col.map(n => sizeOf(n).w));
-    if (d === 0) x = 0; else x -= w + 70;
+    if (d === 0) x = 0; else x -= w + 60;
     colX.set(d, x);
     // order by the mean y of consumers (+ pin index for stability)
     const key = n => {
@@ -1341,6 +1341,11 @@ export function openMaterialEditor({ store, mediaRuntime, materialId }) {
     mat.links = mat.links.filter(l => !(dir === 'in' ? l.to.node === nodeId && l.to.pin === pin : l.from.node === nodeId && l.from.pin === pin));
     if (mat.links.length !== before) changed('Break links');
   }
+  function arrangeMeasured() {
+    const sizes = new Map([...nodesC.children].map(el => [el.dataset.id, { w: el.offsetWidth, h: el.offsetHeight }]));
+    autoLayout(mat.nodes, mat.links, n => sizes.get(n.id) || estimateNodeSize(n));
+    renderNodes(); renderWires(); commit('Arrange nodes');
+  }
   function frameAll() {
     const els = [...nodesC.children];
     if (!els.length) return;
@@ -1708,9 +1713,7 @@ export function openMaterialEditor({ store, mediaRuntime, materialId }) {
     if (act === 'close') close();
     else if (act === 'home') frameAll();
     else if (act === 'arrange') {
-      const sizes = new Map([...nodesC.children].map(el => [el.dataset.id, { w: el.offsetWidth, h: el.offsetHeight }]));
-      autoLayout(mat.nodes, mat.links, n => sizes.get(n.id) || estimateNodeSize(n));
-      changed('Arrange nodes'); frameAll();
+      arrangeMeasured(); frameAll();
     }
     else if (act === 'apply') { commit('Apply material', true); setStatus(compiled.ok, compiled.ok ? 'Applied · ' + compiled.uniforms.length + ' params' : compiled.error); }
   });
@@ -1724,7 +1727,8 @@ export function openMaterialEditor({ store, mediaRuntime, materialId }) {
     nameEl.textContent = mat.name;
     selected = new Set();
     changed('Material template: ' + t.name);
-    requestAnimationFrame(frameAll);
+    arrangeMeasured();
+    frameAll();
   });
   back.addEventListener('pointerdown', e => { if (e.target === back) { /* click outside does nothing (UE-like) */ } });
 

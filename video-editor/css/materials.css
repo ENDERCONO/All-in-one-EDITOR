@@ -143,7 +143,7 @@
 .mat-pin:hover .dot, .mat-pin.hover .dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--pc) 45%, transparent); }
 .mat-pin.bad .dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 60%, transparent); }
 .mat-pin input[type="number"] { width: 52px; }
-.mat-pin .mat-vec2 input[type="number"] { width: 40px; }
+.mat-pin .mat-vec2 input[type="number"] { width: 48px; }
 
 /* inline widgets */
 .mat-node input[type="number"], .mat-node input[type="text"], .mat-node select {
