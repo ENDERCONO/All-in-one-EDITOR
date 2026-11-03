@@ -1,1 +1,14 @@
 /* gizmo module styles */
+#gizmoLayer, .gizmo-layer { touch-action: none; overflow: visible; z-index: 2; }
+.gizmo-svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.gizmo-svg .gz-box { pointer-events: none; }
+.gizmo-svg .gz-outline { fill: none; stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 1px rgba(0,0,0,.8)); }
+.gizmo-svg .gz-rotline { stroke: var(--accent); stroke-width: 1.2; }
+.gizmo-svg .gz-center { fill: var(--accent); stroke: #0b0d10; stroke-width: 1; opacity: .85; }
+.gizmo-svg .gz-handle { fill: #fff; stroke: #0b0d10; stroke-width: 1.5; pointer-events: all; }
+.gizmo-svg .gz-handle:hover { fill: var(--accent); }
+.gizmo-svg .gz-rot { fill: var(--accent); cursor: grab; }
+.gizmo-layer.dragging .gz-rot { cursor: grabbing; }
+.gizmo-svg .gz-box.locked .gz-handle { display: none; }
+.gizmo-svg .gz-box.locked .gz-outline { stroke-dasharray: 4 3; stroke: var(--text-dim); }
+.gizmo-svg .gz-guide { stroke: #ff3ea5; stroke-width: 1; stroke-dasharray: 5 4; shape-rendering: crispEdges; }

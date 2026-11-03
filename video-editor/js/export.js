@@ -37,6 +37,7 @@ const ABR = [96, 128, 160, 192, 256, 320];
 const even = v => Math.max(2, Math.round(v / 2) * 2);
 const fmtBytes = b => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : b < 1073741824 ? (b / 1048576).toFixed(1) + ' MB' : (b / 1073741824).toFixed(2) + ' GB';
 const fmtTime = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
+const fmtTc = s => { const m = Math.floor(s / 60), x = s - m * 60; return m + ':' + x.toFixed(2).padStart(5, '0'); };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const sanitize = s => (String(s || 'export').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'export');
 
@@ -238,7 +239,7 @@ export function openExportDialog({ store, mediaRuntime, sources, audio, createRe
           <label>File name</label>
           <div class="ve-x-name"><input type="text" data-k="name"><span class="ve-x-ext"></span></div>
           <label>Range</label>
-          <select data-k="range"><option value="all">Whole project</option>${hasInOut ? `<option value="inout">In – Out (${fmtTime(S.markIn)} – ${fmtTime(S.markOut)})</option>` : ''}</select>
+          <select data-k="range"><option value="all">Whole project</option>${hasInOut ? `<option value="inout">In – Out (${fmtTc(S.markIn)} – ${fmtTc(S.markOut)})</option>` : ''}</select>
 
           <div class="ve-x-sec" data-v>Video</div>
           <label data-v>Resolution</label>

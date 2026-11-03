@@ -5809,6 +5809,10 @@
   /* ============ CLAUDE ARENA GAME ============ */
   main[data-mode="claudegame"] { display: flex; }
 
+  /* ============ VIDEO EDITOR (iframe, see video-editor/) ============ */
+  main[data-mode="videoeditor"] { display:flex; padding:0; overflow:hidden; }
+  #videoEditorFrame { flex:1; width:100%; height:100%; border:0; display:block; background:#0b0d10; }
+
   /* ============ BALATRO ============ */
   main[data-mode="balatro"] { display:flex; padding:0; background:#0a0a0f; overflow:hidden; }
   #balatroBg {
@@ -6025,6 +6029,12 @@
       <button class="sb-tab" data-tab="convert" title="Converter — file conversion and video downloader">
         <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg></span>
         <span class="sb-label">Converter</span>
+      </button>
+
+      <!-- ===== VIDEO EDITOR (single) ===== -->
+      <button class="sb-tab" data-tab="videoeditor" title="Video Editor — Filmora-style multi-track editor: timeline, transitions, filters, green screen, materials, export MP4 / WebM / WAV / MP3">
+        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="11" rx="2"/><path d="m10 7.5 4 2-4 2z" fill="currentColor"/><path d="M2 19h8M14 19h8"/><path d="M10 17v4M14 17v4"/></svg></span>
+        <span class="sb-label">Video Editor</span>
       </button>
 
       <!-- ===== VERTICAL VIDEO (single) ===== -->
@@ -8884,6 +8894,20 @@
   </main>
 
   <!-- ================= BALATRO ================= -->
+  <!-- ================= VIDEO EDITOR ================= -->
+  <!-- The editor is its own app in video-editor/; the iframe keeps its shortcuts (Space, Ctrl+V, Ctrl+Z…) separate. Loaded on first open. -->
+  <main data-mode="videoeditor" hidden>
+    <iframe id="videoEditorFrame" title="Video Editor" allow="microphone; fullscreen; clipboard-read; clipboard-write" allowfullscreen></iframe>
+  </main>
+  <script>
+    (function () {
+      const main = document.querySelector('main[data-mode="videoeditor"]');
+      const frame = document.getElementById('videoEditorFrame');
+      const load = () => { if (!main.hidden && !frame.src) frame.src = 'video-editor/index.html'; if (!main.hidden) setTimeout(() => frame.contentWindow && frame.focus(), 50); };
+      new MutationObserver(load).observe(main, { attributes: true, attributeFilter: ['hidden'] });
+    })();
+  </script>
+
   <main data-mode="balatro" hidden>
     <div id="balatroBg">
       <div id="balatroContent">
@@ -9181,6 +9205,12 @@ document.addEventListener('DOMContentLoaded', () => {
   function route(files) {
     files = files.filter(Boolean);
     if (!files.length) return false;
+    if (currentMode === 'videoeditor') { // hand pasted / dropped files to the embedded editor
+      const w = document.getElementById('videoEditorFrame')?.contentWindow;
+      if (!w || !w.__ve) return false;
+      w.dispatchEvent(new w.CustomEvent('ve:importFiles', { detail: { files, time: w.__ve.store.playhead } }));
+      return true;
+    }
     const first = files[0];
     let inputs = inputsFor(currentMode, first);
     if (!inputs.length) {

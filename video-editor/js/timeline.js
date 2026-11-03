@@ -175,7 +175,7 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
     const z = zoom(), h = row.h - 4;
     const hasA = clipHasAudio(c);
     const badges = [];
-    if (c.speed !== 1) badges.push(`<span class="tl-badge">${c.speed === 0 ? 'freeze' : (+c.speed).toFixed(c.speed < 1 ? 2 : 1) + 'x'}</span>`);
+    if (c.speed !== 1 && (c.type === 'video' || c.type === 'audio')) badges.push(`<span class="tl-badge">${c.speed === 0 ? 'freeze' : (+c.speed).toFixed(c.speed < 1 ? 2 : 1) + 'x'}</span>`);
     if (c.reverse) badges.push(`<span class="tl-badge" title="Reversed">rev</span>`);
     if (c.filters?.length || c.materialId || c.chroma?.enabled) badges.push(`<span class="tl-badge fx" title="Effects applied">fx</span>`);
     if (c.audio?.mute && hasA) badges.push(`<span class="tl-badge ico" title="Muted">${icon('mute', 11)}</span>`);
@@ -532,7 +532,8 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
   });
 
   content.addEventListener('dblclick', ev => {
-    const clipEl = ev.target.closest('.tl-clip');
+    const hit = document.elementFromPoint(ev.clientX, ev.clientY) || ev.target;
+    const clipEl = hit.closest?.('.tl-clip');
     if (!clipEl || store.tool === 'blade') return;
     const id = clipEl.dataset.clip;
     store.select(id);
