@@ -1,7 +1,7 @@
 // Right-hand property panel. Tabs depend on the selected clip's type:
 // Video (transform, crop, compositing, green screen, material, transitions),
 // Titles, Audio, Color, Speed, Effects. With nothing selected: Project Info.
-import { mediaRuntime, uid, clamp } from './state.js';
+import { mediaRuntime, uid, clamp, defaultColor, defaultHueMatch, defaultAudioFx } from './state.js';
 import { BLEND_MODES, FILTERS, TRANSITIONS, FONTS } from './catalog.js';
 import { icon } from './icons.js';
 
@@ -10,7 +10,7 @@ const set = (o, path, v) => { const ks = path.split('.'); const last = ks.pop();
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const tc = (s, fps) => { s = Math.max(0, s); const f = Math.floor((s % 1) * fps + 1e-6); const t = Math.floor(s); return [Math.floor(t / 3600), Math.floor(t / 60) % 60, t % 60, f].map(n => String(n).padStart(2, '0')).join(':'); };
 
-export function createInspector({ root, store, ops, materialsApi, pickColor, openProjectSettings }) {
+export function createInspector({ root, store, ops, materialsApi, audioApi, pickColor, openProjectSettings }) {
   let tab = null, structKey = '', bindings = [];
   const collapsed = new Set(JSON.parse(localStorage.getItem('ve.ins.collapsed') || '[]'));
   const clip = () => store.selectedClips()[0] || null;
@@ -19,7 +19,12 @@ export function createInspector({ root, store, ops, materialsApi, pickColor, ope
     const c = clip(); if (!c) return;
     const ids = store.selection.clipIds;
     store.update(label || 'Edit ' + path.split('.').pop(), p => {
-      for (const id of ids) { const x = p.clips.find(y => y.id === id); if (x && (ids.length === 1 || get(x, path) !== undefined)) set(x, path, v); }
+      for (const id of ids) {
+        const x = p.clips.find(y => y.id === id); if (!x) continue;
+        if (path.startsWith('hueMatch.') && !x.hueMatch) x.hueMatch = defaultHueMatch();
+        if (path.startsWith('audio.fx.')) x.audio.fx = { ...defaultAudioFx(), ...(x.audio.fx || {}) };
+        set(x, path, v);
+      }
     }, { coalesce: ids.join(',') + ':' + path });
   }
 
@@ -118,7 +123,22 @@ export function createInspector({ root, store, ops, materialsApi, pickColor, ope
       ${toggle('Mute', 'audio.mute')}
       ${toggle('Keep pitch', 'audio.keepPitch', { onLabel: 'when changing speed' })}
       ${c.type === 'video' ? `<div class="btn-row"><button class="btn" data-do="detach">Detach audio</button></div>` : ''}
-    `);
+    `) + voiceSecs();
+  }
+
+  function voiceSecs() {
+    const VF = audioApi?.VOICE_FILTERS || [], PR = audioApi?.AUDIO_PRESETS || [];
+    const pct = (l, k, d = 0) => slider(l, 'audio.fx.' + k, { min: 0, max: 100, toUI: v => v * 100, fromUI: v => v / 100, def: d });
+    return (PR.length ? section('apresets', 'Audio Presets', `<div class="chip-grid">${PR.map(p => `<button class="btn" data-apreset="${p.id}" title="${esc(p.title || '')}">${esc(p.label)}</button>`).join('')}</div>`) : '')
+      + (VF.length ? section('voice', 'Voice Filters', `<div class="chip-grid">${VF.map(v => `<button class="btn" data-voice="${v.id}" title="${esc(v.title || '')}">${esc(v.label)}</button>`).join('')}</div>
+        ${slider('Filter mix', 'audio.voiceMix', { min: 0, max: 100, toUI: v => v * 100, fromUI: v => v / 100, def: 1 })}`) : '')
+      + section('afx', 'Audio Effects', `
+        ${pct('Reverb', 'reverb')}${pct('Reverb size', 'reverbSize', 0.5)}
+        ${pct('Echo', 'echo')}${slider('Echo time (s)', 'audio.fx.echoTime', { min: 0.02, max: 1.5, step: 0.01, def: 0.3 })}${pct('Echo repeats', 'echoFeedback', 0.4)}
+        ${pct('Bit crush', 'crush')}${slider('Bit depth', 'audio.fx.crushBits', { min: 1, max: 16, def: 8 })}${slider('Sample rate', 'audio.fx.crushRate', { min: 1000, max: 44100, step: 100, def: 11025 })}
+        ${pct('Muffle', 'lowpass')}${slider('High-pass (Hz)', 'audio.fx.highpass', { min: 0, max: 2000, step: 10 })}${slider('Bass boost (dB)', 'audio.fx.bass', { min: 0, max: 18, step: 0.5 })}
+        ${pct('8D orbit', 'orbit')}${slider('Orbit speed (Hz)', 'audio.fx.orbitSpeed', { min: 0.05, max: 2, step: 0.01, def: 0.25 })}
+        <div class="btn-row"><button class="btn" data-do="resetAfx">Reset audio effects</button></div>`);
   }
 
   function colorTab() {
@@ -126,7 +146,18 @@ export function createInspector({ root, store, ops, materialsApi, pickColor, ope
     return section('basic', 'Color', `
       ${s('Exposure', 'exposure')}${s('Brightness', 'brightness')}${s('Contrast', 'contrast')}${s('Saturation', 'saturation')}
       ${s('Hue', 'hue', -180, 180)}${s('Temperature', 'temperature')}${s('Tint', 'tint')}${s('Highlights', 'highlights')}${s('Shadows', 'shadows')}
-    `) + section('detail', 'Detail', `${s('Sharpen', 'sharpen', 0, 100)}${s('Blur', 'blur', 0, 100)}${s('Vignette', 'vignette', 0, 100)}
+      ${s('Vibrance', 'vibrance')}${s('Gamma', 'gamma')}
+    `) + section('levels', 'Levels & Channels', `
+      ${s('Blacks', 'blacks')}${s('Whites', 'whites')}${s('Fade', 'fade', 0, 100)}
+      ${s('Red', 'red')}${s('Green', 'green')}${s('Blue', 'blue')}
+      ${s('Color levels', 'posterize', 0, 64)}
+      <div class="prop wide"><label>Toggle</label><div class="btn-row">${toggleBtn('Invert', 'color.invert')}${toggleBtn('Grayscale', 'color.grayscale')}</div></div>
+    `) + section('huematch', 'Auto Hue Match', `
+      ${color('From', 'hueMatch.from', { pick: true })}
+      ${color('To', 'hueMatch.to', { pick: true })}
+      ${slider('Range (°)', 'hueMatch.range', { min: 1, max: 180, def: 30 })}
+      ${toggle('Colorize', 'hueMatch.colorize', { onLabel: 'force every pixel to the To color' })}
+    `, { toggleOf: 'hueMatch.enabled' }) + section('detail', 'Detail', `${s('Sharpen', 'sharpen', 0, 100)}${s('Clarity', 'clarity')}${s('Noise / grain', 'noise', 0, 100)}${s('Blur', 'blur', 0, 100)}${s('Vignette', 'vignette', 0, 100)}
       <div class="btn-row"><button class="btn" data-do="resetColor">Reset color</button></div>`);
   }
 
@@ -229,7 +260,8 @@ export function createInspector({ root, store, ops, materialsApi, pickColor, ope
         el.addEventListener('input', () => { t.value = el.value; edit(b.path, el.value); });
         t.addEventListener('change', () => { if (/^#[0-9a-f]{6}$/i.test(t.value)) { el.value = t.value; edit(b.path, t.value); } });
         document.getElementById(b.id + 'p')?.addEventListener('click', async () => {
-          const hex = await pickColor?.(); if (hex) { el.value = t.value = hex; edit(b.path, hex, 'Pick key color'); if (b.path === 'chroma.color' && !clip().chroma.enabled) edit('chroma.enabled', true); }
+          const hex = await pickColor?.(); if (hex) { el.value = t.value = hex; edit(b.path, hex, 'Pick key color'); if (b.path === 'chroma.color' && !clip().chroma.enabled) edit('chroma.enabled', true);
+          if (b.path.startsWith('hueMatch.') && !clip().hueMatch?.enabled) edit('hueMatch.enabled', true); }
         });
       } else if (b.kind === 'textarea') {
         el.addEventListener('input', () => edit(b.path, el.value, 'Edit text'));
@@ -244,7 +276,7 @@ export function createInspector({ root, store, ops, materialsApi, pickColor, ope
       const s = store.project.settings; const fit = Math.min(s.width / m.width, s.height / m.height), fill = Math.max(s.width / m.width, s.height / m.height);
       edit('transform.scale', fill / fit, 'Fill frame'); edit('transform.x', 0); edit('transform.y', 0);
     });
-    on('[data-do="resetColor"]', () => edit('color', { brightness: 0, contrast: 0, saturation: 0, hue: 0, exposure: 0, temperature: 0, tint: 0, highlights: 0, shadows: 0, vignette: 0, blur: 0, sharpen: 0 }, 'Reset color'));
+    on('[data-do="resetColor"]', () => { edit('color', defaultColor(), 'Reset color'); edit('hueMatch', defaultHueMatch()); });
     on('[data-do="detach"]', () => ops.detachAudio());
     on('[data-do="noBg"]', () => edit('text.background', '', 'Text background'));
     on('[data-do="editMat"]', () => { const id = clip().materialId; if (id) materialsApi?.openMaterialEditor?.({ store, mediaRuntime, materialId: id }); });
@@ -252,6 +284,20 @@ export function createInspector({ root, store, ops, materialsApi, pickColor, ope
     const bg = root.querySelector('#insTextBg');
     if (bg) { bg.value = /^#[0-9a-f]{6}$/i.test(c.text?.background || '') ? c.text.background : '#000000'; bg.addEventListener('input', () => edit('text.background', bg.value, 'Text background')); }
     root.querySelector('#insMat')?.addEventListener('change', e => edit('materialId', e.target.value || null, 'Set material'));
+    on('[data-do="resetAfx"]', () => edit('audio.fx', defaultAudioFx(), 'Reset audio effects'));
+    root.querySelectorAll('[data-voice]').forEach(b => b.addEventListener('click', () => edit('audio.voice', b.dataset.voice, 'Voice filter')));
+    root.querySelectorAll('[data-apreset]').forEach(b => b.addEventListener('click', () => {
+      const pr = (audioApi?.AUDIO_PRESETS || []).find(x => x.id === b.dataset.apreset); if (!pr) return;
+      store.transact('Preset ' + pr.label, p => {
+        for (const id of store.selection.clipIds) {
+          const x = p.clips.find(y => y.id === id); if (!x) continue;
+          const res = pr.apply(x.audio) || {}; const { clipSpeed, fx, ...rest } = res;
+          Object.assign(x.audio, rest);
+          if (fx) x.audio.fx = { ...defaultAudioFx(), ...(x.audio.fx || {}), ...fx };
+          if (clipSpeed && x.type !== 'image' && x.type !== 'text' && x.type !== 'color' && x.type !== 'material') { x.duration = x.duration * x.speed / clipSpeed; x.speed = clipSpeed; }
+        }
+      });
+    }));
     root.querySelectorAll('[data-speed]').forEach(b => b.addEventListener('click', () => ops.setSpeed(+b.dataset.speed)));
     root.querySelectorAll('[data-famt]').forEach(r => r.addEventListener('input', () => edit(`filters.${r.dataset.famt}.amount`, r.value / 100, 'Filter amount')));
     root.querySelectorAll('[data-fdel]').forEach(b => b.addEventListener('click', () => store.transact('Remove filter', p => { const x = p.clips.find(y => y.id === clip().id); x.filters.splice(+b.dataset.fdel, 1); })));
@@ -297,6 +343,7 @@ export function createInspector({ root, store, ops, materialsApi, pickColor, ope
 
   function sync() {
     const c = clip(); if (!c) return;
+    root.querySelectorAll('[data-voice]').forEach(b => b.classList.toggle('primary', (c.audio.voice || 'none') === b.dataset.voice));
     for (const b of bindings) {
       const el = document.getElementById(b.id); if (!el) continue;
       let v = get(c, b.path);

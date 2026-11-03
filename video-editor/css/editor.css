@@ -202,3 +202,6 @@ input[type="color"] { width: 28px; height: 22px; padding: 0; border: 1px solid v
 /* QoL: maximized panel (` key) and loop indicator */
 .panel.maxed { position: fixed; inset: 44px 6px 26px 6px; z-index: 900; box-shadow: 0 0 0 1px var(--accent), 0 20px 60px #000c; }
 #btnPlay.looping { color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+.chip-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 5px; }
+.chip-grid .btn { padding: 5px 6px; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

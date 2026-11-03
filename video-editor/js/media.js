@@ -146,6 +146,17 @@ function drawWaveThumb(id) {
 function transitionSvg(id) {
   const s = (inner) => `<svg class="preview" viewBox="0 0 160 90" fill="none" stroke="currentColor" stroke-width="1.6">${inner}</svg>`;
   const arrow = (x1, y1, x2, y2) => `<path d="M${x1} ${y1}L${x2} ${y2}" stroke-dasharray="3 3"/><path d="M${x2} ${y2}l${x1 < x2 ? -6 : x1 > x2 ? 6 : -4} ${y1 < y2 ? -6 : y1 > y2 ? 6 : -4}M${x2} ${y2}l${x1 < x2 ? -6 : x1 > x2 ? 6 : 4} ${y1 < y2 ? -6 : y1 > y2 ? 6 : 4}"/>`;
+  const frame = '<rect x="20" y="10" width="120" height="70" rx="3"/>';
+  if (id.startsWith('cube')) return s(`<path d="M50 28l30-12 30 12v34l-30 12-30-12z"/><path d="M50 28l30 12 30-12M80 40v34"/>${id === 'cube_up' ? arrow(80, 20, 80, 8) : arrow(id === 'cube_left' ? 116 : 44, 45, id === 'cube_left' ? 136 : 24, 45)}`);
+  if (id === 'flip_card') return s(`<path d="M60 16l40 6v46l-40 6z"/><path d="M80 8v74" stroke-dasharray="3 3"/>`);
+  if (id === 'door_open') return s(`${frame}<path d="M20 10l35 8v54l-35 8M140 10l-35 8v54l35 8"/>`);
+  if (id === 'page_turn') return s(`${frame}<path d="M140 50L105 80"/><path d="M140 50c-20 2-32 14-35 30" />`);
+  if (id === 'star_wipe') return s(`${frame}<path d="M80 18l8 17 19 2-14 13 4 19-17-10-17 10 4-19-14-13 19-2z"/>`);
+  if (id === 'heart_wipe') return s(`${frame}<path d="M80 72S54 56 54 39a12 12 0 0 1 26-6 12 12 0 0 1 26 6c0 17-26 33-26 33z"/>`);
+  if (id === 'white_flash' || id === 'flashbang' || id === 'film_burn') return s(`${frame}<circle cx="80" cy="45" r="10" fill="currentColor"/>${[0, 45, 90, 135, 180, 225, 270, 315].map(a => { const r = a * Math.PI / 180; return `<path d="M${80 + Math.cos(r) * 16} ${45 + Math.sin(r) * 16}L${80 + Math.cos(r) * 28} ${45 + Math.sin(r) * 28}"/>`; }).join('')}`);
+  if (id === 'spin_zoom' || id === 'zoom_punch' || id === 'cross_zoom') return s(`${frame}<rect x="62" y="34" width="36" height="22" transform="rotate(${id === 'spin_zoom' ? 20 : 0} 80 45)"/><path d="M30 18l22 12M130 18l-22 12M30 72l22-12M130 72l-22-12"/>`);
+  if (id === 'clock_wipe' || id === 'radial_wipe') return s(`${frame}<circle cx="80" cy="45" r="24"/><path d="M80 45V21M80 45l17 17"/>`);
+  if (id === 'shake_cut' || id === 'whip_pan' || id === 'bounce') return s(`${frame}<rect x="55" y="25" width="50" height="40" rx="2"/><path d="M40 30h-10M40 45h-14M40 60h-10M120 30h10M120 45h14M120 60h10"/>`);
   if (id.startsWith('wipe') || id.startsWith('slide') || id.startsWith('push')) {
     const d = id.split('_')[1];
     const map = { left: [100, 45, 60, 45], right: [60, 45, 100, 45], up: [80, 60, 80, 30], down: [80, 30, 80, 60] };

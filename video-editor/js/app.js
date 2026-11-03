@@ -75,11 +75,12 @@ function modal(title, bodyHtml, buttons = [], { width = 520 } = {}) {
 // ======================================================================
 async function boot() {
   applyIcons();
-  const [{ createTimeline }, { createRenderer }, { createGizmo }, materials, { createAudioEngine }, exportMod] = await Promise.all([
+  const [{ createTimeline }, { createRenderer }, { createGizmo }, materials, audioMod, exportMod] = await Promise.all([
     safeImport('./timeline.js', () => import('./timeline.js')), safeImport('./renderer.js', () => import('./renderer.js')), safeImport('./gizmo.js', () => import('./gizmo.js')),
     safeImport('./materials.js', () => import('./materials.js')), safeImport('./audio.js', () => import('./audio.js')), safeImport('./export.js', () => import('./export.js')),
   ]);
 
+  const { createAudioEngine } = audioMod;
   const canvas = $('#previewCanvas');
   const sources = createSources({ store, mediaRuntime });
   let renderer = null, audio = null, gizmo = null, timeline = null;
@@ -228,7 +229,7 @@ async function boot() {
   store.on('tool', syncTools); store.on('snap', syncTools); store.on('history', syncTools); syncTools();
 
   // ---------- Inspector ----------
-  const inspector = createInspector({ root: $('#inspector'), store, ops, materialsApi: materials, pickColor, openProjectSettings });
+  const inspector = createInspector({ root: $('#inspector'), store, ops, materialsApi: materials, audioApi: audioMod, pickColor, openProjectSettings });
   window.addEventListener('ve:editText', e => { store.select([e.detail.id]); inspector.showTab('titles'); setTimeout(() => { const ta = $('#inspector textarea'); ta?.focus(); ta?.select(); }, 30); });
 
   // Eyedropper: click the player to sample a color (keying of the selected clip is switched off while sampling)

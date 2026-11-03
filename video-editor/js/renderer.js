@@ -40,6 +40,13 @@ float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.545
 vec4 premul(vec4 c) { return vec4(c.rgb * c.a, c.a); }
 vec4 unpremul(vec4 c) { return c.a > 1e-5 ? vec4(c.rgb / c.a, c.a) : vec4(0.0); }
 vec2 rot2(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(c * p.x - s * p.y, s * p.x + c * p.y); }
+vec3 hueRot(vec3 c, float a) {
+  const mat3 toYIQ = mat3(0.299, 0.596, 0.211, 0.587, -0.274, -0.523, 0.114, -0.322, 0.312);
+  const mat3 toRGB = mat3(1.0, 1.0, 1.0, 0.956, -0.272, -1.106, 0.621, -0.647, 1.703);
+  vec3 yiq = toYIQ * c; yiq.yz = rot2(yiq.yz, a); return toRGB * yiq;
+}
+float h1(float x) { return fract(sin(x * 127.1) * 43758.5453); }
+float sn(float x) { float i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(h1(i), h1(i + 1.0), f) * 2.0 - 1.0; }
 `;
 
 const FS_COPY = HEAD + `
@@ -78,13 +85,10 @@ void main() {
 }`;
 
 const FS_COLOR = HEAD + `
-uniform sampler2D u_tex; uniform vec2 u_texel;
+uniform sampler2D u_tex, u_low; uniform vec2 u_texel;
 uniform float u_bri, u_con, u_sat, u_hue, u_exp, u_temp, u_tint, u_hi, u_sh, u_vig, u_sharp;
-vec3 hueRot(vec3 c, float a) {
-  const mat3 toYIQ = mat3(0.299, 0.596, 0.211, 0.587, -0.274, -0.523, 0.114, -0.322, 0.312);
-  const mat3 toRGB = mat3(1.0, 1.0, 1.0, 0.956, -0.272, -1.106, 0.621, -0.647, 1.703);
-  vec3 yiq = toYIQ * c; yiq.yz = rot2(yiq.yz, a); return toRGB * yiq;
-}
+uniform float u_gamma, u_vib, u_noise, u_fade, u_clar, u_blacks, u_whites, u_post, u_inv, u_gray, u_time;
+uniform vec3 u_gain;
 void main() {
   vec4 s = texture(u_tex, v_uv);
   vec3 c = s.rgb;
@@ -93,18 +97,76 @@ void main() {
            + texture(u_tex, v_uv + vec2(0.0, u_texel.y)).rgb + texture(u_tex, v_uv - vec2(0.0, u_texel.y)).rgb;
     c += (c - n * 0.25) * u_sharp * 3.0;
   }
+  if (u_blacks != 0.0 || u_whites != 0.0) { // input levels (+ lifts blacks / brightens whites)
+    float lo = -u_blacks * 0.25, hi = 1.0 - u_whites * 0.25;
+    c = (c - lo) / max(hi - lo, 0.05);
+  }
   c *= exp2(u_exp * 2.0);
   c += u_bri * 0.35;
   float cf = u_con > 0.0 ? 1.0 + u_con * 1.5 : 1.0 + u_con;
   c = (c - 0.5) * cf + 0.5;
+  if (u_gamma != 0.0) c = pow(max(c, 0.0), vec3(exp2(-u_gamma * 1.2)));
   float l = luma(clamp(c, 0.0, 1.0));
   c += u_sh * 0.35 * (1.0 - smoothstep(0.0, 0.55, l));
   c += u_hi * 0.35 * smoothstep(0.45, 1.0, l);
+  if (u_clar != 0.0) { // local contrast: luma detail against a wide blur
+    float detail = luma(s.rgb) - luma(texture(u_low, v_uv).rgb);
+    float lc = luma(clamp(c, 0.0, 1.0));
+    float m = 1.0 - pow(abs(lc * 2.0 - 1.0), 2.0);
+    c += detail * u_clar * 1.6 * (0.35 + 0.65 * m);
+  }
   c += vec3(u_temp, u_temp * 0.15, -u_temp) * 0.15;
   c += vec3(u_tint * 0.5, -u_tint, u_tint * 0.5) * 0.12;
+  c *= max(1.0 + u_gain, 0.0);
   if (u_hue != 0.0) c = hueRot(c, u_hue);
   c = mix(vec3(luma(c)), c, 1.0 + u_sat);
+  if (u_vib != 0.0) {
+    vec3 cc = clamp(c, 0.0, 1.0);
+    float sv = max(cc.r, max(cc.g, cc.b)) - min(cc.r, min(cc.g, cc.b));
+    float w = u_vib > 0.0 ? u_vib * (1.0 - sv) * 1.6 : u_vib * (1.0 - sv * 0.5);
+    c = mix(vec3(luma(c)), c, 1.0 + w);
+  }
+  if (u_fade > 0.0) { c = mix(vec3(luma(c)), c, 1.0 - u_fade * 0.2); c = c * (1.0 - u_fade * 0.3) + u_fade * 0.2; }
   if (u_vig > 0.0) { float d = length(v_uv - 0.5) * 1.4142; c *= 1.0 - u_vig * smoothstep(0.35, 1.1, d); }
+  c = clamp(c, 0.0, 1.0);
+  if (u_gray > 0.5) c = vec3(luma(c));
+  if (u_inv > 0.5) c = 1.0 - c;
+  if (u_post >= 2.0) c = min(floor(c * u_post), u_post - 1.0) / (u_post - 1.0);
+  if (u_noise > 0.0) { float nz = hash(floor(v_uv / u_texel) + fract(u_time * 7.31) * 117.0) - 0.5; c += nz * u_noise * 0.4; }
+  outColor = vec4(clamp(c, 0.0, 1.0), s.a);
+}`;
+
+const FS_HUE = HEAD + `
+uniform sampler2D u_tex; uniform vec3 u_from, u_to; uniform float u_range; uniform int u_colorize;
+vec3 rgb2hsv(vec3 c) {
+  vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+  vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+  vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+  float d = q.x - min(q.w, q.y); float e = 1.0e-10;
+  return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+vec3 hsv2rgb(vec3 c) { vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0); return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y); }
+vec3 hsl2rgb(vec3 c) { vec3 rgb = clamp(abs(mod(c.x * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0); return c.z + c.y * (rgb - 0.5) * (1.0 - abs(2.0 * c.z - 1.0)); }
+vec3 rgb2hsl(vec3 c) {
+  float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b)), L = (mx + mn) * 0.5, d = mx - mn;
+  float S = d < 1e-5 ? 0.0 : d / (1.0 - abs(2.0 * L - 1.0) + 1e-6);
+  return vec3(rgb2hsv(c).x, clamp(S, 0.0, 1.0), L);
+}
+void main() {
+  vec4 s = texture(u_tex, v_uv);
+  vec3 c;
+  if (u_colorize == 1) {
+    vec3 tl = rgb2hsl(u_to);
+    c = hsl2rgb(vec3(tl.x, tl.y, rgb2hsl(s.rgb).z));
+  } else {
+    vec3 hf = rgb2hsv(u_from), ht = rgb2hsv(u_to), hp = rgb2hsv(s.rgb);
+    float d = abs(hp.x - hf.x); d = min(d, 1.0 - d);
+    float r = max(u_range / 360.0, 1e-4);
+    float w = (1.0 - smoothstep(r * 0.5, r, d)) * smoothstep(0.04, 0.15, hp.y) * smoothstep(0.02, 0.08, hp.z);
+    float dh = ht.x - hf.x; dh -= floor(dh + 0.5);
+    float ns = clamp(hp.y * mix(1.0, ht.y / max(hf.y, 0.05), w), 0.0, 1.0);
+    c = hsv2rgb(vec3(fract(hp.x + dh * w), ns, hp.z));
+  }
   outColor = vec4(clamp(c, 0.0, 1.0), s.a);
 }`;
 
@@ -210,6 +272,230 @@ void main() {
     float bar = max(0.0, (1.0 - ar / 2.39) * 0.5) * a;
     if (uv.y < bar || uv.y > 1.0 - bar) r = vec4(0.0, 0.0, 0.0, 1.0);
     direct = true;
+  }
+  r.rgb = clamp(r.rgb, 0.0, 1.0);
+  outColor = direct ? r : mix(o, r, a);
+}`;
+
+// v2 filters live in their own program to keep each shader small enough to compile fast.
+const FS_FILTER2 = HEAD + `
+uniform sampler2D u_tex; uniform vec2 u_res; uniform int u_type; uniform float u_amt, u_time;
+vec4 S(vec2 uv) { return texture(u_tex, uv); }
+vec4 SB(vec2 uv) { return (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) ? vec4(0.0) : texture(u_tex, uv); }
+vec4 SM(vec2 uv) { return texture(u_tex, 1.0 - abs(1.0 - mod(uv, 2.0))); } // mirrored wrap
+vec3 sat(vec3 c, float s) { return mix(vec3(luma(c)), c, s); }
+float vig(vec2 uv, float k) { return 1.0 - k * smoothstep(0.3, 1.1, length(uv - 0.5) * 1.4142); }
+vec3 sepia(vec3 c) { return vec3(dot(c, vec3(0.393, 0.769, 0.189)), dot(c, vec3(0.349, 0.686, 0.168)), dot(c, vec3(0.272, 0.534, 0.131))); }
+float L(vec2 uv) { return luma(S(uv).rgb); }
+float sobel(vec2 uv, vec2 d) {
+  float tl = L(uv + d * vec2(-1, -1)), tc = L(uv + d * vec2(0, -1)), tr = L(uv + d * vec2(1, -1));
+  float ml = L(uv + d * vec2(-1, 0)), mr = L(uv + d * vec2(1, 0));
+  float bl = L(uv + d * vec2(-1, 1)), bc = L(uv + d * vec2(0, 1)), br = L(uv + d * vec2(1, 1));
+  return length(vec2(-tl - 2.0 * ml - bl + tr + 2.0 * mr + br, -tl - 2.0 * tc - tr + bl + 2.0 * bc + br));
+}
+vec2 aspv() { return vec2(u_res.x / u_res.y, 1.0); }
+// camera shake: translate (uv units) + rotate (rad) + zoom to hide the edges
+vec2 shakeUV(vec2 uv, float freq, float amp, float rotAmp, float zoom) {
+  float t = u_time * freq;
+  vec2 o = vec2(sn(t) + 0.5 * sn(t * 2.3 + 11.0), sn(t + 31.7) + 0.5 * sn(t * 2.1 + 5.0)) * amp;
+  float r = (sn(t * 0.8 + 71.3) + 0.4 * sn(t * 1.9 + 3.3)) * rotAmp;
+  vec2 d = rot2((uv - 0.5) * aspv(), r) / zoom;
+  return d / aspv() + 0.5 + o;
+}
+vec4 diskBlur(vec2 uv, float rad) { // rad in uv-height units
+  vec4 acc = premul(SM(uv)); float n = 1.0;
+  for (int i = 1; i <= 24; i++) { float rr = sqrt(float(i) / 24.0) * rad; float ang = float(i) * 2.39996;
+    acc += premul(SM(uv + vec2(cos(ang) / aspv().x, sin(ang)) * rr)); n += 1.0; }
+  return unpremul(acc / n);
+}
+vec3 thermal(float t) {
+  t = clamp(t, 0.0, 1.0) * 5.0;
+  vec3 c0 = vec3(0.0, 0.0, 0.12), c1 = vec3(0.3, 0.0, 0.6), c2 = vec3(0.85, 0.0, 0.5), c3 = vec3(1.0, 0.3, 0.0), c4 = vec3(1.0, 0.8, 0.0), c5 = vec3(1.0, 1.0, 0.9);
+  if (t < 1.0) return mix(c0, c1, t); if (t < 2.0) return mix(c1, c2, t - 1.0);
+  if (t < 3.0) return mix(c2, c3, t - 2.0); if (t < 4.0) return mix(c3, c4, t - 3.0); return mix(c4, c5, t - 4.0);
+}
+float bayer2(vec2 a) { a = floor(a); return fract(dot(a, vec2(0.5, a.y * 0.75))); }
+float bayer8(vec2 a) { return (bayer2(0.25 * a) * 0.25 + bayer2(0.5 * a)) * 0.25 + bayer2(a); }
+void main() {
+  vec2 uv = v_uv; vec4 o = S(uv); vec3 c = o.rgb; float a = u_amt; vec2 px = 1.0 / u_res;
+  vec4 r = o; bool direct = false; float l = luma(c); float T = u_time;
+  int t = u_type;
+  if (t == F_deep_fry) {
+    vec3 n4 = S(uv + vec2(px.x, 0.0)).rgb + S(uv - vec2(px.x, 0.0)).rgb + S(uv + vec2(0.0, px.y)).rgb + S(uv - vec2(0.0, px.y)).rgb;
+    vec3 v = c + (c - n4 * 0.25) * 4.0;
+    v = sat(v, 2.8); v = (v - 0.5) * 1.8 + 0.5; v *= vec3(1.2, 1.0, 0.75);
+    vec2 blk = floor(uv * u_res / 8.0);
+    v += (hash(blk + 0.37) - 0.5) * 0.08;
+    v = mix(v, floor(clamp(v, 0.0, 1.0) * 5.0 + 0.5) / 5.0, 0.55);
+    v += (hash(floor(uv * u_res) + fract(T * 7.0) * 50.0) - 0.5) * 0.18;
+    r.rgb = v;
+  }
+  else if (t == F_shake) { r = SM(shakeUV(uv, 9.0, 0.022 * a, 0.035 * a, 1.0 + 0.08 * a)); direct = true; }
+  else if (t == F_earthquake) {
+    vec2 u0 = shakeUV(uv, 4.0, 0.05 * a, 0.05 * a, 1.0 + 0.16 * a);
+    vec2 dir = vec2(sn(T * 12.0) + 1.2, sn(T * 12.0 + 9.0)) * 0.005 * a; // slight blur along the jolt
+    vec4 acc = vec4(0.0);
+    for (int i = -4; i <= 4; i++) acc += premul(SM(u0 + dir * float(i) / 4.0));
+    r = unpremul(acc / 9.0); direct = true;
+  }
+  else if (t == F_rgb_shake) {
+    vec2 base = shakeUV(uv, 7.0, 0.008 * a, 0.01 * a, 1.0 + 0.03 * a);
+    vec2 or1 = vec2(sn(T * 11.0), sn(T * 11.0 + 4.0)) * 0.025 * a, ob = vec2(sn(T * 9.0 + 17.0), sn(T * 9.0 + 23.0)) * 0.025 * a;
+    vec4 g = SM(base);
+    r = vec4(SM(base + or1).r, g.g, SM(base + ob).b, g.a); direct = true;
+  }
+  else if (t == F_drunk) {
+    vec2 w = vec2(sin(uv.y * 6.0 + T * 2.0), cos(uv.x * 5.0 + T * 1.6)) * 0.008 * a;
+    vec2 d = rot2((uv - 0.5) * aspv(), sin(T * 0.9) * 0.05 * a) / aspv() + 0.5 + w;
+    vec2 off = vec2(sin(T * 1.3), cos(T * 1.7)) * 0.03 * a;
+    r = unpremul(premul(SM(d + off)) * 0.5 + premul(SM(d - off)) * 0.5); direct = true;
+  }
+  else if (t == F_zoom_pulse) {
+    float ph = fract(T * 2.0); float k = exp(-ph * 7.0);
+    float sc = 1.0 + 0.18 * a * k;
+    r = SM((uv - 0.5) / sc + 0.5); direct = true;
+  }
+  else if (t == F_rainbow) r.rgb = hueRot(sat(c, 1.35), T * 3.14159 + uv.x * 1.5);
+  else if (t == F_thermal) r.rgb = thermal(smoothstep(0.02, 0.98, l));
+  else if (t == F_night_vision) {
+    float g = pow(clamp(l * 1.7, 0.0, 1.0), 0.8);
+    g += (hash(floor(uv * u_res) + fract(T * 9.1) * 71.0) - 0.5) * 0.22;
+    g *= 0.82 + 0.18 * sin(uv.y * u_res.y * 2.0);
+    float vv = 1.0 - smoothstep(0.35, 0.75, length((uv - 0.5) * aspv() / aspv().x * 1.3));
+    r.rgb = vec3(0.12, 1.0, 0.2) * g * (0.15 + 0.85 * vv) + vec3(0.0, 0.03, 0.0);
+  }
+  else if (t == F_xray) { float iv = 1.0 - l; iv = smoothstep(0.08, 0.95, iv); r.rgb = mix(vec3(0.0, 0.03, 0.08), vec3(0.75, 0.92, 1.0), pow(iv, 1.3)); }
+  else if (t == F_color_pop) {
+    float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b)), sv = mx - mn;
+    float redness = smoothstep(0.08, 0.2, (c.r - max(c.g, c.b)) / max(mx, 0.01)) * smoothstep(0.08, 0.25, sv);
+    r.rgb = mix(vec3(l), sat(c, 1.25), redness);
+  }
+  else if (t == F_sketch) {
+    float st = max(1.0, u_res.y / 540.0);
+    float e = sobel(uv, px * st);
+    float lines = 1.0 - clamp(e * 2.2 - 0.06, 0.0, 1.0);
+    vec2 fc = uv * u_res / st;
+    float hatch = l < 0.42 ? 0.78 + 0.22 * step(0.45, fract((fc.x + fc.y) / 5.0)) : 1.0;
+    if (l < 0.2) hatch *= 0.82 + 0.18 * step(0.45, fract((fc.x - fc.y) / 5.0));
+    float grain = 0.97 + 0.03 * hash(floor(fc));
+    r.rgb = vec3(0.96, 0.95, 0.91) * lines * hatch * grain * mix(0.82, 1.0, smoothstep(0.1, 0.6, l));
+  }
+  else if (t == F_halftone) {
+    float cell = max(4.0, u_res.y / 90.0);
+    vec2 p = rot2(uv * u_res, 0.7854) / cell;
+    vec2 ctr = (floor(p) + 0.5);
+    vec2 cuv = rot2(ctr * cell, -0.7854) / u_res;
+    float cl = luma(S(cuv).rgb);
+    float rad = sqrt(clamp(1.0 - cl, 0.0, 1.0)) * 0.62;
+    float d = length(p - ctr);
+    float ink = 1.0 - smoothstep(rad - 0.08, rad + 0.08, d);
+    r.rgb = mix(vec3(0.97, 0.96, 0.92), vec3(0.07, 0.07, 0.1), ink);
+  }
+  else if (t == F_dither) {
+    float ps = max(1.0, floor(u_res.y / 360.0));
+    vec2 cp = floor(uv * u_res / ps);
+    float cl = luma(S((cp + 0.5) * ps / u_res).rgb);
+    r.rgb = vec3(step(bayer8(cp) + 0.5 / 64.0, cl));
+  }
+  else if (t == F_oil_paint) {
+    float st = max(1.0, u_res.y / 400.0);
+    vec3 m0 = vec3(0.0), m1 = vec3(0.0), m2 = vec3(0.0), m3 = vec3(0.0), q0 = vec3(0.0), q1 = vec3(0.0), q2 = vec3(0.0), q3 = vec3(0.0);
+    for (int j = 0; j <= 3; j++) for (int i = 0; i <= 3; i++) {
+      vec2 d = vec2(float(i), float(j)) * st * px;
+      vec3 s0 = S(uv + vec2(-d.x, -d.y)).rgb, s1 = S(uv + vec2(d.x, -d.y)).rgb, s2 = S(uv + vec2(-d.x, d.y)).rgb, s3 = S(uv + d).rgb;
+      m0 += s0; q0 += s0 * s0; m1 += s1; q1 += s1 * s1; m2 += s2; q2 += s2 * s2; m3 += s3; q3 += s3 * s3;
+    }
+    m0 /= 16.0; m1 /= 16.0; m2 /= 16.0; m3 /= 16.0;
+    float v0 = dot(q0 / 16.0 - m0 * m0, vec3(1.0)), v1 = dot(q1 / 16.0 - m1 * m1, vec3(1.0));
+    float v2 = dot(q2 / 16.0 - m2 * m2, vec3(1.0)), v3 = dot(q3 / 16.0 - m3 * m3, vec3(1.0));
+    vec3 best = m0; float bv = v0;
+    if (v1 < bv) { bv = v1; best = m1; } if (v2 < bv) { bv = v2; best = m2; } if (v3 < bv) { bv = v3; best = m3; }
+    r.rgb = sat(best, 1.1);
+  }
+  else if (t == F_neon_edges) {
+    float st = max(1.0, u_res.y / 720.0);
+    float e = sobel(uv, px * st) + 0.6 * sobel(uv, px * st * 3.0);
+    vec3 col = sat(c, 2.2); col = col / max(max(col.r, max(col.g, col.b)), 0.25);
+    col = mix(col, hueRot(vec3(1.0, 0.1, 0.8), uv.x * 2.0 + T), 0.35);
+    r.rgb = vec3(0.01, 0.0, 0.03) + col * smoothstep(0.05, 0.6, e) * 1.6;
+  }
+  else if (t == F_mosaic) {
+    float cell = max(6.0, u_res.y / 36.0);
+    vec2 g = uv * u_res / cell; vec2 id = floor(g); vec2 f = fract(g);
+    vec3 tc = S((id + 0.5) * cell / u_res).rgb * (0.92 + 0.16 * hash(id));
+    float edge = min(min(f.x, f.y), min(1.0 - f.x, 1.0 - f.y));
+    float grout = 1.0 - smoothstep(0.05, 0.1, edge);
+    tc *= 1.0 - 0.18 * (1.0 - smoothstep(0.1, 0.35, edge)); // bevel
+    r.rgb = mix(tc, vec3(0.16, 0.15, 0.14), grout);
+  }
+  else if (t == F_crt) {
+    vec2 d = uv - 0.5; float k = 0.25 * a;
+    vec2 u2 = 0.5 + d * (1.0 + k * dot(d, d) * 2.0) / (1.0 + k * 0.25);
+    vec3 col = SB(u2).rgb; float al = SB(u2).a;
+    float scan = 0.65 + 0.35 * sin(u2.y * u_res.y * 2.0944);
+    float m = mod(floor(uv.x * u_res.x), 3.0);
+    vec3 mask = m < 1.0 ? vec3(1.25, 0.8, 0.8) : (m < 2.0 ? vec3(0.8, 1.25, 0.8) : vec3(0.8, 0.8, 1.25));
+    col = col * mix(vec3(1.0), mask * scan * 1.3, a) * vig(u2, 0.5 * a);
+    bool outside = u2.x < 0.0 || u2.y < 0.0 || u2.x > 1.0 || u2.y > 1.0;
+    r = outside ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(col, max(al, a)); direct = true;
+  }
+  else if (t == F_old_film) {
+    float fr = floor(T * 18.0);
+    vec2 u2 = uv + vec2(0.0, (h1(fr * 1.31) - 0.5) * 0.004);
+    vec3 col = sepia(sat(S(u2).rgb, 0.4)) * (0.88 + 0.16 * h1(fr * 1.7));
+    for (int i = 0; i < 3; i++) {
+      float fi = float(i);
+      if (h1(fr * 7.7 + fi * 3.1) > 0.4) {
+        float x = h1(fr * 3.1 + fi * 17.0) + sin(uv.y * 3.0 + fr) * 0.004;
+        float w = (0.6 + 1.2 * h1(fi + fr * 0.37)) * px.x;
+        float sc = 1.0 - smoothstep(w * 0.4, w, abs(uv.x - x));
+        col = mix(col, h1(fi * 5.0 + fr) > 0.3 ? vec3(0.95, 0.92, 0.85) : vec3(0.12), sc * 0.75);
+      }
+    }
+    vec2 gs = vec2(24.0, 14.0); vec2 gg = uv * gs; vec2 cell = floor(gg);
+    if (hash(cell + fr * 13.1) > 0.975) {
+      vec2 cp = vec2(0.2) + 0.6 * vec2(hash(cell + fr + 1.7), hash(cell * 1.3 + fr));
+      float rad = (1.0 + 3.0 * hash(cell - fr)) / u_res.y * gs.y;
+      float dd = length((fract(gg) - cp) * u_res / gs) / (u_res.y / gs.y);
+      col *= mix(1.0, 0.15, 1.0 - smoothstep(rad * 0.5, rad, dd));
+    }
+    col += (hash(floor(uv * u_res) + fract(T * 7.0) * 40.0) - 0.5) * 0.12;
+    r.rgb = col * vig(uv, 0.75);
+  }
+  else if (t == F_kaleidoscope) {
+    vec2 d = (uv - 0.5) * aspv();
+    float rr = length(d), ang = atan(d.y, d.x) + T * 0.2;
+    float seg = 6.2831853 / 6.0;
+    ang = mod(ang, seg); ang = abs(ang - seg * 0.5);
+    vec2 q = vec2(cos(ang), sin(ang)) * rr;
+    r = SM(q / aspv() + 0.5); direct = false;
+  }
+  else if (t == F_bulge || t == F_pinch) {
+    vec2 d = (uv - 0.5) * aspv(); float R = 0.5; float f = length(d) / R;
+    float k = f < 1.0 ? (1.0 - f * f) : 0.0;
+    float s = t == F_bulge ? 1.0 - 0.6 * a * k : 1.0 + 0.8 * a * k;
+    r = SB(d * s / aspv() + 0.5); direct = true;
+  }
+  else if (t == F_twirl) {
+    vec2 d = (uv - 0.5) * aspv(); float R = 0.6; float f = length(d) / R;
+    float k = f < 1.0 ? (1.0 - f) * (1.0 - f) : 0.0;
+    r = SB(rot2(d, a * 4.0 * k) / aspv() + 0.5); direct = true;
+  }
+  else if (t == F_tilt_shift) {
+    float dy = abs(uv.y - 0.5);
+    float rad = smoothstep(0.1, 0.42, dy) * 0.012 * a;
+    r = rad > 0.0005 ? diskBlur(uv, rad) : o;
+    r.rgb = sat(r.rgb, 1.0 + 0.25 * a); direct = true;
+  }
+  else if (t == F_zoom_blur) {
+    vec4 acc = vec4(0.0);
+    for (int i = 0; i < 24; i++) acc += premul(SB(0.5 + (uv - 0.5) * (1.0 - 0.18 * a * float(i) / 23.0)));
+    r = unpremul(acc / 24.0); direct = true;
+  }
+  else if (t == F_motion_blur) {
+    vec4 acc = vec4(0.0);
+    for (int i = -12; i <= 12; i++) acc += premul(SM(uv + vec2(float(i) / 12.0 * 0.03 * a, 0.0)));
+    r = unpremul(acc / 25.0); direct = true;
   }
   r.rgb = clamp(r.rgb, 0.0, 1.0);
   outColor = direct ? r : mix(o, r, a);
