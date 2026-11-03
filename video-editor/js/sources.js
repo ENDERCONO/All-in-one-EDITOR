@@ -10,6 +10,7 @@ export function createSources({ store, mediaRuntime }) {
   holder.style.cssText = 'position:fixed;left:-9999px;top:0;width:2px;height:2px;overflow:hidden;opacity:0;pointer-events:none';
   document.body.appendChild(holder);
   let textVersion = 1;
+  let curT = 0; // timeline time of the frame being drawn (set by sync / prepare)
 
   function videoFor(clip) {
     let p = pool.get(clip.id);
@@ -98,6 +99,8 @@ export function createSources({ store, mediaRuntime }) {
       return { el: p.el, width: p.el.videoWidth, height: p.el.videoHeight };
     }
     if (clip.type === 'image') {
+      const fr = animFrame(clip);
+      if (fr) return { el: fr.bmp, width: fr.bmp.width, height: fr.bmp.height };
       const img = imageFor(clip);
       return img ? { el: img, width: img.naturalWidth, height: img.naturalHeight } : null;
     }
@@ -108,7 +111,18 @@ export function createSources({ store, mediaRuntime }) {
     return null;
   }
 
+  // Current frame of an animated GIF/WebP clip (loops)
+  function animIndex(clip) {
+    const a = mediaRuntime.get(clip.mediaId)?.anim; if (!a || !a.frames.length) return -1;
+    let st = store.sourceTime(clip, curT) % a.total; if (st < 0) st += a.total;
+    let lo = 0, hi = a.frames.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (a.frames[mid].t <= st) lo = mid; else hi = mid - 1; }
+    return lo;
+  }
+  function animFrame(clip) { const i = animIndex(clip); return i < 0 ? null : mediaRuntime.get(clip.mediaId).anim.frames[i]; }
+
   function version(clip) {
+    if (clip.type === 'image') { const i = animIndex(clip); if (i >= 0) return i + 2; }
     if (clip.type === 'text') return textCanvas(clip).version;
     if (clip.type === 'video') { const p = pool.get(clip.id); return p ? p.el.currentTime : 0; }
     return 1;
@@ -125,6 +139,7 @@ export function createSources({ store, mediaRuntime }) {
   }
 
   function sync(t, playing) {
+    curT = t;
     const fps = store.project.settings.fps || 30;
     const active = new Set();
     for (const { clip, time } of neededAt(t)) {
@@ -179,6 +194,7 @@ export function createSources({ store, mediaRuntime }) {
   }
 
   async function prepare(t) {
+    curT = t;
     const jobs = [];
     for (const { clip, time } of neededAt(t)) {
       if (clip.type === 'video') {

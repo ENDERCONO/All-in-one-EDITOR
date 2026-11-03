@@ -9210,10 +9210,12 @@ document.addEventListener('DOMContentLoaded', () => {
     files = files.filter(Boolean);
     if (!files.length) return false;
     if (currentMode === 'videoeditor') { // hand pasted / dropped files to the embedded editor
-      const w = document.getElementById('videoEditorFrame')?.contentWindow;
-      if (!w || !w.__ve) return false;
-      w.dispatchEvent(new w.CustomEvent('ve:importFiles', { detail: { files, time: w.__ve.store.playhead } }));
-      return true;
+      try {
+        const w = document.getElementById('videoEditorFrame')?.contentWindow;
+        if (!w || !w.__ve) return false;
+        w.dispatchEvent(new w.CustomEvent('ve:importFiles', { detail: { files, time: w.__ve.store.playhead } }));
+        return true;
+      } catch (e) { return false; } // file:// pages can't reach into the frame — drop files inside the editor instead
     }
     const first = files[0];
     let inputs = inputsFor(currentMode, first);

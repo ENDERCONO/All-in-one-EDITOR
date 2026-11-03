@@ -61,7 +61,8 @@ export const ops = {
   insertMedia(mediaId, { time = store.playhead, trackId = null, select = true } = {}) {
     const m = store.getMedia(mediaId); if (!m) return null;
     const type = m.kind === 'audio' ? 'audio' : m.kind === 'image' ? 'image' : 'video';
-    const dur = type === 'image' ? 5 : Math.max(store.frame(), m.duration || 5);
+    const loopLen = m.duration >= 1 ? m.duration : Math.ceil(3 / Math.max(0.05, m.duration)) * m.duration; // short GIFs loop to ~3 s
+    const dur = type === 'image' ? (m.animated ? loopLen : 5) : Math.max(store.frame(), m.duration || 5);
     let clip;
     store.transact('Add ' + m.name, p => {
       const tid = trackFor(p, kindForType(type), time, dur, trackId);
@@ -269,6 +270,96 @@ export const ops = {
     store.transact('Ungroup', p => sel.forEach(s => { p.clips.find(c => c.id === s.id).groupId = null; }));
   },
   selectAll() { store.select(store.project.clips.map(c => c.id)); },
+
+  // ---------------- QoL ----------------
+  // Move selected clips by N frames (Alt+←/→); blocked if it would overlap
+  nudge(frames) {
+    const sel = store.selectedClips().filter(c => !store.getTrack(c.trackId)?.locked); if (!sel.length) return;
+    const d = frames * store.frame();
+    const ids = new Set(sel.map(c => c.id));
+    if (sel.some(c => c.start + d < -FRAME_EPS || !isFree(store.project, c.trackId, c.start + d, c.duration, ids))) return false;
+    store.update('Nudge', p => sel.forEach(c0 => { const c = p.clips.find(x => x.id === c0.id); c.start = Math.max(0, c.start + d); }), { coalesce: 'nudge' });
+    return true;
+  },
+  // Move selected clips one track up (-1) or down (+1) among tracks of the same kind (Ctrl+↑/↓)
+  moveToTrack(dir) {
+    const sel = store.selectedClips().filter(c => !store.getTrack(c.trackId)?.locked); if (!sel.length) return;
+    store.transact(dir < 0 ? 'Move to track above' : 'Move to track below', p => sel.forEach(c0 => {
+      const c = p.clips.find(x => x.id === c0.id); const kind = kindForType(c.type);
+      const list = p.tracks.filter(t => t.kind === kind);
+      let i = list.findIndex(t => t.id === c.trackId) + dir;
+      let target = list[i];
+      if (!target) target = insertTrack(p, kind, dir < 0 ? p.tracks.indexOf(list[0]) : p.tracks.indexOf(list.at(-1)) + 1);
+      c.trackId = isFree(p, target.id, c.start, c.duration, new Set([c.id])) ? target.id : trackFor(p, kind, c.start, c.duration, target.id, new Set([c.id]));
+    }));
+  },
+  // Close every gap on the tracks of the selection (or all tracks)
+  closeGaps() {
+    const tids = new Set(store.selectedClips().map(c => c.trackId));
+    store.transact('Close gaps', p => {
+      for (const t of p.tracks) {
+        if (tids.size && !tids.has(t.id)) continue;
+        if (t.locked) continue;
+        let pos = 0;
+        for (const c of p.clips.filter(c => c.trackId === t.id).sort((a, b) => a.start - b.start)) { c.start = pos; pos += c.duration; }
+      }
+    });
+  },
+  copyEffects() {
+    const c = store.selectedClips()[0]; if (!c) return false;
+    store.effectsClipboard = deep({ color: c.color, filters: c.filters, chroma: c.chroma, hueMatch: c.hueMatch, materialId: c.materialId, materialParams: c.materialParams, blend: c.blend, opacity: c.transform.opacity, audio: { pitch: c.audio.pitch, voice: c.audio.voice, voiceMix: c.audio.voiceMix, fx: c.audio.fx } });
+    return true;
+  },
+  pasteEffects() {
+    const fx = store.effectsClipboard; const sel = store.selectedClips(); if (!fx || !sel.length) return false;
+    store.transact('Paste effects', p => sel.forEach(c0 => {
+      const c = p.clips.find(x => x.id === c0.id);
+      if (c.type !== 'audio') {
+        Object.assign(c, deep({ color: fx.color, chroma: fx.chroma, hueMatch: fx.hueMatch, materialId: fx.materialId, materialParams: fx.materialParams, blend: fx.blend }));
+        c.filters = deep(fx.filters).map(f => ({ ...f, id: uid('flt') }));
+        c.transform.opacity = fx.opacity;
+      }
+      Object.assign(c.audio, deep(fx.audio));
+    }));
+    return true;
+  },
+  toggleMute() {
+    const sel = store.selectedClips(); if (!sel.length) return;
+    const to = !sel.every(c => c.audio.mute);
+    store.transact(to ? 'Mute' : 'Unmute', p => sel.forEach(c0 => { p.clips.find(x => x.id === c0.id).audio.mute = to; }));
+  },
+  toggleReverse() {
+    const sel = store.selectedClips().filter(c => c.type === 'video' || c.type === 'audio'); if (!sel.length) return;
+    store.transact('Reverse', p => sel.forEach(c0 => { const c = p.clips.find(x => x.id === c0.id); c.reverse = !c.reverse; }));
+  },
+  splitAll(t = store.playhead) {
+    const ids = store.project.clips.filter(c => t > c.start + FRAME_EPS && t < end(c) - FRAME_EPS && !store.getTrack(c.trackId)?.locked).map(c => c.id);
+    return ids.length ? ops.splitAt(t, ids) : false;
+  },
+  volumeStep(db) {
+    const sel = store.selectedClips(); if (!sel.length) return;
+    store.update('Volume', p => sel.forEach(c0 => { const c = p.clips.find(x => x.id === c0.id); c.audio.volume = Math.max(-60, Math.min(12, Math.round((c.audio.volume + db) * 10) / 10)); }), { coalesce: 'volstep' });
+    return store.selectedClips()[0]?.audio.volume;
+  },
+  opacityStep(d) {
+    const sel = store.selectedClips().filter(c => c.type !== 'audio'); if (!sel.length) return;
+    store.update('Opacity', p => sel.forEach(c0 => { const c = p.clips.find(x => x.id === c0.id); c.transform.opacity = Math.max(0, Math.min(1, Math.round((c.transform.opacity + d) * 100) / 100)); }), { coalesce: 'opstep' });
+    return store.selectedClips()[0]?.transform.opacity;
+  },
+  // Duplicate selected clips onto the track above at the same time (handy for overlays)
+  duplicateUp() {
+    const sel = store.selectedClips(); if (!sel.length) return;
+    const ids = [];
+    store.transact('Duplicate to track above', p => sel.forEach(c0 => {
+      const c = deep(p.clips.find(x => x.id === c0.id)); c.id = uid('clip'); c.groupId = null;
+      const kind = kindForType(c.type); const list = p.tracks.filter(t => t.kind === kind);
+      const i = list.findIndex(t => t.id === c0.trackId);
+      const above = kind === 'video' ? list[i - 1] : list[i + 1];
+      c.trackId = above && isFree(p, above.id, c.start, c.duration) ? above.id : insertTrack(p, kind, kind === 'video' ? p.tracks.indexOf(list[i]) : p.tracks.indexOf(list[i]) + 1).id;
+      p.clips.push(c); ids.push(c.id);
+    }));
+    store.select(ids);
+  },
 
   // Edit points (clip starts/ends + 0) for ↑/↓ navigation
   editPoints() {

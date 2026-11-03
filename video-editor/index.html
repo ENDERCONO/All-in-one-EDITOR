@@ -150,6 +150,8 @@
 <input type="file" id="importInput" multiple accept="video/*,audio/*,image/*" hidden>
 <input type="file" id="openInput" accept=".aioproj,.json,application/json" hidden>
 
-<script type="module" src="js/app.js"></script>
+<!-- Served over http(s): ES modules. Opened from disk (file://): browsers block modules, so load the bundle (node video-editor/build.mjs). -->
+<script>if (location.protocol === 'file:') document.write('<script src="dist/editor.js"><\/script>');</script>
+<script type="module">if (location.protocol !== 'file:') import('./js/app.js');</script>
 </body>
 </html>

@@ -14,8 +14,8 @@ const fpsInt = () => Math.round(store.project.settings.fps || 30);
 const tc = s => { s = Math.max(0, s); const f = fpsInt(); const tot = Math.floor(s * f + 1e-6); const fr = tot % f, sec = Math.floor(tot / f); return [Math.floor(sec / 3600), Math.floor(sec / 60) % 60, sec % 60, fr].map(n => String(n).padStart(2, '0')).join(':'); };
 
 // Load the parallel-built modules defensively so one broken module doesn't kill the app
-async function safeImport(path) {
-  try { return await import(path); } catch (e) { console.error('Failed to load', path, e); toast(`Module ${path} failed to load — see console`); return {}; }
+async function safeImport(path, load) {
+  try { return await load(); } catch (e) { console.error('Failed to load', path, e); toast(`Module ${path} failed to load — see console`); return {}; }
 }
 
 function toast(msg, ms = 2600) {
@@ -76,8 +76,8 @@ function modal(title, bodyHtml, buttons = [], { width = 520 } = {}) {
 async function boot() {
   applyIcons();
   const [{ createTimeline }, { createRenderer }, { createGizmo }, materials, { createAudioEngine }, exportMod] = await Promise.all([
-    safeImport('./timeline.js'), safeImport('./renderer.js'), safeImport('./gizmo.js'),
-    safeImport('./materials.js'), safeImport('./audio.js'), safeImport('./export.js'),
+    safeImport('./timeline.js', () => import('./timeline.js')), safeImport('./renderer.js', () => import('./renderer.js')), safeImport('./gizmo.js', () => import('./gizmo.js')),
+    safeImport('./materials.js', () => import('./materials.js')), safeImport('./audio.js', () => import('./audio.js')), safeImport('./export.js', () => import('./export.js')),
   ]);
 
   const canvas = $('#previewCanvas');
@@ -501,20 +501,21 @@ async function boot() {
       { sep: true }, { label: 'Cut', kbd: 'Ctrl+X', run: actions.cut }, { label: 'Copy', kbd: 'Ctrl+C', run: actions.copy }, { label: 'Paste', kbd: 'Ctrl+V', run: actions.paste },
       { label: 'Duplicate', kbd: 'Ctrl+D', run: actions.duplicate }, { label: 'Delete', kbd: 'Del', run: actions.delete }, { label: 'Ripple Delete', kbd: 'Shift+Del', run: actions.rippleDelete },
       { sep: true }, { label: 'Select All', kbd: 'Ctrl+A', run: actions.selectAll }, { label: 'Split', kbd: 'Ctrl+B', run: actions.split },
-      { label: 'Trim Start to Playhead', kbd: 'Alt+[', run: actions.trimStart }, { label: 'Trim End to Playhead', kbd: 'Alt+]', run: actions.trimEnd },
-      { sep: true }, { label: 'Detach Audio', kbd: 'Ctrl+Alt+D', run: actions.detach }, { label: 'Group', kbd: 'Ctrl+G', run: actions.group }, { label: 'Ungroup', kbd: 'Ctrl+Alt+G', run: actions.ungroup },
+      { label: 'Trim Start to Playhead', kbd: 'Alt+[', run: actions.trimStart }, { label: 'Trim End to Playhead', kbd: 'Alt+]', run: actions.trimEnd }, { label: 'Split All Tracks', kbd: 'Ctrl+Shift+K', run: () => ops.splitAll() }, { label: 'Close Gaps', kbd: 'Ctrl+Shift+Backspace', run: () => ops.closeGaps() },
+      { label: 'Mute / Unmute Clip', kbd: 'Ctrl+Shift+M', run: () => ops.toggleMute() }, { label: 'Reverse Clip', kbd: 'Shift+R', run: () => ops.toggleReverse() }, { label: 'Duplicate to Track Above', kbd: 'Alt+D', run: () => ops.duplicateUp() }, { label: 'Move to Track Above', kbd: 'Ctrl+↑', run: () => ops.moveToTrack(-1) }, { label: 'Move to Track Below', kbd: 'Ctrl+↓', run: () => ops.moveToTrack(1) },
+      { sep: true }, { label: 'Detach Audio', kbd: 'Ctrl+Alt+D', run: actions.detach }, { label: 'Copy Effects', kbd: 'Ctrl+Alt+C', run: () => ops.copyEffects() }, { label: 'Paste Effects', kbd: 'Ctrl+Alt+V', run: () => ops.pasteEffects() }, { label: 'Group', kbd: 'Ctrl+G', run: actions.group }, { label: 'Ungroup', kbd: 'Ctrl+Alt+G', run: actions.ungroup },
     ],
     Tools: () => [
       { label: 'Add Title', kbd: 'Ctrl+T', run: actions.addTitle }, { label: 'Add Marker', kbd: 'M', run: actions.marker }, { label: 'Freeze Frame', kbd: 'Alt+F', run: actions.freeze },
       { label: 'Green Screen (Chroma Key)', run: actions.chroma }, { label: 'Speed…', run: actions.speed }, { label: 'Crop & Zoom', run: actions.crop },
-      { sep: true }, { label: 'New Material (Node Editor)', kbd: 'Ctrl+Shift+M', run: actions.newMaterial },
-      { sep: true }, { label: 'Snapshot (PNG)', run: actions.snapshot }, { label: 'Blade Tool', kbd: 'C', run: actions.toolBlade, checked: store.tool === 'blade' }, { label: 'Selection Tool', kbd: 'V', run: actions.toolSelect, checked: store.tool === 'select' },
+      { sep: true }, { label: 'New Material (Node Editor)', kbd: 'Ctrl+Alt+M', run: actions.newMaterial },
+      { sep: true }, { label: 'Snapshot (PNG)', kbd: 'Ctrl+Alt+S', run: actions.snapshot }, { label: 'Loop Playback', kbd: 'Ctrl+L', run: () => toggleLoop(), checked: !!store.loopRange }, { label: 'Blade Tool', kbd: 'C', run: actions.toolBlade, checked: store.tool === 'blade' }, { label: 'Selection Tool', kbd: 'V', run: actions.toolSelect, checked: store.tool === 'select' },
     ],
     View: () => [
       { label: 'Theme: Filmora', run: () => setTheme('filmora'), checked: document.documentElement.dataset.theme === 'filmora' },
       { label: 'Theme: Unreal Engine', run: () => setTheme('unreal'), checked: document.documentElement.dataset.theme === 'unreal' },
       { sep: true }, { label: 'Snapping', kbd: 'N', run: actions.snap, checked: store.snap },
-      { label: 'Zoom In', kbd: 'Ctrl+=', run: actions.zoomIn }, { label: 'Zoom Out', kbd: 'Ctrl+-', run: actions.zoomOut }, { label: 'Zoom to Fit', kbd: 'Shift+Z', run: actions.zoomFit },
+      { label: 'Zoom In', kbd: 'Ctrl+=', run: actions.zoomIn }, { label: 'Zoom Out', kbd: 'Ctrl+-', run: actions.zoomOut }, { label: 'Zoom to Fit', kbd: 'Shift+Z', run: actions.zoomFit }, { label: 'Zoom to Selection', kbd: 'F', run: () => zoomToSelection() }, { label: 'Maximize Panel Under Mouse', kbd: '`', run: () => toggleMaximize() },
       { sep: true }, { label: 'Full Screen Preview', kbd: 'Alt+Enter', run: actions.fullscreen }, { label: 'Reset Panel Layout', run: resetLayout },
     ],
     Help: () => [{ label: 'Keyboard Shortcuts', kbd: 'Ctrl+Alt+K', run: actions.shortcuts }, { label: 'About', run: () => modal('About', '<p>AIO Video Editor — a Filmora-style editor that runs entirely in your browser: WebGL compositing, Web Audio mixing, an Unreal-style material node editor, and WebCodecs export.</p>', [{ label: 'Close', primary: true }]) }],
@@ -533,8 +534,41 @@ async function boot() {
       ['Ctrl+B', 'Split at playhead'], ['C / V', 'Blade / selection tool'], ['Del', 'Delete'], ['Shift+Del', 'Ripple delete'], ['Alt+[ / Alt+] · Q / W', 'Trim start / end to playhead'],
       ['Ctrl+C / X / V', 'Copy / cut / paste (an image on the clipboard goes onto the timeline)'], ['Ctrl+D', 'Duplicate'], ['Ctrl+A', 'Select all'], ['Ctrl+Z / Ctrl+Y', 'Undo / redo'],
       ['Ctrl+Alt+D', 'Detach audio'], ['Alt+F', 'Freeze frame'], ['M', 'Add marker'], ['N', 'Snapping'], ['Ctrl+= / Ctrl+-', 'Zoom timeline'], ['Shift+Z', 'Zoom to fit'], ['Ctrl+G / Ctrl+Alt+G', 'Group / ungroup'],
-      ['Ctrl+I', 'Import'], ['Ctrl+N / O / S', 'New / open / save'], ['Ctrl+E', 'Export'], ['Ctrl+T', 'Add title'], ['Ctrl+Shift+M', 'New material'], ['Alt+Enter', 'Full-screen preview']];
+      ['Ctrl+Alt+C / Ctrl+Alt+V', 'Copy / paste effects'], ['Alt+← / →', 'Nudge clip 1 frame (Shift = 10)'], ['Ctrl+↑ / ↓', 'Move clip to track above / below'], ['Alt+D', 'Duplicate to track above'], ['Shift+↑ / ↓', 'Previous / next marker'], ['Shift+Home / End', 'Start / end of selected clip'], ['Ctrl+Shift+K', 'Split all tracks'], ['Ctrl+Shift+Backspace', 'Close gaps'], ['Ctrl+Shift+M', 'Mute / unmute clip'], ['Shift+R', 'Reverse clip'], ['Ctrl+R', 'Speed'], ['Ctrl+L', 'Loop playback (in/out, selection or all)'], ['X / Alt+X', 'Mark selected clip as in/out / clear'], ['+ / -', 'Clip volume ±1 dB (Shift: opacity ±5%)'], ['F', 'Zoom timeline to selection'], ['`', 'Maximize panel under the mouse'], ['Ctrl+F', 'Search the library'], ['Ctrl+Alt+S', 'Snapshot PNG'], ['Ctrl+Alt+M', 'New material'], ['Ctrl+I', 'Import'], ['Ctrl+N / O / S', 'New / open / save'], ['Ctrl+E', 'Export'], ['Ctrl+T', 'Add title'], ['Alt+Enter', 'Full-screen preview']];
     modal('Keyboard Shortcuts', `<div class="form-grid" style="grid-template-columns:190px 1fr">${rows.map(([k, v]) => `<span class="tc" style="color:var(--accent)">${k}</span><span>${v}</span>`).join('')}</div>`, [{ label: 'Close', primary: true }], { width: 560 });
+  }
+
+  // ---------- QoL helpers ----------
+  function toggleLoop() {
+    if (store.loopRange) { store.loopRange = null; toast('Loop off'); document.querySelector('#btnPlay').classList.remove('looping'); return; }
+    const s = store.project.settings; const sel = store.selectedClips();
+    let r = s.markOut > s.markIn ? [s.markIn, s.markOut] : sel.length ? [Math.min(...sel.map(c => c.start)), Math.max(...sel.map(c => c.start + c.duration))] : [0, store.duration()];
+    if (!(r[1] - r[0] > store.frame())) return toast('Nothing to loop');
+    store.loopRange = r; document.querySelector('#btnPlay').classList.add('looping');
+    toast(`Looping ${tc(r[0])} → ${tc(r[1])} (Ctrl+L to stop)`);
+    if (store.playhead < r[0] || store.playhead > r[1]) playback.seek(r[0]);
+    playback.play();
+  }
+  function jumpMarker(dir) {
+    const ms = store.project.markers.map(m => m.time).sort((a, b) => a - b);
+    const t = dir < 0 ? ms.filter(x => x < store.playhead - 1e-3).at(-1) : ms.find(x => x > store.playhead + 1e-3);
+    if (t == null) return toast('No more markers');
+    playback.seek(t);
+  }
+  function zoomToSelection() {
+    const sel = store.selectedClips(); if (!sel.length) return zoomFit();
+    const a = Math.min(...sel.map(c => c.start)), b = Math.max(...sel.map(c => c.start + c.duration));
+    const w = ($('#timeline').clientWidth || 800) - 190;
+    store.setZoom(clamp(w / Math.max(0.2, (b - a) * 1.15), 2, 2000));
+    playback.seek(a); timeline?.scrollToPlayhead?.();
+  }
+  let hoverPanel = null;
+  document.addEventListener('pointermove', e => { const p = e.target.closest?.('.panel'); if (p) hoverPanel = p; }, { passive: true });
+  function toggleMaximize() {
+    const cur = document.querySelector('.panel.maxed');
+    if (cur) { cur.classList.remove('maxed'); layoutPreview(); return; }
+    (hoverPanel || $('#player')).classList.add('maxed'); layoutPreview();
+    setTimeout(layoutPreview, 50);
   }
 
   // ---------- Keyboard shortcuts (Filmora layout) ----------
@@ -544,10 +578,22 @@ async function boot() {
     const k = e.key, ctrl = e.ctrlKey || e.metaKey, sh = e.shiftKey, alt = e.altKey;
     const run = (f) => { e.preventDefault(); f(); };
     const lk = k.length === 1 ? k.toLowerCase() : k;
+    if (ctrl && alt && lk === 'c') return run(() => toast(ops.copyEffects() ? 'Effects copied' : 'Select a clip first'));
+    if (ctrl && alt && lk === 'v') return run(() => toast(ops.pasteEffects() ? 'Effects pasted' : 'Copy effects from a clip first (Ctrl+Alt+C)'));
+    if (ctrl && alt && lk === 'm') return run(actions.newMaterial);
+    if (ctrl && alt && lk === 's') return run(actions.snapshot);
+    if (ctrl && sh && lk === 'm') return run(() => ops.toggleMute());
+    if (ctrl && sh && (lk === 'k' || lk === 'b')) return run(() => { if (!ops.splitAll()) toast('Nothing under the playhead to split'); });
+    if (ctrl && sh && k === 'Backspace') return run(() => ops.closeGaps());
+    if (ctrl && sh && lk === 'a') return run(() => store.select([]));
+    if (ctrl && k === 'ArrowUp') return run(() => ops.moveToTrack(-1));
+    if (ctrl && k === 'ArrowDown') return run(() => ops.moveToTrack(1));
+    if (ctrl && !sh && !alt && lk === 'r') return run(() => { if (!store.selectedClips().length) return toast('Select a clip first'); inspector.showTab('speed'); });
+    if (ctrl && !sh && !alt && lk === 'l') return run(toggleLoop);
+    if (ctrl && !sh && !alt && lk === 'f') return run(() => { const i = document.getElementById('libSearch'); i.focus(); i.select(); });
     if (ctrl && alt && lk === 'd') return run(actions.detach);
     if (ctrl && alt && lk === 'g') return run(actions.ungroup);
     if (ctrl && alt && lk === 'k') return run(actions.shortcuts);
-    if (ctrl && sh && lk === 'm') return run(actions.newMaterial);
     if (ctrl && sh && lk === 's') return run(() => menus.File()[7].run());
     if (ctrl && sh && lk === 'z') return run(actions.redo);
     if (ctrl) {
@@ -560,16 +606,25 @@ async function boot() {
     if (alt && (k === '[' || e.code === 'BracketLeft')) return run(actions.trimStart);
     if (alt && (k === ']' || e.code === 'BracketRight')) return run(actions.trimEnd);
     if (alt && lk === 'f') return run(actions.freeze);
+    if (alt && (k === 'ArrowLeft' || k === 'ArrowRight')) return run(() => ops.nudge((k === 'ArrowLeft' ? -1 : 1) * (sh ? 10 : 1)));
+    if (alt && lk === 'd') return run(() => ops.duplicateUp());
+    if (alt && lk === 'x') return run(() => { store.transact('Clear in/out', p => { delete p.settings.markIn; delete p.settings.markOut; }); toast('In/out cleared'); });
     if (alt) return;
     const fr = store.frame();
     switch (lk) {
       case ' ': return run(() => playback.toggle());
       case 'ArrowLeft': return run(() => playback.seek(store.snapTime(store.playhead) - (sh ? 1 : fr)));
       case 'ArrowRight': return run(() => playback.seek(store.snapTime(store.playhead) + (sh ? 1 : fr)));
-      case 'ArrowUp': return run(() => { const pts = ops.editPoints().filter(p => p < store.playhead - 1e-3); playback.seek(pts.length ? pts.at(-1) : 0); });
-      case 'ArrowDown': return run(() => { const pt = ops.editPoints().find(p => p > store.playhead + 1e-3); if (pt != null) playback.seek(pt); });
-      case 'Home': return run(() => playback.seek(0));
-      case 'End': return run(() => playback.seek(store.duration()));
+      case 'ArrowUp': if (sh) return run(() => jumpMarker(-1)); return run(() => { const pts = ops.editPoints().filter(p => p < store.playhead - 1e-3); playback.seek(pts.length ? pts.at(-1) : 0); });
+      case 'ArrowDown': if (sh) return run(() => jumpMarker(1)); return run(() => { const pt = ops.editPoints().find(p => p > store.playhead + 1e-3); if (pt != null) playback.seek(pt); });
+      case 'Home': return run(() => { const c = sh && store.selectedClips()[0]; playback.seek(c ? c.start : 0); });
+      case 'End': return run(() => { const c = sh && store.selectedClips()[0]; playback.seek(c ? c.start + c.duration - store.frame() : store.duration()); });
+      case 'r': if (sh) return run(() => ops.toggleReverse()); return;
+      case 'x': return run(() => { const sel = store.selectedClips(); if (!sel.length) return toast('Select a clip to mark its range'); const a = Math.min(...sel.map(c => c.start)), b = Math.max(...sel.map(c => c.start + c.duration)); store.transact('Mark clip', p => { p.settings.markIn = a; p.settings.markOut = b; }); toast('In/out set to the selected clip'); });
+      case 'f': return run(zoomToSelection);
+      case '+': case '=': return run(() => { const v = sh ? ops.opacityStep(0.05) : ops.volumeStep(1); if (v != null) status(sh ? `Opacity ${Math.round(v * 100)}%` : `Volume ${v.toFixed(1)} dB`); });
+      case '-': case '_': return run(() => { const v = sh ? ops.opacityStep(-0.05) : ops.volumeStep(-1); if (v != null) status(sh ? `Opacity ${Math.round(v * 100)}%` : `Volume ${v.toFixed(1)} dB`); });
+      case '`': return run(toggleMaximize);
       case 'Delete': case 'Backspace': return run(() => (sh ? actions.rippleDelete() : actions.delete()));
       case 'c': return run(() => store.setTool('blade'));
       case 'v': return run(() => store.setTool('select'));

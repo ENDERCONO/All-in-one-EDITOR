@@ -2,7 +2,7 @@
 // offline pitch shifting (WSOLA time-stretch + resample, in a Worker) and offline mixdown.
 // Contract: docs/ARCHITECTURE.md → audio.js
 
-import { dbToGain } from './state.js';
+import { dbToGain, defaultAudioFx } from './state.js';
 
 const PEAK_RATE = 200;      // peak bins per second
 const LEAD = 0.06;          // seconds of scheduling headroom on play()
@@ -186,10 +186,449 @@ function shiftChannels(channels, sr, semis) {
 }
 
 // ---------------------------------------------------------------------------
+// Voice filters + FX (ported from the main site's Audio Tools module, index.html:
+// VOICE_FILTERS / buildVoiceChain / buildGraph / AUD_PRESETS). Same recipes, same
+// worklets, so a clip sounds like the Audio Tools preview.
+// ---------------------------------------------------------------------------
+
+// AudioWorklet processors: 'crusher' (sample-and-hold + quantizer, fractional bits OK)
+// and 'voice-pitch' (two-tap crossfaded delay pitch shifter with vibrato).
+const WORKLET_SRC = `
+class Crusher extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'bits', defaultValue: 16, minValue: 1, maxValue: 32, automationRate: 'a-rate' },
+      { name: 'sampleRate', defaultValue: 48000, minValue: 500, maxValue: 192000, automationRate: 'a-rate' },
+    ];
+  }
+  constructor() { super(); this.phaser = 0; this.heldL = 0; this.heldR = 0; }
+  process(inputs, outputs, params) {
+    const input = inputs[0], output = outputs[0];
+    if (!output || output.length === 0) return true;
+    const bitsArr = params.bits, srArr = params.sampleRate;
+    const nChan = output.length, len = output[0].length;
+    const quant = (v, levels) => {
+      const x = v < -1 ? -1 : (v > 1 ? 1 : v);
+      let q = Math.round(x * levels) / levels;
+      return q < -1 ? -1 : (q > 1 ? 1 : q);
+    };
+    for (let i = 0; i < len; i++) {
+      const bits = Math.max(1, Math.min(32, bitsArr.length > 1 ? bitsArr[i] : bitsArr[0]));
+      const targetSr = Math.max(100, Math.min(sampleRate, srArr.length > 1 ? srArr[i] : srArr[0]));
+      const levels = Math.pow(2, bits) - 1;
+      this.phaser += targetSr / sampleRate;
+      if (this.phaser >= 1) {
+        this.phaser -= 1;
+        const inL = input && input[0], inR = input && (input[1] || input[0]);
+        this.heldL = quant(inL ? inL[i] : 0, levels);
+        this.heldR = quant(inR ? inR[i] : 0, levels);
+      }
+      output[0][i] = this.heldL;
+      if (nChan > 1) output[1][i] = this.heldR;
+    }
+    return true;
+  }
+}
+registerProcessor('crusher', Crusher);
+
+class VoicePitch extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'semitones', defaultValue: 0, minValue: -36, maxValue: 36, automationRate: 'k-rate' },
+      { name: 'vibRate', defaultValue: 0, minValue: 0, maxValue: 20, automationRate: 'k-rate' },
+      { name: 'vibDepth', defaultValue: 0, minValue: 0, maxValue: 0.02, automationRate: 'k-rate' },
+    ];
+  }
+  constructor() {
+    super();
+    this.size = 32768; this.mask = this.size - 1;
+    this.bufL = new Float32Array(this.size); this.bufR = new Float32Array(this.size);
+    this.w = 0; this.phase = 0; this.vph = 0;
+    this.win = Math.round(sampleRate * 0.05);
+  }
+  read(buf, d) {
+    const pos = this.w - d, i0 = Math.floor(pos), f = pos - i0;
+    const a = buf[i0 & this.mask], b = buf[(i0 + 1) & this.mask];
+    return a + (b - a) * f;
+  }
+  process(inputs, outputs, params) {
+    const input = inputs[0], output = outputs[0];
+    if (!output || output.length === 0) return true;
+    const inL = input && input[0], inR = input && (input[1] || input[0]);
+    const oL = output[0], oR = output.length > 1 ? output[1] : null;
+    const len = oL.length;
+    const ratio = Math.pow(2, params.semitones[0] / 12);
+    const shifting = Math.abs(ratio - 1) > 1e-4;
+    const step = (1 - ratio) / this.win;
+    const vibRate = params.vibRate[0], vibDepth = params.vibDepth[0] * sampleRate;
+    const vibOn = vibRate > 0 && vibDepth > 0;
+    const vinc = 2 * Math.PI * vibRate / sampleRate, TWO_PI = 2 * Math.PI;
+    for (let i = 0; i < len; i++) {
+      this.bufL[this.w] = inL ? inL[i] : 0;
+      this.bufR[this.w] = inR ? inR[i] : 0;
+      let vib = 0;
+      if (vibOn) {
+        vib = vibDepth * 0.5 * (1 + Math.sin(this.vph));
+        this.vph += vinc; if (this.vph > TWO_PI) this.vph -= TWO_PI;
+      }
+      let l, r;
+      if (shifting) {
+        const p1 = this.phase;
+        let p2 = p1 + 0.5; if (p2 >= 1) p2 -= 1;
+        const d1 = 2 + vib + p1 * this.win, d2 = 2 + vib + p2 * this.win;
+        const sn = Math.sin(Math.PI * p1), g1 = sn * sn, g2 = 1 - g1;
+        l = this.read(this.bufL, d1) * g1 + this.read(this.bufL, d2) * g2;
+        r = this.read(this.bufR, d1) * g1 + this.read(this.bufR, d2) * g2;
+        this.phase += step;
+        if (this.phase < 0) this.phase += 1; else if (this.phase >= 1) this.phase -= 1;
+      } else {
+        l = this.read(this.bufL, 2 + vib); r = this.read(this.bufR, 2 + vib);
+      }
+      oL[i] = l; if (oR) oR[i] = r;
+      this.w = (this.w + 1) & this.mask;
+    }
+    return true;
+  }
+}
+registerProcessor('voice-pitch', VoicePitch);
+`;
+
+// Per-context worklet registration: ctx -> { ready, failed, promise }
+const workletStates = new WeakMap();
+let workletUrl = null, workletWarned = false;
+function workletState(c) {
+  let s = workletStates.get(c);
+  if (s) return s;
+  s = { ready: false, failed: false, promise: null };
+  workletStates.set(c, s);
+  s.promise = (async () => {
+    try {
+      if (!c.audioWorklet || typeof AudioWorkletNode === 'undefined') throw new Error('AudioWorklet unsupported');
+      if (!workletUrl) workletUrl = URL.createObjectURL(new Blob([WORKLET_SRC], { type: 'application/javascript' }));
+      await c.audioWorklet.addModule(workletUrl);
+      s.ready = true;
+    } catch (e) {
+      s.failed = true;
+      if (!workletWarned) { workletWarned = true; console.warn('[audio] AudioWorklet unavailable; voice pitch + bitcrusher stages skipped', e); }
+    }
+    return s.ready;
+  })();
+  return s;
+}
+
+// Recipes (verbatim from the site). Fields: voices [{pitch, gain, vibRate, vibDepth}],
+// ring {freq, mix}, comb {time, fb}, band [hp, lp], hp, lp, peak {f, gain}, lowshelf dB,
+// drive 0..1, tremolo {rate, depth}, echo {time, fb, mix, damp}.
+const VOICE_RECIPES = {
+  none: {},
+  chipmunk: { voices: [{ pitch: 9 }], hp: 150 },
+  deep: { voices: [{ pitch: -5 }], lowshelf: 5 },
+  giant: { voices: [{ pitch: -10 }], lowshelf: 6, drive: 0.15 },
+  demon: { voices: [{ pitch: -7 }, { pitch: -19, gain: 0.7 }], drive: 0.45, lowshelf: 4,
+           echo: { time: 0.06, fb: 0.3, mix: 0.25, damp: 3000 } },
+  robot: { ring: { freq: 50, mix: 0.6 }, comb: { time: 0.009, fb: 0.55 } },
+  dalek: { ring: { freq: 30, mix: 1 }, band: [250, 4500], drive: 0.2 },
+  anonymous: { voices: [{ pitch: -4 }], ring: { freq: 110, mix: 0.3 }, band: [200, 5000], drive: 0.25 },
+  alien: { voices: [{ pitch: 5, vibRate: 7, vibDepth: 0.0025 }], ring: { freq: 420, mix: 0.35 } },
+  telephone: { band: [400, 3400], drive: 0.25 },
+  radio: { band: [700, 3000], drive: 0.6, peak: { f: 1800, gain: 6 } },
+  megaphone: { band: [600, 3500], drive: 0.85, peak: { f: 1400, gain: 8 } },
+  underwater: { lp: 500, voices: [{ pitch: 0, vibRate: 1.1, vibDepth: 0.006 }], tremolo: { rate: 0.8, depth: 0.25 } },
+  cave: { echo: { time: 0.32, fb: 0.45, mix: 0.45, damp: 2500 }, lowshelf: 2 },
+  ghost: { voices: [{ pitch: 3, vibRate: 4, vibDepth: 0.002 }], hp: 300, tremolo: { rate: 5, depth: 0.3 },
+           echo: { time: 0.42, fb: 0.55, mix: 0.5, damp: 3000 } },
+  choir: { voices: [{ pitch: 0 }, { pitch: -12, gain: 0.6 }, { pitch: 7, gain: 0.5 },
+                    { pitch: 0, vibRate: 5, vibDepth: 0.003, gain: 0.6 }] },
+  wobble: { voices: [{ pitch: 0, vibRate: 6, vibDepth: 0.004 }] },
+  helicopter: { tremolo: { rate: 14, depth: 0.9 } },
+  blownMic: { drive: 0.9, band: [120, 7000] },
+};
+
+export const VOICE_FILTERS = [
+  { id: 'none', label: 'None', title: 'No voice filter' },
+  { id: 'chipmunk', label: 'Chipmunk', title: 'Sped-up squeaky voice, without the speed-up' },
+  { id: 'deep', label: 'Deep voice', title: 'Lower, fuller voice' },
+  { id: 'giant', label: 'Giant', title: 'Huge, slow-sounding voice' },
+  { id: 'demon', label: 'Demon', title: 'Two octaves of growl plus grit' },
+  { id: 'robot', label: 'Robot', title: 'Metallic ring-mod + comb resonance' },
+  { id: 'dalek', label: 'Dalek', title: 'Classic 30 Hz ring modulator' },
+  { id: 'anonymous', label: 'Anonymous', title: 'Deep, masked hacker voice' },
+  { id: 'alien', label: 'Alien', title: 'Pitched up, warbly and ring-modulated' },
+  { id: 'telephone', label: 'Telephone', title: 'Narrow 400–3400 Hz phone line' },
+  { id: 'radio', label: 'Radio', title: 'Walkie-talkie / AM radio' },
+  { id: 'megaphone', label: 'Megaphone', title: 'Overdriven bullhorn' },
+  { id: 'underwater', label: 'Underwater', title: 'Muffled and wobbling' },
+  { id: 'cave', label: 'Cave', title: 'Big rocky echo' },
+  { id: 'ghost', label: 'Ghost', title: 'Airy, trembling, haunted' },
+  { id: 'choir', label: 'Choir', title: 'Your voice stacked in harmony' },
+  { id: 'wobble', label: 'Wobble', title: 'Vibrato wobble' },
+  { id: 'helicopter', label: 'Helicopter', title: 'Fast chopping tremolo' },
+  { id: 'blownMic', label: 'Blown-out mic', title: 'Clipped, overloaded microphone' },
+];
+
+// ---- fx parameter mappings (shared with the site's slider scales) ----
+// fx.reverbSize 0..1 -> impulse length 0.2..6 s (exponential; 0.5 ≈ 1.1 s)
+export function reverbSeconds(size) { return 0.2 * Math.pow(30, Math.max(0, Math.min(1, +size || 0))); }
+const reverbSizeFor = sec => Math.round(Math.log(sec / 0.2) / Math.log(30) * 1000) / 1000;
+// fx.lowpass 0..1 muffle -> cutoff, exponential 20 kHz .. 250 Hz (site "Muffle" %)
+export function muffleFreq(amount) { return amount <= 0 ? 20000 : Math.round(20000 * Math.pow(250 / 20000, Math.min(1, amount))); }
+// AD/DA converter filters around the crusher, fixed at ~50 % (what the site's crunch presets use)
+const convFreq = rate => Math.max(200, Math.min(20000, (rate / 2) / 1.1));
+
+function driveCurve(amount) {
+  const k = amount * 60, n = 1024, curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; curve[i] = ((1 + k) * x) / (1 + k * Math.abs(x)); }
+  return curve;
+}
+
+// Noise-burst impulse response (same shape as the site's buildIR, decay 2.5), seeded so
+// the live preview and the export use the exact same room. Cached per rate + size.
+const irCache = new Map();
+function reverbIR(sampleRate, sec) {
+  const key = sampleRate + '_' + sec.toFixed(2);
+  let b = irCache.get(key);
+  if (b) return b;
+  const len = Math.max(1, Math.floor(sampleRate * sec));
+  b = new AudioBuffer({ length: len, numberOfChannels: 2, sampleRate });
+  let seed = 0x9e3779b9;
+  const rnd = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return ((seed >>> 0) / 4294967296); };
+  for (let c = 0; c < 2; c++) {
+    const d = b.getChannelData(c);
+    for (let i = 0; i < len; i++) d[i] = (rnd() * 2 - 1) * Math.pow(1 - i / len, 2.5);
+  }
+  if (irCache.size > 24) irCache.delete(irCache.keys().next().value);
+  irCache.set(key, b);
+  return b;
+}
+
+// Presets bar (site AUD_PRESETS). apply(clipAudio) returns a partial clip.audio to merge
+// (fx is always a complete object: each preset starts from neutral, like the site's).
+// Speed presets also return `clipSpeed` — NOT an audio field: the caller must move it to
+// the top-level clip.speed (and adjust clip.duration as its speed edit does), then drop it.
+// Spatial presets map the site's HRTF modes onto lowpass (rear pinna shadow / wall),
+// reverb (distance) and orbit (8D auto-pan).
+const P = (o = {}) => ({ ...defaultAudioFx(), ...o });
+export const AUDIO_PRESETS = [
+  { id: 'reset', label: 'Reset all', title: 'Everything back to neutral',
+    apply: () => ({ pitch: 0, voice: 'none', voiceMix: 1, keepPitch: true, fx: P(), clipSpeed: 1 }) },
+  { id: 'behindWall', label: 'Behind the wall', title: 'Muffled, boomy, through a wall',
+    apply: () => ({ voice: 'none', fx: P({ lowpass: 0.8, bass: 7, reverb: 0.24, reverbSize: reverbSizeFor(1.8) }) }) },
+  { id: 'slowedReverb', label: 'Slowed + reverb', title: '0.82× speed, pitch drops, big hall',
+    apply: () => ({ voice: 'none', keepPitch: false, fx: P({ reverb: 0.46, reverbSize: reverbSizeFor(3.2), bass: 4 }), clipSpeed: 0.82 }) },
+  { id: 'nightcore', label: 'Nightcore', title: '1.28× speed, pitch up',
+    apply: () => ({ voice: 'none', keepPitch: false, fx: P({ reverb: 0.12, reverbSize: reverbSizeFor(1.5), highpass: 60 }), clipSpeed: 1.28 }) },
+  { id: 'orbit8d', label: '8D orbit', title: 'Sound circles around your head',
+    apply: () => ({ voice: 'none', fx: P({ orbit: 1, orbitSpeed: 0.18, reverb: 0.18, reverbSize: reverbSizeFor(1.6) }) }) },
+  { id: 'underwater', label: 'Underwater', title: 'Deep muffle, heavy bass, wet room',
+    apply: () => ({ voice: 'none', keepPitch: true, fx: P({ lowpass: 0.88, bass: 9, reverb: 0.36, reverbSize: reverbSizeFor(2.6) }), clipSpeed: 0.94 }) },
+  { id: 'oldRadio', label: 'Old radio', title: '8-bit / 11 kHz crunch through a small speaker',
+    apply: () => ({ voice: 'none', fx: P({ lowpass: 0.44, highpass: 620, crush: 1, crushBits: 8, crushRate: 11000 }) }) },
+  { id: 'timeMachine', label: 'Time machine', title: '4.6-bit / 3587 Hz vintage sampler crunch',
+    apply: () => ({ voice: 'none', fx: P({ highpass: 594.2, crush: 1, crushBits: 4.6, crushRate: 3587 }) }) },
+  { id: 'nextRoom', label: 'Next room', title: 'Coming from the room behind you',
+    apply: () => ({ voice: 'none', fx: P({ lowpass: 0.7, highpass: 130, reverb: 0.32, reverbSize: reverbSizeFor(2.2), orbit: 0.15, orbitSpeed: 0.02 }) }) },
+  { id: 'pacing', label: 'Pacing behind you', title: 'Slowly moving around behind you',
+    apply: () => ({ voice: 'none', fx: P({ lowpass: 0.3, reverb: 0.22, reverbSize: reverbSizeFor(2), orbit: 0.6, orbitSpeed: 0.1 }) }) },
+  { id: 'canyon', label: 'Canyon echo', title: 'Long dark repeats',
+    apply: () => ({ voice: 'none', fx: P({ echo: 0.55, echoTime: 0.48, echoFeedback: 0.62, echoDamp: 3200, reverb: 0.25, reverbSize: reverbSizeFor(3.4) }) }) },
+  { id: 'stadium', label: 'Stadium', title: 'Huge space with a late slap',
+    apply: () => ({ voice: 'none', fx: P({ echo: 0.4, echoTime: 0.9, echoFeedback: 0.45, echoDamp: 2200, reverb: 0.4, reverbSize: reverbSizeFor(4.5), bass: 4 }) }) },
+  { id: 'slapback', label: 'Slapback', title: 'Single quick rockabilly repeat',
+    apply: () => ({ voice: 'none', fx: P({ echo: 0.45, echoTime: 0.09, echoFeedback: 0.12, echoDamp: 8000 }) }) },
+];
+
+// Builds the per-clip effect chain: input -> voice (dry/wet voiceMix) -> crusher -> muffle
+// -> highpass -> bass -> echo -> reverb -> 8D orbit -> returned `out`. Neutral stages are
+// skipped. `local` is the clip-local time at `when` (keeps LFO phases identical between
+// live playback from any point and the export). Same code for AudioContext + Offline.
+function buildClipFx(c, a, input, when, local, wlReady) {
+  const nodes = [], oscs = [];
+  const add = n => { nodes.push(n); return n; };
+  const gain = v => { const g = add(c.createGain()); g.gain.value = v; return g; };
+  // Sine LFO whose phase at `when` equals 2π·freq·local + extra (deterministic).
+  const osc = (freq, extra = 0) => {
+    const o = add(c.createOscillator());
+    o.frequency.value = freq;
+    const p = 2 * Math.PI * freq * local + extra;
+    o.setPeriodicWave(c.createPeriodicWave(new Float32Array([0, Math.sin(p)]), new Float32Array([0, Math.cos(p)]), { disableNormalization: true }));
+    o.start(when);
+    oscs.push(o);
+    return o;
+  };
+  let node = input;
+  const filt = (type, freq, opts = {}) => {
+    const f = add(c.createBiquadFilter());
+    f.type = type; f.frequency.value = freq;
+    if (opts.Q !== undefined) f.Q.value = opts.Q;
+    if (opts.gain !== undefined) f.gain.value = opts.gain;
+    node.connect(f); node = f;
+    return f;
+  };
+  const fx = { ...defaultAudioFx(), ...(a.fx || {}) };
+  const num = (v, d) => (Number.isFinite(+v) ? +v : d);
+
+  // ---- voice filter ----
+  const def = VOICE_RECIPES[a.voice] || null;
+  const vmix = Math.max(0, Math.min(1, num(a.voiceMix, 1)));
+  if (def && a.voice !== 'none' && vmix > 0) {
+    const vin = node, vout = gain(1);
+    if (vmix < 1) { const dry = gain(1 - vmix); vin.connect(dry); dry.connect(vout); }
+    if (def.voices && wlReady) {
+      const sum = gain(1);
+      for (const v of def.voices) {
+        const pn = add(new AudioWorkletNode(c, 'voice-pitch', { outputChannelCount: [2] }));
+        pn.parameters.get('semitones').value = v.pitch || 0;
+        pn.parameters.get('vibRate').value = v.vibRate || 0;
+        pn.parameters.get('vibDepth').value = v.vibDepth || 0;
+        const vg = gain((v.gain !== undefined ? v.gain : 1) / Math.sqrt(def.voices.length));
+        node.connect(pn); pn.connect(vg); vg.connect(sum);
+      }
+      node = sum;
+    }
+    if (def.ring) {
+      const ringMul = gain(0);
+      osc(def.ring.freq).connect(ringMul.gain);
+      const ringWet = gain(def.ring.mix * 1.4), ringDry = gain(1 - def.ring.mix), ringOut = gain(1);
+      node.connect(ringMul); ringMul.connect(ringWet); ringWet.connect(ringOut);
+      node.connect(ringDry); ringDry.connect(ringOut);
+      node = ringOut;
+    }
+    if (def.comb) {
+      const combSum = gain(1);
+      const d = add(c.createDelay(0.1)); d.delayTime.value = def.comb.time;
+      const fb = gain(def.comb.fb);
+      node.connect(combSum); combSum.connect(d); d.connect(fb); fb.connect(combSum);
+      const combOut = gain(1 - def.comb.fb * 0.5);
+      combSum.connect(combOut);
+      node = combOut;
+    }
+    if (def.band) {
+      filt('highpass', def.band[0], { Q: 0.9 }); filt('highpass', def.band[0], { Q: 0.7 });
+      filt('lowpass', def.band[1], { Q: 0.9 }); filt('lowpass', def.band[1], { Q: 0.7 });
+    }
+    if (def.hp) filt('highpass', def.hp, { Q: 0.707 });
+    if (def.lp) { filt('lowpass', def.lp, { Q: 0.707 }); filt('lowpass', def.lp, { Q: 0.707 }); }
+    if (def.peak) filt('peaking', def.peak.f, { Q: 1.2, gain: def.peak.gain });
+    if (def.lowshelf) filt('lowshelf', 150, { gain: def.lowshelf });
+    if (def.drive) {
+      const ws = add(c.createWaveShaper());
+      ws.curve = driveCurve(def.drive); ws.oversample = '2x';
+      const k = def.drive * 60;
+      const makeup = gain((1 + k * 0.5) / (1 + k));
+      node.connect(ws); ws.connect(makeup); node = makeup;
+    }
+    if (def.tremolo) {
+      const trem = gain(1 - def.tremolo.depth / 2);
+      const depth = gain(def.tremolo.depth / 2);
+      osc(def.tremolo.rate).connect(depth); depth.connect(trem.gain);
+      node.connect(trem); node = trem;
+    }
+    if (def.echo) {
+      const out = gain(1);
+      const d = add(c.createDelay(2)); d.delayTime.value = def.echo.time;
+      const damp = add(c.createBiquadFilter()); damp.type = 'lowpass'; damp.frequency.value = def.echo.damp || 4000;
+      const fb = gain(def.echo.fb), mix = gain(def.echo.mix);
+      node.connect(out);
+      node.connect(d); d.connect(damp); damp.connect(fb); fb.connect(d);
+      damp.connect(mix); mix.connect(out);
+      node = out;
+    }
+    const wet = gain(vmix);
+    node.connect(wet); wet.connect(vout);
+    node = vout;
+  }
+
+  // ---- bitcrusher (AD filter -> crusher -> DA filter), dry/wet by fx.crush ----
+  const crush = Math.max(0, Math.min(1, num(fx.crush, 0)));
+  if (crush > 0 && wlReady) {
+    const cin = node, cout = gain(1);
+    if (crush < 1) { const dry = gain(1 - crush); cin.connect(dry); dry.connect(cout); }
+    const rate = Math.max(500, Math.min(c.sampleRate, num(fx.crushRate, 11025)));
+    filt('lowpass', convFreq(rate), { Q: 0.707 });
+    const cr = add(new AudioWorkletNode(c, 'crusher', { outputChannelCount: [2] }));
+    cr.parameters.get('bits').value = Math.max(1, Math.min(16, num(fx.crushBits, 8)));
+    cr.parameters.get('sampleRate').value = rate;
+    node.connect(cr); node = cr;
+    filt('lowpass', convFreq(rate), { Q: 0.707 });
+    const wet = gain(crush);
+    node.connect(wet); wet.connect(cout);
+    node = cout;
+  }
+
+  // ---- tone ----
+  const muffle = Math.max(0, Math.min(1, num(fx.lowpass, 0)));
+  if (muffle > 0) filt('lowpass', muffleFreq(muffle), { Q: 0.707 });
+  const hpf = num(fx.highpass, 0);
+  if (hpf > 0) filt('highpass', Math.min(20000, hpf), { Q: 0.707 });
+  const bass = num(fx.bass, 0);
+  if (bass) filt('lowshelf', 120, { gain: Math.max(-24, Math.min(24, bass)) });
+
+  // ---- echo (feedback delay, damped repeats) ----
+  const echo = Math.max(0, Math.min(1, num(fx.echo, 0)));
+  if (echo > 0) {
+    const out = gain(1);
+    const d = add(c.createDelay(10)); d.delayTime.value = Math.max(0.001, Math.min(10, num(fx.echoTime, 0.3)));
+    const damp = add(c.createBiquadFilter()); damp.type = 'lowpass'; damp.Q.value = 0.707;
+    damp.frequency.value = Math.max(200, Math.min(20000, num(fx.echoDamp, 6000)));
+    const fb = gain(Math.max(0, Math.min(0.95, num(fx.echoFeedback, 0.4))));
+    const wet = gain(echo);
+    node.connect(out);
+    node.connect(d); d.connect(damp); damp.connect(fb); fb.connect(d);
+    d.connect(wet); wet.connect(out);
+    node = out;
+  }
+
+  // ---- reverb (generated IR, wet/dry like the site: dry = 1 - wet) ----
+  const rev = Math.max(0, Math.min(1, num(fx.reverb, 0)));
+  if (rev > 0) {
+    const out = gain(1);
+    const conv = add(c.createConvolver());
+    conv.buffer = reverbIR(c.sampleRate, reverbSeconds(num(fx.reverbSize, 0.5)));
+    const wet = gain(rev), dry = gain(1 - rev);
+    node.connect(conv); conv.connect(wet); wet.connect(out);
+    node.connect(dry); dry.connect(out);
+    node = out;
+  }
+
+  // ---- 8D orbit: source circles the head. θ = 2π·speed·t; pan = depth·sinθ,
+  // rear pinna shadow (lowpass 20 kHz front → 4 kHz behind) and a little distance
+  // dip behind, both following cosθ. ----
+  const orbit = Math.max(0, Math.min(1, num(fx.orbit, 0)));
+  const ospeed = Math.max(0.001, Math.min(20, num(fx.orbitSpeed, 0.25)));
+  if (orbit > 0) {
+    const lp = filt('lowpass', 20000 - 8000 * orbit, { Q: 0.707 });
+    const lpDepth = gain(8000 * orbit);
+    const cosO = osc(ospeed, Math.PI / 2);
+    cosO.connect(lpDepth); lpDepth.connect(lp.frequency);
+    const g = gain(1 - 0.15 * orbit);
+    const gDepth = gain(0.15 * orbit);
+    cosO.connect(gDepth); gDepth.connect(g.gain);
+    node.connect(g); node = g;
+    const p = add(c.createStereoPanner());
+    p.pan.value = 0;
+    const pDepth = gain(orbit);
+    osc(ospeed).connect(pDepth); pDepth.connect(p.pan);
+    node.connect(p); node = p;
+  }
+
+  // Tail that keeps ringing after the source stops (for cleanup in live playback)
+  let tail = 0;
+  if (def && def.echo) tail += 2;
+  if (echo > 0) tail += Math.min(30, num(fx.echoTime, 0.3) * Math.log(0.001) / Math.log(Math.max(0.01, num(fx.echoFeedback, 0.4))));
+  if (rev > 0) tail += reverbSeconds(num(fx.reverbSize, 0.5));
+  if (def && def.comb) tail += 0.5;
+  return { out: node, nodes, oscs, tail: tail + 0.2 };
+}
+
+function needsWorklet(a) {
+  const d = a && VOICE_RECIPES[a.voice];
+  return !!((d && d.voices && (a.voiceMix ?? 1) > 0) || (a && a.fx && a.fx.crush > 0));
+}
 
 export function createAudioEngine({ store, mediaRuntime }) {
   const AC = window.AudioContext || window.webkitAudioContext;
   const ctx = new AC({ latencyHint: 'interactive' });
+  workletState(ctx);              // register voice/crusher worklets early
 
   const master = ctx.createGain();
   const monitor = ctx.createGain();
@@ -322,7 +761,7 @@ export function createAudioEngine({ store, mediaRuntime }) {
 
   // ---- graph building (shared by realtime + offline) ----
   // Timeline time t maps to context time t0 + (t - from). Clips are cut at `to`.
-  function scheduleClip(c, clip, buf, dest, from, to, t0) {
+  function scheduleClip(c, clip, buf, dest, from, to, t0, wlReady) {
     if (!buf || !(clip.speed > 0)) return null;
     const cs = clip.start, ce = Math.min(clip.start + clip.duration, to);
     const s = Math.max(from, cs);
@@ -350,9 +789,11 @@ export function createAudioEngine({ store, mediaRuntime }) {
     for (const p of pts) g.gain.linearRampToValueAtTime(env(p), toCtx(p));
     const pan = c.createStereoPanner();
     pan.pan.value = Math.max(-1, Math.min(1, a.pan || 0));
-    node.connect(g); g.connect(pan); pan.connect(dest);
+    node.connect(g);
+    const fx = buildClipFx(c, a, g, when, s - cs, wlReady);
+    fx.out.connect(pan); pan.connect(dest);
     node.start(when, offset, dur);
-    return { src: node, nodes: [g, pan] };
+    return { src: node, nodes: [g, pan, ...fx.nodes], oscs: fx.oscs, tail: fx.tail, end: when + (ce - s) };
   }
 
   function overlapping(from, to) {
@@ -373,20 +814,43 @@ export function createAudioEngine({ store, mediaRuntime }) {
     playing = true;
     fromTime = t;
     startCtxTime = ctx.currentTime + LEAD;
+    const wl = workletState(ctx);
+    let waitWl = false;
     for (const clip of overlapping(t, Infinity)) {
       const buf = bufferNow(clip, laterRefresh);
-      const n = scheduleClip(ctx, clip, buf, master, t, Infinity, startCtxTime);
-      if (n) live.push(n);
+      if (!wl.ready && !wl.failed && needsWorklet(clip.audio)) waitWl = true;
+      const n = scheduleClip(ctx, clip, buf, master, t, Infinity, startCtxTime, wl.ready);
+      if (n) { live.push(n); scheduleCleanup(n); }
     }
+    if (waitWl) wl.promise.then(ok => { if (ok) laterRefresh(); });
+  }
+
+  function teardown(n) {
+    if (n.dead) return;
+    n.dead = true;
+    try { n.src.stop(); } catch (e) { /* not started */ }
+    for (const o of n.oscs || []) { try { o.stop(); } catch (e) { /* ignore */ } }
+    try { n.src.disconnect(); } catch (e) { /* ignore */ }
+    for (const x of n.nodes) { try { x.disconnect(); } catch (e) { /* ignore */ } }
+  }
+
+  // Free a finished clip's graph (worklets, LFOs) once its effect tail has rung out.
+  function scheduleCleanup(n) {
+    n.src.onended = () => {
+      if (n.dead) return;
+      const ms = Math.max(0, (n.end + (n.tail || 0) - ctx.currentTime) * 1000) + 100;
+      setTimeout(() => {
+        if (n.dead) return;
+        teardown(n);
+        live = live.filter(x => x !== n);
+      }, ms);
+    };
   }
 
   function stop() {
     if (playing) fromTime = now();
     playing = false;
-    for (const n of live) {
-      try { n.src.stop(); } catch (e) { /* not started */ }
-      try { n.src.disconnect(); n.nodes.forEach(x => x.disconnect()); } catch (e) { /* ignore */ }
-    }
+    for (const n of live) teardown(n);
     live = [];
   }
 
@@ -407,10 +871,12 @@ export function createAudioEngine({ store, mediaRuntime }) {
     const clips = overlapping(start, end);
     const bufs = await Promise.all(clips.map(bufferFinal));
     const oc = new OfflineAudioContext({ numberOfChannels: channels, length, sampleRate });
+    // Worklet modules are per context: register (and wait) before scheduling anything.
+    const wlReady = clips.some(c => needsWorklet(c.audio)) ? await workletState(oc).promise : false;
     const m = oc.createGain();
     m.gain.value = dbToGain(st.masterVolume || 0);
     m.connect(oc.destination);
-    clips.forEach((clip, i) => scheduleClip(oc, clip, bufs[i], m, start, end, 0));
+    clips.forEach((clip, i) => scheduleClip(oc, clip, bufs[i], m, start, end, 0, wlReady));
     return oc.startRendering();
   }
 

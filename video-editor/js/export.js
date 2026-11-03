@@ -5,7 +5,8 @@
 
 import { RESOLUTIONS, FPS_OPTIONS } from './catalog.js';
 
-const VENDOR = new URL('../vendor/', import.meta.url);
+// Resolved from the page (video-editor/index.html) so it also works in the file:// bundle
+const VENDOR = new URL('vendor/', location.href);
 const PREF_KEY = 've.export.prefs';
 
 const ICONS = {

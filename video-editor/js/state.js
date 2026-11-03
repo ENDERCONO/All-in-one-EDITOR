@@ -16,7 +16,15 @@ const deep = o => JSON.parse(JSON.stringify(o));
 
 export function defaultColor() {
   return { brightness: 0, contrast: 0, saturation: 0, hue: 0, exposure: 0, temperature: 0, tint: 0,
-    highlights: 0, shadows: 0, vignette: 0, blur: 0, sharpen: 0 };
+    highlights: 0, shadows: 0, vignette: 0, blur: 0, sharpen: 0,
+    // v2 (from the Image Editor and more)
+    gamma: 0, vibrance: 0, noise: 0, fade: 0, clarity: 0, blacks: 0, whites: 0,
+    red: 0, green: 0, blue: 0, posterize: 0, invert: false, grayscale: false };
+}
+export function defaultHueMatch() { return { enabled: false, from: '#ff0000', to: '#0066ff', range: 30, colorize: false }; }
+export function defaultAudioFx() {
+  return { reverb: 0, reverbSize: 0.5, echo: 0, echoTime: 0.3, echoFeedback: 0.4, crush: 0, crushBits: 8, crushRate: 11025,
+    lowpass: 0, highpass: 0, bass: 0, orbit: 0, orbitSpeed: 0.25 };
 }
 
 export function makeClip(over = {}) {
@@ -29,8 +37,9 @@ export function makeClip(over = {}) {
     color: defaultColor(),
     filters: [],
     chroma: { enabled: false, color: '#00ff00', similarity: 0.35, smoothness: 0.08, spill: 0.5, edgeFeather: 0 },
+    hueMatch: defaultHueMatch(),
     materialId: null, materialParams: {},
-    audio: { volume: 0, pan: 0, pitch: 0, fadeIn: 0, fadeOut: 0, mute: false, keepPitch: true, detached: false },
+    audio: { volume: 0, pan: 0, pitch: 0, fadeIn: 0, fadeOut: 0, mute: false, keepPitch: true, detached: false, voice: 'none', voiceMix: 1, fx: defaultAudioFx() },
     text: null, fill: null,
     transitionIn: null, transitionOut: null,
     groupId: null,

@@ -4,7 +4,7 @@ import { store, mediaRuntime, uid } from './state.js';
 import { FILTERS, TRANSITIONS, TITLE_PRESETS, SAMPLE_COLORS } from './catalog.js';
 import { icon } from './icons.js';
 
-const EFFECT_CATS = new Set(['Stylize', 'Distort', 'Lens']);
+const EFFECT_CATS = new Set(['Stylize', 'Distort', 'Lens', 'Meme']);
 const fmtDur = s => { s = Math.max(0, s || 0); const m = Math.floor(s / 60), ss = Math.floor(s % 60); return `${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`; };
 
 function kindOf(file) {
@@ -64,6 +64,33 @@ async function makeVideoThumbs(id, url, duration) {
   v.removeAttribute('src'); v.load();
 }
 
+// Animated GIF / WebP / APNG: decode every frame with WebCodecs' ImageDecoder (Chrome / Edge).
+async function decodeAnimated(file) {
+  try {
+    if (!('ImageDecoder' in window)) return null;
+    const type = file.type || (/\.gif$/i.test(file.name || '') ? 'image/gif' : '');
+    if (!/^image\/(gif|webp|apng|png)$/.test(type) || !(await ImageDecoder.isTypeSupported(type))) return null;
+    const dec = new ImageDecoder({ data: await file.arrayBuffer(), type });
+    await dec.tracks.ready;
+    const tr = dec.tracks.selectedTrack;
+    if (!tr || tr.frameCount <= 1) { dec.close(); return null; }
+    await dec.completed.catch(() => {});
+    const frames = []; let t = 0;
+    const n = Math.min(tr.frameCount, 1500);
+    for (let i = 0; i < n; i++) {
+      const { image } = await dec.decode({ frameIndex: i });
+      const dur = Math.max(0.02, (image.duration || 100000) / 1e6);
+      // Canvas (not ImageBitmap): WebGL ignores UNPACK_FLIP_Y for ImageBitmaps
+      const cv = document.createElement('canvas'); cv.width = image.displayWidth; cv.height = image.displayHeight;
+      cv.getContext('2d').drawImage(image, 0, 0);
+      frames.push({ t, dur, bmp: cv });
+      image.close(); t += dur;
+    }
+    dec.close();
+    return { frames, total: t };
+  } catch (e) { console.warn('animated image decode failed', e); return null; }
+}
+
 let importCount = 0;
 // Import files into the media bin. Returns the created media ids.
 export async function importFiles(files, { audio, addToTimeline = false, time, trackId, ops } = {}) {
@@ -76,10 +103,12 @@ export async function importFiles(files, { audio, addToTimeline = false, time, t
     if (!meta) { window.dispatchEvent(new CustomEvent('ve:toast', { detail: `Couldn't read ${file.name}` })); URL.revokeObjectURL(url); continue; }
     const id = uid('med');
     const name = file.name || `${kind === 'image' ? 'Pasted image' : 'Clip'} ${++importCount}`;
-    mediaRuntime.set(id, { file, url, image: meta.image || null, thumb: kind === 'image' ? url : null, filmstrip: kind === 'image' ? [{ t: 0, url }] : null });
+    const anim = kind === 'image' ? await decodeAnimated(file) : null;
+    if (anim) meta.duration = anim.total;
+    mediaRuntime.set(id, { file, url, image: meta.image || null, anim, thumb: kind === 'image' ? url : null, filmstrip: kind === 'image' ? [{ t: 0, url }] : null });
     store.transact('Import ' + name, p => p.media.push({
       id, name, kind, mime: file.type || '', duration: meta.duration, width: meta.width, height: meta.height,
-      hasAudio: kind !== 'image', size: file.size || 0,
+      hasAudio: kind !== 'image', size: file.size || 0, animated: !!anim,
     }));
     ids.push(id);
     if (kind === 'video') makeVideoThumbs(id, url, meta.duration);
@@ -259,7 +288,7 @@ export function createLibrary({ store, ops, audio, materials }) {
         add(item({
           name: m.name, kind: 'media', id: m.id, thumbUrl: rt.thumb,
           thumbHtml: rt.thumb ? '' : `<span>${icon(m.kind === 'audio' ? 'audio' : 'media', 26)}</span>`,
-          badge: m.kind === 'image' ? 'IMG' : fmtDur(m.duration) + (used ? ' ✓' : ''),
+          badge: m.kind === 'image' ? (m.animated ? 'GIF ' + fmtDur(m.duration) : 'IMG') : fmtDur(m.duration) + (used ? ' ✓' : ''),
           title: `${m.name}\n${m.kind}${m.width ? ` · ${m.width}×${m.height}` : ''}${m.duration ? ' · ' + m.duration.toFixed(2) + ' s' : ''}\nDouble-click or + to add at the playhead · drag onto the timeline`,
           onDbl: () => ops.insertMedia(m.id, { time: store.playhead }),
           onCtx: e => ctxMenu(e, [
