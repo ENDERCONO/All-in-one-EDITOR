@@ -121,7 +121,7 @@
     let lastCoalesce = null, lastCoalesceTime = 0;
     const store2 = {
       project: newProject(),
-      selection: { clipIds: [], trackId: null, markerId: null },
+      selection: { clipIds: [], trackId: null, markerId: null, transition: null },
       playhead: 0,
       playing: false,
       tool: "select",
@@ -223,7 +223,7 @@
         if (groups.size) {
           for (const c of store2.project.clips) if (c.groupId && groups.has(c.groupId) && !next.includes(c.id)) next.push(c.id);
         }
-        store2.selection = { ...store2.selection, clipIds: next };
+        store2.selection = { ...store2.selection, clipIds: next, transition: ids.length ? null : store2.selection.transition };
         store2.emit("selection", store2.selection);
       },
       setTool(t) {
@@ -257,29 +257,61 @@
         return clip.reverse ? clip.in + span - local * clip.speed : clip.in + local * clip.speed;
       },
       // Layers to draw at time t, bottom first. See ARCHITECTURE.md.
+      // Source time that keeps running past a clip's edges (for transition handles), clamped to the media
+      extSourceTime(clip, t) {
+        if (clip.reverse || clip.type !== "video") return store2.sourceTime(clip, t);
+        const m = store2.getMedia(clip.mediaId);
+        const max = m?.duration ? m.duration - store2.frame() : Infinity;
+        return clamp(clip.in + (t - clip.start) * clip.speed, 0, Math.max(0, max));
+      },
+      // Transition sitting on the cut between `b` and the clip that ends where `b` starts
+      cutTransition(b, clips = store2.clipsOnTrack(b.trackId)) {
+        const ti = b.transitionIn;
+        if (!ti || !(ti.duration > 0)) return null;
+        const fr = store2.frame();
+        const a = clips.find((c) => c !== b && Math.abs(c.start + c.duration - b.start) <= fr + FRAME_EPS);
+        if (!a) return null;
+        const d = Math.min(ti.duration, a.duration, b.duration);
+        return { a, b, type: ti.type, duration: d, from: b.start - d / 2, to: b.start + d / 2 };
+      },
+      // Layers to draw at time t, bottom first. See ARCHITECTURE.md.
+      // A transition on a cut is centred on it (half over each clip) and mixes the
+      // end of the left clip into the start of the right one. A transition with no
+      // neighbour fades from / to transparent at the clip's own edge.
       renderListAt(t) {
         const out = [];
-        const fr = store2.frame();
         const vtracks = store2.project.tracks.filter((tr) => tr.kind === "video" && !tr.hidden);
         for (let i = vtracks.length - 1; i >= 0; i--) {
           const track = vtracks[i];
           const clips = store2.clipsOnTrack(track.id);
+          let cut = null;
+          for (const c of clips) {
+            const ct = store2.cutTransition(c, clips);
+            if (ct && t >= ct.from - FRAME_EPS && t < ct.to - FRAME_EPS) {
+              cut = ct;
+              break;
+            }
+          }
+          if (cut && cut.b.type !== "audio") {
+            out.push({ track, clip: cut.b, time: store2.extSourceTime(cut.b, t), transition: {
+              type: cut.type,
+              progress: clamp((t - cut.from) / (cut.to - cut.from), 0, 1),
+              phase: "in",
+              other: cut.a,
+              otherTime: store2.extSourceTime(cut.a, t)
+            } });
+            continue;
+          }
           const clip = clips.find((c) => t >= c.start - FRAME_EPS && t < c.start + c.duration - FRAME_EPS);
           if (!clip || clip.type === "audio") continue;
           let transition = null;
           const local = t - clip.start;
           const ti = clip.transitionIn, to = clip.transitionOut;
-          if (ti && ti.duration > 0 && local < ti.duration) {
-            const prev = clips.find((c) => c !== clip && Math.abs(c.start + c.duration - clip.start) <= fr + FRAME_EPS);
-            transition = {
-              type: ti.type,
-              progress: clamp(local / ti.duration, 0, 1),
-              phase: "in",
-              other: prev || null,
-              otherTime: prev ? store2.sourceTime(prev, prev.start + prev.duration - fr) : null
-            };
+          if (ti && ti.duration > 0 && local < ti.duration && !store2.cutTransition(clip, clips)) {
+            transition = { type: ti.type, progress: clamp(local / ti.duration, 0, 1), phase: "in", other: null, otherTime: null };
           } else if (to && to.duration > 0 && local > clip.duration - to.duration) {
-            transition = { type: to.type, progress: clamp((clip.duration - local) / to.duration, 0, 1), phase: "out", other: null, otherTime: null };
+            const next = clips.find((c) => c !== clip && store2.cutTransition(c, clips)?.a === clip);
+            if (!next) transition = { type: to.type, progress: clamp((clip.duration - local) / to.duration, 0, 1), phase: "out", other: null, otherTime: null };
           }
           out.push({ track, clip, time: store2.sourceTime(clip, t), transition });
         }
@@ -572,6 +604,7 @@
         <div class="tl-content">
           <div class="tl-lanes"></div>
           <div class="tl-clips"></div>
+          <div class="tl-trans-layer"></div>
           <div class="tl-drop" hidden></div>
           <div class="tl-snap" hidden></div>
           <div class="tl-blade" hidden></div>
@@ -586,6 +619,7 @@
     const heads = $2(".tl-heads"), headsInner = $2(".tl-heads-inner"), scroll = $2(".tl-scroll"), content = $2(".tl-content");
     const lanesEl = $2(".tl-lanes"), clipsEl = $2(".tl-clips"), dropEl = $2(".tl-drop"), snapEl = $2(".tl-snap");
     const bladeEl = $2(".tl-blade"), bandEl = $2(".tl-band"), phLine = $2(".tl-ph-line"), phBall = $2(".tl-ph-ball");
+    const transLayer = $2(".tl-trans-layer");
     let layout = [];
     let layoutById = /* @__PURE__ */ new Map();
     let topPad = 40, contentH = 0, contentW = 0;
@@ -599,6 +633,7 @@
     let rafPaint = 0, rafRuler = 0;
     let linked = true;
     let menuEl = null;
+    let ballY = 8;
     const zoom = () => store2.zoom;
     const X = (t) => X0 + t * zoom();
     const T = (x) => (x - X0) / zoom();
@@ -659,6 +694,7 @@
       elTl.classList.toggle("tool-blade", store2.tool === "blade");
       phKnob.innerHTML = store2.tool === "blade" ? icon("split", 12) : "";
       corner.querySelector('[data-act="link"]').classList.toggle("on", linked);
+      placeBall();
     }
     function renderHeads() {
       headsInner.innerHTML = layout.map((r) => {
@@ -685,7 +721,7 @@
       lanesEl.innerHTML = html;
     }
     function clipColorVar(c) {
-      return { video: "--clip-video", image: "--clip-image", audio: "--clip-audio", text: "--clip-title", material: "--clip-material", color: "--clip-color" }[c.type] || "--clip-video";
+      return { video: "--clip-video", image: "--clip-image", audio: "--clip-audio", text: "--clip-title", material: "--clip-material", color: "--clip-color", adjustment: "--clip-adjust" }[c.type] || "--clip-video";
     }
     function clipHasAudio(c) {
       if (c.type === "audio") return true;
@@ -727,7 +763,7 @@
       if (c.filters?.length || c.materialId || c.chroma?.enabled) badges.push(`<span class="tl-badge fx" title="Effects applied">fx</span>`);
       if (c.audio?.mute && hasA) badges.push(`<span class="tl-badge ico" title="Muted">${icon("mute", 11)}</span>`);
       if (c.groupId) badges.push(`<span class="tl-badge ico" title="Grouped">${icon("link", 11)}</span>`);
-      const typeIco = { video: "media", image: "media", audio: "audio", text: "text", color: "color", material: "materials" }[c.type] || "media";
+      const typeIco = { video: "media", image: "media", audio: "audio", text: "text", color: "color", material: "materials", adjustment: "effects" }[c.type] || "media";
       const label = c.type === "text" ? c.text?.content || c.name : c.name;
       let html = `<canvas class="tl-cv"></canvas>`;
       if (c.type === "color") html += `<div class="tl-color-swatch" style="background:${esc2(c.fill || "#000")}"></div>`;
@@ -742,13 +778,6 @@
       if (c.type === "audio") {
         const vy = volToY(c.audio?.volume || 0, h2);
         html += `<div class="tl-vol" data-part="vol" style="top:${vy}px" title="Volume ${(c.audio?.volume || 0).toFixed(1)} dB"></div>`;
-      }
-      for (const side of ["in", "out"]) {
-        const tr = side === "in" ? c.transitionIn : c.transitionOut;
-        if (!tr || !(tr.duration > 0)) continue;
-        const w = Math.max(8, tr.duration * z);
-        html += `<div class="tl-trans ${side}" data-part="trans-${side}" style="width:${w}px" title="${esc2(tr.type)} \xB7 ${tr.duration.toFixed(2)}s (right-click to remove)">
-        <div class="tl-trans-ico">${icon("transitions", 12)}</div><div class="tl-trans-edge" data-part="transEdge-${side}"></div></div>`;
       }
       html += `<div class="tl-trim l" data-part="trimL"></div><div class="tl-trim r" data-part="trimR"></div>`;
       return html;
@@ -793,6 +822,193 @@
         el2.remove();
         clipEls.delete(id);
       }
+      renderTransitions();
+    }
+    const trKey = (side) => side === "out" ? "transitionOut" : "transitionIn";
+    const trLabel = (type) => TRANSITIONS.find((t) => t.id === type)?.label || type;
+    function adjPrev(c, clips) {
+      const fr = store2.frame();
+      return clips.find((o) => o !== c && o.type !== "audio" && Math.abs(endOf(o) - c.start) <= fr + FRAME_EPS) || null;
+    }
+    function adjNext(c, clips) {
+      const fr = store2.frame();
+      return clips.find((o) => o !== c && o.type !== "audio" && Math.abs(o.start - endOf(c)) <= fr + FRAME_EPS) || null;
+    }
+    function transBlocks() {
+      const out = [];
+      const byTrack = /* @__PURE__ */ new Map();
+      for (const c of store2.project.clips) {
+        if (!byTrack.has(c.trackId)) byTrack.set(c.trackId, []);
+        byTrack.get(c.trackId).push(c);
+      }
+      for (const [tid, clips] of byTrack) {
+        if (!layoutById.has(tid)) continue;
+        clips.sort((a, b) => a.start - b.start);
+        for (const c of clips) {
+          const ti = c.transitionIn, to = c.transitionOut;
+          if (ti && ti.duration > 0) {
+            const ct = store2.cutTransition(c, clips);
+            if (ct) out.push({ clipId: c.id, side: "in", trackId: tid, from: ct.from, to: ct.to, cut: true, type: ti.type, duration: ct.duration });
+            else {
+              const d = Math.min(ti.duration, c.duration);
+              out.push({ clipId: c.id, side: "in", trackId: tid, from: c.start, to: c.start + d, cut: false, type: ti.type, duration: d });
+            }
+          }
+          if (to && to.duration > 0) {
+            const n = adjNext(c, clips);
+            if (n && store2.cutTransition(n, clips)?.a === c) continue;
+            const d = Math.min(to.duration, c.duration);
+            out.push({ clipId: c.id, side: "out", trackId: tid, from: endOf(c) - d, to: endOf(c), cut: false, type: to.type, duration: d });
+          }
+        }
+      }
+      return out;
+    }
+    function trGeom(from, to, row) {
+      const h2 = Math.max(14, Math.min(22, row.h - 26));
+      return `left:${X(from)}px;top:${row.y + 18}px;width:${Math.max(10, (to - from) * zoom())}px;height:${h2}px`;
+    }
+    function renderTransitions() {
+      const selT = store2.selection.transition;
+      let html = "";
+      for (const b of transBlocks()) {
+        const row = layoutById.get(b.trackId);
+        const sel = selT && selT.clipId === b.clipId && selT.side === b.side;
+        const w = (b.to - b.from) * zoom();
+        html += `<div class="tl-tr${b.cut ? " cut" : " edge " + b.side}${sel ? " sel" : ""}${row.track.locked ? " locked" : ""}${w < 40 ? " narrow" : ""}" data-tr="${b.clipId}|${b.side}" style="${trGeom(b.from, b.to, row)}" title="${esc2(trLabel(b.type))} \xB7 ${b.duration.toFixed(2)}s \u2014 drag to move, edges to resize, right-click for options">
+        ${icon("transitions", 12)}<span class="tl-tr-name">${esc2(trLabel(b.type))}</span><i class="tl-tr-edge l" data-tedge="l"></i><i class="tl-tr-edge r" data-tedge="r"></i></div>`;
+      }
+      transLayer.innerHTML = html;
+    }
+    const trRefOf = (el2) => {
+      const [clipId, side] = el2.dataset.tr.split("|");
+      return { clipId, side };
+    };
+    function slotAtPoint(p) {
+      const row = rowAtY(p.y);
+      if (!row || row.track.kind !== "video" || row.track.locked) return null;
+      const clips = store2.clipsOnTrack(row.track.id);
+      const thr = 14 / zoom(), t = T(p.x);
+      const c = clips.find((o) => o.type !== "audio" && t >= o.start - thr && t <= endOf(o) + thr);
+      if (!c) return null;
+      const near = clips.filter((o) => o.type !== "audio" && t >= o.start - thr && t <= endOf(o) + thr);
+      const pick = near.length > 1 ? near.reduce((a, b) => Math.min(Math.abs(t - a.start), Math.abs(t - endOf(a))) <= Math.min(Math.abs(t - b.start), Math.abs(t - endOf(b))) ? a : b) : c;
+      return slotFor(pick, t - pick.start < pick.duration / 2 ? "in" : "out", clips);
+    }
+    function slotFor(c, edge, clips = store2.clipsOnTrack(c.trackId)) {
+      if (edge === "in") return { clipId: c.id, side: "in" };
+      const n = adjNext(c, clips);
+      return n ? { clipId: n.id, side: "in" } : { clipId: c.id, side: "out" };
+    }
+    function slotRange(slot, dur = 1) {
+      const c = store2.getClip(slot.clipId);
+      if (!c) return null;
+      const clips = store2.clipsOnTrack(c.trackId);
+      if (slot.side === "in") {
+        const a = adjPrev(c, clips);
+        if (a) {
+          const d = Math.min(dur, a.duration, c.duration);
+          return { from: c.start - d / 2, to: c.start + d / 2, trackId: c.trackId };
+        }
+        return { from: c.start, to: c.start + Math.min(dur, c.duration), trackId: c.trackId };
+      }
+      return { from: endOf(c) - Math.min(dur, c.duration), to: endOf(c), trackId: c.trackId };
+    }
+    function showSlot(slot, dur) {
+      const r = slot && slotRange(slot, dur);
+      const row = r && layoutById.get(r.trackId);
+      if (!row) {
+        if (dropEl.classList.contains("slot")) dropEl.hidden = true;
+        return;
+      }
+      dropEl.hidden = false;
+      dropEl.className = "tl-drop slot";
+      dropEl.style.cssText = trGeom(r.from, r.to, row);
+    }
+    function startTrResize(ev, ref, edge) {
+      const c = store2.getClip(ref.clipId);
+      if (!c) return;
+      const key = trKey(ref.side), o = { ...c[key] };
+      const clips = store2.clipsOnTrack(c.trackId);
+      const ct = ref.side === "in" ? store2.cutTransition(c, clips) : null;
+      const d0 = ct ? ct.duration : Math.min(o.duration, c.duration);
+      const max = ct ? Math.min(ct.a.duration, c.duration) : c.duration;
+      const p0 = pointer(ev);
+      let changed = false;
+      const d = {
+        move(e) {
+          const dx = (pointer(e).x - p0.x) / zoom();
+          let v;
+          if (ct) v = d0 + (edge === "r" ? 2 * dx : -2 * dx);
+          else if (ref.side === "in") v = d0 + (edge === "r" ? dx : -dx);
+          else v = d0 + (edge === "l" ? -dx : dx);
+          c[key].duration = clamp(store2.snapTime(v), store2.frame() * 2, max);
+          changed = true;
+          renderTransitions();
+        },
+        up() {
+          const v = c[key].duration;
+          c[key] = { ...o };
+          if (!changed || Math.abs(v - d0) < 1e-9) return;
+          store2.transact("Transition duration", (pj) => {
+            const x = pj.clips.find((y) => y.id === c.id);
+            if (x) x[key] = { ...o, duration: v };
+          });
+        }
+      };
+      beginDrag(ev, d);
+    }
+    function startTrMove(ev, ref, el2) {
+      const p0 = pointer(ev);
+      const c = store2.getClip(ref.clipId);
+      const dur = c?.[trKey(ref.side)]?.duration || 1;
+      const left0 = parseFloat(el2.style.left), top0 = parseFloat(el2.style.top);
+      let lifted = false, target = null;
+      const d = {
+        vertical: true,
+        move(e) {
+          const p = pointer(e);
+          if (!lifted && Math.abs(p.x - p0.x) < 4 && Math.abs(p.y - p0.y) < 4) return;
+          lifted = true;
+          el2.classList.add("lifting");
+          el2.style.left = left0 + p.x - p0.x + "px";
+          el2.style.top = top0 + p.y - p0.y + "px";
+          target = slotAtPoint(p);
+          if (target && target.clipId === ref.clipId && target.side === ref.side) target = null;
+          if (target) showSlot(target, dur);
+          else {
+            dropEl.hidden = true;
+          }
+        },
+        up() {
+          dropEl.hidden = true;
+          if (!lifted) return;
+          if (target) call("moveTransition", ref, target);
+          else renderTransitions();
+        }
+      };
+      beginDrag(ev, d);
+    }
+    function transitionMenu(ev, ref) {
+      const c = store2.getClip(ref.clipId);
+      if (!c) return;
+      const key = trKey(ref.side), tr = c[key];
+      const locked = store2.getTrack(c.trackId)?.locked;
+      const setDur = (v) => call("setTransition", c.id, ref.side, { ...tr, duration: v });
+      openMenu(ev.clientX, ev.clientY, [
+        { label: "Copy", kbd: "Ctrl+C", action: () => call("copyTransition", ref) },
+        { label: "Paste", kbd: "Ctrl+V", disabled: locked || !store2.transitionClipboard, action: () => {
+          call("selectTransition", ref.clipId, ref.side);
+          call("pasteTransition");
+        } },
+        "-",
+        ...[0.5, 1, 2].map((v) => ({ label: `Duration ${v}s`, checked: Math.abs((tr?.duration || 0) - v) < 1e-6, disabled: locked, action: () => setDur(v) })),
+        "-",
+        { label: "Delete", kbd: "Del", disabled: locked, action: () => {
+          call("setTransition", c.id, ref.side, null);
+          call("selectTransition", null);
+        } }
+      ]);
     }
     function updateSelectionClasses() {
       const sel = new Set(store2.selection.clipIds);
@@ -1106,6 +1322,20 @@
       if (ev.button !== 0) return;
       closeMenu();
       const p = pointer(ev);
+      const trEl = ev.target.closest(".tl-tr");
+      if (trEl) {
+        const ref = trRefOf(trEl);
+        const c = store2.getClip(ref.clipId);
+        ev.preventDefault();
+        store2.select([]);
+        call("selectTransition", ref.clipId, ref.side);
+        if (!c || store2.getTrack(c.trackId)?.locked) return;
+        const edge = ev.target.closest("[data-tedge]")?.dataset.tedge;
+        const live = transLayer.querySelector(`.tl-tr[data-tr="${ref.clipId}|${ref.side}"]`) || trEl;
+        if (edge) startTrResize(ev, ref, edge);
+        else startTrMove(ev, ref, live);
+        return;
+      }
       const clipEl = ev.target.closest(".tl-clip");
       const clip = clipEl && store2.getClip(clipEl.dataset.clip);
       if (clip) {
@@ -1126,10 +1356,7 @@
           return;
         }
         if (part === "trimL" || part === "trimR") startTrim(ev, clip, part === "trimL" ? "l" : "r");
-        else if (part.startsWith("transEdge-")) startTransDrag(ev, clip, part.slice(10));
-        else if (part.startsWith("trans-")) {
-          startMove(ev, clip, isSel && !ev.ctrlKey && !ev.shiftKey && !ev.metaKey);
-        } else if (part === "fadeIn" || part === "fadeOut") startFade(ev, clip, part);
+        else if (part === "fadeIn" || part === "fadeOut") startFade(ev, clip, part);
         else if (part === "vol") startVol(ev, clip);
         else if (!(ev.ctrlKey || ev.metaKey) || store2.selection.clipIds.includes(clip.id)) startMove(ev, clip, isSel && !ev.ctrlKey && !ev.shiftKey && !ev.metaKey);
         ev.preventDefault();
@@ -1434,29 +1661,6 @@
       };
       beginDrag(ev, d);
     }
-    function startTransDrag(ev, clip, side) {
-      const key = side === "in" ? "transitionIn" : "transitionOut";
-      const o = { ...clip[key] };
-      const p0 = pointer(ev);
-      const d = {
-        move(e) {
-          const dx = (pointer(e).x - p0.x) / zoom();
-          clip[key].duration = clamp(store2.snapTime(o.duration + (side === "in" ? dx : -dx)), store2.frame() * 2, clip.duration / 2 || clip.duration);
-          renderClips();
-        },
-        up() {
-          const v = clip[key].duration;
-          if (Math.abs(v - o.duration) < 1e-9) return;
-          commit("Transition duration", () => {
-            clip[key] = { ...o };
-          }, (pj) => {
-            const c = pj.clips.find((x) => x.id === clip.id);
-            c[key] = { ...o, duration: v };
-          });
-        }
-      };
-      beginDrag(ev, d);
-    }
     function startFade(ev, clip, part) {
       const key = part;
       const o = clip.audio[key] || 0;
@@ -1596,9 +1800,49 @@
       window.addEventListener("pointerup", up);
       ev.preventDefault();
     });
-    const placeBall = () => {
-      phBall.style.transform = `translate(-50%, ${scroll.scrollTop + 8}px)`;
-    };
+    function placeBall() {
+      const y = clamp(ballY, 0, Math.max(0, scroll.clientHeight - 30));
+      phBall.style.transform = `translate(-50%, ${scroll.scrollTop + y}px)`;
+    }
+    elTl.addEventListener("pointerdown", (ev) => {
+      if (ev.button !== 1) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      closeMenu();
+      const x0 = ev.clientX, y0 = ev.clientY, sl0 = scroll.scrollLeft, st0 = scroll.scrollTop;
+      elTl.classList.add("panning");
+      try {
+        elTl.setPointerCapture(ev.pointerId);
+      } catch {
+      }
+      const move = (e) => {
+        const need = sl0 - (e.clientX - x0) + scroll.clientWidth;
+        if (need > contentW) {
+          contentW = need + 10;
+          content.style.width = contentW + "px";
+        }
+        scroll.scrollLeft = Math.max(0, sl0 - (e.clientX - x0));
+        scroll.scrollTop = Math.max(0, st0 - (e.clientY - y0));
+      };
+      const up = () => {
+        elTl.classList.remove("panning");
+        window.removeEventListener("pointermove", move, true);
+        window.removeEventListener("pointerup", up, true);
+        window.removeEventListener("pointercancel", up, true);
+      };
+      window.addEventListener("pointermove", move, true);
+      window.addEventListener("pointerup", up, true);
+      window.addEventListener("pointercancel", up, true);
+    }, true);
+    elTl.addEventListener("mousedown", (ev) => {
+      if (ev.button === 1) ev.preventDefault();
+    }, true);
+    elTl.addEventListener("auxclick", (ev) => {
+      if (ev.button === 1) {
+        ev.preventDefault();
+        ev.stopPropagation();
+      }
+    }, true);
     scroll.addEventListener("scroll", placeBall);
     placeBall();
     phBall.addEventListener("pointerdown", (ev) => {
@@ -1606,13 +1850,16 @@
       ev.preventDefault();
       ev.stopPropagation();
       closeMenu();
-      const x0 = ev.clientX;
+      const x0 = ev.clientX, y0 = ev.clientY;
       let moved = false;
+      const grabDy = ev.clientY - phBall.getBoundingClientRect().top;
       phBall.setPointerCapture?.(ev.pointerId);
       const move = (e) => {
-        if (!moved && Math.abs(e.clientX - x0) < 3) return;
+        if (!moved && Math.abs(e.clientX - x0) < 3 && Math.abs(e.clientY - y0) < 3) return;
         moved = true;
         phBall.classList.add("drag");
+        ballY = clamp(e.clientY - scroll.getBoundingClientRect().top - grabDy, 0, Math.max(0, scroll.clientHeight - 30));
+        placeBall();
         const r = content.getBoundingClientRect();
         let t = Math.max(0, T(e.clientX - r.left));
         if (store2.snap) {
@@ -1839,6 +2086,14 @@
     });
     content.addEventListener("contextmenu", (ev) => {
       ev.preventDefault();
+      const trEl = ev.target.closest(".tl-tr");
+      if (trEl) {
+        const ref = trRefOf(trEl);
+        store2.select([]);
+        call("selectTransition", ref.clipId, ref.side);
+        transitionMenu(ev, ref);
+        return;
+      }
       const p = pointer(ev);
       const t = Math.max(0, store2.snapTime(T(p.x)));
       const clipEl = ev.target.closest(".tl-clip");
@@ -1858,16 +2113,6 @@
       const part = ev.target.closest("[data-part]")?.dataset.part || "";
       if (!store2.selection.clipIds.includes(clip.id)) store2.select(clip.id);
       const locked = store2.getTrack(clip.trackId)?.locked;
-      if (part.startsWith("trans")) {
-        const side = part.endsWith("in") ? "in" : "out";
-        openMenu(ev.clientX, ev.clientY, [
-          { label: "Remove transition", disabled: locked, action: () => call("setTransition", clip.id, side, null) },
-          { label: "Duration 0.5s", disabled: locked, action: () => call("setTransition", clip.id, side, { ...clip[side === "in" ? "transitionIn" : "transitionOut"], duration: 0.5 }) },
-          { label: "Duration 1s", disabled: locked, action: () => call("setTransition", clip.id, side, { ...clip[side === "in" ? "transitionIn" : "transitionOut"], duration: 1 }) },
-          { label: "Duration 2s", disabled: locked, action: () => call("setTransition", clip.id, side, { ...clip[side === "in" ? "transitionIn" : "transitionOut"], duration: 2 }) }
-        ]);
-        return;
-      }
       const sel = store2.selectedClips();
       const splitT = store2.playhead > clip.start + FRAME_EPS && store2.playhead < endOf(clip) - FRAME_EPS ? store2.playhead : t;
       const hasA = clipHasAudio(clip);
@@ -1901,7 +2146,10 @@
           }));
         } },
         "-",
-        { label: "Add transition (Dissolve)", disabled: locked || !VISUAL2.has(clip.type), action: () => call("setTransition", clip.id, "in", { type: "dissolve", duration: Math.min(1, clip.duration / 2) }) },
+        { label: "Add transition (Dissolve)", disabled: locked || !VISUAL2.has(clip.type), action: () => {
+          call("setTransition", clip.id, "in", { type: "dissolve", duration: 1 });
+          call("selectTransition", clip.id, "in");
+        } },
         { label: "Remove transitions", disabled: locked || !(clip.transitionIn || clip.transitionOut), action: () => {
           store2.transact("Remove transitions", (pj) => {
             const c = pj.clips.find((x) => x.id === clip.id);
@@ -2001,7 +2249,8 @@
       dropEl.hidden = false;
       if (info.clip) {
         const r = layoutById.get(info.clip.trackId);
-        const x = info.edge === "in" ? X(info.clip.start) : X(endOf(info.clip)) - Math.min(40, info.clip.duration * zoom() / 2);
+        const sl = slotFor(info.clip, info.edge), sr = slotRange(sl, 40 / zoom());
+        const x = sr ? X(sr.from) : X(info.clip.start);
         dropEl.className = "tl-drop clip";
         dropEl.style.cssText = `left:${X(info.clip.start)}px;top:${r.y + 1}px;width:${info.clip.duration * zoom()}px;height:${r.h - 2}px;--ex:${x - X(info.clip.start)}px`;
       } else if (info.row) {
@@ -2074,14 +2323,23 @@
           break;
         case "transition": {
           const c = info.clip ? { clip: info.clip, edge: info.edge } : nearestClipEdge(info);
-          if (!c || locked || !VISUAL2.has(c.clip.type)) return;
-          call("setTransition", c.clip.id, c.edge, { type: id, duration: 1 });
-          store2.select(c.clip.id);
+          if (!c || locked || !VISUAL2.has(c.clip.type) || store2.getTrack(c.clip.trackId)?.locked) return;
+          const slot = slotFor(c.clip, c.edge);
+          call("setTransition", slot.clipId, slot.side, { type: id, duration: 1 });
+          store2.select([]);
+          call("selectTransition", slot.clipId, slot.side);
           break;
         }
+        case "adjustment":
+          if (!info.clip) call("addAdjustmentClip", { time: info.t, trackId: trackForDrop(info, "video") });
+          break;
         case "filter":
         case "effect": {
-          if (!info.clip || locked || !VISUAL2.has(info.clip.type)) return;
+          if (!info.clip) {
+            call("addAdjustmentClip", { time: info.t, trackId: trackForDrop(info, "video"), filter: id });
+            break;
+          }
+          if (locked || !VISUAL2.has(info.clip.type)) return;
           store2.transact("Add filter", (pj) => {
             const c = pj.clips.find((x) => x.id === info.clip.id);
             c.filters = [...c.filters || [], { id: uid("flt"), type: id, amount: 1 }];
@@ -2111,6 +2369,7 @@
     store2.on("selection", () => {
       updateSelectionClasses();
       renderMarkers();
+      if (!drag) renderTransitions();
     });
     store2.on("playhead", () => {
       updatePlayhead();
@@ -2144,11 +2403,12 @@
     "js/timeline.js"() {
       init_state();
       init_icons();
+      init_catalog();
       RULER_H = 28;
       X0 = 12;
       SNAP_PX = 8;
       BOTTOM_PAD = 36;
-      VISUAL2 = /* @__PURE__ */ new Set(["video", "image", "text", "color", "material"]);
+      VISUAL2 = /* @__PURE__ */ new Set(["video", "image", "text", "color", "material", "adjustment"]);
       kindOf2 = (c) => c.type === "audio" ? "audio" : "video";
       endOf = (c) => c.start + c.duration;
       esc2 = (s) => String(s ?? "").replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
@@ -3111,19 +3371,91 @@ void main() { outColor = aio_material(v_uv); }
         }
       }
     });
-    graphEl.addEventListener("dragover", (e) => {
-      if (e.dataTransfer.types.includes("text/x-aio-node")) {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "copy";
+    const dragKind = (e) => {
+      const ts = [...e.dataTransfer?.types || []];
+      return ts.includes("text/x-aio-node") ? "node" : ts.includes("application/x-ve") ? "ve" : ts.includes("Files") ? "files" : null;
+    };
+    const isImageFile = (f) => /^image\//.test(f.type) || /\.(png|jpe?g|gif|webp|bmp|avif|svg)$/i.test(f.name || "");
+    function droppedImages(e) {
+      const raw = e.dataTransfer.getData("application/x-ve");
+      if (raw) {
+        let d = null;
+        try {
+          d = JSON.parse(raw);
+        } catch (err) {
+        }
+        const ok = d && d.kind === "media" && store2.getMedia(d.id)?.kind === "image";
+        return Promise.resolve(ok ? [d.id] : []);
       }
-    });
-    graphEl.addEventListener("drop", (e) => {
-      const t = e.dataTransfer.getData("text/x-aio-node");
-      if (!t) return;
-      e.preventDefault();
+      const files = [...e.dataTransfer.files || []].filter(isImageFile);
+      if (!files.length) return Promise.resolve([]);
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => resolve([]), 6e4);
+        window.dispatchEvent(new CustomEvent("ve:importMedia", { detail: { files, resolve: (ids) => {
+          clearTimeout(timer);
+          resolve(ids || []);
+        } } }));
+      }).then((ids) => ids.filter((mid) => store2.getMedia(mid)?.kind === "image"));
+    }
+    function dropZone(el2, accept, onDrop) {
+      el2.addEventListener("dragover", (e) => {
+        const k = dragKind(e);
+        if (!k || !accept.includes(k)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = "copy";
+        el2.classList.add("mat-drop-hot");
+      });
+      el2.addEventListener("dragleave", (e) => {
+        if (!e.relatedTarget || !el2.contains(e.relatedTarget)) el2.classList.remove("mat-drop-hot");
+      });
+      el2.addEventListener("drop", (e) => {
+        el2.classList.remove("mat-drop-hot");
+        const k = dragKind(e);
+        if (!k || !accept.includes(k)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onDrop(e, k);
+      });
+    }
+    dropZone(graphEl, ["node", "files", "ve"], async (e, k) => {
       const r = gRect();
       const w = toWorld(e.clientX - r.left, e.clientY - r.top);
-      addNode(t, w.x, w.y);
+      if (k === "node") {
+        addNode(e.dataTransfer.getData("text/x-aio-node"), w.x, w.y);
+        return;
+      }
+      const targetId = e.target.closest?.(".mat-node")?.dataset.id;
+      const pending = droppedImages(e);
+      if (k === "files") setStatus(true, "Importing images\u2026");
+      const ids = await pending;
+      if (closed) return;
+      if (!ids.length) {
+        setStatus(false, "Drop image files (or images from the library) here");
+        return;
+      }
+      const target = mat.nodes.find((n) => n.id === targetId && n.type === "textureSample");
+      const sel = [];
+      ids.forEach((mid, i) => {
+        if (i === 0 && target) {
+          target.params.texture = mid;
+          sel.push(target.id);
+          return;
+        }
+        const off = (i - (target ? 1 : 0)) * 30;
+        const n = makeNode("textureSample", w.x + off, w.y + off, { texture: mid });
+        mat.nodes.push(n);
+        sel.push(n.id);
+      });
+      selected = new Set(sel);
+      changed(target && ids.length === 1 ? "Set texture" : "Add texture sample");
+    });
+    dropZone(left.querySelector(".mat-prev-panel"), ["files", "ve"], async (e) => {
+      const ids = await droppedImages(e);
+      if (closed || !ids.length) return;
+      fillPrevSrc();
+      prevSrcSel.value = "media:" + ids[0];
+      preview.setSource(prevSrcSel.value);
     });
     let codePre = null, paramsBox = null;
     function updateDetailsCode() {
@@ -4642,7 +4974,10 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       blur: makeProgram(FS_BLUR),
       filter: makeProgram(FS_FILTER),
       composite: makeProgram(FS_COMPOSITE),
-      transition: makeProgram(FS_TRANSITION)
+      transition: makeProgram(FS_TRANSITION),
+      hue: makeProgram(FS_HUE),
+      filter2: makeProgram(FS_FILTER2),
+      transition2: makeProgram(FS_TRANSITION2)
     };
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
@@ -4850,7 +5185,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
     const dimsCache = /* @__PURE__ */ new Map();
     function baseSize(clip, sw, sh) {
       const { width: W, height: H } = settings();
-      if (clip.type === "color" || clip.type === "material") return [W, H];
+      if (FULLFRAME.has(clip.type)) return [W, H];
       if (clip.type === "text") return [sw, sh];
       const f = Math.min(W / sw, H / sh);
       return [sw * f, sh * f];
@@ -4881,7 +5216,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
     }
     function sourceDims(clip) {
       const { width: W, height: H } = settings();
-      if (clip.type === "color" || clip.type === "material") return [W, H];
+      if (FULLFRAME.has(clip.type)) return [W, H];
       if (clip.type === "text") {
         try {
           const f = sources.getFrame(clip);
@@ -4903,25 +5238,59 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       return [W, H];
     }
     function getClipQuad(clip) {
+      if (clip.type === "adjustment") {
+        const { width: W, height: H } = settings();
+        return [{ x: -W / 2, y: -H / 2 }, { x: W / 2, y: -H / 2 }, { x: W / 2, y: H / 2 }, { x: -W / 2, y: H / 2 }];
+      }
       const [sw, sh] = sourceDims(clip);
       const [a, b, c, d, tx, ty] = clipMatrix(clip, sw, sh);
       const [l, t, r, bo] = cropRect(clip);
       const pt = (u, v) => ({ x: a * u + c * v + tx, y: b * u + d * v + ty });
       return [pt(l, t), pt(r, t), pt(r, bo), pt(l, bo)];
     }
-    function colorNeutral(col) {
-      if (!col) return true;
-      for (const k of ["brightness", "contrast", "saturation", "hue", "exposure", "temperature", "tint", "highlights", "shadows", "vignette", "sharpen", "blur"]) {
-        if (col[k]) return false;
-      }
-      return true;
+    const posterLevels = (col) => {
+      const v = Math.round(Number(col && col.posterize) || 0);
+      return v >= 2 ? Math.min(64, v) : 0;
+    };
+    function colorUber(col) {
+      if (!col) return false;
+      return COLOR_KEYS.some((k) => Number(col[k])) || posterLevels(col) > 0 || !!col.invert || !!col.grayscale;
     }
-    function processLayer(clip, t) {
+    function colorNeutral(col) {
+      return !col || !colorUber(col) && !Number(col.blur);
+    }
+    function blurCopy(srcTex, w, h2, sigmaFrac) {
+      const sigmaPx = sigmaFrac * Math.max(w, h2);
+      const ds = Math.max(1, Math.floor(sigmaPx / 4));
+      const bw = Math.max(1, Math.round(w / ds)), bh = Math.max(1, Math.round(h2 / ds));
+      const r1 = acquire(bw, bh);
+      pass(P3.blur, r1, (pr) => {
+        bindTex(0, srcTex);
+        u1i(pr, "u_tex", 0);
+        u2f(pr, "u_dir", 1, 0);
+        u1f(pr, "u_sigma", sigmaPx / w);
+      });
+      const r2 = acquire(bw, bh);
+      pass(P3.blur, r2, (pr) => {
+        bindTex(0, r1.tex);
+        u1i(pr, "u_tex", 0);
+        u2f(pr, "u_dir", 0, 1);
+        u1f(pr, "u_sigma", sigmaPx / h2);
+      });
+      release(r1);
+      return r2;
+    }
+    function processLayer(clip, t, frameTex = null) {
       if (!clip || !VISUAL3.has(clip.type)) return null;
       const { width: W, height: H } = settings();
       let srcTex, sw, sh;
       if (clip.type === "color") {
         srcTex = colorTexture(clip.fill || "#2a6df4");
+        sw = W;
+        sh = H;
+      } else if (clip.type === "adjustment") {
+        if (!frameTex) return null;
+        srcTex = frameTex;
         sw = W;
         sh = H;
       } else if (clip.type === "material") {
@@ -4942,9 +5311,11 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
         sh = frame.height;
         dimsCache.set(clip.id, { sw, sh });
       }
-      const chroma = clip.chroma && clip.chroma.enabled && clip.type !== "color" && clip.type !== "material";
+      const chroma = clip.chroma && clip.chroma.enabled && !FULLFRAME.has(clip.type);
       const col = clip.color;
       const colorOn = !colorNeutral(col);
+      const hm = clip.hueMatch;
+      const hueOn = !!(hm && hm.enabled && clip.type !== "material" && (hm.colorize || (Number(hm.range) || 0) > 0));
       const filters = (clip.filters || []).filter((f) => f && FILTER_INDEX.has(f.type) && (f.amount ?? 1) > 0);
       let mat = null;
       if (clip.materialId && materialsMod) {
@@ -4952,14 +5323,14 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
         if (m) mat = getMaterialProgram(m);
       } else if (clip.materialId && !materialsMod) loadMaterials();
       if (clip.type === "material" && !mat) return null;
-      if (!chroma && !colorOn && !filters.length && !mat) return { tex: srcTex, rt: null, sw, sh };
+      if (!chroma && !hueOn && !colorOn && !filters.length && !mat) return { tex: srcTex, rt: null, sw, sh };
       const [bw, bh] = baseSize(clip, sw, sh);
       const tr = clip.transform || {};
       const sc = Math.abs(tr.scale ?? 1);
       const disp = canvasW / W;
       const dispW = bw * sc * Math.abs(tr.scaleX ?? 1) * disp, dispH = bh * sc * Math.abs(tr.scaleY ?? 1) * disp;
       let lw, lh;
-      if (clip.type === "color" || clip.type === "material") {
+      if (FULLFRAME.has(clip.type)) {
         lw = canvasW;
         lh = canvasH;
       } else {
@@ -5038,11 +5409,36 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
           u1f(pr, "u_feather", feather * 0.01 * Math.max(lw, lh));
         });
       }
+      if (hueOn) {
+        const [fr, fg, fb] = hexToRgb2(hm.from, [1, 0, 0]);
+        const [tr2, tg, tb] = hexToRgb2(hm.to, [0, 0.4, 1]);
+        step(P3.hue, (pr) => {
+          gl.uniform3f(pr.loc("u_from"), fr, fg, fb);
+          gl.uniform3f(pr.loc("u_to"), tr2, tg, tb);
+          u1f(pr, "u_range", Math.max(0, Math.min(180, Number(hm.range) || 0)));
+          u1i(pr, "u_colorize", hm.colorize ? 1 : 0);
+        });
+      }
       if (colorOn) {
-        const n = (k) => (Number(col[k]) || 0) / 100;
-        const needUber = ["brightness", "contrast", "saturation", "hue", "exposure", "temperature", "tint", "highlights", "shadows", "vignette", "sharpen"].some((k) => col[k]);
-        if (needUber) {
+        const n = (k) => Math.max(-1, Math.min(1, (Number(col[k]) || 0) / 100));
+        if (colorUber(col)) {
+          const clar = n("clarity");
+          const low = clar ? blurCopy(cur.tex, lw, lh, 0.025) : null;
           step(P3.color, (pr) => {
+            bindTex(1, low ? low.tex : transparentTex);
+            u1i(pr, "u_low", 1);
+            u1f(pr, "u_gamma", n("gamma"));
+            u1f(pr, "u_vib", n("vibrance"));
+            u1f(pr, "u_noise", Math.max(0, n("noise")));
+            u1f(pr, "u_fade", Math.max(0, n("fade")));
+            u1f(pr, "u_clar", clar);
+            u1f(pr, "u_blacks", n("blacks"));
+            u1f(pr, "u_whites", n("whites"));
+            gl.uniform3f(pr.loc("u_gain"), n("red"), n("green"), n("blue"));
+            u1f(pr, "u_post", posterLevels(col));
+            u1f(pr, "u_inv", col.invert ? 1 : 0);
+            u1f(pr, "u_gray", col.grayscale ? 1 : 0);
+            u1f(pr, "u_time", Math.max(0, t - clip.start));
             u2f(pr, "u_texel", 1 / lw, 1 / lh);
             u1f(pr, "u_bri", n("brightness"));
             u1f(pr, "u_con", n("contrast"));
@@ -5056,6 +5452,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
             u1f(pr, "u_vig", Math.max(0, n("vignette")));
             u1f(pr, "u_sharp", Math.max(0, n("sharpen")));
           });
+          if (low) release(low);
         }
         const blur = Math.max(0, Math.min(100, Number(col.blur) || 0));
         if (blur > 0) {
@@ -5073,9 +5470,10 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
         }
       }
       for (const f of filters) {
-        step(P3.filter, (pr) => {
+        const fi = FILTER_INDEX.get(f.type);
+        step(fi >= FILTER_V2 ? P3.filter2 : P3.filter, (pr) => {
           u2f(pr, "u_res", lw, lh);
-          u1i(pr, "u_type", FILTER_INDEX.get(f.type));
+          u1i(pr, "u_type", fi);
           u1f(pr, "u_amt", Math.max(0, Math.min(1, f.amount ?? 1)));
           u1f(pr, "u_time", Math.max(0, t - clip.start));
         });
@@ -5150,11 +5548,19 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
         const mode = BLEND_INDEX.get(clip.blend) ?? 0;
         const tr = entry.transition;
         try {
-          if (tr && TRANSITION_INDEX.has(tr.type)) {
+          if (clip.type === "adjustment") {
+            const strength = clipOpacity(clip) * (tr ? Math.max(0, Math.min(1, tr.progress)) : 1);
+            if (strength <= 0) continue;
+            const layer = processLayer(clip, t, frameA.tex);
+            if (!layer || !layer.rt) continue;
+            composite(layer.tex, identityInv(), [0, 0, 1, 1], strength, mode, frameA.tex, frameB);
+            release(layer.rt);
+          } else if (tr && TRANSITION_INDEX.has(tr.type)) {
             const rtB = layerToFrameRT(clip, t);
             const rtA = layerToFrameRT(tr.other, t);
             const rtT = acquire(canvasW, canvasH);
-            pass(P3.transition, rtT, (pr) => {
+            const ti = TRANSITION_INDEX.get(tr.type);
+            pass(ti >= TRANSITION_V2 ? P3.transition2 : P3.transition, rtT, (pr) => {
               bindTex(0, rtA.tex);
               u1i(pr, "u_a", 0);
               bindTex(1, rtB.tex);
@@ -5162,7 +5568,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
               u1f(pr, "u_p", Math.max(0, Math.min(1, tr.progress)));
               u1f(pr, "u_asp", st.width / st.height);
               u2f(pr, "u_res", canvasW, canvasH);
-              u1i(pr, "u_type", TRANSITION_INDEX.get(tr.type));
+              u1i(pr, "u_type", ti);
             });
             release(rtA);
             release(rtB);
@@ -5232,7 +5638,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
     });
     return { render, setSize, getClipQuad, dispose, gl };
   }
-  var materialsMod, materialsPromise, ident, DEFINES, FILTER_INDEX, TRANSITION_INDEX, BLEND_INDEX, VS, HEAD, FS_COPY, FS_FILL, FS_CHROMA, FS_COLOR, FS_HUE, FS_BLUR, FS_FILTER, FS_FILTER2, FS_COMPOSITE, FS_TRANSITION, VISUAL3;
+  var materialsMod, materialsPromise, ident, DEFINES, FILTER_INDEX, TRANSITION_INDEX, BLEND_INDEX, FILTER_V2, TRANSITION_V2, COLOR_KEYS, VS, HEAD, FS_COPY, FS_FILL, FS_CHROMA, FS_COLOR, FS_HUE, FS_BLUR, FS_FILTER, FS_FILTER2, FS_COMPOSITE, TR_COMMON, FS_TRANSITION, FS_TRANSITION2, VISUAL3, FULLFRAME;
   var init_renderer = __esm({
     "js/renderer.js"() {
       init_catalog();
@@ -5246,6 +5652,31 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       FILTER_INDEX = new Map(FILTERS.map((f, i) => [f.id, i]));
       TRANSITION_INDEX = new Map(TRANSITIONS.map((f, i) => [f.id, i]));
       BLEND_INDEX = new Map(BLEND_MODES.map((f, i) => [f.id, i]));
+      FILTER_V2 = FILTER_INDEX.get("deep_fry") ?? FILTERS.length;
+      TRANSITION_V2 = TRANSITION_INDEX.get("cube_left") ?? TRANSITIONS.length;
+      COLOR_KEYS = [
+        "brightness",
+        "contrast",
+        "saturation",
+        "hue",
+        "exposure",
+        "temperature",
+        "tint",
+        "highlights",
+        "shadows",
+        "vignette",
+        "sharpen",
+        "gamma",
+        "vibrance",
+        "noise",
+        "fade",
+        "clarity",
+        "blacks",
+        "whites",
+        "red",
+        "green",
+        "blue"
+      ];
       VS = `#version 300 es
 in vec2 a_pos; out vec2 v_uv;
 void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
@@ -5327,7 +5758,7 @@ void main() {
     float detail = luma(s.rgb) - luma(texture(u_low, v_uv).rgb);
     float lc = luma(clamp(c, 0.0, 1.0));
     float m = 1.0 - pow(abs(lc * 2.0 - 1.0), 2.0);
-    c += detail * u_clar * 1.6 * (0.35 + 0.65 * m);
+    c += detail * u_clar * 1.1 * (0.35 + 0.65 * m);
   }
   c += vec3(u_temp, u_temp * 0.15, -u_temp) * 0.15;
   c += vec3(u_tint * 0.5, -u_tint, u_tint * 0.5) * 0.12;
@@ -5682,13 +6113,13 @@ void main() {
   else if (t == F_bulge || t == F_pinch) {
     vec2 d = (uv - 0.5) * aspv(); float R = 0.5; float f = length(d) / R;
     float k = f < 1.0 ? (1.0 - f * f) : 0.0;
-    float s = t == F_bulge ? 1.0 - 0.6 * a * k : 1.0 + 0.8 * a * k;
-    r = SB(d * s / aspv() + 0.5); direct = true;
+    float s = t == F_bulge ? 1.0 - 0.5 * a * k : 1.0 + 0.5 * a * k;
+    r = SM(d * s / aspv() + 0.5); direct = true;
   }
   else if (t == F_twirl) {
     vec2 d = (uv - 0.5) * aspv(); float R = 0.6; float f = length(d) / R;
     float k = f < 1.0 ? (1.0 - f) * (1.0 - f) : 0.0;
-    r = SB(rot2(d, a * 4.0 * k) / aspv() + 0.5); direct = true;
+    r = SM(rot2(d, a * 2.5 * k) / aspv() + 0.5); direct = true;
   }
   else if (t == F_tilt_shift) {
     float dy = abs(uv.y - 0.5);
@@ -5756,7 +6187,7 @@ void main() {
   vec3 co = cs * a + d.rgb * d.a * (1.0 - a);
   outColor = ao > 1e-5 ? vec4(co / ao, ao) : vec4(0.0);
 }`;
-      FS_TRANSITION = HEAD + `
+      TR_COMMON = `
 uniform sampler2D u_a, u_b; uniform float u_p, u_asp; uniform int u_type; uniform vec2 u_res;
 // uv here is top-down (y = 0 at the top of the frame); textures are GL (y up).
 vec4 A(vec2 uv) { return (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) ? vec4(0.0) : texture(u_a, vec2(uv.x, 1.0 - uv.y)); }
@@ -5767,15 +6198,17 @@ vec4 fadeA(vec4 c, float k) { return vec4(c.rgb, c.a * k); }
 vec4 blurA(vec2 uv, float rad) {
   vec4 acc = premul(A(uv)); float n = 1.0;
   for (int i = 1; i <= 16; i++) { float r = sqrt(float(i) / 16.0) * rad; float ang = float(i) * 2.39996;
-    acc += premul(A(uv + vec2(cos(ang), sin(ang) * u_asp) * r)); n += 1.0; }
+    acc += premul(A(clamp(uv + vec2(cos(ang), sin(ang) * u_asp) * r, 0.0, 1.0))); n += 1.0; }
   return unpremul(acc / n);
 }
 vec4 blurB(vec2 uv, float rad) {
   vec4 acc = premul(B(uv)); float n = 1.0;
   for (int i = 1; i <= 16; i++) { float r = sqrt(float(i) / 16.0) * rad; float ang = float(i) * 2.39996;
-    acc += premul(B(uv + vec2(cos(ang), sin(ang) * u_asp) * r)); n += 1.0; }
+    acc += premul(B(clamp(uv + vec2(cos(ang), sin(ang) * u_asp) * r, 0.0, 1.0))); n += 1.0; }
   return unpremul(acc / n);
 }
+`;
+      FS_TRANSITION = HEAD + TR_COMMON + `
 void main() {
   vec2 uv = vec2(v_uv.x, 1.0 - v_uv.y); float p = u_p; vec4 o; float e = 0.015;
   vec2 asp = vec2(u_asp, 1.0);
@@ -5847,7 +6280,284 @@ void main() {
   else o = mixS(A(uv), B(uv), p); // dissolve + fallback
   outColor = o;
 }`;
-      VISUAL3 = /* @__PURE__ */ new Set(["video", "image", "text", "color", "material"]);
+      FS_TRANSITION2 = HEAD + TR_COMMON + `
+const float CAMF = 2.0; // camera distance; the frame plane z = 0 exactly fills the view
+vec4 BG;
+vec3 rotY(vec3 v, float a) { float c = cos(a), s = sin(a); return vec3(c * v.x + s * v.z, v.y, -s * v.x + c * v.z); }
+vec3 rotX(vec3 v, float a) { float c = cos(a), s = sin(a); return vec3(v.x, c * v.y - s * v.z, s * v.y + c * v.z); }
+vec3 rayDir(vec2 uv) { return vec3((uv.x - 0.5) * u_asp, 0.5 - uv.y, CAMF); }
+vec3 safeInv(vec3 d) { return 1.0 / (d + vec3(equal(d, vec3(0.0))) * 1e-6); }
+vec4 AM(vec2 uv) { return A(1.0 - abs(1.0 - mod(uv, 2.0))); }
+vec4 BM(vec2 uv) { return B(1.0 - abs(1.0 - mod(uv, 2.0))); }
+// axis 0 = spin around Y (dir +1 left, -1 right), axis 1 = spin around X (up)
+vec4 cube(vec2 uv, int axis, float dir, float p) {
+  vec3 h = vec3(u_asp * 0.5, 0.5, axis == 0 ? u_asp * 0.5 : 0.5);
+  float ang = p * 1.5707963 * dir;
+  float push = sin(p * 3.14159) * (axis == 0 ? 0.8 : 0.5);
+  vec3 ctr = vec3(0.0, 0.0, h.z + push);
+  vec3 ro = vec3(0.0, 0.0, -CAMF) - ctr, rd = rayDir(uv);
+  if (axis == 0) { ro = rotY(ro, -ang); rd = rotY(rd, -ang); } else { ro = rotX(ro, -ang); rd = rotX(rd, -ang); }
+  vec3 iv = safeInv(rd);
+  vec3 t0 = (-h - ro) * iv, t1 = (h - ro) * iv;
+  vec3 tmin = min(t0, t1), tmax = max(t0, t1);
+  float tn = max(max(tmin.x, tmin.y), tmin.z), tf = min(min(tmax.x, tmax.y), tmax.z);
+  if (tn > tf || tf < 0.0) return BG;
+  vec3 hp = ro + rd * tn;
+  vec3 n = tn == tmin.x ? vec3(sign(hp.x), 0.0, 0.0) : (tn == tmin.y ? vec3(0.0, sign(hp.y), 0.0) : vec3(0.0, 0.0, sign(hp.z)));
+  vec4 col;
+  if (n.z < -0.5) col = A(vec2(hp.x / (2.0 * h.x) + 0.5, 0.5 - hp.y / (2.0 * h.y)));
+  else if (axis == 0 && n.x * dir > 0.5) col = B(vec2(dir * hp.z / (2.0 * h.z) + 0.5, 0.5 - hp.y / (2.0 * h.y)));
+  else if (axis == 1 && n.y < -0.5) col = B(vec2(hp.x / (2.0 * h.x) + 0.5, 0.5 + hp.z / (2.0 * h.z)));
+  else col = vec4(0.1, 0.1, 0.12, 1.0);
+  vec3 nw = axis == 0 ? rotY(n, ang) : rotX(n, ang);
+  col.rgb *= 0.35 + 0.65 * max(0.0, -nw.z);
+  return over(col, BG);
+}
+vec4 flipCard(vec2 uv, float p) {
+  float ang = p * 3.14159;
+  vec3 ro = vec3(0.0, 0.0, -CAMF) - vec3(0.0, 0.0, sin(p * 3.14159) * 0.8), rd = rayDir(uv);
+  ro = rotY(ro, -ang); rd = rotY(rd, -ang);
+  if (abs(rd.z) < 1e-6) return BG;
+  float tt = -ro.z / rd.z; if (tt < 0.0) return BG;
+  vec3 hp = ro + rd * tt;
+  vec2 q = vec2(hp.x / u_asp + 0.5, 0.5 - hp.y);
+  if (q.x < 0.0 || q.y < 0.0 || q.x > 1.0 || q.y > 1.0) return BG;
+  vec4 col = rd.z > 0.0 ? A(q) : B(vec2(1.0 - q.x, q.y));
+  col.rgb *= 0.45 + 0.55 * abs(cos(ang));
+  return over(col, BG);
+}
+// one door: hinge at world x = hx; covers A's x range [x0, x1] (world units)
+void door(vec2 uv, float hx, float ang, float x0, float x1, inout float best, inout vec4 res) {
+  vec3 ro = vec3(-hx, 0.0, -CAMF), rd = rayDir(uv);
+  ro = rotY(ro, -ang); rd = rotY(rd, -ang);
+  if (abs(rd.z) < 1e-6) return;
+  float tt = -ro.z / rd.z; if (tt < 0.0 || tt > best) return;
+  vec3 hp = ro + rd * tt; float wx = hp.x + hx;
+  if (wx < x0 || wx > x1 || abs(hp.y) > 0.5) return;
+  vec4 col = A(vec2(wx / u_asp + 0.5, 0.5 - hp.y));
+  col.rgb *= 0.4 + 0.6 * cos(ang);
+  best = tt; res = col;
+}
+vec4 doorOpen(vec2 uv, float p) {
+  float e = p * p * (3.0 - 2.0 * p);
+  float ang = e * 2.05; // past 90\xB0 + the view angle so the doors leave the frame
+  float sc = 0.85 + 0.15 * e;
+  vec4 back = B((uv - 0.5) / sc + 0.5); back.rgb *= 0.55 + 0.45 * e;
+  back = over(back, BG);
+  float best = 1e9; vec4 d = vec4(0.0);
+  float hw = u_asp * 0.5;
+  door(uv, -hw, -ang, -hw, 0.0, best, d); // swing away from the viewer
+  door(uv, hw, ang, 0.0, hw, best, d);
+  d.a *= 1.0 - smoothstep(0.9, 1.0, p);
+  return over(d, back);
+}
+vec4 pageTurn(vec2 uv, float p) {
+  vec2 sz = vec2(u_asp, 1.0);
+  vec2 q = uv * sz;
+  vec2 n = normalize(sz);
+  float Lp = length(sz), R = 0.12, PI = 3.14159265;
+  float s0 = mix(Lp + 0.01, -PI * R * 0.5 - 0.06, p);
+  float s = dot(q, n);
+  vec4 res = B(uv);
+  if (s > s0) res.rgb *= 1.0 - 0.5 * (1.0 - smoothstep(0.0, 2.5 * R, s - s0 - R * 0.3)) * smoothstep(0.0, 0.05, Lp - s0);
+  if (s < s0) res = over(A(uv), res);
+  else if (s < s0 + R) {
+    float a1 = R * asin(clamp((s - s0) / R, 0.0, 1.0));
+    vec4 fc = A((q + n * (s0 + a1 - s)) / sz);
+    fc.rgb *= 1.0 - 0.45 * (s - s0) / R;
+    res = over(fc, res);
+  }
+  if (s < s0 + R) {
+    float a2 = s >= s0 ? PI * R - R * asin(clamp((s - s0) / R, 0.0, 1.0)) : PI * R + (s0 - s);
+    vec4 bc = A((q + n * (s0 + a2 - s)) / sz);
+    float lit = s >= s0 ? 0.75 + 0.25 * (s - s0) / R : 1.0;
+    bc.rgb = mix(bc.rgb, vec3(0.96), 0.65) * lit;
+    res = over(bc, res);
+  }
+  return res;
+}
+vec4 radialA(vec2 uv, float sc, float blur) { // zoom about the center + radial blur
+  vec4 acc = vec4(0.0);
+  for (int i = 0; i < 12; i++) acc += premul(AM((uv - 0.5) / (sc * (1.0 + blur * float(i) / 11.0)) + 0.5));
+  return unpremul(acc / 12.0);
+}
+vec4 radialB(vec2 uv, float sc, float blur) {
+  vec4 acc = vec4(0.0);
+  for (int i = 0; i < 12; i++) acc += premul(BM((uv - 0.5) / (sc * (1.0 + blur * float(i) / 11.0)) + 0.5));
+  return unpremul(acc / 12.0);
+}
+vec4 spinA(vec2 uv, float ang, float sc, float smear) {
+  vec4 acc = vec4(0.0); vec2 asp = vec2(u_asp, 1.0);
+  for (int i = 0; i < 8; i++) acc += premul(AM(rot2((uv - 0.5) * asp, -(ang - smear * float(i) / 7.0)) / sc / asp + 0.5));
+  return unpremul(acc / 8.0);
+}
+vec4 spinB(vec2 uv, float ang, float sc, float smear) {
+  vec4 acc = vec4(0.0); vec2 asp = vec2(u_asp, 1.0);
+  for (int i = 0; i < 8; i++) acc += premul(BM(rot2((uv - 0.5) * asp, -(ang - smear * float(i) / 7.0)) / sc / asp + 0.5));
+  return unpremul(acc / 8.0);
+}
+vec4 pushS(vec2 uv, float x) { return over(B(uv - vec2(1.0 - x, 0.0)), A(uv + vec2(x, 0.0))); }
+float sdStar5(vec2 p, float r, float rf) {
+  const vec2 k1 = vec2(0.809016994375, -0.587785252292);
+  const vec2 k2 = vec2(-k1.x, k1.y);
+  p.x = abs(p.x);
+  p -= 2.0 * max(dot(k1, p), 0.0) * k1;
+  p -= 2.0 * max(dot(k2, p), 0.0) * k2;
+  p.x = abs(p.x);
+  p.y -= r;
+  vec2 ba = rf * vec2(-k1.y, k1.x) - vec2(0.0, 1.0);
+  float h = clamp(dot(p, ba) / dot(ba, ba), 0.0, r);
+  return length(p - ba * h) * sign(p.y * ba.x - p.x * ba.y);
+}
+float dot2(vec2 v) { return dot(v, v); }
+float sdHeart(vec2 p) {
+  p.x = abs(p.x);
+  if (p.y + p.x > 1.0) return sqrt(dot2(p - vec2(0.25, 0.75))) - sqrt(2.0) / 4.0;
+  return sqrt(min(dot2(p - vec2(0.0, 1.0)), dot2(p - 0.5 * max(p.x + p.y, 0.0)))) * sign(p.x - p.y);
+}
+float easeBounce(float x) {
+  const float n1 = 7.5625, d1 = 2.75;
+  if (x < 1.0 / d1) return n1 * x * x;
+  if (x < 2.0 / d1) { x -= 1.5 / d1; return n1 * x * x + 0.75; }
+  if (x < 2.5 / d1) { x -= 2.25 / d1; return n1 * x * x + 0.9375; }
+  x -= 2.625 / d1; return n1 * x * x + 0.984375;
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+void main() {
+  vec2 uv = vec2(v_uv.x, 1.0 - v_uv.y); float p = u_p; vec4 o; float e = 0.01;
+  vec2 asp = vec2(u_asp, 1.0);
+  float amt = 1.0 - abs(2.0 * p - 1.0);
+  int t = u_type;
+  BG = vec4(0.04, 0.04, 0.05, max(A(uv).a, B(uv).a));
+  if (t == T_cube_left) o = cube(uv, 0, 1.0, p);
+  else if (t == T_cube_right) o = cube(uv, 0, -1.0, p);
+  else if (t == T_cube_up) o = cube(uv, 1, 1.0, p);
+  else if (t == T_flip_card) o = flipCard(uv, p);
+  else if (t == T_door_open) o = doorOpen(uv, p);
+  else if (t == T_page_turn) o = pageTurn(uv, p);
+  else if (t == T_white_flash) {
+    float w = exp(-pow((p - 0.5) / 0.07, 2.0));
+    vec4 base = p < 0.5 ? A(uv) : B(uv);
+    base.rgb *= 1.0 + 1.5 * w;
+    o = vec4(mix(clamp(base.rgb, 0.0, 1.0), vec3(1.0), w), max(base.a, w));
+  }
+  else if (t == T_flashbang) {
+    float white = p < 0.1 ? smoothstep(0.0, 0.1, p) : 1.0 - smoothstep(0.25, 0.9, p);
+    float boost = 1.0 + 5.0 * white;
+    vec4 base = p < 0.18 ? A(uv) : B(uv);
+    vec3 col = base.rgb * boost;
+    float ghost = p >= 0.18 ? (1.0 - smoothstep(0.2, 0.95, p)) : 0.0;
+    float ring = 0.6 + 0.4 * cos(p * 40.0);
+    vec4 after = blurA(uv + vec2(sin(p * 50.0) * 0.004, 0.0), 0.01 + 0.03 * p);
+    col += after.rgb * after.a * ghost * 0.9 * ring;
+    col = mix(col, vec3(1.0), white * white);
+    o = vec4(clamp(col, 0.0, 1.0), max(max(base.a, white), after.a * ghost));
+  }
+  else if (t == T_zoom_punch) {
+    if (p < 0.5) { float q = p * 2.0; o = radialA(uv, 1.0 + 2.5 * q * q, q * q * 0.35); }
+    else { float q = (p - 0.5) * 2.0; float k = 1.0 - pow(1.0 - q, 3.0); o = radialB(uv, mix(2.4, 1.0, k), (1.0 - k) * 0.35); }
+  }
+  else if (t == T_spin_zoom) {
+    if (p < 0.5) { float q = p * 2.0; float ea = q * q; o = spinA(uv, ea * 6.2831853, 1.0 + 3.0 * ea, q * 0.9); }
+    else { float q = (p - 0.5) * 2.0; float k = 1.0 - pow(1.0 - q, 2.0); o = spinB(uv, -(1.0 - k) * 6.2831853, mix(4.0, 1.0, k), (1.0 - q) * 0.9); }
+  }
+  else if (t == T_star_wipe || t == T_heart_wipe) {
+    vec2 d = (uv - 0.5) * asp; d.y = -d.y;
+    float sdf;
+    if (t == T_star_wipe) { float r = p * p * 3.4; d = rot2(d, p * 0.8); sdf = sdStar5(d, r, 0.45); }
+    else { float sc = p * p * 3.2 + 1e-4; sdf = sdHeart(d / sc + vec2(0.0, 0.5)) * sc; }
+    o = mixS(B(uv), A(uv), smoothstep(-0.004, 0.004, sdf));
+  }
+  else if (t == T_shake_cut) {
+    float k = p < 0.5 ? smoothstep(0.3, 0.5, p) : exp(-(p - 0.5) * 7.0);
+    float st = floor(p * 45.0);
+    vec2 off = (vec2(hash(vec2(st, 1.3)), hash(vec2(st, 7.1))) - 0.5) * 0.12 * k;
+    float ang = (hash(vec2(st, 3.7)) - 0.5) * 0.12 * k;
+    vec2 u2 = rot2((uv - 0.5) * asp, ang) / (1.0 + 0.15 * k) / asp + 0.5 + off;
+    vec2 sp = vec2(0.012 * k, 0.0);
+    if (p < 0.5) { vec4 c = AM(u2); o = vec4(AM(u2 + sp).r, c.g, AM(u2 - sp).b, c.a); }
+    else { vec4 c = BM(u2); o = vec4(BM(u2 + sp).r, c.g, BM(u2 - sp).b, c.a); }
+  }
+  else if (t == T_whip_pan) {
+    float x = p < 0.5 ? 4.0 * p * p * p : 1.0 - pow(-2.0 * p + 2.0, 3.0) / 2.0;
+    float bl = amt * amt * 0.25;
+    vec4 acc = vec4(0.0);
+    for (int i = -10; i <= 10; i++) acc += premul(pushS(uv + vec2(float(i) / 10.0 * bl, 0.0), x));
+    o = unpremul(acc / 21.0);
+  }
+  else if (t == T_bounce) o = over(B(uv + vec2(0.0, 1.0 - easeBounce(p))), A(uv));
+  else if (t == T_clock_wipe) {
+    vec2 d = (uv - 0.5) * asp;
+    float a01 = fract(atan(d.x, -d.y) / 6.2831853 + 1.0);
+    float q = p * (1.0 + 2.0 * e) - e;
+    o = mixS(B(uv), A(uv), smoothstep(q - e, q + e, a01));
+  }
+  else if (t == T_radial_wipe) {
+    float r = length((uv - 0.5) * asp) / (length(asp) * 0.5);
+    float q = p * 1.3;
+    o = mixS(A(uv), B(uv), 1.0 - smoothstep(q - 0.3, q, r));
+  }
+  else if (t == T_cross_zoom) {
+    float str = amt * 0.45; vec4 acc = vec4(0.0);
+    float m = smoothstep(0.35, 0.65, p);
+    float sa = 1.0 + 0.6 * smoothstep(0.0, 1.0, p), sb = 1.6 - 0.6 * smoothstep(0.0, 1.0, p);
+    for (int i = 0; i < 16; i++) {
+      float f = 1.0 - str * float(i) / 15.0;
+      vec2 u2 = 0.5 + (uv - 0.5) * f;
+      acc += mix(premul(AM((u2 - 0.5) / sa + 0.5)), premul(BM((u2 - 0.5) / sb + 0.5)), m);
+    }
+    o = unpremul(acc / 16.0);
+  }
+  else if (t == T_film_burn) {
+    o = mixS(A(uv), B(uv), smoothstep(0.4, 0.6, p));
+    vec2 ctr = vec2(mix(-0.3, 1.3, p), 0.5 + 0.15 * sin(p * 6.0));
+    vec2 d = (uv - ctr) * asp;
+    float nz = vnoise(uv * 5.0 + p * 3.0) * 0.6 + vnoise(uv * 13.0 - p * 5.0) * 0.4;
+    float rad = 0.15 + 0.55 * amt;
+    float g = 1.0 - smoothstep(0.0, rad, length(d) + (nz - 0.5) * 0.35);
+    vec3 burn = mix(vec3(0.9, 0.25, 0.02), vec3(1.0, 0.75, 0.3), smoothstep(0.2, 0.6, g));
+    burn = mix(burn, vec3(1.0, 0.98, 0.9), smoothstep(0.6, 0.9, g));
+    vec3 col = o.rgb + burn * smoothstep(0.0, 0.6, g) * 1.4;
+    col = mix(col, vec3(1.0, 0.98, 0.92), smoothstep(0.75, 1.0, g));
+    o = vec4(clamp(col, 0.0, 1.0), max(o.a, smoothstep(0.0, 0.5, g)));
+  }
+  else if (t == T_luma_fade) {
+    float la = luma(A(uv).rgb);
+    float q = p * 1.2 - 0.1;
+    o = mixS(A(uv), B(uv), smoothstep(la - 0.1, la, q));
+  }
+  else if (t == T_rgb_split) {
+    float x = p * p * (3.0 - 2.0 * p);
+    float sp = amt * 0.12;
+    vec4 g = pushS(uv, x);
+    o = vec4(pushS(uv + vec2(sp, 0.0), x).r, g.g, pushS(uv - vec2(sp, 0.0), x).b, g.a);
+  }
+  else if (t == T_mosaic_tiles) {
+    vec2 grid = vec2(floor(9.0 * u_asp + 0.5), 9.0);
+    vec2 g = uv * grid; vec2 id = floor(g); vec2 lc = fract(g) - 0.5;
+    float lp = clamp((p - hash(id) * 0.6) / 0.4, 0.0, 1.0);
+    float cw = abs(cos(lp * 3.14159));
+    if (abs(lc.x) > cw * 0.5 - 0.002) o = vec4(BG.rgb, max(A(uv).a, B(uv).a));
+    else {
+      vec2 su = (id + 0.5 + vec2(lc.x / max(cw, 1e-3), lc.y)) / grid;
+      o = lp < 0.5 ? A(su) : B(su);
+      o.rgb *= 0.6 + 0.4 * cw;
+    }
+  }
+  else if (t == T_dreamy) {
+    vec2 u2 = clamp(uv + vec2(sin(uv.y * 18.0 + p * 12.0) * 0.03, sin(uv.x * 12.0 + p * 9.0) * 0.01) * amt, 0.002, 0.998);
+    float rad = amt * 0.02;
+    o = mixS(blurA(u2, rad), blurB(u2, rad), smoothstep(0.2, 0.8, p));
+    o.rgb = mix(o.rgb, vec3(1.0), amt * 0.15);
+  }
+  else o = mixS(A(uv), B(uv), p);
+  outColor = o;
+}`;
+      VISUAL3 = /* @__PURE__ */ new Set(["video", "image", "text", "color", "material", "adjustment"]);
+      FULLFRAME = /* @__PURE__ */ new Set(["color", "material", "adjustment"]);
     }
   });
 
@@ -6833,12 +7543,32 @@ self.onmessage = e => { const { id, channels, sr, semis } = e.data;
       const e = pitchEntry(rt, clip.reverse, semis);
       return await e.promise || plain;
     }
+    function cutSpan(clip) {
+      const r = { start: clip.start, end: clip.start + clip.duration, xin: 0, xout: 0 };
+      if (clip.type !== "video" || clip.reverse || !store2.cutTransition) return r;
+      const clips = store2.clipsOnTrack(clip.trackId);
+      const tin = store2.cutTransition(clip, clips);
+      if (tin) {
+        r.start = tin.from;
+        r.xin = tin.to - tin.from;
+      }
+      for (const c of clips) {
+        const ct = c !== clip && store2.cutTransition(c, clips);
+        if (ct && ct.a === clip) {
+          r.end = ct.to;
+          r.xout = ct.to - ct.from;
+          break;
+        }
+      }
+      return r;
+    }
     function scheduleClip(c, clip, buf, dest, from, to, t0, wlReady) {
       if (!buf || !(clip.speed > 0)) return null;
-      const cs = clip.start, ce = Math.min(clip.start + clip.duration, to);
+      const span = cutSpan(clip);
+      const cs = span.start, ce = Math.min(span.end, to);
       const s = Math.max(from, cs);
       if (ce - s <= 1e-4) return null;
-      const src = store2.sourceTime(clip, s);
+      const src = span.xin || span.xout ? store2.extSourceTime(clip, s) : store2.sourceTime(clip, s);
       let offset = clip.reverse ? buf.duration - src : src;
       let dur = (ce - s) * clip.speed;
       if (offset < 0) {
@@ -6857,8 +7587,8 @@ self.onmessage = e => { const { id, channels, sr, semis } = e.data;
       g.channelInterpretation = "speakers";
       const a = clip.audio || {};
       const base = dbToGain(a.volume || 0);
-      const fi = Math.max(0, a.fadeIn || 0), fo = Math.max(0, a.fadeOut || 0);
-      const cEnd = clip.start + clip.duration;
+      const fi = Math.max(0, a.fadeIn || 0, span.xin), fo = Math.max(0, a.fadeOut || 0, span.xout);
+      const cEnd = span.end;
       const env = (t) => base * Math.max(0, Math.min(1, fi > 0 ? (t - cs) / fi : 1, fo > 0 ? (cEnd - t) / fo : 1));
       g.gain.setValueAtTime(env(s), when);
       const pts = [cs + fi, cEnd - fo, cEnd].filter((p) => p > s + 1e-6).sort((x, y) => x - y);
@@ -6873,7 +7603,11 @@ self.onmessage = e => { const { id, channels, sr, semis } = e.data;
       return { src: node, nodes: [g, pan, ...fx.nodes], oscs: fx.oscs, tail: fx.tail, end: when + (ce - s) };
     }
     function overlapping(from, to) {
-      return store2.audibleClips().filter((c) => c.mediaId && c.speed > 0 && c.start + c.duration > from + 1e-4 && c.start < to);
+      return store2.audibleClips().filter((c) => {
+        if (!c.mediaId || !(c.speed > 0)) return false;
+        const sp = cutSpan(c);
+        return sp.end > from + 1e-4 && sp.start < to;
+      });
     }
     let refreshQueued = false;
     const laterRefresh = () => {
@@ -11685,12 +12419,77 @@ ${notes}`;
         rippleShift(p, c.trackId, oldEnd, end(c) - oldEnd, /* @__PURE__ */ new Set([c.id]));
       }));
     },
+    // Adjustment layer: its color / filters / hue match / material affect every track below it
+    addAdjustmentClip({ time = store.playhead, trackId = null, filter = null, duration = 5 } = {}) {
+      let clip;
+      store.transact("Add adjustment layer", (p) => {
+        const tid = trackId && isFree(p, trackId, time, duration) ? trackId : (() => {
+          const vt = p.tracks.filter((t) => t.kind === "video" && !t.locked);
+          let top = -1;
+          vt.forEach((t, i) => {
+            if (!isFree(p, t.id, time, duration)) top = top < 0 ? i : Math.min(top, i);
+          });
+          for (let i = (top < 0 ? vt.length : top) - 1; i >= 0; i--) if (isFree(p, vt[i].id, time, duration)) return vt[i].id;
+          return insertTrack(p, "video").id;
+        })();
+        clip = makeClip({ trackId: tid, type: "adjustment", name: "Adjustment Layer", start: time, duration });
+        if (filter) clip.filters.push({ id: uid("flt"), type: filter, amount: 1 });
+        p.clips.push(clip);
+      });
+      store.select([clip.id]);
+      return clip;
+    },
+    // ---- transitions as objects: select / copy / paste / move ----
+    selectTransition(clipId, side) {
+      store.selection = { ...store.selection, transition: clipId ? { clipId, side } : null };
+      store.emit("selection", store.selection);
+    },
+    copyTransition(ref = store.selection.transition) {
+      const c = ref && store.getClip(ref.clipId);
+      const tr = c && c[ref.side === "out" ? "transitionOut" : "transitionIn"];
+      if (!tr) return false;
+      store.transitionClipboard = { ...tr };
+      return true;
+    },
+    // Paste onto the selected clips' start (a cut, if a clip ends there), or onto the selected transition's slot
+    pasteTransition() {
+      const tr = store.transitionClipboard;
+      if (!tr) return false;
+      const ref = store.selection.transition;
+      const targets = ref ? [{ id: ref.clipId, side: ref.side }] : store.selectedClips().filter((c) => c.type !== "audio").map((c) => ({ id: c.id, side: "in" }));
+      if (!targets.length) return false;
+      store.transact("Paste transition", (p) => targets.forEach(({ id, side }) => {
+        const c = p.clips.find((x) => x.id === id);
+        if (c) c[side === "out" ? "transitionOut" : "transitionIn"] = { ...tr, duration: Math.min(tr.duration, c.duration) };
+      }));
+      return true;
+    },
+    // Move a transition from one clip edge to another (drag in the timeline)
+    moveTransition(from, to) {
+      const src = store.getClip(from.clipId);
+      const key = (s) => s === "out" ? "transitionOut" : "transitionIn";
+      const tr = src && src[key(from.side)];
+      if (!tr) return;
+      store.transact("Move transition", (p) => {
+        p.clips.find((x) => x.id === from.clipId)[key(from.side)] = null;
+        const dst = p.clips.find((x) => x.id === to.clipId);
+        if (dst) dst[key(to.side)] = { ...tr, duration: Math.min(tr.duration, dst.duration) };
+      });
+      ops.selectTransition(to.clipId, to.side);
+    },
+    deleteSelectedTransition() {
+      const ref = store.selection.transition;
+      if (!ref) return false;
+      ops.setTransition(ref.clipId, ref.side, null);
+      ops.selectTransition(null);
+      return true;
+    },
     setTransition(clipId, side, val) {
       store.transact(val ? "Add transition" : "Remove transition", (p) => {
         const c = p.clips.find((x) => x.id === clipId);
         if (!c) return;
         const key = side === "out" ? "transitionOut" : "transitionIn";
-        c[key] = val ? { type: val.type, duration: Math.min(val.duration ?? 1, c.duration / 2) } : null;
+        c[key] = val ? { type: val.type, duration: Math.min(val.duration ?? 1, c.duration) } : null;
       });
     },
     addTrack(kind = "video", index) {
@@ -12059,7 +12858,7 @@ ${notes}`;
         const el2 = p.el;
         const dur = isFinite(el2.duration) ? el2.duration : Infinity;
         const st = Math.min(time, dur - 1e-3);
-        const runs = playing && !clip.reverse && clip.speed > 0 && time === store2.sourceTime(clip, t) && t < clip.start + clip.duration;
+        const runs = playing && !clip.reverse && clip.speed > 0;
         if (runs) {
           if (Math.abs(el2.playbackRate - clip.speed) > 1e-3) el2.playbackRate = Math.min(16, Math.max(0.0625, clip.speed));
           if (el2.paused) {
@@ -12754,6 +13553,14 @@ Drag onto the start or end of a clip, or double-click to add it to the selected 
         }
       }
       if (tab === "effects" || tab === "filters") {
+        if (tab === "effects" && cat === "all" && !q) add(item({
+          name: "Adjustment Layer",
+          kind: "adjustment",
+          id: "adj",
+          thumbHtml: `<div style="position:absolute;inset:0;background:repeating-linear-gradient(135deg,#5b3d8f 0 10px,#4a3176 10px 20px);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:12px">ADJUST</div>`,
+          title: "Adjustment Layer \u2014 effects on it apply to everything below on the timeline. Drag onto the timeline, or double-click.\nTip: dropping any filter on empty timeline space makes one too.",
+          onDbl: () => ops2.addAdjustmentClip({ time: store2.playhead })
+        }));
         const list = FILTERS.filter((f) => tab === "effects" === EFFECT_CATS.has(f.category)).filter((f) => (cat === "all" || f.category === cat) && match(f.label));
         for (const f of list) {
           add(item({
@@ -12933,14 +13740,15 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       const trans = [{ id: "", label: "None" }, ...TRANSITIONS.map((t) => ({ id: t.id, label: t.label }))];
       let h2 = "";
       if (c.type === "color") h2 += section("fill", "Color", color("Fill", "fill"));
-      h2 += transformSec(c);
+      if (c.type === "adjustment") h2 += '<div class="ins-empty" style="padding:8px 14px">Adjustment layer \u2014 its color, filters, hue match and material apply to every track below it. Opacity sets the strength.</div>';
+      else h2 += transformSec(c);
       if (c.type === "video" || c.type === "image") h2 += section("crop", "Crop", `
       ${slider("Left", "crop.l", { min: 0, max: 95, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}
       ${slider("Right", "crop.r", { min: 0, max: 95, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}
       ${slider("Top", "crop.t", { min: 0, max: 95, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}
       ${slider("Bottom", "crop.b", { min: 0, max: 95, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}`);
       h2 += section("comp", "Compositing", `${select("Blend Mode", "blend", BLEND_MODES)}${slider("Opacity", "transform.opacity", { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 1 })}`);
-      if (c.type !== "material") h2 += section("chroma", "Chroma Key (Green Screen)", `
+      if (c.type !== "material" && c.type !== "adjustment") h2 += section("chroma", "Chroma Key (Green Screen)", `
       ${color("Key color", "chroma.color", { pick: true })}
       ${slider("Tolerance", "chroma.similarity", { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 0.35 })}
       ${slider("Edge soft", "chroma.smoothness", { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 0.08 })}
@@ -13035,6 +13843,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       const m = c.mediaId ? store2.getMedia(c.mediaId) : null;
       const hasAudio = c.type === "audio" || c.type === "video" && m?.hasAudio && !c.audio.detached;
       const t = [];
+      if (c.type === "adjustment") return [["effects", "Effects"], ["color", "Color"], ["video", "Blend"]];
       if (c.type === "text") t.push(["titles", "Titles"]);
       if (c.type !== "audio") t.push(["video", "Video"]);
       if (hasAudio) t.push(["audio", "Audio"]);
@@ -13667,8 +14476,12 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     const actions = {
       undo: () => store.undo(),
       redo: () => store.redo(),
-      delete: () => ops.deleteSelected(),
-      rippleDelete: () => ops.deleteSelected({ ripple: true }),
+      delete: () => {
+        if (!ops.deleteSelectedTransition()) ops.deleteSelected();
+      },
+      rippleDelete: () => {
+        if (!ops.deleteSelectedTransition()) ops.deleteSelected({ ripple: true });
+      },
       split: () => {
         if (!ops.splitAt(store.playhead)) toast("Put the playhead over a clip to split it");
       },
@@ -13714,9 +14527,27 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       import: () => $("#importInput").click(),
       open: () => $("#openInput").click(),
       newProject: () => newProj(),
-      copy: () => ops.copy(),
-      cut: () => ops.cut(),
-      paste: () => ops.paste(store.playhead),
+      copy: () => {
+        if (store.selection.transition) {
+          if (ops.copyTransition()) toast("Transition copied \u2014 select clips or a transition and paste");
+          return;
+        }
+        ops.copy();
+      },
+      cut: () => {
+        if (store.selection.transition) {
+          ops.copyTransition();
+          ops.deleteSelectedTransition();
+          return;
+        }
+        ops.cut();
+      },
+      paste: () => {
+        if (store.transitionClipboard && (store.selection.transition || !store.clipboard?.length && store.selectedClips().length)) {
+          if (ops.pasteTransition()) return;
+        }
+        ops.paste(store.playhead);
+      },
       duplicate: () => ops.duplicate(),
       selectAll: () => ops.selectAll(),
       trimStart: () => ops.trimStartTo(store.playhead),
@@ -13825,6 +14656,13 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         status(`Imported ${files.length} file(s)`);
       }
     });
+    window.addEventListener("ve:importMedia", async (e) => {
+      try {
+        e.detail.resolve(await importFiles([...e.detail.files], { audio }));
+      } catch (err) {
+        e.detail.resolve([]);
+      }
+    });
     window.addEventListener("ve:importFiles", async (e) => {
       const { files, time, trackId } = e.detail;
       await importFiles([...files], { audio, ops, addToTimeline: true, time, trackId });
@@ -13858,6 +14696,8 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       else if (d.kind === "title") ops.addTextClip({ time: store.playhead, preset: d.id });
       else if (d.kind === "color") ops.addColorClip({ time: store.playhead, fill: d.id });
       else if (d.kind === "material") ops.addMaterialClip({ time: store.playhead, materialId: d.id });
+      else if (d.kind === "adjustment") ops.addAdjustmentClip({ time: store.playhead });
+      else if (d.kind === "filter" || d.kind === "effect") ops.addAdjustmentClip({ time: store.playhead, filter: d.id });
     });
     document.addEventListener("paste", async (e) => {
       if (isTyping(e.target)) return;
@@ -13875,9 +14715,9 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         toast(`Pasted ${named.length > 1 ? named.length + " files" : "image"} at ${tc2(store.playhead)}`);
         return;
       }
-      if (store.clipboard?.length) {
+      if (store.clipboard?.length || store.transitionClipboard) {
         e.preventDefault();
-        ops.paste(store.playhead);
+        actions.paste();
       }
     });
     let rec = null;
@@ -14232,6 +15072,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       ],
       Tools: () => [
         { label: "Add Title", kbd: "Ctrl+T", run: actions.addTitle },
+        { label: "Add Adjustment Layer", kbd: "Ctrl+Alt+A", run: () => ops.addAdjustmentClip({ time: store.playhead }) },
         { label: "Add Marker", kbd: "M", run: actions.marker },
         { label: "Freeze Frame", kbd: "Alt+F", run: actions.freeze },
         { label: "Green Screen (Chroma Key)", run: actions.chroma },
@@ -14390,6 +15231,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       if (ctrl && alt && lk === "c") return run(() => toast(ops.copyEffects() ? "Effects copied" : "Select a clip first"));
       if (ctrl && alt && lk === "v") return run(() => toast(ops.pasteEffects() ? "Effects pasted" : "Copy effects from a clip first (Ctrl+Alt+C)"));
       if (ctrl && alt && lk === "m") return run(actions.newMaterial);
+      if (ctrl && alt && lk === "a") return run(() => ops.addAdjustmentClip({ time: store.playhead }));
       if (ctrl && alt && lk === "s") return run(actions.snapshot);
       if (ctrl && sh && lk === "m") return run(() => ops.toggleMute());
       if (ctrl && sh && (lk === "k" || lk === "b")) return run(() => {

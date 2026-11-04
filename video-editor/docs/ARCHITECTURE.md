@@ -60,7 +60,7 @@ reverse array order).
 ```js
 {
   id, trackId,
-  type: 'video' | 'image' | 'audio' | 'text' | 'color' | 'material',
+  type: 'video' | 'image' | 'audio' | 'text' | 'color' | 'material' | 'adjustment',  // adjustment = effects on everything below
   mediaId: string|null,          // video / image / audio clips
   name: string,
   start: 0,                      // timeline position (s)
@@ -158,9 +158,10 @@ Returns the layers to draw at time `t`, **bottom first**:
       other: Clip|null, otherTime /* source time of other, or null */ } } ]
 ```
 
-For `transitionIn` on clip B during `[B.start, B.start + d)`: `other` is the clip
-on the same track that ends at `B.start` (±1 frame), held on its last frame, or
-`null` (transition from transparent). For `transitionOut` on clip A during the
+A `transitionIn` on clip B with a clip A ending at `B.start` is a **cut transition**
+(`store.cutTransition(B)`): it is centred on the cut, `[B.start - d/2, B.start + d/2)`, the
+entry is `{clip: B, other: A}` and both use extended source times (`store.extSourceTime`).
+Without a neighbour, B fades in from transparent over `[B.start, B.start + d)`. For `transitionOut` on clip A during the
 last `d` seconds: `other` is `null` (transition to transparent). The renderer
 draws `mix(other, clip, progress)` using the transition shader.
 

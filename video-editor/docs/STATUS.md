@@ -24,6 +24,10 @@ Last updated by the build session that created the editor.
 | Voice & audio fx | ✅ | 19 voice filters + 13 presets + reverb / echo / crush / muffle / high-pass / bass / 8D, ported from Audio Tools |
 | Image adjustments | ✅ | Image Editor set (hue, sat, exposure, contrast, sharpen, noise, invert, grayscale, color levels, auto hue match) + gamma, vibrance, levels, RGB, fade, clarity |
 | QoL hotkeys | ✅ | see `SHORTCUTS.md` → Quality-of-life |
+| Shared transitions | ✅ | a transition on a cut is one block centred on it (half over each clip, video + audio crossfade); resize symmetric, drag to another cut / edge, right-click, Ctrl+C / Ctrl+V, Delete |
+| Adjustment layers | ✅ | clip type `adjustment`: color / filters / hue match / material apply to every track below; drop a filter on empty timeline space, Effects → Adjustment Layer, Ctrl+Alt+A |
+| Timeline extras | ✅ | scissor ball drags in both directions, middle-mouse pan |
+| Material editor drops | ✅ | drag images (files or library) onto the graph → Texture Sample nodes |
 
 ## Known limitations / next ideas
 
