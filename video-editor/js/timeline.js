@@ -664,7 +664,8 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
       call('selectTransition', ref.clipId, ref.side);
       if (!c || store.getTrack(c.trackId)?.locked) return;
       const edge = ev.target.closest('[data-tedge]')?.dataset.tedge;
-      if (edge) startTrResize(ev, ref, edge); else startTrMove(ev, ref, trEl);
+      const live = transLayer.querySelector(`.tl-tr[data-tr="${ref.clipId}|${ref.side}"]`) || trEl; // re-rendered by the selection
+      if (edge) startTrResize(ev, ref, edge); else startTrMove(ev, ref, live);
       return;
     }
     const clipEl = ev.target.closest('.tl-clip');
