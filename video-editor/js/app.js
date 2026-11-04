@@ -190,7 +190,7 @@ async function boot() {
 
   const actions = {
     undo: () => store.undo(), redo: () => store.redo(),
-    delete: () => ops.deleteSelected(), rippleDelete: () => ops.deleteSelected({ ripple: true }),
+    delete: () => { if (!ops.deleteSelectedTransition()) ops.deleteSelected(); }, rippleDelete: () => { if (!ops.deleteSelectedTransition()) ops.deleteSelected({ ripple: true }); },
     split: () => { if (!ops.splitAt(store.playhead)) toast('Put the playhead over a clip to split it'); },
     addTitle: () => ops.addTextClip({ time: store.playhead }),
     crop: () => { if (!store.selectedClips().length) return toast('Select a clip first'); inspector.showTab('video'); document.querySelector('[data-sec="crop"]')?.classList.remove('collapsed'); document.querySelector('[data-sec="crop"]')?.scrollIntoView({ block: 'center' }); },
@@ -210,7 +210,10 @@ async function boot() {
     toolSelect: () => store.setTool('select'), toolBlade: () => store.setTool(store.tool === 'blade' ? 'select' : 'blade'),
     save: () => saveProject(), export: () => openExport(), projectSettings: () => openProjectSettings(),
     import: () => $('#importInput').click(), open: () => $('#openInput').click(), newProject: () => newProj(),
-    copy: () => ops.copy(), cut: () => ops.cut(), paste: () => ops.paste(store.playhead), duplicate: () => ops.duplicate(),
+    copy: () => { if (store.selection.transition) { if (ops.copyTransition()) toast('Transition copied — select clips or a transition and paste'); return; } ops.copy(); },
+    cut: () => { if (store.selection.transition) { ops.copyTransition(); ops.deleteSelectedTransition(); return; } ops.cut(); },
+    paste: () => { if (store.transitionClipboard && (store.selection.transition || (!store.clipboard?.length && store.selectedClips().length))) { if (ops.pasteTransition()) return; } ops.paste(store.playhead); },
+    duplicate: () => ops.duplicate(),
     selectAll: () => ops.selectAll(), trimStart: () => ops.trimStartTo(store.playhead), trimEnd: () => ops.trimEndTo(store.playhead),
     group: () => ops.group(), ungroup: () => ops.ungroup(), snapshot, fullscreen: toggleFullscreen,
     shortcuts: () => showShortcuts(),
@@ -280,6 +283,10 @@ async function boot() {
     const files = [...e.target.files]; e.target.value = '';
     if (files.length) { status('Importing…'); await importFiles(files, { audio }); status(`Imported ${files.length} file(s)`); }
   });
+  // Import without adding to the timeline; resolves with the new media ids (used by the material editor)
+  window.addEventListener('ve:importMedia', async e => {
+    try { e.detail.resolve(await importFiles([...e.detail.files], { audio })); } catch (err) { e.detail.resolve([]); }
+  });
   window.addEventListener('ve:importFiles', async e => {
     const { files, time, trackId } = e.detail;
     await importFiles([...files], { audio, ops, addToTimeline: true, time, trackId });
@@ -309,6 +316,8 @@ async function boot() {
     else if (d.kind === 'title') ops.addTextClip({ time: store.playhead, preset: d.id });
     else if (d.kind === 'color') ops.addColorClip({ time: store.playhead, fill: d.id });
     else if (d.kind === 'material') ops.addMaterialClip({ time: store.playhead, materialId: d.id });
+    else if (d.kind === 'adjustment') ops.addAdjustmentClip({ time: store.playhead });
+    else if (d.kind === 'filter' || d.kind === 'effect') ops.addAdjustmentClip({ time: store.playhead, filter: d.id });
   });
 
   document.addEventListener('paste', async e => {
@@ -322,7 +331,7 @@ async function boot() {
       toast(`Pasted ${named.length > 1 ? named.length + ' files' : 'image'} at ${tc(store.playhead)}`);
       return;
     }
-    if (store.clipboard?.length) { e.preventDefault(); ops.paste(store.playhead); }
+    if (store.clipboard?.length || store.transitionClipboard) { e.preventDefault(); actions.paste(); }
   });
 
   // ---------- Voiceover recording ----------
@@ -507,7 +516,7 @@ async function boot() {
       { sep: true }, { label: 'Detach Audio', kbd: 'Ctrl+Alt+D', run: actions.detach }, { label: 'Copy Effects', kbd: 'Ctrl+Alt+C', run: () => ops.copyEffects() }, { label: 'Paste Effects', kbd: 'Ctrl+Alt+V', run: () => ops.pasteEffects() }, { label: 'Group', kbd: 'Ctrl+G', run: actions.group }, { label: 'Ungroup', kbd: 'Ctrl+Alt+G', run: actions.ungroup },
     ],
     Tools: () => [
-      { label: 'Add Title', kbd: 'Ctrl+T', run: actions.addTitle }, { label: 'Add Marker', kbd: 'M', run: actions.marker }, { label: 'Freeze Frame', kbd: 'Alt+F', run: actions.freeze },
+      { label: 'Add Title', kbd: 'Ctrl+T', run: actions.addTitle }, { label: 'Add Adjustment Layer', kbd: 'Ctrl+Alt+A', run: () => ops.addAdjustmentClip({ time: store.playhead }) }, { label: 'Add Marker', kbd: 'M', run: actions.marker }, { label: 'Freeze Frame', kbd: 'Alt+F', run: actions.freeze },
       { label: 'Green Screen (Chroma Key)', run: actions.chroma }, { label: 'Speed…', run: actions.speed }, { label: 'Crop & Zoom', run: actions.crop },
       { sep: true }, { label: 'New Material (Node Editor)', kbd: 'Ctrl+Alt+M', run: actions.newMaterial },
       { sep: true }, { label: 'Snapshot (PNG)', kbd: 'Ctrl+Alt+S', run: actions.snapshot }, { label: 'Loop Playback', kbd: 'Ctrl+L', run: () => toggleLoop(), checked: !!store.loopRange }, { label: 'Blade Tool', kbd: 'C', run: actions.toolBlade, checked: store.tool === 'blade' }, { label: 'Selection Tool', kbd: 'V', run: actions.toolSelect, checked: store.tool === 'select' },
@@ -582,6 +591,7 @@ async function boot() {
     if (ctrl && alt && lk === 'c') return run(() => toast(ops.copyEffects() ? 'Effects copied' : 'Select a clip first'));
     if (ctrl && alt && lk === 'v') return run(() => toast(ops.pasteEffects() ? 'Effects pasted' : 'Copy effects from a clip first (Ctrl+Alt+C)'));
     if (ctrl && alt && lk === 'm') return run(actions.newMaterial);
+    if (ctrl && alt && lk === 'a') return run(() => ops.addAdjustmentClip({ time: store.playhead }));
     if (ctrl && alt && lk === 's') return run(actions.snapshot);
     if (ctrl && sh && lk === 'm') return run(() => ops.toggleMute());
     if (ctrl && sh && (lk === 'k' || lk === 'b')) return run(() => { if (!ops.splitAll()) toast('Nothing under the playhead to split'); });

@@ -761,12 +761,25 @@ export function createAudioEngine({ store, mediaRuntime }) {
 
   // ---- graph building (shared by realtime + offline) ----
   // Timeline time t maps to context time t0 + (t - from). Clips are cut at `to`.
+  // Shared (cut) transitions: the outgoing clip keeps playing through the cut and
+  // fades out while the incoming one starts early and fades in.
+  function cutSpan(clip) {
+    const r = { start: clip.start, end: clip.start + clip.duration, xin: 0, xout: 0 };
+    if (clip.type !== 'video' || clip.reverse || !store.cutTransition) return r;
+    const clips = store.clipsOnTrack(clip.trackId);
+    const tin = store.cutTransition(clip, clips);
+    if (tin) { r.start = tin.from; r.xin = tin.to - tin.from; }
+    for (const c of clips) { const ct = c !== clip && store.cutTransition(c, clips); if (ct && ct.a === clip) { r.end = ct.to; r.xout = ct.to - ct.from; break; } }
+    return r;
+  }
+
   function scheduleClip(c, clip, buf, dest, from, to, t0, wlReady) {
     if (!buf || !(clip.speed > 0)) return null;
-    const cs = clip.start, ce = Math.min(clip.start + clip.duration, to);
+    const span = cutSpan(clip);
+    const cs = span.start, ce = Math.min(span.end, to);
     const s = Math.max(from, cs);
     if (ce - s <= 1e-4) return null;
-    const src = store.sourceTime(clip, s);
+    const src = span.xin || span.xout ? store.extSourceTime(clip, s) : store.sourceTime(clip, s);
     let offset = clip.reverse ? buf.duration - src : src;
     let dur = (ce - s) * clip.speed;
     if (offset < 0) { dur += offset; offset = 0; }
@@ -781,8 +794,8 @@ export function createAudioEngine({ store, mediaRuntime }) {
     g.channelCount = 2; g.channelCountMode = 'explicit'; g.channelInterpretation = 'speakers'; // mono -> L=R
     const a = clip.audio || {};
     const base = dbToGain(a.volume || 0);
-    const fi = Math.max(0, a.fadeIn || 0), fo = Math.max(0, a.fadeOut || 0);
-    const cEnd = clip.start + clip.duration;
+    const fi = Math.max(0, a.fadeIn || 0, span.xin), fo = Math.max(0, a.fadeOut || 0, span.xout);
+    const cEnd = span.end;
     const env = t => base * Math.max(0, Math.min(1, fi > 0 ? (t - cs) / fi : 1, fo > 0 ? (cEnd - t) / fo : 1));
     g.gain.setValueAtTime(env(s), when);
     const pts = [cs + fi, cEnd - fo, cEnd].filter(p => p > s + 1e-6).sort((x, y) => x - y);
@@ -797,7 +810,7 @@ export function createAudioEngine({ store, mediaRuntime }) {
   }
 
   function overlapping(from, to) {
-    return store.audibleClips().filter(c => c.mediaId && c.speed > 0 && c.start + c.duration > from + 1e-4 && c.start < to);
+    return store.audibleClips().filter(c => { if (!c.mediaId || !(c.speed > 0)) return false; const sp = cutSpan(c); return sp.end > from + 1e-4 && sp.start < to; });
   }
 
   // ---- realtime ----

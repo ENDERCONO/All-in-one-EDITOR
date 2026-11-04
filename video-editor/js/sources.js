@@ -149,7 +149,7 @@ export function createSources({ store, mediaRuntime }) {
       const el = p.el;
       const dur = isFinite(el.duration) ? el.duration : Infinity;
       const st = Math.min(time, dur - 0.001);
-      const runs = playing && !clip.reverse && clip.speed > 0 && time === store.sourceTime(clip, t) && t < clip.start + clip.duration;
+      const runs = playing && !clip.reverse && clip.speed > 0; // source time advances linearly (also through transition handles)
       if (runs) {
         if (Math.abs(el.playbackRate - clip.speed) > 1e-3) el.playbackRate = Math.min(16, Math.max(0.0625, clip.speed));
         if (el.paused) { if (Math.abs(el.currentTime - st) > 0.05) el.currentTime = st; el.play().catch(() => {}); }

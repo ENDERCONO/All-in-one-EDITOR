@@ -185,3 +185,12 @@
   .mat-right { width: 240px; }
   .mat-hint { display: none; }
 }
+
+/* drop targets (image files / library media) */
+.mat-graph.mat-drop-hot, .mat-prev-panel.mat-drop-hot { box-shadow: inset 0 0 0 2px var(--accent); }
+.mat-graph.mat-drop-hot::after {
+  content: 'Drop images to add Texture Samples (drop on a Texture Sample to replace its image)';
+  position: absolute; left: 50%; top: 14px; transform: translateX(-50%); z-index: 30; pointer-events: none;
+  padding: 6px 14px; border-radius: 4px; background: var(--accent); color: var(--accent-ink); font-weight: 600; white-space: nowrap;
+}
+.mat-prev-panel.mat-drop-hot .mat-prev-wrap { outline: 2px dashed var(--accent); outline-offset: -4px; }

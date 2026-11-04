@@ -3,11 +3,13 @@
   --tl-bg: #15181c; --tl-lane: #1b1f24; --tl-lane-alt: #1e2228; --tl-head-bg: #1a1d22;
   --tl-wave: #b9ffee; --tl-wave-v: #8ff0d8; --tl-wave-bg: rgba(0, 0, 0, .28);
   --tl-ruler-bg: #181b20; --tl-clip-r: 5px;
+  --clip-adjust: #6b5a9e; --clip-adjust-2: #5a4a8a;
 }
 [data-theme="unreal"] {
   --tl-bg: #141414; --tl-lane: #1c1c1c; --tl-lane-alt: #202020; --tl-head-bg: #1d1d1d;
   --tl-wave: #cfe9c9; --tl-wave-v: #b5d6ff; --tl-wave-bg: rgba(0, 0, 0, .35);
   --tl-ruler-bg: #151515; --tl-clip-r: 2px;
+  --clip-adjust: #5e4f86; --clip-adjust-2: #4d4072;
 }
 
 .tl-host { overflow: hidden; }
@@ -74,7 +76,7 @@
 .tl-badge { flex: none; font: 600 9.5px/13px var(--mono); padding: 0 3px; border-radius: 3px; background: rgba(0, 0, 0, .5); color: #fff; display: inline-flex; align-items: center; }
 .tl-badge.fx { background: var(--accent); color: var(--accent-ink); }
 .tl-color-swatch { position: absolute; left: 0; right: 0; top: 16px; bottom: 0; opacity: .9; pointer-events: none; }
-.t-text .tl-clip-head, .t-material .tl-clip-head, .t-color .tl-clip-head { height: 100%; align-items: flex-start; padding-top: 1px; background: none; }
+.t-text .tl-clip-head, .t-material .tl-clip-head, .t-color .tl-clip-head, .t-adjustment .tl-clip-head { height: 100%; align-items: flex-start; padding-top: 1px; background: none; }
 
 /* trim handles */
 .tl-trim { position: absolute; top: 0; bottom: 0; width: 7px; cursor: ew-resize; z-index: 3; }
@@ -123,3 +125,28 @@
   display: flex; align-items: center; justify-content: center; pointer-events: auto; cursor: pointer; box-shadow: 0 2px 6px #0009; z-index: 21; transition: box-shadow .12s; }
 .tl-ph-ball:hover { box-shadow: 0 0 0 3px #ff4d4d55, 0 2px 6px #0009; }
 .tl-ph-ball.drag { cursor: ew-resize; }
+
+/* Adjustment layers: striped violet */
+.tl-clip.t-adjustment { background: repeating-linear-gradient(135deg, var(--clip-adjust) 0 9px, var(--clip-adjust-2) 9px 18px); }
+
+/* Transitions (own layer above the clips): centred on a cut, or at a free clip edge */
+.tl-trans-layer { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+.tl-tr { position: absolute; pointer-events: auto; display: flex; align-items: center; gap: 4px; padding: 0 6px; overflow: hidden; white-space: nowrap;
+  font-size: 10.5px; color: #fff; background: rgba(20, 22, 26, .78); border: 1px solid rgba(255, 255, 255, .55); border-radius: 6px; cursor: grab; box-shadow: 0 1px 4px #0008; }
+[data-theme="unreal"] .tl-tr { border-radius: 2px; }
+.tl-tr .ico { flex: none; }
+.tl-tr-name { overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.tl-tr.narrow { padding: 0; justify-content: center; }
+.tl-tr.narrow .tl-tr-name { display: none; }
+.tl-tr:hover { border-color: var(--sel); }
+.tl-tr.sel { border-color: var(--sel); box-shadow: 0 0 0 1px var(--sel), 0 1px 4px #0008; background: color-mix(in srgb, var(--sel) 30%, rgba(20, 22, 26, .85)); }
+.tl-tr.lifting { opacity: .8; cursor: grabbing; z-index: 30; box-shadow: 0 6px 16px #000a; }
+.tl-tr.locked { cursor: not-allowed; opacity: .6; }
+.tl-tr-edge { position: absolute; top: 0; bottom: 0; width: 7px; cursor: ew-resize; }
+.tl-tr-edge.l { left: -1px; } .tl-tr-edge.r { right: -1px; }
+.tl-tr.edge.in .tl-tr-edge.l, .tl-tr.edge.out .tl-tr-edge.r { display: none; }
+.tl.tool-blade .tl-tr { pointer-events: none; }
+.tl-drop.slot { border: 2px dashed var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--accent) 25%, transparent); }
+
+/* Middle-button panning */
+.tl.panning, .tl.panning * { cursor: grabbing !important; }

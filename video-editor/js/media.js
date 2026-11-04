@@ -337,6 +337,12 @@ export function createLibrary({ store, ops, audio, materials }) {
     }
 
     if (tab === 'effects' || tab === 'filters') {
+      if (tab === 'effects' && cat === 'all' && !q) add(item({
+        name: 'Adjustment Layer', kind: 'adjustment', id: 'adj',
+        thumbHtml: `<div style="position:absolute;inset:0;background:repeating-linear-gradient(135deg,#5b3d8f 0 10px,#4a3176 10px 20px);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:12px">ADJUST</div>`,
+        title: 'Adjustment Layer — effects on it apply to everything below on the timeline. Drag onto the timeline, or double-click.\nTip: dropping any filter on empty timeline space makes one too.',
+        onDbl: () => ops.addAdjustmentClip({ time: store.playhead }),
+      }));
       const list = FILTERS.filter(f => (tab === 'effects') === EFFECT_CATS.has(f.category)).filter(f => (cat === 'all' || f.category === cat) && match(f.label));
       for (const f of list) {
         add(item({

@@ -219,11 +219,65 @@ export const ops = {
     }));
   },
 
+  // Adjustment layer: its color / filters / hue match / material affect every track below it
+  addAdjustmentClip({ time = store.playhead, trackId = null, filter = null, duration = 5 } = {}) {
+    let clip;
+    store.transact('Add adjustment layer', p => {
+      // goes above the clips at that time: prefer a free track above the topmost busy one
+      const tid = trackId && isFree(p, trackId, time, duration) ? trackId : (() => {
+        const vt = p.tracks.filter(t => t.kind === 'video' && !t.locked);
+        let top = -1; vt.forEach((t, i) => { if (!isFree(p, t.id, time, duration)) top = top < 0 ? i : Math.min(top, i); });
+        for (let i = (top < 0 ? vt.length : top) - 1; i >= 0; i--) if (isFree(p, vt[i].id, time, duration)) return vt[i].id;
+        return insertTrack(p, 'video').id;
+      })();
+      clip = makeClip({ trackId: tid, type: 'adjustment', name: 'Adjustment Layer', start: time, duration });
+      if (filter) clip.filters.push({ id: uid('flt'), type: filter, amount: 1 });
+      p.clips.push(clip);
+    });
+    store.select([clip.id]);
+    return clip;
+  },
+
+  // ---- transitions as objects: select / copy / paste / move ----
+  selectTransition(clipId, side) {
+    store.selection = { ...store.selection, transition: clipId ? { clipId, side } : null };
+    store.emit('selection', store.selection);
+  },
+  copyTransition(ref = store.selection.transition) {
+    const c = ref && store.getClip(ref.clipId); const tr = c && c[ref.side === 'out' ? 'transitionOut' : 'transitionIn'];
+    if (!tr) return false; store.transitionClipboard = { ...tr }; return true;
+  },
+  // Paste onto the selected clips' start (a cut, if a clip ends there), or onto the selected transition's slot
+  pasteTransition() {
+    const tr = store.transitionClipboard; if (!tr) return false;
+    const ref = store.selection.transition;
+    const targets = ref ? [{ id: ref.clipId, side: ref.side }] : store.selectedClips().filter(c => c.type !== 'audio').map(c => ({ id: c.id, side: 'in' }));
+    if (!targets.length) return false;
+    store.transact('Paste transition', p => targets.forEach(({ id, side }) => {
+      const c = p.clips.find(x => x.id === id); if (c) c[side === 'out' ? 'transitionOut' : 'transitionIn'] = { ...tr, duration: Math.min(tr.duration, c.duration) };
+    }));
+    return true;
+  },
+  // Move a transition from one clip edge to another (drag in the timeline)
+  moveTransition(from, to) {
+    const src = store.getClip(from.clipId); const key = s => (s === 'out' ? 'transitionOut' : 'transitionIn');
+    const tr = src && src[key(from.side)]; if (!tr) return;
+    store.transact('Move transition', p => {
+      p.clips.find(x => x.id === from.clipId)[key(from.side)] = null;
+      const dst = p.clips.find(x => x.id === to.clipId); if (dst) dst[key(to.side)] = { ...tr, duration: Math.min(tr.duration, dst.duration) };
+    });
+    ops.selectTransition(to.clipId, to.side);
+  },
+  deleteSelectedTransition() {
+    const ref = store.selection.transition; if (!ref) return false;
+    ops.setTransition(ref.clipId, ref.side, null); ops.selectTransition(null); return true;
+  },
+
   setTransition(clipId, side, val) {
     store.transact(val ? 'Add transition' : 'Remove transition', p => {
       const c = p.clips.find(x => x.id === clipId); if (!c) return;
       const key = side === 'out' ? 'transitionOut' : 'transitionIn';
-      c[key] = val ? { type: val.type, duration: Math.min(val.duration ?? 1, c.duration / 2) } : null;
+      c[key] = val ? { type: val.type, duration: Math.min(val.duration ?? 1, c.duration) } : null;
     });
   },
 

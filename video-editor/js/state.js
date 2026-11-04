@@ -75,7 +75,7 @@ function createStore() {
 
   const store = {
     project: newProject(),
-    selection: { clipIds: [], trackId: null, markerId: null },
+    selection: { clipIds: [], trackId: null, markerId: null, transition: null },
     playhead: 0, playing: false, tool: 'select', zoom: 80, snap: true, clipboard: [],
 
     on(ev, fn) { if (!listeners.has(ev)) listeners.set(ev, new Set()); listeners.get(ev).add(fn); return () => store.off(ev, fn); },
@@ -154,7 +154,7 @@ function createStore() {
       // Selecting a grouped clip selects the whole group
       const groups = new Set(next.map(id => store.getClip(id)?.groupId).filter(Boolean));
       if (groups.size) for (const c of store.project.clips) if (c.groupId && groups.has(c.groupId) && !next.includes(c.id)) next.push(c.id);
-      store.selection = { ...store.selection, clipIds: next };
+      store.selection = { ...store.selection, clipIds: next, transition: ids.length ? null : store.selection.transition };
       store.emit('selection', store.selection);
     },
     setTool(t) { store.tool = t; store.emit('tool', t); },
@@ -179,27 +179,52 @@ function createStore() {
     },
 
     // Layers to draw at time t, bottom first. See ARCHITECTURE.md.
+    // Source time that keeps running past a clip's edges (for transition handles), clamped to the media
+    extSourceTime(clip, t) {
+      if (clip.reverse || clip.type !== 'video') return store.sourceTime(clip, t);
+      const m = store.getMedia(clip.mediaId);
+      const max = m?.duration ? m.duration - store.frame() : Infinity;
+      return clamp(clip.in + (t - clip.start) * clip.speed, 0, Math.max(0, max));
+    },
+
+    // Transition sitting on the cut between `b` and the clip that ends where `b` starts
+    cutTransition(b, clips = store.clipsOnTrack(b.trackId)) {
+      const ti = b.transitionIn; if (!ti || !(ti.duration > 0)) return null;
+      const fr = store.frame();
+      const a = clips.find(c => c !== b && Math.abs(c.start + c.duration - b.start) <= fr + FRAME_EPS);
+      if (!a) return null;
+      const d = Math.min(ti.duration, a.duration, b.duration);
+      return { a, b, type: ti.type, duration: d, from: b.start - d / 2, to: b.start + d / 2 };
+    },
+
+    // Layers to draw at time t, bottom first. See ARCHITECTURE.md.
+    // A transition on a cut is centred on it (half over each clip) and mixes the
+    // end of the left clip into the start of the right one. A transition with no
+    // neighbour fades from / to transparent at the clip's own edge.
     renderListAt(t) {
       const out = [];
-      const fr = store.frame();
       const vtracks = store.project.tracks.filter(tr => tr.kind === 'video' && !tr.hidden);
       for (let i = vtracks.length - 1; i >= 0; i--) {
         const track = vtracks[i];
         const clips = store.clipsOnTrack(track.id);
+        let cut = null;
+        for (const c of clips) { const ct = store.cutTransition(c, clips); if (ct && t >= ct.from - FRAME_EPS && t < ct.to - FRAME_EPS) { cut = ct; break; } }
+        if (cut && cut.b.type !== 'audio') {
+          out.push({ track, clip: cut.b, time: store.extSourceTime(cut.b, t), transition: {
+            type: cut.type, progress: clamp((t - cut.from) / (cut.to - cut.from), 0, 1), phase: 'in',
+            other: cut.a, otherTime: store.extSourceTime(cut.a, t) } });
+          continue;
+        }
         const clip = clips.find(c => t >= c.start - FRAME_EPS && t < c.start + c.duration - FRAME_EPS);
         if (!clip || clip.type === 'audio') continue;
         let transition = null;
         const local = t - clip.start;
         const ti = clip.transitionIn, to = clip.transitionOut;
-        if (ti && ti.duration > 0 && local < ti.duration) {
-          const prev = clips.find(c => c !== clip && Math.abs(c.start + c.duration - clip.start) <= fr + FRAME_EPS);
-          transition = {
-            type: ti.type, progress: clamp(local / ti.duration, 0, 1), phase: 'in',
-            other: prev || null,
-            otherTime: prev ? store.sourceTime(prev, prev.start + prev.duration - fr) : null,
-          };
+        if (ti && ti.duration > 0 && local < ti.duration && !store.cutTransition(clip, clips)) {
+          transition = { type: ti.type, progress: clamp(local / ti.duration, 0, 1), phase: 'in', other: null, otherTime: null };
         } else if (to && to.duration > 0 && local > clip.duration - to.duration) {
-          transition = { type: to.type, progress: clamp((clip.duration - local) / to.duration, 0, 1), phase: 'out', other: null, otherTime: null };
+          const next = clips.find(c => c !== clip && store.cutTransition(c, clips)?.a === clip);
+          if (!next) transition = { type: to.type, progress: clamp((clip.duration - local) / to.duration, 0, 1), phase: 'out', other: null, otherTime: null };
         }
         out.push({ track, clip, time: store.sourceTime(clip, t), transition });
       }

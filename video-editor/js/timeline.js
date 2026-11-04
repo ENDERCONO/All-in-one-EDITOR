@@ -3,13 +3,14 @@
 // See docs/ARCHITECTURE.md (timeline.js contract).
 import { uid, clamp, dbToGain, FRAME_EPS } from './state.js';
 import { icon } from './icons.js';
+import { TRANSITIONS } from './catalog.js';
 
 const HEAD_W = 150;      // track header column
 const RULER_H = 28;
 const X0 = 12;           // px before t=0
 const SNAP_PX = 8;
 const BOTTOM_PAD = 36;
-const VISUAL = new Set(['video', 'image', 'text', 'color', 'material']);
+const VISUAL = new Set(['video', 'image', 'text', 'color', 'material', 'adjustment']);
 const kindOf = c => (c.type === 'audio' ? 'audio' : 'video');
 const endOf = c => c.start + c.duration;
 const esc = s => String(s ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
@@ -39,6 +40,7 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
         <div class="tl-content">
           <div class="tl-lanes"></div>
           <div class="tl-clips"></div>
+          <div class="tl-trans-layer"></div>
           <div class="tl-drop" hidden></div>
           <div class="tl-snap" hidden></div>
           <div class="tl-blade" hidden></div>
@@ -53,6 +55,7 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
   const heads = $('.tl-heads'), headsInner = $('.tl-heads-inner'), scroll = $('.tl-scroll'), content = $('.tl-content');
   const lanesEl = $('.tl-lanes'), clipsEl = $('.tl-clips'), dropEl = $('.tl-drop'), snapEl = $('.tl-snap');
   const bladeEl = $('.tl-blade'), bandEl = $('.tl-band'), phLine = $('.tl-ph-line'), phBall = $('.tl-ph-ball');
+  const transLayer = $('.tl-trans-layer');
 
   // ---------------------------------------------------------------- state
   let layout = [];            // [{ track, y, h, idxInKind }]
@@ -68,6 +71,7 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
   let rafPaint = 0, rafRuler = 0;
   let linked = true;
   let menuEl = null;
+  let ballY = 8;              // scissor ball offset from the top of the visible track area
 
   const zoom = () => store.zoom;
   const X = t => X0 + t * zoom();
@@ -126,6 +130,7 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
     elTl.classList.toggle('tool-blade', store.tool === 'blade');
     phKnob.innerHTML = store.tool === 'blade' ? icon('split', 12) : '';
     corner.querySelector('[data-act="link"]').classList.toggle('on', linked);
+    placeBall();
   }
 
   function renderHeads() {
@@ -156,7 +161,7 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
 
   // ---------------------------------------------------------------- clips
   function clipColorVar(c) {
-    return { video: '--clip-video', image: '--clip-image', audio: '--clip-audio', text: '--clip-title', material: '--clip-material', color: '--clip-color' }[c.type] || '--clip-video';
+    return { video: '--clip-video', image: '--clip-image', audio: '--clip-audio', text: '--clip-title', material: '--clip-material', color: '--clip-color', adjustment: '--clip-adjust' }[c.type] || '--clip-video';
   }
   function clipHasAudio(c) {
     if (c.type === 'audio') return true;
@@ -180,7 +185,7 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
     if (c.filters?.length || c.materialId || c.chroma?.enabled) badges.push(`<span class="tl-badge fx" title="Effects applied">fx</span>`);
     if (c.audio?.mute && hasA) badges.push(`<span class="tl-badge ico" title="Muted">${icon('mute', 11)}</span>`);
     if (c.groupId) badges.push(`<span class="tl-badge ico" title="Grouped">${icon('link', 11)}</span>`);
-    const typeIco = { video: 'media', image: 'media', audio: 'audio', text: 'text', color: 'color', material: 'materials' }[c.type] || 'media';
+    const typeIco = { video: 'media', image: 'media', audio: 'audio', text: 'text', color: 'color', material: 'materials', adjustment: 'effects' }[c.type] || 'media';
     const label = c.type === 'text' ? (c.text?.content || c.name) : c.name;
     let html = `<canvas class="tl-cv"></canvas>`;
     if (c.type === 'color') html += `<div class="tl-color-swatch" style="background:${esc(c.fill || '#000')}"></div>`;
@@ -196,13 +201,6 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
     if (c.type === 'audio') {
       const vy = volToY(c.audio?.volume || 0, h);
       html += `<div class="tl-vol" data-part="vol" style="top:${vy}px" title="Volume ${(c.audio?.volume || 0).toFixed(1)} dB"></div>`;
-    }
-    for (const side of ['in', 'out']) {
-      const tr = side === 'in' ? c.transitionIn : c.transitionOut;
-      if (!tr || !(tr.duration > 0)) continue;
-      const w = Math.max(8, tr.duration * z);
-      html += `<div class="tl-trans ${side}" data-part="trans-${side}" style="width:${w}px" title="${esc(tr.type)} · ${tr.duration.toFixed(2)}s (right-click to remove)">
-        <div class="tl-trans-ico">${icon('transitions', 12)}</div><div class="tl-trans-edge" data-part="transEdge-${side}"></div></div>`;
     }
     html += `<div class="tl-trim l" data-part="trimL"></div><div class="tl-trim r" data-part="trimR"></div>`;
     return html;
@@ -241,6 +239,163 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
       if (el._sig !== sig) { el.innerHTML = buildClipInner(c, row); el._sig = sig; el._paintKey = null; el._cv = el.querySelector('.tl-cv'); }
     }
     for (const [id, el] of clipEls) if (!seen.has(id)) { el.remove(); clipEls.delete(id); }
+    renderTransitions();
+  }
+
+  // ---------------------------------------------------------------- transitions (cut = centred on the cut, else at a clip edge)
+  const trKey = side => (side === 'out' ? 'transitionOut' : 'transitionIn');
+  const trLabel = type => TRANSITIONS.find(t => t.id === type)?.label || type;
+  function adjPrev(c, clips) { const fr = store.frame(); return clips.find(o => o !== c && o.type !== 'audio' && Math.abs(endOf(o) - c.start) <= fr + FRAME_EPS) || null; }
+  function adjNext(c, clips) { const fr = store.frame(); return clips.find(o => o !== c && o.type !== 'audio' && Math.abs(o.start - endOf(c)) <= fr + FRAME_EPS) || null; }
+
+  function transBlocks() {
+    const out = [];
+    const byTrack = new Map();
+    for (const c of store.project.clips) { if (!byTrack.has(c.trackId)) byTrack.set(c.trackId, []); byTrack.get(c.trackId).push(c); }
+    for (const [tid, clips] of byTrack) {
+      if (!layoutById.has(tid)) continue;
+      clips.sort((a, b) => a.start - b.start);
+      for (const c of clips) {
+        const ti = c.transitionIn, to = c.transitionOut;
+        if (ti && ti.duration > 0) {
+          const ct = store.cutTransition(c, clips);
+          if (ct) out.push({ clipId: c.id, side: 'in', trackId: tid, from: ct.from, to: ct.to, cut: true, type: ti.type, duration: ct.duration });
+          else { const d = Math.min(ti.duration, c.duration); out.push({ clipId: c.id, side: 'in', trackId: tid, from: c.start, to: c.start + d, cut: false, type: ti.type, duration: d }); }
+        }
+        if (to && to.duration > 0) {
+          const n = adjNext(c, clips);
+          if (n && store.cutTransition(n, clips)?.a === c) continue; // inert: the cut transition wins
+          const d = Math.min(to.duration, c.duration);
+          out.push({ clipId: c.id, side: 'out', trackId: tid, from: endOf(c) - d, to: endOf(c), cut: false, type: to.type, duration: d });
+        }
+      }
+    }
+    return out;
+  }
+  function trGeom(from, to, row) {
+    const h = Math.max(14, Math.min(22, row.h - 26));
+    return `left:${X(from)}px;top:${row.y + 18}px;width:${Math.max(10, (to - from) * zoom())}px;height:${h}px`;
+  }
+  function renderTransitions() {
+    const selT = store.selection.transition;
+    let html = '';
+    for (const b of transBlocks()) {
+      const row = layoutById.get(b.trackId);
+      const sel = selT && selT.clipId === b.clipId && selT.side === b.side;
+      const w = (b.to - b.from) * zoom();
+      html += `<div class="tl-tr${b.cut ? ' cut' : ' edge ' + b.side}${sel ? ' sel' : ''}${row.track.locked ? ' locked' : ''}${w < 40 ? ' narrow' : ''}" data-tr="${b.clipId}|${b.side}" style="${trGeom(b.from, b.to, row)}" title="${esc(trLabel(b.type))} · ${b.duration.toFixed(2)}s — drag to move, edges to resize, right-click for options">
+        ${icon('transitions', 12)}<span class="tl-tr-name">${esc(trLabel(b.type))}</span><i class="tl-tr-edge l" data-tedge="l"></i><i class="tl-tr-edge r" data-tedge="r"></i></div>`;
+    }
+    transLayer.innerHTML = html;
+  }
+  const trRefOf = el => { const [clipId, side] = el.dataset.tr.split('|'); return { clipId, side }; };
+
+  // Which transition slot is under a content point: a cut (right clip's 'in') or a free clip edge
+  function slotAtPoint(p) {
+    const row = rowAtY(p.y);
+    if (!row || row.track.kind !== 'video' || row.track.locked) return null;
+    const clips = store.clipsOnTrack(row.track.id);
+    const thr = 14 / zoom(), t = T(p.x);
+    const c = clips.find(o => o.type !== 'audio' && t >= o.start - thr && t <= endOf(o) + thr);
+    if (!c) return null;
+    const near = clips.filter(o => o.type !== 'audio' && t >= o.start - thr && t <= endOf(o) + thr);
+    const pick = near.length > 1 ? near.reduce((a, b) => (Math.min(Math.abs(t - a.start), Math.abs(t - endOf(a))) <= Math.min(Math.abs(t - b.start), Math.abs(t - endOf(b))) ? a : b)) : c;
+    return slotFor(pick, t - pick.start < pick.duration / 2 ? 'in' : 'out', clips);
+  }
+  function slotFor(c, edge, clips = store.clipsOnTrack(c.trackId)) {
+    if (edge === 'in') return { clipId: c.id, side: 'in' };
+    const n = adjNext(c, clips);
+    return n ? { clipId: n.id, side: 'in' } : { clipId: c.id, side: 'out' };
+  }
+  function slotRange(slot, dur = 1) {
+    const c = store.getClip(slot.clipId); if (!c) return null;
+    const clips = store.clipsOnTrack(c.trackId);
+    if (slot.side === 'in') {
+      const a = adjPrev(c, clips);
+      if (a) { const d = Math.min(dur, a.duration, c.duration); return { from: c.start - d / 2, to: c.start + d / 2, trackId: c.trackId }; }
+      return { from: c.start, to: c.start + Math.min(dur, c.duration), trackId: c.trackId };
+    }
+    return { from: endOf(c) - Math.min(dur, c.duration), to: endOf(c), trackId: c.trackId };
+  }
+  function showSlot(slot, dur) {
+    const r = slot && slotRange(slot, dur);
+    const row = r && layoutById.get(r.trackId);
+    if (!row) { if (dropEl.classList.contains('slot')) dropEl.hidden = true; return; }
+    dropEl.hidden = false; dropEl.className = 'tl-drop slot';
+    dropEl.style.cssText = trGeom(r.from, r.to, row);
+  }
+
+  function startTrResize(ev, ref, edge) {
+    const c = store.getClip(ref.clipId); if (!c) return;
+    const key = trKey(ref.side), o = { ...c[key] };
+    const clips = store.clipsOnTrack(c.trackId);
+    const ct = ref.side === 'in' ? store.cutTransition(c, clips) : null;
+    const d0 = ct ? ct.duration : Math.min(o.duration, c.duration);
+    const max = ct ? Math.min(ct.a.duration, c.duration) : c.duration;
+    const p0 = pointer(ev);
+    let changed = false;
+    const d = {
+      move(e) {
+        const dx = (pointer(e).x - p0.x) / zoom();
+        let v;
+        if (ct) v = d0 + (edge === 'r' ? 2 * dx : -2 * dx);
+        else if (ref.side === 'in') v = d0 + (edge === 'r' ? dx : -dx);
+        else v = d0 + (edge === 'l' ? -dx : dx);
+        c[key].duration = clamp(store.snapTime(v), store.frame() * 2, max);
+        changed = true;
+        renderTransitions();
+      },
+      up() {
+        const v = c[key].duration;
+        c[key] = { ...o };
+        if (!changed || Math.abs(v - d0) < 1e-9) return;
+        store.transact('Transition duration', pj => { const x = pj.clips.find(y => y.id === c.id); if (x) x[key] = { ...o, duration: v }; });
+      },
+    };
+    beginDrag(ev, d);
+  }
+
+  function startTrMove(ev, ref, el) {
+    const p0 = pointer(ev);
+    const c = store.getClip(ref.clipId);
+    const dur = c?.[trKey(ref.side)]?.duration || 1;
+    const left0 = parseFloat(el.style.left), top0 = parseFloat(el.style.top);
+    let lifted = false, target = null;
+    const d = {
+      vertical: true,
+      move(e) {
+        const p = pointer(e);
+        if (!lifted && Math.abs(p.x - p0.x) < 4 && Math.abs(p.y - p0.y) < 4) return;
+        lifted = true;
+        el.classList.add('lifting');
+        el.style.left = (left0 + p.x - p0.x) + 'px'; el.style.top = (top0 + p.y - p0.y) + 'px';
+        target = slotAtPoint(p);
+        if (target && target.clipId === ref.clipId && target.side === ref.side) target = null;
+        if (target) showSlot(target, dur); else { dropEl.hidden = true; }
+      },
+      up() {
+        dropEl.hidden = true;
+        if (!lifted) return;
+        if (target) call('moveTransition', ref, target);
+        else renderTransitions();
+      },
+    };
+    beginDrag(ev, d);
+  }
+
+  function transitionMenu(ev, ref) {
+    const c = store.getClip(ref.clipId); if (!c) return;
+    const key = trKey(ref.side), tr = c[key];
+    const locked = store.getTrack(c.trackId)?.locked;
+    const setDur = v => call('setTransition', c.id, ref.side, { ...tr, duration: v });
+    openMenu(ev.clientX, ev.clientY, [
+      { label: 'Copy', kbd: 'Ctrl+C', action: () => call('copyTransition', ref) },
+      { label: 'Paste', kbd: 'Ctrl+V', disabled: locked || !store.transitionClipboard, action: () => { call('selectTransition', ref.clipId, ref.side); call('pasteTransition'); } },
+      '-',
+      ...[0.5, 1, 2].map(v => ({ label: `Duration ${v}s`, checked: Math.abs((tr?.duration || 0) - v) < 1e-6, disabled: locked, action: () => setDur(v) })),
+      '-',
+      { label: 'Delete', kbd: 'Del', disabled: locked, action: () => { call('setTransition', c.id, ref.side, null); call('selectTransition', null); } },
+    ]);
   }
 
   function updateSelectionClasses() {
@@ -500,6 +655,18 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
     if (ev.button !== 0) return;
     closeMenu();
     const p = pointer(ev);
+    const trEl = ev.target.closest('.tl-tr');
+    if (trEl) {
+      const ref = trRefOf(trEl);
+      const c = store.getClip(ref.clipId);
+      ev.preventDefault();
+      store.select([]);
+      call('selectTransition', ref.clipId, ref.side);
+      if (!c || store.getTrack(c.trackId)?.locked) return;
+      const edge = ev.target.closest('[data-tedge]')?.dataset.tedge;
+      if (edge) startTrResize(ev, ref, edge); else startTrMove(ev, ref, trEl);
+      return;
+    }
     const clipEl = ev.target.closest('.tl-clip');
     const clip = clipEl && store.getClip(clipEl.dataset.clip);
     if (clip) {
@@ -518,8 +685,6 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
       else if (!isSel) store.select(clip.id);
       if (track?.locked) { ev.preventDefault(); return; }
       if (part === 'trimL' || part === 'trimR') startTrim(ev, clip, part === 'trimL' ? 'l' : 'r');
-      else if (part.startsWith('transEdge-')) startTransDrag(ev, clip, part.slice(10));
-      else if (part.startsWith('trans-')) { /* selecting the clip is enough */ startMove(ev, clip, isSel && !ev.ctrlKey && !ev.shiftKey && !ev.metaKey); }
       else if (part === 'fadeIn' || part === 'fadeOut') startFade(ev, clip, part);
       else if (part === 'vol') startVol(ev, clip);
       else if (!(ev.ctrlKey || ev.metaKey) || store.selection.clipIds.includes(clip.id)) startMove(ev, clip, isSel && !ev.ctrlKey && !ev.shiftKey && !ev.metaKey);
@@ -774,26 +939,6 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
     beginDrag(ev, d);
   }
 
-  // --- transition duration
-  function startTransDrag(ev, clip, side) {
-    const key = side === 'in' ? 'transitionIn' : 'transitionOut';
-    const o = { ...clip[key] };
-    const p0 = pointer(ev);
-    const d = {
-      move(e) {
-        const dx = (pointer(e).x - p0.x) / zoom();
-        clip[key].duration = clamp(store.snapTime(o.duration + (side === 'in' ? dx : -dx)), store.frame() * 2, clip.duration / 2 || clip.duration);
-        renderClips();
-      },
-      up() {
-        const v = clip[key].duration;
-        if (Math.abs(v - o.duration) < 1e-9) return;
-        commit('Transition duration', () => { clip[key] = { ...o }; }, pj => { const c = pj.clips.find(x => x.id === clip.id); c[key] = { ...o, duration: v }; });
-      },
-    };
-    beginDrag(ev, d);
-  }
-
   // --- fades
   function startFade(ev, clip, part) {
     const key = part; // fadeIn | fadeOut
@@ -911,16 +1056,48 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
   });
 
   // Filmora-style scissor ball on the playhead line: drag = scrub, click = split at the playhead
-  const placeBall = () => { phBall.style.transform = `translate(-50%, ${scroll.scrollTop + 8}px)`; };
+  function placeBall() {
+    const y = clamp(ballY, 0, Math.max(0, scroll.clientHeight - 30));
+    phBall.style.transform = `translate(-50%, ${scroll.scrollTop + y}px)`;
+  }
+
+  // Middle-button drag anywhere = pan (no selection / edits); suppress the browser autoscroll
+  elTl.addEventListener('pointerdown', ev => {
+    if (ev.button !== 1) return;
+    ev.preventDefault(); ev.stopPropagation(); closeMenu();
+    const x0 = ev.clientX, y0 = ev.clientY, sl0 = scroll.scrollLeft, st0 = scroll.scrollTop;
+    elTl.classList.add('panning');
+    try { elTl.setPointerCapture(ev.pointerId); } catch { /* ignore */ }
+    const move = e => {
+      const need = sl0 - (e.clientX - x0) + scroll.clientWidth;
+      if (need > contentW) { contentW = need + 10; content.style.width = contentW + 'px'; }
+      scroll.scrollLeft = Math.max(0, sl0 - (e.clientX - x0));
+      scroll.scrollTop = Math.max(0, st0 - (e.clientY - y0));
+    };
+    const up = () => {
+      elTl.classList.remove('panning');
+      window.removeEventListener('pointermove', move, true);
+      window.removeEventListener('pointerup', up, true);
+      window.removeEventListener('pointercancel', up, true);
+    };
+    window.addEventListener('pointermove', move, true);
+    window.addEventListener('pointerup', up, true);
+    window.addEventListener('pointercancel', up, true);
+  }, true);
+  elTl.addEventListener('mousedown', ev => { if (ev.button === 1) ev.preventDefault(); }, true);
+  elTl.addEventListener('auxclick', ev => { if (ev.button === 1) { ev.preventDefault(); ev.stopPropagation(); } }, true);
   scroll.addEventListener('scroll', placeBall); placeBall();
   phBall.addEventListener('pointerdown', ev => {
     if (ev.button !== 0) return;
     ev.preventDefault(); ev.stopPropagation(); closeMenu();
-    const x0 = ev.clientX; let moved = false;
+    const x0 = ev.clientX, y0 = ev.clientY; let moved = false;
+    const grabDy = ev.clientY - phBall.getBoundingClientRect().top;
     phBall.setPointerCapture?.(ev.pointerId);
     const move = e => {
-      if (!moved && Math.abs(e.clientX - x0) < 3) return;
+      if (!moved && Math.abs(e.clientX - x0) < 3 && Math.abs(e.clientY - y0) < 3) return;
       moved = true; phBall.classList.add('drag');
+      ballY = clamp(e.clientY - scroll.getBoundingClientRect().top - grabDy, 0, Math.max(0, scroll.clientHeight - 30));
+      placeBall();
       const r = content.getBoundingClientRect();
       let t = Math.max(0, T(e.clientX - r.left));
       if (store.snap) { const sn = findSnap([t], snapTargets(null).slice(2).concat(store.project.markers.map(m => m.time))); t = sn ? sn.at : store.snapTime(t); }
@@ -1091,6 +1268,13 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
   // ---------------------------------------------------------------- context menu on clips / empty area
   content.addEventListener('contextmenu', ev => {
     ev.preventDefault();
+    const trEl = ev.target.closest('.tl-tr');
+    if (trEl) {
+      const ref = trRefOf(trEl);
+      store.select([]); call('selectTransition', ref.clipId, ref.side);
+      transitionMenu(ev, ref);
+      return;
+    }
     const p = pointer(ev);
     const t = Math.max(0, store.snapTime(T(p.x)));
     const clipEl = ev.target.closest('.tl-clip');
@@ -1110,16 +1294,6 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
     const part = ev.target.closest('[data-part]')?.dataset.part || '';
     if (!store.selection.clipIds.includes(clip.id)) store.select(clip.id);
     const locked = store.getTrack(clip.trackId)?.locked;
-    if (part.startsWith('trans')) {
-      const side = part.endsWith('in') ? 'in' : 'out';
-      openMenu(ev.clientX, ev.clientY, [
-        { label: 'Remove transition', disabled: locked, action: () => call('setTransition', clip.id, side, null) },
-        { label: 'Duration 0.5s', disabled: locked, action: () => call('setTransition', clip.id, side, { ...clip[side === 'in' ? 'transitionIn' : 'transitionOut'], duration: 0.5 }) },
-        { label: 'Duration 1s', disabled: locked, action: () => call('setTransition', clip.id, side, { ...clip[side === 'in' ? 'transitionIn' : 'transitionOut'], duration: 1 }) },
-        { label: 'Duration 2s', disabled: locked, action: () => call('setTransition', clip.id, side, { ...clip[side === 'in' ? 'transitionIn' : 'transitionOut'], duration: 2 }) },
-      ]);
-      return;
-    }
     const sel = store.selectedClips();
     const splitT = store.playhead > clip.start + FRAME_EPS && store.playhead < endOf(clip) - FRAME_EPS ? store.playhead : t;
     const hasA = clipHasAudio(clip);
@@ -1147,7 +1321,7 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
         store.transact('Reverse', pj => ids.forEach(id => { const c = pj.clips.find(x => x.id === id); if (c && (c.type === 'video' || c.type === 'audio')) c.reverse = r; }));
       } },
       '-',
-      { label: 'Add transition (Dissolve)', disabled: locked || !VISUAL.has(clip.type), action: () => call('setTransition', clip.id, 'in', { type: 'dissolve', duration: Math.min(1, clip.duration / 2) }) },
+      { label: 'Add transition (Dissolve)', disabled: locked || !VISUAL.has(clip.type), action: () => { call('setTransition', clip.id, 'in', { type: 'dissolve', duration: 1 }); call('selectTransition', clip.id, 'in'); } },
       { label: 'Remove transitions', disabled: locked || !(clip.transitionIn || clip.transitionOut), action: () => {
         store.transact('Remove transitions', pj => { const c = pj.clips.find(x => x.id === clip.id); c.transitionIn = null; c.transitionOut = null; });
       } },
@@ -1230,7 +1404,8 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
     dropEl.hidden = false;
     if (info.clip) {
       const r = layoutById.get(info.clip.trackId);
-      const x = info.edge === 'in' ? X(info.clip.start) : X(endOf(info.clip)) - Math.min(40, info.clip.duration * zoom() / 2);
+      const sl = slotFor(info.clip, info.edge), sr = slotRange(sl, 40 / zoom());
+      const x = sr ? X(sr.from) : X(info.clip.start);
       dropEl.className = 'tl-drop clip';
       dropEl.style.cssText = `left:${X(info.clip.start)}px;top:${r.y + 1}px;width:${info.clip.duration * zoom()}px;height:${r.h - 2}px;--ex:${x - X(info.clip.start)}px`;
     } else if (info.row) {
@@ -1290,14 +1465,19 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
         break;
       case 'transition': {
         const c = info.clip ? { clip: info.clip, edge: info.edge } : nearestClipEdge(info);
-        if (!c || locked || !VISUAL.has(c.clip.type)) return;
-        call('setTransition', c.clip.id, c.edge, { type: id, duration: 1 });
-        store.select(c.clip.id);
+        if (!c || locked || !VISUAL.has(c.clip.type) || store.getTrack(c.clip.trackId)?.locked) return;
+        const slot = slotFor(c.clip, c.edge);
+        call('setTransition', slot.clipId, slot.side, { type: id, duration: 1 });
+        store.select([]); call('selectTransition', slot.clipId, slot.side);
         break;
       }
+      case 'adjustment':
+        if (!info.clip) call('addAdjustmentClip', { time: info.t, trackId: trackForDrop(info, 'video') });
+        break;
       case 'filter':
       case 'effect': {
-        if (!info.clip || locked || !VISUAL.has(info.clip.type)) return;
+        if (!info.clip) { call('addAdjustmentClip', { time: info.t, trackId: trackForDrop(info, 'video'), filter: id }); break; }
+        if (locked || !VISUAL.has(info.clip.type)) return;
         store.transact('Add filter', pj => { const c = pj.clips.find(x => x.id === info.clip.id); c.filters = [...(c.filters || []), { id: uid('flt'), type: id, amount: 1 }]; });
         store.select(info.clip.id);
         break;
@@ -1321,7 +1501,7 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
 
   // ---------------------------------------------------------------- store events
   store.on('project', () => { if (!drag) render(); });
-  store.on('selection', () => { updateSelectionClasses(); renderMarkers(); });
+  store.on('selection', () => { updateSelectionClasses(); renderMarkers(); if (!drag) renderTransitions(); });
   store.on('playhead', () => {
     updatePlayhead();
     if (store.playing) {

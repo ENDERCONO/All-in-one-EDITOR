@@ -118,7 +118,7 @@ void main() {
     float detail = luma(s.rgb) - luma(texture(u_low, v_uv).rgb);
     float lc = luma(clamp(c, 0.0, 1.0));
     float m = 1.0 - pow(abs(lc * 2.0 - 1.0), 2.0);
-    c += detail * u_clar * 1.6 * (0.35 + 0.65 * m);
+    c += detail * u_clar * 1.1 * (0.35 + 0.65 * m);
   }
   c += vec3(u_temp, u_temp * 0.15, -u_temp) * 0.15;
   c += vec3(u_tint * 0.5, -u_tint, u_tint * 0.5) * 0.12;
@@ -478,13 +478,13 @@ void main() {
   else if (t == F_bulge || t == F_pinch) {
     vec2 d = (uv - 0.5) * aspv(); float R = 0.5; float f = length(d) / R;
     float k = f < 1.0 ? (1.0 - f * f) : 0.0;
-    float s = t == F_bulge ? 1.0 - 0.6 * a * k : 1.0 + 0.8 * a * k;
-    r = SB(d * s / aspv() + 0.5); direct = true;
+    float s = t == F_bulge ? 1.0 - 0.5 * a * k : 1.0 + 0.5 * a * k;
+    r = SM(d * s / aspv() + 0.5); direct = true;
   }
   else if (t == F_twirl) {
     vec2 d = (uv - 0.5) * aspv(); float R = 0.6; float f = length(d) / R;
     float k = f < 1.0 ? (1.0 - f) * (1.0 - f) : 0.0;
-    r = SB(rot2(d, a * 4.0 * k) / aspv() + 0.5); direct = true;
+    r = SM(rot2(d, a * 2.5 * k) / aspv() + 0.5); direct = true;
   }
   else if (t == F_tilt_shift) {
     float dy = abs(uv.y - 0.5);
@@ -565,13 +565,13 @@ vec4 fadeA(vec4 c, float k) { return vec4(c.rgb, c.a * k); }
 vec4 blurA(vec2 uv, float rad) {
   vec4 acc = premul(A(uv)); float n = 1.0;
   for (int i = 1; i <= 16; i++) { float r = sqrt(float(i) / 16.0) * rad; float ang = float(i) * 2.39996;
-    acc += premul(A(uv + vec2(cos(ang), sin(ang) * u_asp) * r)); n += 1.0; }
+    acc += premul(A(clamp(uv + vec2(cos(ang), sin(ang) * u_asp) * r, 0.0, 1.0))); n += 1.0; }
   return unpremul(acc / n);
 }
 vec4 blurB(vec2 uv, float rad) {
   vec4 acc = premul(B(uv)); float n = 1.0;
   for (int i = 1; i <= 16; i++) { float r = sqrt(float(i) / 16.0) * rad; float ang = float(i) * 2.39996;
-    acc += premul(B(uv + vec2(cos(ang), sin(ang) * u_asp) * r)); n += 1.0; }
+    acc += premul(B(clamp(uv + vec2(cos(ang), sin(ang) * u_asp) * r, 0.0, 1.0))); n += 1.0; }
   return unpremul(acc / n);
 }
 `;
@@ -662,7 +662,7 @@ vec4 BM(vec2 uv) { return B(1.0 - abs(1.0 - mod(uv, 2.0))); }
 vec4 cube(vec2 uv, int axis, float dir, float p) {
   vec3 h = vec3(u_asp * 0.5, 0.5, axis == 0 ? u_asp * 0.5 : 0.5);
   float ang = p * 1.5707963 * dir;
-  float push = sin(p * 3.14159) * (axis == 0 ? 1.1 : 0.7);
+  float push = sin(p * 3.14159) * (axis == 0 ? 0.8 : 0.5);
   vec3 ctr = vec3(0.0, 0.0, h.z + push);
   vec3 ro = vec3(0.0, 0.0, -CAMF) - ctr, rd = rayDir(uv);
   if (axis == 0) { ro = rotY(ro, -ang); rd = rotY(rd, -ang); } else { ro = rotX(ro, -ang); rd = rotX(rd, -ang); }
@@ -709,14 +709,15 @@ void door(vec2 uv, float hx, float ang, float x0, float x1, inout float best, in
 }
 vec4 doorOpen(vec2 uv, float p) {
   float e = p * p * (3.0 - 2.0 * p);
-  float ang = e * 1.62;
+  float ang = e * 2.05; // past 90° + the view angle so the doors leave the frame
   float sc = 0.85 + 0.15 * e;
   vec4 back = B((uv - 0.5) / sc + 0.5); back.rgb *= 0.55 + 0.45 * e;
   back = over(back, BG);
   float best = 1e9; vec4 d = vec4(0.0);
   float hw = u_asp * 0.5;
-  door(uv, -hw, ang, -hw, 0.0, best, d);
-  door(uv, hw, -ang, 0.0, hw, best, d);
+  door(uv, -hw, -ang, -hw, 0.0, best, d); // swing away from the viewer
+  door(uv, hw, ang, 0.0, hw, best, d);
+  d.a *= 1.0 - smoothstep(0.9, 1.0, p);
   return over(d, back);
 }
 vec4 pageTurn(vec2 uv, float p) {
@@ -835,8 +836,8 @@ void main() {
   else if (t == T_star_wipe || t == T_heart_wipe) {
     vec2 d = (uv - 0.5) * asp; d.y = -d.y;
     float sdf;
-    if (t == T_star_wipe) { float r = p * 3.3; d = rot2(d, p * 0.8); sdf = sdStar5(d, r, 0.45); }
-    else { float sc = p * 2.8 + 1e-4; sdf = sdHeart(d / sc + vec2(0.0, 0.5)) * sc; }
+    if (t == T_star_wipe) { float r = p * p * 3.4; d = rot2(d, p * 0.8); sdf = sdStar5(d, r, 0.45); }
+    else { float sc = p * p * 3.2 + 1e-4; sdf = sdHeart(d / sc + vec2(0.0, 0.5)) * sc; }
     o = mixS(B(uv), A(uv), smoothstep(-0.004, 0.004, sdf));
   }
   else if (t == T_shake_cut) {
@@ -916,7 +917,7 @@ void main() {
     }
   }
   else if (t == T_dreamy) {
-    vec2 u2 = uv + vec2(sin(uv.y * 18.0 + p * 12.0) * 0.03, sin(uv.x * 12.0 + p * 9.0) * 0.01) * amt;
+    vec2 u2 = clamp(uv + vec2(sin(uv.y * 18.0 + p * 12.0) * 0.03, sin(uv.x * 12.0 + p * 9.0) * 0.01) * amt, 0.002, 0.998);
     float rad = amt * 0.02;
     o = mixS(blurA(u2, rad), blurB(u2, rad), smoothstep(0.2, 0.8, p));
     o.rgb = mix(o.rgb, vec3(1.0), amt * 0.15);
@@ -933,7 +934,8 @@ function hexToRgb(hex, fallback = [0, 0, 0]) {
   return [parseInt(h.slice(0, 2), 16) / 255, parseInt(h.slice(2, 4), 16) / 255, parseInt(h.slice(4, 6), 16) / 255];
 }
 
-const VISUAL = new Set(['video', 'image', 'text', 'color', 'material']);
+const VISUAL = new Set(['video', 'image', 'text', 'color', 'material', 'adjustment']);
+const FULLFRAME = new Set(['color', 'material', 'adjustment']);
 
 export function createRenderer({ canvas, store, sources, mediaRuntime }) {
   const gl = canvas.getContext('webgl2', { premultipliedAlpha: false, preserveDrawingBuffer: true, alpha: false, antialias: false });
@@ -1157,7 +1159,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
   // Base size (project px) of the layer before transform.
   function baseSize(clip, sw, sh) {
     const { width: W, height: H } = settings();
-    if (clip.type === 'color' || clip.type === 'material') return [W, H];
+    if (FULLFRAME.has(clip.type)) return [W, H];
     if (clip.type === 'text') return [sw, sh];
     const f = Math.min(W / sw, H / sh);
     return [sw * f, sh * f];
@@ -1187,7 +1189,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
   function glCrop(clip) { const [l, t, r, b] = cropRect(clip); return [l, 1 - b, r, 1 - t]; }
   function sourceDims(clip) {
     const { width: W, height: H } = settings();
-    if (clip.type === 'color' || clip.type === 'material') return [W, H];
+    if (FULLFRAME.has(clip.type)) return [W, H];
     if (clip.type === 'text') {
       try { const f = sources.getFrame(clip); if (f && f.width && f.height) return [f.width, f.height]; } catch { /* ignore */ }
     }
@@ -1202,6 +1204,10 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
   }
 
   function getClipQuad(clip) {
+    if (clip.type === 'adjustment') {
+      const { width: W, height: H } = settings();
+      return [{ x: -W / 2, y: -H / 2 }, { x: W / 2, y: -H / 2 }, { x: W / 2, y: H / 2 }, { x: -W / 2, y: H / 2 }];
+    }
     const [sw, sh] = sourceDims(clip);
     const [a, b, c, d, tx, ty] = clipMatrix(clip, sw, sh);
     const [l, t, r, bo] = cropRect(clip);
@@ -1231,11 +1237,13 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
   }
 
   // Returns { tex, rt (owned or null), sw, sh } or null if not drawable.
-  function processLayer(clip, t) {
+  // `frameTex`: for adjustment clips, the frame composited so far (canvas-sized) is the source.
+  function processLayer(clip, t, frameTex = null) {
     if (!clip || !VISUAL.has(clip.type)) return null;
     const { width: W, height: H } = settings();
     let srcTex, sw, sh;
     if (clip.type === 'color') { srcTex = colorTexture(clip.fill || '#2a6df4'); sw = W; sh = H; }
+    else if (clip.type === 'adjustment') { if (!frameTex) return null; srcTex = frameTex; sw = W; sh = H; }
     else if (clip.type === 'material') { srcTex = transparentTex; sw = W; sh = H; }
     else {
       let frame = null;
@@ -1247,7 +1255,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
       dimsCache.set(clip.id, { sw, sh });
     }
 
-    const chroma = clip.chroma && clip.chroma.enabled && clip.type !== 'color' && clip.type !== 'material';
+    const chroma = clip.chroma && clip.chroma.enabled && !FULLFRAME.has(clip.type);
     const col = clip.color;
     const colorOn = !colorNeutral(col);
     const hm = clip.hueMatch;
@@ -1269,7 +1277,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     const disp = canvasW / W;
     const dispW = bw * sc * Math.abs(tr.scaleX ?? 1) * disp, dispH = bh * sc * Math.abs(tr.scaleY ?? 1) * disp;
     let lw, lh;
-    if (clip.type === 'color' || clip.type === 'material') { lw = canvasW; lh = canvasH; }
+    if (FULLFRAME.has(clip.type)) { lw = canvasW; lh = canvasH; }
     else {
       const r = Math.min(1, Math.max(dispW / sw, dispH / sh, 0.05));
       lw = sw * r; lh = sh * r;
@@ -1470,7 +1478,15 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
       const mode = BLEND_INDEX.get(clip.blend) ?? 0;
       const tr = entry.transition;
       try {
-        if (tr && TRANSITION_INDEX.has(tr.type)) {
+        if (clip.type === 'adjustment') {
+          // Adjustment layer: process the frame so far, blend it back (opacity × transition = strength).
+          const strength = clipOpacity(clip) * (tr ? Math.max(0, Math.min(1, tr.progress)) : 1);
+          if (strength <= 0) continue;
+          const layer = processLayer(clip, t, frameA.tex);
+          if (!layer || !layer.rt) continue; // nothing to apply
+          composite(layer.tex, identityInv(), [0, 0, 1, 1], strength, mode, frameA.tex, frameB);
+          release(layer.rt);
+        } else if (tr && TRANSITION_INDEX.has(tr.type)) {
           const rtB = layerToFrameRT(clip, t);
           const rtA = layerToFrameRT(tr.other, t);
           const rtT = acquire(canvasW, canvasH);

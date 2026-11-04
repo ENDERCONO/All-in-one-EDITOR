@@ -1448,12 +1448,68 @@ export function openMaterialEditor({ store, mediaRuntime, materialId }) {
   palSearch.addEventListener('keydown', e => {
     if (e.key === 'Enter') { const d = matches(palSearch.value)[0]; if (d) { const r = gRect(); const w = toWorld(r.width / 2 - 70, r.height / 2 - 30); addNode(d.type, w.x, w.y); } }
   });
-  graphEl.addEventListener('dragover', e => { if (e.dataTransfer.types.includes('text/x-aio-node')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
-  graphEl.addEventListener('drop', e => {
-    const t = e.dataTransfer.getData('text/x-aio-node'); if (!t) return;
-    e.preventDefault();
+  /* ---------------- Drag & drop: palette nodes, image files, library media ---------------- */
+  const dragKind = e => {
+    const ts = [...(e.dataTransfer?.types || [])];
+    return ts.includes('text/x-aio-node') ? 'node' : ts.includes('application/x-ve') ? 've' : ts.includes('Files') ? 'files' : null;
+  };
+  const isImageFile = f => /^image\//.test(f.type) || /\.(png|jpe?g|gif|webp|bmp|avif|svg)$/i.test(f.name || '');
+  // Must be called synchronously inside the drop handler (dataTransfer is cleared afterwards).
+  function droppedImages(e) {
+    const raw = e.dataTransfer.getData('application/x-ve');
+    if (raw) {
+      let d = null; try { d = JSON.parse(raw); } catch (err) { /* ignore */ }
+      const ok = d && d.kind === 'media' && store.getMedia(d.id)?.kind === 'image';
+      return Promise.resolve(ok ? [d.id] : []);
+    }
+    const files = [...(e.dataTransfer.files || [])].filter(isImageFile);
+    if (!files.length) return Promise.resolve([]);
+    return new Promise(resolve => {
+      const timer = setTimeout(() => resolve([]), 60000);
+      window.dispatchEvent(new CustomEvent('ve:importMedia', { detail: { files, resolve: ids => { clearTimeout(timer); resolve(ids || []); } } }));
+    }).then(ids => ids.filter(mid => store.getMedia(mid)?.kind === 'image'));
+  }
+  function dropZone(el, accept, onDrop) {
+    el.addEventListener('dragover', e => {
+      const k = dragKind(e); if (!k || !accept.includes(k)) return;
+      e.preventDefault(); e.stopPropagation();
+      e.dataTransfer.dropEffect = 'copy';
+      el.classList.add('mat-drop-hot');
+    });
+    el.addEventListener('dragleave', e => { if (!e.relatedTarget || !el.contains(e.relatedTarget)) el.classList.remove('mat-drop-hot'); });
+    el.addEventListener('drop', e => {
+      el.classList.remove('mat-drop-hot');
+      const k = dragKind(e); if (!k || !accept.includes(k)) return;
+      e.preventDefault(); e.stopPropagation();
+      onDrop(e, k);
+    });
+  }
+  dropZone(graphEl, ['node', 'files', 've'], async (e, k) => {
     const r = gRect(); const w = toWorld(e.clientX - r.left, e.clientY - r.top);
-    addNode(t, w.x, w.y);
+    if (k === 'node') { addNode(e.dataTransfer.getData('text/x-aio-node'), w.x, w.y); return; }
+    const targetId = e.target.closest?.('.mat-node')?.dataset.id;
+    const pending = droppedImages(e);
+    if (k === 'files') setStatus(true, 'Importing images…');
+    const ids = await pending;
+    if (closed) return;
+    if (!ids.length) { setStatus(false, 'Drop image files (or images from the library) here'); return; }
+    const target = mat.nodes.find(n => n.id === targetId && n.type === 'textureSample');
+    const sel = [];
+    ids.forEach((mid, i) => {
+      if (i === 0 && target) { target.params.texture = mid; sel.push(target.id); return; }
+      const off = (i - (target ? 1 : 0)) * 30;
+      const n = makeNode('textureSample', w.x + off, w.y + off, { texture: mid });
+      mat.nodes.push(n); sel.push(n.id);
+    });
+    selected = new Set(sel);
+    changed(target && ids.length === 1 ? 'Set texture' : 'Add texture sample');
+  });
+  dropZone(left.querySelector('.mat-prev-panel'), ['files', 've'], async e => {
+    const ids = await droppedImages(e);
+    if (closed || !ids.length) return;
+    fillPrevSrc();
+    prevSrcSel.value = 'media:' + ids[0];
+    preview.setSource(prevSrcSel.value);
   });
 
   /* ---------------- Details panel ---------------- */

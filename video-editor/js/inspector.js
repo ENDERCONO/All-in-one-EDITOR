@@ -74,14 +74,15 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
     const trans = [{ id: '', label: 'None' }, ...TRANSITIONS.map(t => ({ id: t.id, label: t.label }))];
     let h = '';
     if (c.type === 'color') h += section('fill', 'Color', color('Fill', 'fill'));
-    h += transformSec(c);
+    if (c.type === 'adjustment') h += '<div class="ins-empty" style="padding:8px 14px">Adjustment layer — its color, filters, hue match and material apply to every track below it. Opacity sets the strength.</div>';
+    else h += transformSec(c);
     if (c.type === 'video' || c.type === 'image') h += section('crop', 'Crop', `
       ${slider('Left', 'crop.l', { min: 0, max: 95, toUI: v => v * 100, fromUI: v => v / 100 })}
       ${slider('Right', 'crop.r', { min: 0, max: 95, toUI: v => v * 100, fromUI: v => v / 100 })}
       ${slider('Top', 'crop.t', { min: 0, max: 95, toUI: v => v * 100, fromUI: v => v / 100 })}
       ${slider('Bottom', 'crop.b', { min: 0, max: 95, toUI: v => v * 100, fromUI: v => v / 100 })}`);
     h += section('comp', 'Compositing', `${select('Blend Mode', 'blend', BLEND_MODES)}${slider('Opacity', 'transform.opacity', { min: 0, max: 100, toUI: v => v * 100, fromUI: v => v / 100, def: 1 })}`);
-    if (c.type !== 'material') h += section('chroma', 'Chroma Key (Green Screen)', `
+    if (c.type !== 'material' && c.type !== 'adjustment') h += section('chroma', 'Chroma Key (Green Screen)', `
       ${color('Key color', 'chroma.color', { pick: true })}
       ${slider('Tolerance', 'chroma.similarity', { min: 0, max: 100, toUI: v => v * 100, fromUI: v => v / 100, def: 0.35 })}
       ${slider('Edge soft', 'chroma.smoothness', { min: 0, max: 100, toUI: v => v * 100, fromUI: v => v / 100, def: 0.08 })}
@@ -185,6 +186,7 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
     const m = c.mediaId ? store.getMedia(c.mediaId) : null;
     const hasAudio = c.type === 'audio' || (c.type === 'video' && m?.hasAudio && !c.audio.detached);
     const t = [];
+    if (c.type === 'adjustment') return [['effects', 'Effects'], ['color', 'Color'], ['video', 'Blend']];
     if (c.type === 'text') t.push(['titles', 'Titles']);
     if (c.type !== 'audio') t.push(['video', 'Video']);
     if (hasAudio) t.push(['audio', 'Audio']);
