@@ -3,6 +3,7 @@
 // The library and the model weights (Hugging Face hub) download on first use and are cached by the browser.
 //
 // exports: openAutoCaptions({ store, ops, audio, mediaRuntime, transcribe? }), isAIAvailable(),
+//          openRemoveBackground({ store, ops, audio, mediaRuntime, mediaIds?, segment? }), refineMask, cutoutPng, BG_MODELS,
 //          aiUnavailableReason(), captionsToSrt(clips), chunksToWords(chunks), groupWords(words, opts),
 //          buildCaptions(store, words, opts), addCaptionTrack(store, captions, opts), AI_MODELS, CAPTION_STYLES
 import { makeClip, makeTrack, clamp } from './state.js';
@@ -37,8 +38,8 @@ const BASE_TEXT = { content: '', font: 'Inter', size: 56, color: '#ffffff', bold
 const MIN_DUR = 0.3, PAUSE = 0.5, MAX_CHARS = 42;
 const CJK = /[぀-ヿ㐀-鿿가-힯豈-﫿]/;
 
-export function aiUnavailableReason() {
-  if (typeof location !== 'undefined' && location.protocol === 'file:') return 'Auto captions need the site served over http(s) — open it from a web server (e.g. node server.js) instead of a file.';
+export function aiUnavailableReason(feature = 'Auto captions') {
+  if (typeof location !== 'undefined' && location.protocol === 'file:') return feature + ' need the site served over http(s) — open it from a web server (e.g. node server.js) instead of a file.';
   if (typeof Worker === 'undefined') return 'This browser does not support Web Workers.';
   if (typeof WebAssembly !== 'object') return 'This browser does not support WebAssembly.';
   return null;
@@ -375,6 +376,244 @@ export function openAutoCaptions({ store, ops, audio, mediaRuntime, transcribe, 
       ctrl = null;
       if (back.isConnected) setBusy(false);
     }
+  };
+  return { el: back, close };
+}
+
+// ================================================================ background removal
+
+export const BG_MODELS = [
+  { id: 'briaai/RMBG-1.4', label: 'RMBG 1.4 — best edges', size: '~45 MB (GPU ~175 MB)', note: 'BRIA RMBG-1.4 is licensed for non-commercial use.' },
+  { id: 'Xenova/modnet', label: 'MODNet — fast, portraits', size: '~7 MB (GPU ~25 MB)', note: '' },
+];
+
+// Post-process a soft alpha mask: threshold (0..100, the alpha that becomes 50 %), hardness (0..100,
+// 0 = the model's soft mask, 100 = a hard cut) and feather (px box blur, applied last).
+export function refineMask(mask, w, h, { threshold = 50, hardness = 0, feather = 0 } = {}) {
+  const out = new Uint8ClampedArray(w * h);
+  const c = clamp(threshold, 1, 99) / 100, half = Math.max(0.004, 0.5 * (1 - clamp(hardness, 0, 100) / 100));
+  // linear ramp from c-half (→ 0) to c+half (→ 1); threshold 50 + hardness 0 = the mask unchanged
+  const lut = new Uint8ClampedArray(256);
+  for (let v = 0; v < 256; v++) lut[v] = Math.round(clamp((v / 255 - (c - half)) / (2 * half), 0, 1) * 255);
+  for (let i = 0; i < out.length; i++) out[i] = lut[mask[i]];
+  const r = Math.round(feather);
+  if (r > 0) boxBlur(out, w, h, r);
+  return out;
+}
+function boxBlur(a, w, h, r) {
+  const tmp = new Uint8ClampedArray(a.length), n = 2 * r + 1;
+  for (let pass = 0; pass < 2; pass++) {
+    for (let y = 0; y < h; y++) { // horizontal a → tmp
+      let sum = 0; const row = y * w;
+      for (let x = -r; x <= r; x++) sum += a[row + clamp(x, 0, w - 1)];
+      for (let x = 0; x < w; x++) { tmp[row + x] = sum / n; sum += a[row + Math.min(w - 1, x + r + 1)] - a[row + Math.max(0, x - r)]; }
+    }
+    for (let x = 0; x < w; x++) { // vertical tmp → a
+      let sum = 0;
+      for (let y = -r; y <= r; y++) sum += tmp[clamp(y, 0, h - 1) * w + x];
+      for (let y = 0; y < h; y++) { a[y * w + x] = sum / n; sum += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x]; }
+    }
+  }
+}
+
+// Original pixels + alpha mask → PNG Blob at full resolution
+export async function cutoutPng(bitmap, mask, w, h, refine) {
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  const img = ctx.getImageData(0, 0, w, h);
+  const a = refine ? refineMask(mask, w, h, refine) : mask;
+  for (let i = 0, j = 3; i < a.length; i++, j += 4) img.data[j] = Math.min(img.data[j], a[i]);
+  ctx.putImageData(img, 0, 0);
+  return new Promise((res, rej) => cv.toBlob(b => (b ? res(b) : rej(new Error('PNG encoding failed'))), 'image/png'));
+}
+
+function importViaApp(files, ms = 20000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('The editor did not import the new image.')), ms);
+    window.dispatchEvent(new CustomEvent('ve:importMedia', { detail: { files, resolve: ids => { clearTimeout(timer); resolve(ids || []); } } }));
+  });
+}
+
+async function bitmapOf(rt) {
+  if (rt?.file) { try { return await createImageBitmap(rt.file, { imageOrientation: 'from-image' }); } catch {} }
+  const im = rt?.image;
+  if (im) { if (!im.complete) await new Promise(r => { im.onload = im.onerror = r; }); return createImageBitmap(im); }
+  throw new Error('The image is not loaded.');
+}
+
+export function openRemoveBackground({ store, ops, audio, mediaRuntime, mediaIds = [], segment, libUrl } = {}) {
+  document.querySelector('.ai-back')?.remove();
+  const clips = store.selectedClips().filter(c => c.type === 'image' && store.getMedia(c.mediaId)?.kind === 'image');
+  const ids = [...new Set([...clips.map(c => c.mediaId), ...mediaIds.filter(id => store.getMedia(id)?.kind === 'image')])];
+  const items = ids.map(id => ({ mediaId: id, media: store.getMedia(id), bitmap: null, mask: null, w: 0, h: 0 }));
+  const unavailable = aiUnavailableReason('Local AI tools') || (!items.length ? 'Select one or more image clips on the timeline (or images in the library) first.' : null);
+  const prefs = { bgModel: BG_MODELS[0].id, ...loadPrefs() };
+
+  const back = document.createElement('div');
+  back.className = 'modal-back ai-back';
+  back.innerHTML = `<div class="modal ai-modal ai-rmbg" role="dialog" aria-label="Remove Background">
+    <div class="modal-head"><span>Remove Background <small class="ai-badge">local AI</small></span><button class="icon-btn ai-x" title="Close">✕</button></div>
+    <div class="modal-body">
+      ${unavailable ? `<div class="ai-msg ai-err ai-unavail">${esc(unavailable)}</div>` : ''}
+      <div class="ai-cmp">
+        <figure><canvas class="ai-before"></canvas><figcaption>Before</figcaption></figure>
+        <figure><canvas class="ai-after ai-checker"></canvas><figcaption>After</figcaption></figure>
+      </div>
+      ${items.length > 1 ? `<div class="ai-pager"><button class="btn ai-prev">‹</button><span class="ai-page dim"></span><button class="btn ai-next">›</button></div>` : ''}
+      <div class="form-grid ai-form">
+        <label>Images</label><div class="dim ai-count">${items.length ? esc(items.map(i => i.media.name).join(', ')) : '—'}</div>
+        <label>Model</label><select data-k="bgModel">${BG_MODELS.map(m => `<option value="${m.id}"${m.id === prefs.bgModel ? ' selected' : ''}>${esc(m.label)} (${m.size})</option>`).join('')}</select>
+        <label>Threshold</label><div class="ai-row"><input type="range" data-r="threshold" min="5" max="95" value="50"><span class="ai-val" data-v="threshold">50</span></div>
+        <label>Edge hardness</label><div class="ai-row"><input type="range" data-r="hardness" min="0" max="100" value="0"><span class="ai-val" data-v="hardness">0</span></div>
+        <label>Feather</label><div class="ai-row"><input type="range" data-r="feather" min="0" max="12" value="0"><span class="ai-val" data-v="feather">0 px</span></div>
+        <label></label><span class="dim ai-engine"></span>
+      </div>
+      <div class="ai-progress" hidden>
+        <div class="ai-step" data-step="download"><div class="ai-step-l"><span>Model download</span><span class="ai-pct"></span></div><div class="ai-bar"><i></i></div></div>
+        <div class="ai-step" data-step="infer"><div class="ai-step-l"><span>Segmentation</span><span class="ai-pct"></span></div><div class="ai-bar"><i></i></div></div>
+        <div class="ai-status dim"></div>
+      </div>
+      <div class="ai-msg ai-notice" hidden></div>
+      <div class="ai-msg ai-err ai-error" hidden></div>
+      <div class="ai-msg ai-ok ai-result" hidden></div>
+      <div class="ai-note dim ai-license"></div>
+    </div>
+    <div class="modal-foot"><span class="ai-spacer"></span><button class="btn ai-cancel">Cancel</button><button class="btn ai-go">Remove background</button><button class="btn primary ai-apply" disabled>Apply</button></div>
+  </div>`;
+  (document.getElementById('modalRoot') || document.body).appendChild(back);
+  const q = s => back.querySelector(s);
+  const refine = () => ({ threshold: +q('[data-r="threshold"]').value, hardness: +q('[data-r="hardness"]').value, feather: +q('[data-r="feather"]').value });
+  let busy = false, ctrl = null, cur = 0, applied = false;
+
+  pickDevice().then(d => { const e = q('.ai-engine'); if (e) e.textContent = d === 'webgpu' ? 'Engine: GPU (WebGPU)' : 'Engine: CPU (WebAssembly)'; });
+  const license = () => { q('.ai-license').textContent = (BG_MODELS.find(m => m.id === q('[data-k="bgModel"]').value)?.note || '') + ' Runs in your browser; the model is downloaded once, then cached.'; };
+  license(); q('[data-k="bgModel"]').onchange = license;
+
+  // ---- preview (≤ 300 px per side)
+  const PV = 300;
+  const pv = { key: -1, w: 0, h: 0, rgba: null, mask: null };
+  const drawPreview = () => {
+    const it = items[cur]; if (!it?.bitmap) return;
+    const k = Math.min(1, PV / Math.max(it.w, it.h)), w = Math.max(1, Math.round(it.w * k)), h = Math.max(1, Math.round(it.h * k));
+    const bc = q('.ai-before'), ac = q('.ai-after');
+    if (pv.key !== cur || pv.w !== w) {
+      bc.width = ac.width = w; bc.height = ac.height = h;
+      const bx = bc.getContext('2d', { willReadFrequently: true }); bx.clearRect(0, 0, w, h); bx.drawImage(it.bitmap, 0, 0, w, h);
+      pv.rgba = bx.getImageData(0, 0, w, h); pv.key = cur; pv.w = w; pv.h = h; pv.mask = null;
+    }
+    if (it.mask && !pv.mask) { // downscale the mask once per image
+      const mc = document.createElement('canvas'); mc.width = it.w; mc.height = it.h;
+      const id = new ImageData(it.w, it.h); for (let i = 0; i < it.mask.length; i++) { id.data[i * 4] = it.mask[i]; id.data[i * 4 + 3] = 255; }
+      mc.getContext('2d').putImageData(id, 0, 0);
+      const sc = document.createElement('canvas'); sc.width = w; sc.height = h; const sx = sc.getContext('2d', { willReadFrequently: true });
+      sx.drawImage(mc, 0, 0, w, h); const d = sx.getImageData(0, 0, w, h).data;
+      pv.mask = new Uint8Array(w * h); for (let i = 0; i < pv.mask.length; i++) pv.mask[i] = d[i * 4];
+    }
+    const ax = ac.getContext('2d');
+    if (!pv.mask) { ax.clearRect(0, 0, w, h); ax.globalAlpha = 0.35; ax.drawImage(it.bitmap, 0, 0, w, h); ax.globalAlpha = 1; return; }
+    const r = refine(); const a = refineMask(pv.mask, w, h, { ...r, feather: r.feather * w / it.w });
+    const out = new ImageData(new Uint8ClampedArray(pv.rgba.data), w, h);
+    for (let i = 0, j = 3; i < a.length; i++, j += 4) out.data[j] = Math.min(out.data[j], a[i]);
+    ax.putImageData(out, 0, 0);
+  };
+  const page = () => { if (q('.ai-page')) q('.ai-page').textContent = `${cur + 1} / ${items.length} · ${items[cur].media.name}`; drawPreview(); };
+  if (q('.ai-prev')) { q('.ai-prev').onclick = () => { cur = (cur + items.length - 1) % items.length; page(); }; q('.ai-next').onclick = () => { cur = (cur + 1) % items.length; page(); }; }
+  back.querySelectorAll('[data-r]').forEach(i => i.oninput = () => { q(`[data-v="${i.dataset.r}"]`).textContent = i.value + (i.dataset.r === 'feather' ? ' px' : ''); drawPreview(); });
+
+  Promise.all(items.map(async it => { it.bitmap = await bitmapOf(mediaRuntime.get(it.mediaId)); it.w = it.bitmap.width; it.h = it.bitmap.height; }))
+    .then(page).catch(e => show('.ai-error', esc('Could not read the image: ' + e.message)));
+
+  const show = (sel, html) => { const el = q(sel); el.hidden = !html; el.innerHTML = html || ''; };
+  const setBar = (step, frac, text) => {
+    const el = q(`[data-step="${step}"]`); el.classList.add('on');
+    el.querySelector('.ai-bar i').style.width = (frac == null ? 0 : clamp(frac, 0, 1) * 100).toFixed(1) + '%';
+    el.querySelector('.ai-bar').classList.toggle('indet', frac == null);
+    el.querySelector('.ai-pct').textContent = text || '';
+  };
+  const hasMasks = () => items.length && items.every(i => i.mask);
+  const setBusy = b => {
+    busy = b; back.classList.toggle('ai-busy', b);
+    q('[data-k="bgModel"]').disabled = b;
+    q('.ai-go').disabled = b || !!unavailable;
+    q('.ai-apply').disabled = b || !hasMasks() || applied;
+    q('.ai-cancel').textContent = b ? 'Cancel' : applied ? 'Close' : 'Cancel';
+  };
+  const close = () => { if (busy) ctrl?.abort(); back.remove(); };
+  q('.ai-x').onclick = close;
+  q('.ai-cancel').onclick = () => { if (busy) ctrl?.abort(); else close(); };
+  back.addEventListener('pointerdown', e => { if (e.target === back && !busy) close(); });
+  back.addEventListener('keydown', e => { if (e.key === 'Escape') close(); e.stopPropagation(); });
+  setBusy(false);
+
+  q('.ai-go').onclick = async () => {
+    if (busy || unavailable) return;
+    const model = q('[data-k="bgModel"]').value;
+    savePrefs({ ...loadPrefs(), bgModel: model });
+    show('.ai-error'); show('.ai-notice'); show('.ai-result');
+    q('.ai-progress').hidden = false;
+    back.querySelectorAll('.ai-step').forEach(s => s.classList.remove('on', 'done'));
+    const status = t => { q('.ai-status').textContent = t; };
+    ctrl = new AbortController(); const signal = ctrl.signal;
+    items.forEach(i => { i.mask = null; }); pv.mask = null; applied = false;
+    setBusy(true);
+    try {
+      const device = await pickDevice();
+      setBar('download', null, 'checking cache…');
+      const on = m => {
+        if (m.type === 'status') status(m.message);
+        else if (m.type === 'notice') show('.ai-notice', esc(m.message));
+        else if (m.type === 'download') setBar('download', m.total ? m.loaded / m.total : null, m.total ? `${Math.round(m.loaded / m.total * 100)}% · ${mb(m.loaded)} / ${mb(m.total)}` : mb(m.loaded));
+      };
+      const run = segment || workerSegment;
+      for (let n = 0; n < items.length; n++) {
+        const it = items[n];
+        if (!it.bitmap) throw new Error('The image ' + it.media.name + ' could not be read.');
+        setBar('infer', items.length > 1 ? n / items.length : null, `${n + 1} / ${items.length}`);
+        const cv = document.createElement('canvas'); cv.width = it.w; cv.height = it.h;
+        const cx = cv.getContext('2d', { willReadFrequently: true }); cx.drawImage(it.bitmap, 0, 0);
+        const px = cx.getImageData(0, 0, it.w, it.h);
+        const res = await run({ data: px.data, width: it.w, height: it.h }, { model, device, signal, libUrl }, on);
+        if (signal.aborted) throw Object.assign(new Error('Cancelled'), { code: 'cancel' });
+        const dl = q('[data-step="download"]'); if (!dl.classList.contains('done')) { dl.classList.add('done'); setBar('download', 1, dl.querySelector('.ai-pct').textContent.replace(/^\d+%|checking cache…/, 'ready') || 'ready'); }
+        if (!res?.mask || res.width !== it.w || res.height !== it.h) throw new Error('The model returned a mask of the wrong size.');
+        it.mask = res.mask instanceof Uint8Array ? res.mask : Uint8Array.from(res.mask);
+        if (n === cur) { pv.mask = null; drawPreview(); }
+      }
+      setBar('infer', 1, `${items.length} / ${items.length}`);
+      status(''); cur = 0; pv.mask = null; page();
+      show('.ai-result', `Background found in ${items.length} image${items.length > 1 ? 's' : ''}. Adjust the edges, then <b>Apply</b>.`);
+    } catch (e) {
+      if (e.code === 'cancel' || signal.aborted) { status(''); show('.ai-notice', 'Cancelled.'); q('.ai-progress').hidden = true; }
+      else { console.warn('[remove background]', e); show('.ai-error', esc(e.message || String(e))); status(''); }
+    } finally { ctrl = null; if (back.isConnected) setBusy(false); }
+  };
+
+  q('.ai-apply').onclick = async () => {
+    if (busy || !hasMasks()) return;
+    setBusy(true); q('.ai-apply').disabled = true;
+    const status = t => { q('.ai-status').textContent = t; };
+    try {
+      const r = refine(), map = new Map();
+      for (const it of items) {
+        status('Saving ' + it.media.name + '…');
+        const blob = await cutoutPng(it.bitmap, it.mask, it.w, it.h, r);
+        const base = it.media.name.replace(/\.[a-z0-9]{2,5}$/i, '');
+        const file = new File([blob], base + ' (no bg).png', { type: 'image/png' });
+        const [nid] = await importViaApp([file]);
+        if (!nid) throw new Error('Could not import ' + file.name + '.');
+        map.set(it.mediaId, { id: nid, name: file.name });
+      }
+      const clipIds = new Set(clips.map(c => c.id));
+      let swapped = 0;
+      if (clipIds.size) store.transact('Remove background', p => {
+        for (const c of p.clips) { const m = clipIds.has(c.id) && map.get(c.mediaId); if (m) { c.mediaId = m.id; c.name = m.name; swapped++; } }
+      });
+      applied = true; status('');
+      show('.ai-result', `<b>Background removed from ${map.size} image${map.size > 1 ? 's' : ''}</b>` + (swapped ? ` · ${swapped} clip${swapped > 1 ? 's now use' : ' now uses'} the cut-out.` : ' · added to the media library.') +
+        '<br><span class="dim">The originals stay in the library' + (swapped ? ' · Ctrl+Z swaps them back.' : '.') + '</span>');
+    } catch (e) { console.warn('[remove background]', e); show('.ai-error', esc(e.message || String(e))); status(''); }
+    finally { if (back.isConnected) setBusy(false); }
   };
   return { el: back, close };
 }

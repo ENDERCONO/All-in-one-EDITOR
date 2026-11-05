@@ -1,13 +1,20 @@
 // Right-hand property panel. Tabs depend on the selected clip's type:
 // Video (transform, crop, compositing, green screen, material, transitions),
 // Titles, Audio, Color, Speed, Effects. With nothing selected: Project Info.
-import { mediaRuntime, uid, clamp, defaultColor, defaultHueMatch, defaultAudioFx } from './state.js';
-import { BLEND_MODES, FILTERS, TRANSITIONS, FONTS } from './catalog.js';
+import { mediaRuntime, uid, defaultColor, defaultHueMatch, defaultAudioFx, defaultMask, defaultGradBlur } from './state.js';
+import { BLEND_MODES, FILTERS, TRANSITIONS, FONTS, MASK_TYPES, CROP_ASPECTS } from './catalog.js';
 import { icon } from './icons.js';
+import { numField } from './numfield.js';
 
 const get = (o, path) => path.split('.').reduce((a, k) => (a == null ? a : a[k]), o);
 const set = (o, path, v) => { const ks = path.split('.'); const last = ks.pop(); const t = ks.reduce((a, k) => (a[k] ??= {}), o); t[last] = v; };
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const CASES = {
+  upper: s => s.toUpperCase(),
+  lower: s => s.toLowerCase(),
+  title: s => s.toLowerCase().replace(/(^|[\s\-_/(\["'“])(\p{L})/gu, (m, a, b) => a + b.toUpperCase()),
+  sentence: s => s.toLowerCase().replace(/(^\s*|[.!?…]\s+|\n\s*)(\p{L})/gu, (m, a, b) => a + b.toUpperCase()),
+};
 const tc = (s, fps) => { s = Math.max(0, s); const f = Math.floor((s % 1) * fps + 1e-6); const t = Math.floor(s); return [Math.floor(t / 3600), Math.floor(t / 60) % 60, t % 60, f].map(n => String(n).padStart(2, '0')).join(':'); };
 
 export function createInspector({ root, store, ops, materialsApi, audioApi, pickColor, openProjectSettings }) {
@@ -23,6 +30,8 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
         const x = p.clips.find(y => y.id === id); if (!x) continue;
         if (path.startsWith('hueMatch.') && !x.hueMatch) x.hueMatch = defaultHueMatch();
         if (path.startsWith('audio.fx.')) x.audio.fx = { ...defaultAudioFx(), ...(x.audio.fx || {}) };
+        if (path.startsWith('mask.') && !x.mask) x.mask = defaultMask();
+        if (path.startsWith('gradBlur.') && !x.gradBlur) x.gradBlur = defaultGradBlur();
         set(x, path, v);
       }
     }, { coalesce: ids.join(',') + ':' + path });
@@ -32,9 +41,11 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
   let n = 0;
   const ctl = (fn) => { const id = 'ins' + (++n); bindings.push({ id, ...fn }); return id; };
 
-  function slider(label, path, { min, max, step = 1, fmt, toUI = v => v, fromUI = v => v, def = 0 } = {}) {
-    const id = ctl({ kind: 'slider', path, toUI, fromUI, def });
-    return `<div class="prop" title="Double-click the label to reset"><label data-reset="${id}">${label}</label><input type="range" id="${id}" min="${min}" max="${max}" step="${step}"><input type="number" id="${id}n" min="${min}" max="${max}" step="${step}"></div>`;
+  // Unreal-style number field (js/numfield.js). min/max = slider range only; typed values go beyond it.
+  // hardMin/hardMax (UI units) only where a value would break things.
+  function slider(label, path, { min, max, step = 1, toUI = v => v, fromUI = v => v, def = 0, unit = '', decimals, hardMin, hardMax } = {}) {
+    const id = ctl({ kind: 'slider', path, toUI, fromUI, def, opts: { min, max, step, unit, decimals, hardMin, hardMax } });
+    return `<div class="prop" title="Drag the label or the field to change · double-click the label to reset"><label data-reset="${id}">${label}</label><div class="nf-slot" id="${id}"></div></div>`;
   }
   function toggle(label, path, { onLabel } = {}) {
     const id = ctl({ kind: 'toggle', path });
@@ -54,46 +65,80 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
   }
 
   // ---------- tab content ----------
+  const pctS = { toUI: v => v * 100, fromUI: v => v / 100, unit: '%' };
   function transformSec(c) {
     const fixed = c.type === 'color' || c.type === 'material';
+    const W = store.project.settings.width, H = store.project.settings.height;
     return section('transform', 'Transform', `
-      ${slider('Scale', 'transform.scale', { min: 0, max: 500, step: 1, toUI: v => v * 100, fromUI: v => v / 100, def: 1 })}
-      ${slider('Width', 'transform.scaleX', { min: 0, max: 500, step: 1, toUI: v => v * 100, fromUI: v => v / 100, def: 1 })}
-      ${slider('Height', 'transform.scaleY', { min: 0, max: 500, step: 1, toUI: v => v * 100, fromUI: v => v / 100, def: 1 })}
-      ${slider('Position X', 'transform.x', { min: -store.project.settings.width, max: store.project.settings.width, step: 1 })}
-      ${slider('Position Y', 'transform.y', { min: -store.project.settings.height, max: store.project.settings.height, step: 1 })}
-      ${slider('Rotate', 'transform.rotation', { min: -180, max: 180, step: 0.5 })}
+      ${slider('Scale', 'transform.scale', { min: 0, max: 500, step: 1, ...pctS, def: 1 })}
+      ${slider('Width', 'transform.scaleX', { min: 0, max: 500, step: 1, ...pctS, def: 1 })}
+      ${slider('Height', 'transform.scaleY', { min: 0, max: 500, step: 1, ...pctS, def: 1 })}
+      ${slider('Position X', 'transform.x', { min: -W, max: W, step: 1, unit: 'px' })}
+      ${slider('Position Y', 'transform.y', { min: -H, max: H, step: 1, unit: 'px' })}
+      ${slider('Rotate', 'transform.rotation', { min: -180, max: 180, step: 0.5, decimals: 1, unit: '°' })}
       <div class="prop wide"><label>Flip</label><div class="btn-row">${toggleBtn('Horizontal', 'transform.flipH')}${toggleBtn('Vertical', 'transform.flipV')}</div></div>
+      <div class="sub-head">3D Tilt</div>
+      ${slider('Tilt X', 'transform.rotX', { min: -90, max: 90, step: 0.5, decimals: 1, unit: '°' })}
+      ${slider('Tilt Y', 'transform.rotY', { min: -90, max: 90, step: 0.5, decimals: 1, unit: '°' })}
+      ${slider('Perspective', 'transform.perspective', { min: 200, max: 4000, step: 10, def: 1200, unit: 'px', hardMin: 10 })}
       ${fixed ? '' : `<div class="btn-row"><button class="btn" data-do="fit">Fit</button><button class="btn" data-do="fill">Fill frame</button><button class="btn" data-do="resetT">Reset</button></div>`}
     `);
   }
   function toggleBtn(label, path) { const id = ctl({ kind: 'tbtn', path }); return `<button class="btn" id="${id}">${label}</button>`; }
 
+  function maskSec(c) {
+    const m = c.mask || defaultMask();
+    const pos = { min: -50, max: 50, step: 0.5, decimals: 1, ...pctS };
+    return section('mask', 'Mask', `
+      ${select('Shape', 'mask.type', MASK_TYPES)}
+      ${m.type === 'none' ? '' : `
+      ${slider('X', 'mask.x', pos)}${slider('Y', 'mask.y', pos)}
+      ${m.type === 'linear' ? '' : `${slider('Width', 'mask.w', { min: 0, max: 100, step: 0.5, decimals: 1, ...pctS, def: 0.5, hardMin: 0 })}${slider('Height', 'mask.h', { min: 0, max: 100, step: 0.5, decimals: 1, ...pctS, def: 0.5, hardMin: 0 })}`}
+      ${slider('Angle', 'mask.angle', { min: -180, max: 180, step: 0.5, decimals: 1, unit: '°' })}
+      ${slider('Feather', 'mask.feather', { min: 0, max: 100, step: 0.5, decimals: 1, ...pctS, def: 0.15, hardMin: 0 })}
+      ${toggle('Invert', 'mask.invert')}`}`);
+  }
+  function gradBlurSec(c) {
+    const g = c.gradBlur || defaultGradBlur();
+    const pos = { min: -50, max: 50, step: 0.5, decimals: 1, ...pctS };
+    return section('gradblur', 'Gradient Blur', `
+      ${select('Mode', 'gradBlur.mode', [{ id: 'linear', label: 'Linear' }, { id: 'band', label: 'Band (tilt-shift)' }, { id: 'radial', label: 'Radial' }])}
+      ${g.mode === 'radial' ? '' : slider('Angle', 'gradBlur.angle', { min: -180, max: 180, step: 0.5, decimals: 1, unit: '°', def: 90 })}
+      ${slider('Start', 'gradBlur.start', { min: 0, max: 100, step: 0.5, decimals: 1, ...pctS })}
+      ${slider('End', 'gradBlur.end', { min: 0, max: 100, step: 0.5, decimals: 1, ...pctS, def: 0.5 })}
+      ${slider('Strength', 'gradBlur.strength', { min: 0, max: 100, step: 0.5, decimals: 1, def: 40, hardMin: 0 })}
+      ${g.mode === 'linear' ? '' : `${slider('Center X', 'gradBlur.x', pos)}${slider('Center Y', 'gradBlur.y', pos)}`}`, { toggleOf: 'gradBlur.enabled' });
+  }
+
   function videoTab(c) {
     const mats = [{ id: '', label: '— None —' }, ...store.project.materials.map(m => ({ id: m.id, label: m.name }))];
     const trans = [{ id: '', label: 'None' }, ...TRANSITIONS.map(t => ({ id: t.id, label: t.label }))];
+    const crop = { min: 0, max: 95, step: 0.5, decimals: 1, ...pctS, hardMin: 0, hardMax: 99 };
+    const fr = 1 / (store.project.settings.fps || 30);
     let h = '';
     if (c.type === 'color') h += section('fill', 'Color', color('Fill', 'fill'));
     if (c.type === 'adjustment') h += '<div class="ins-empty" style="padding:8px 14px">Adjustment layer — its color, filters, hue match and material apply to every track below it. Opacity sets the strength.</div>';
     else h += transformSec(c);
     if (c.type === 'video' || c.type === 'image') h += section('crop', 'Crop', `
-      ${slider('Left', 'crop.l', { min: 0, max: 95, toUI: v => v * 100, fromUI: v => v / 100 })}
-      ${slider('Right', 'crop.r', { min: 0, max: 95, toUI: v => v * 100, fromUI: v => v / 100 })}
-      ${slider('Top', 'crop.t', { min: 0, max: 95, toUI: v => v * 100, fromUI: v => v / 100 })}
-      ${slider('Bottom', 'crop.b', { min: 0, max: 95, toUI: v => v * 100, fromUI: v => v / 100 })}`);
-    h += section('comp', 'Compositing', `${select('Blend Mode', 'blend', BLEND_MODES)}${slider('Opacity', 'transform.opacity', { min: 0, max: 100, toUI: v => v * 100, fromUI: v => v / 100, def: 1 })}`);
+      <div class="prop wide"><label>Aspect</label><div class="seg">${CROP_ASPECTS.map(a => `<button class="btn" data-crop="${a.id}">${esc(a.label || a.id)}</button>`).join('')}</div></div>
+      ${slider('Left', 'crop.l', crop)}
+      ${slider('Right', 'crop.r', crop)}
+      ${slider('Top', 'crop.t', crop)}
+      ${slider('Bottom', 'crop.b', crop)}`);
+    h += section('comp', 'Compositing', `${select('Blend Mode', 'blend', BLEND_MODES)}${slider('Opacity', 'transform.opacity', { min: 0, max: 100, ...pctS, def: 1, hardMin: 0 })}`);
+    h += maskSec(c) + gradBlurSec(c);
     if (c.type !== 'material' && c.type !== 'adjustment') h += section('chroma', 'Chroma Key (Green Screen)', `
       ${color('Key color', 'chroma.color', { pick: true })}
-      ${slider('Tolerance', 'chroma.similarity', { min: 0, max: 100, toUI: v => v * 100, fromUI: v => v / 100, def: 0.35 })}
-      ${slider('Edge soft', 'chroma.smoothness', { min: 0, max: 100, toUI: v => v * 100, fromUI: v => v / 100, def: 0.08 })}
-      ${slider('Spill', 'chroma.spill', { min: 0, max: 100, toUI: v => v * 100, fromUI: v => v / 100, def: 0.5 })}
-      ${slider('Feather', 'chroma.edgeFeather', { min: 0, max: 100, toUI: v => v * 100, fromUI: v => v / 100 })}`, { toggleOf: 'chroma.enabled' });
+      ${slider('Tolerance', 'chroma.similarity', { min: 0, max: 100, ...pctS, def: 0.35 })}
+      ${slider('Edge soft', 'chroma.smoothness', { min: 0, max: 100, ...pctS, def: 0.08 })}
+      ${slider('Spill', 'chroma.spill', { min: 0, max: 100, ...pctS, def: 0.5 })}
+      ${slider('Feather', 'chroma.edgeFeather', { min: 0, max: 100, ...pctS })}`, { toggleOf: 'chroma.enabled' });
     h += section('material', 'Material', `
       <div class="prop wide"><label>Material</label><div style="display:flex;gap:6px"><select id="insMat" style="flex:1">${mats.map(o => `<option value="${o.id}" ${o.id === (c.materialId || '') ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select><button class="btn" data-do="editMat" title="Open node editor">Edit</button><button class="btn" data-do="newMat" title="New material">+</button></div></div>
       <div id="insMatParams"></div>`);
     h += section('trans', 'Transitions', `
-      ${select('In', 'transitionIn.type', trans)}${slider('In length', 'transitionIn.duration', { min: 0.1, max: 5, step: 0.05, def: 1 })}
-      ${select('Out', 'transitionOut.type', trans)}${slider('Out length', 'transitionOut.duration', { min: 0.1, max: 5, step: 0.05, def: 1 })}`);
+      ${select('In', 'transitionIn.type', trans)}${slider('In length', 'transitionIn.duration', { min: 0.1, max: 5, step: 0.05, def: 1, unit: 's', hardMin: fr })}
+      ${select('Out', 'transitionOut.type', trans)}${slider('Out length', 'transitionOut.duration', { min: 0.1, max: 5, step: 0.05, def: 1, unit: 's', hardMin: fr })}`);
     return h;
   }
 
@@ -102,13 +147,14 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
     const tid = ctl({ kind: 'textarea', path: 'text.content' });
     return section('text', 'Text', `
       <textarea id="${tid}" rows="3" style="width:100%;resize:vertical"></textarea>
+      <div class="prop wide"><label>Case</label><div class="seg">${[['upper', 'UPPER'], ['lower', 'lower'], ['title', 'Title Case'], ['sentence', 'Sentence case']].map(([k, l]) => `<button class="btn" data-case="${k}" title="Convert the text to ${l}">${l}</button>`).join('')}</div></div>
       ${select('Font', 'text.font', fonts)}
-      ${slider('Size', 'text.size', { min: 8, max: 400, def: 96 })}
+      ${slider('Size', 'text.size', { min: 8, max: 400, def: 96, unit: 'px', hardMin: 1 })}
       ${color('Color', 'text.color')}
       <div class="prop wide"><label>Style</label><div class="btn-row">${toggleBtn('Bold', 'text.bold')}${toggleBtn('Italic', 'text.italic')}${toggleBtn('Shadow', 'text.shadow')}</div></div>
       ${select('Align', 'text.align', [{ id: 'left', label: 'Left' }, { id: 'center', label: 'Center' }, { id: 'right', label: 'Right' }])}
-      ${slider('Line height', 'text.lineHeight', { min: 0.6, max: 3, step: 0.05, def: 1.15 })}
-      ${slider('Outline', 'text.stroke', { min: 0, max: 40 })}
+      ${slider('Line height', 'text.lineHeight', { min: 0.6, max: 3, step: 0.05, def: 1.15, hardMin: 0.05 })}
+      ${slider('Outline', 'text.stroke', { min: 0, max: 40, unit: 'px', hardMin: 0 })}
       ${color('Outline color', 'text.strokeColor')}
       <div class="prop wide"><label>Background</label><div style="display:flex;gap:6px;align-items:center"><input type="color" id="insTextBg"><button class="btn" data-do="noBg">None</button></div></div>
     `);
@@ -116,11 +162,11 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
 
   function audioTab(c) {
     return section('audio', 'Audio', `
-      ${slider('Volume (dB)', 'audio.volume', { min: -60, max: 12, step: 0.1 })}
+      ${slider('Volume', 'audio.volume', { min: -60, max: 12, step: 0.1, unit: ' dB' })}
       ${slider('Balance', 'audio.pan', { min: -100, max: 100, toUI: v => v * 100, fromUI: v => v / 100 })}
-      ${slider('Pitch (st)', 'audio.pitch', { min: -12, max: 12, step: 0.1 })}
-      ${slider('Fade in (s)', 'audio.fadeIn', { min: 0, max: Math.min(10, c.duration / 2), step: 0.05 })}
-      ${slider('Fade out (s)', 'audio.fadeOut', { min: 0, max: Math.min(10, c.duration / 2), step: 0.05 })}
+      ${slider('Pitch', 'audio.pitch', { min: -12, max: 12, step: 0.1, unit: ' st' })}
+      ${slider('Fade in', 'audio.fadeIn', { min: 0, max: Math.min(10, c.duration / 2), step: 0.05, unit: 's', hardMin: 0 })}
+      ${slider('Fade out', 'audio.fadeOut', { min: 0, max: Math.min(10, c.duration / 2), step: 0.05, unit: 's', hardMin: 0 })}
       ${toggle('Mute', 'audio.mute')}
       ${toggle('Keep pitch', 'audio.keepPitch', { onLabel: 'when changing speed' })}
       ${c.type === 'video' ? `<div class="btn-row"><button class="btn" data-do="detach">Detach audio</button></div>` : ''}
@@ -129,42 +175,42 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
 
   function voiceSecs() {
     const VF = audioApi?.VOICE_FILTERS || [], PR = audioApi?.AUDIO_PRESETS || [];
-    const pct = (l, k, d = 0) => slider(l, 'audio.fx.' + k, { min: 0, max: 100, toUI: v => v * 100, fromUI: v => v / 100, def: d });
+    const pct = (l, k, d = 0) => slider(l, 'audio.fx.' + k, { min: 0, max: 100, ...pctS, def: d, hardMin: 0 });
     return (PR.length ? section('apresets', 'Audio Presets', `<div class="chip-grid">${PR.map(p => `<button class="btn" data-apreset="${p.id}" title="${esc(p.title || '')}">${esc(p.label)}</button>`).join('')}</div>`) : '')
       + (VF.length ? section('voice', 'Voice Filters', `<div class="chip-grid">${VF.map(v => `<button class="btn" data-voice="${v.id}" title="${esc(v.title || '')}">${esc(v.label)}</button>`).join('')}</div>
-        ${slider('Filter mix', 'audio.voiceMix', { min: 0, max: 100, toUI: v => v * 100, fromUI: v => v / 100, def: 1 })}`) : '')
+        ${slider('Filter mix', 'audio.voiceMix', { min: 0, max: 100, ...pctS, def: 1, hardMin: 0 })}`) : '')
       + section('afx', 'Audio Effects', `
         ${pct('Reverb', 'reverb')}${pct('Reverb size', 'reverbSize', 0.5)}
-        ${pct('Echo', 'echo')}${slider('Echo time (s)', 'audio.fx.echoTime', { min: 0.02, max: 1.5, step: 0.01, def: 0.3 })}${pct('Echo repeats', 'echoFeedback', 0.4)}
-        ${pct('Bit crush', 'crush')}${slider('Bit depth', 'audio.fx.crushBits', { min: 1, max: 16, def: 8 })}${slider('Sample rate', 'audio.fx.crushRate', { min: 1000, max: 44100, step: 100, def: 11025 })}
-        ${pct('Muffle', 'lowpass')}${slider('High-pass (Hz)', 'audio.fx.highpass', { min: 0, max: 2000, step: 10 })}${slider('Bass boost (dB)', 'audio.fx.bass', { min: 0, max: 18, step: 0.5 })}
-        ${pct('8D orbit', 'orbit')}${slider('Orbit speed (Hz)', 'audio.fx.orbitSpeed', { min: 0.05, max: 2, step: 0.01, def: 0.25 })}
+        ${pct('Echo', 'echo')}${slider('Echo time', 'audio.fx.echoTime', { min: 0.02, max: 1.5, step: 0.01, def: 0.3, unit: 's', hardMin: 0.001 })}${pct('Echo repeats', 'echoFeedback', 0.4)}
+        ${pct('Bit crush', 'crush')}${slider('Bit depth', 'audio.fx.crushBits', { min: 1, max: 16, def: 8, hardMin: 1 })}${slider('Sample rate', 'audio.fx.crushRate', { min: 1000, max: 44100, step: 100, def: 11025, unit: ' Hz', hardMin: 100 })}
+        ${pct('Muffle', 'lowpass')}${slider('High-pass', 'audio.fx.highpass', { min: 0, max: 2000, step: 10, unit: ' Hz', hardMin: 0 })}${slider('Bass boost', 'audio.fx.bass', { min: 0, max: 18, step: 0.5, unit: ' dB' })}
+        ${pct('8D orbit', 'orbit')}${slider('Orbit speed', 'audio.fx.orbitSpeed', { min: 0.05, max: 2, step: 0.01, def: 0.25, unit: ' Hz', hardMin: 0.001 })}
         <div class="btn-row"><button class="btn" data-do="resetAfx">Reset audio effects</button></div>`);
   }
 
   function colorTab() {
-    const s = (l, k, min = -100, max = 100) => slider(l, 'color.' + k, { min, max });
+    const s = (l, k, min = -100, max = 100, o = {}) => slider(l, 'color.' + k, { min, max, ...o });
     return section('basic', 'Color', `
       ${s('Exposure', 'exposure')}${s('Brightness', 'brightness')}${s('Contrast', 'contrast')}${s('Saturation', 'saturation')}
-      ${s('Hue', 'hue', -180, 180)}${s('Temperature', 'temperature')}${s('Tint', 'tint')}${s('Highlights', 'highlights')}${s('Shadows', 'shadows')}
+      ${s('Hue', 'hue', -180, 180, { unit: '°' })}${s('Temperature', 'temperature')}${s('Tint', 'tint')}${s('Highlights', 'highlights')}${s('Shadows', 'shadows')}
       ${s('Vibrance', 'vibrance')}${s('Gamma', 'gamma')}
     `) + section('levels', 'Levels & Channels', `
       ${s('Blacks', 'blacks')}${s('Whites', 'whites')}${s('Fade', 'fade', 0, 100)}
       ${s('Red', 'red')}${s('Green', 'green')}${s('Blue', 'blue')}
-      ${s('Color levels', 'posterize', 0, 64)}
+      ${s('Color levels', 'posterize', 0, 64, { hardMin: 0 })}
       <div class="prop wide"><label>Toggle</label><div class="btn-row">${toggleBtn('Invert', 'color.invert')}${toggleBtn('Grayscale', 'color.grayscale')}</div></div>
     `) + section('huematch', 'Auto Hue Match', `
       ${color('From', 'hueMatch.from', { pick: true })}
       ${color('To', 'hueMatch.to', { pick: true })}
-      ${slider('Range (°)', 'hueMatch.range', { min: 1, max: 180, def: 30 })}
+      ${slider('Range', 'hueMatch.range', { min: 1, max: 180, def: 30, unit: '°', hardMin: 0 })}
       ${toggle('Colorize', 'hueMatch.colorize', { onLabel: 'force every pixel to the To color' })}
-    `, { toggleOf: 'hueMatch.enabled' }) + section('detail', 'Detail', `${s('Sharpen', 'sharpen', 0, 100)}${s('Clarity', 'clarity')}${s('Noise / grain', 'noise', 0, 100)}${s('Blur', 'blur', 0, 100)}${s('Vignette', 'vignette', 0, 100)}
+    `, { toggleOf: 'hueMatch.enabled' }) + section('detail', 'Detail', `${s('Sharpen', 'sharpen', 0, 100)}${s('Clarity', 'clarity')}${s('Noise / grain', 'noise', 0, 100)}${s('Blur', 'blur', 0, 100, { hardMin: 0 })}${s('Vignette', 'vignette', 0, 100)}
       <div class="btn-row"><button class="btn" data-do="resetColor">Reset color</button></div>`);
   }
 
   function speedTab(c) {
     return section('speed', 'Uniform Speed', `
-      ${slider('Speed', 'speed', { min: 0.1, max: 10, step: 0.05, def: 1 })}
+      ${slider('Speed', 'speed', { min: 0.1, max: 10, step: 0.05, def: 1, unit: '×', hardMin: 0.01 })}
       <div class="btn-row">${[0.25, 0.5, 1, 1.5, 2, 4].map(s => `<button class="btn" data-speed="${s}">${s}x</button>`).join('')}</div>
       <div class="prop wide"><label>Duration</label><span class="tc">${tc(c.duration, store.project.settings.fps)}</span></div>
       ${toggle('Reverse', 'reverse')}
@@ -175,12 +221,11 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
   function effectsTab(c) {
     const rows = c.filters.map((f, i) => {
       const def = FILTERS.find(x => x.id === f.type);
-      return `<div class="prop" title="${esc(def?.label || f.type)}"><label>${esc(def?.label || f.type)}</label><input type="range" min="0" max="100" data-famt="${i}" value="${f.amount * 100}"><button class="btn" data-fdel="${i}" title="Remove">✕</button></div>`;
+      return `<div class="prop has-btn" title="${esc(def?.label || f.type)}"><label data-freset="${i}">${esc(def?.label || f.type)}</label><div class="nf-slot" data-famt="${i}"></div><button class="btn icon" data-fdel="${i}" title="Remove">✕</button></div>`;
     }).join('');
     return section('effects', 'Filters & Effects', `${rows || '<div class="dim">No filters. Drag one from the Filters or Effects tab, or add one here.</div>'}
       <div class="prop wide"><label>Add</label><select id="insAddFilter"><option value="">Choose…</option>${FILTERS.map(f => `<option value="${f.id}">${f.category} · ${f.label}</option>`).join('')}</select></div>`);
   }
-
   function tabsFor(c) {
     if (!c) return [];
     const m = c.mediaId ? store.getMedia(c.mediaId) : null;
@@ -246,25 +291,26 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
     for (const b of bindings) {
       const el = document.getElementById(b.id); if (!el) continue;
       if (b.kind === 'slider') {
-        const num = document.getElementById(b.id + 'n');
-        const apply = v => { if (!isFinite(v) || b.path === 'speed') return; let val = b.fromUI(v); if (b.path.startsWith('transition')) return editTransition(b.path, val); edit(b.path, val); };
-        el.addEventListener('input', () => { num.value = +(+el.value).toFixed(2); apply(+el.value); });
-        num.addEventListener('change', () => { el.value = num.value; apply(+num.value); });
+        const o = b.opts, ui = v => (isFinite(v) ? v : 0);
         const lab = root.querySelector(`[data-reset="${b.id}"]`);
-        lab?.addEventListener('dblclick', () => { if (b.path.startsWith('transition')) return; edit(b.path, b.def, 'Reset'); sync(); });
-        // Drag the label left/right to scrub the value (Shift = fine)
+        const apply = v => {
+          if (!isFinite(v)) return;
+          const val = b.fromUI(v);
+          if (b.path === 'speed') return setSpeed(val);
+          if (b.path.startsWith('transition')) return editTransition(b.path, val);
+          edit(b.path, val, (lab?.textContent || b.path.split('.').pop()));
+        };
+        const cur = get(clip(), b.path);
+        const nf = numField({ value: ui(b.toUI(cur ?? b.def ?? 0)), min: o.min, max: o.max, step: o.step, unit: o.unit, decimals: o.decimals,
+          hardMin: o.hardMin, hardMax: o.hardMax, onInput: apply, title: (lab?.textContent || '') + ' — drag to change (Shift fine, Ctrl coarse), click to type' });
+        nf.id = b.id; el.replaceWith(nf); b.nf = nf;
         if (lab) {
-          lab.classList.add('scrub'); lab.title = 'Drag to change · Shift = fine · double-click to reset';
-          lab.addEventListener('pointerdown', e => {
-            if (e.button !== 0) return; e.preventDefault(); lab.setPointerCapture(e.pointerId);
-            const min = +el.min, max = +el.max, st = +el.step || 0.01, x0 = e.clientX, v0 = +el.value;
-            const mv = ev => {
-              const k = (max - min) / 300 * (ev.shiftKey ? 0.1 : 1);
-              let v = Math.max(min, Math.min(max, v0 + (ev.clientX - x0) * k)); v = Math.round(v / st) * st;
-              el.value = v; el.dispatchEvent(new Event('input'));
-            };
-            const up = () => { lab.removeEventListener('pointermove', mv); lab.removeEventListener('pointerup', up); };
-            lab.addEventListener('pointermove', mv); lab.addEventListener('pointerup', up);
+          lab.classList.add('scrub'); lab.title = 'Drag to change · Shift = fine · Ctrl = coarse · double-click to reset';
+          nf.scrubFrom(lab);
+          lab.addEventListener('dblclick', () => {
+            if (b.path.startsWith('transition')) return;
+            if (b.path === 'speed') return setSpeed(b.def);
+            edit(b.path, b.def, 'Reset ' + lab.textContent); sync();
           });
         }
       } else if (b.kind === 'toggle') {
@@ -287,7 +333,7 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
     }
     // Special buttons
     const on = (sel, fn) => root.querySelector(sel)?.addEventListener('click', fn);
-    on('[data-do="resetT"]', () => edit('transform', { x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, rotation: 0, opacity: clip().transform.opacity, flipH: false, flipV: false }, 'Reset transform'));
+    on('[data-do="resetT"]', () => edit('transform', { x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, rotation: 0, opacity: clip().transform.opacity, flipH: false, flipV: false, rotX: 0, rotY: 0, perspective: 1200 }, 'Reset transform'));
     on('[data-do="fit"]', () => { edit('transform.scale', 1, 'Fit'); edit('transform.scaleX', 1); edit('transform.scaleY', 1); });
     on('[data-do="fill"]', () => {
       const c0 = clip(); const m = store.getMedia(c0.mediaId); if (!m?.width) return;
@@ -317,16 +363,50 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
       });
     }));
     root.querySelectorAll('[data-speed]').forEach(b => b.addEventListener('click', () => ops.setSpeed(+b.dataset.speed)));
-    root.querySelectorAll('[data-famt]').forEach(r => r.addEventListener('input', () => edit(`filters.${r.dataset.famt}.amount`, r.value / 100, 'Filter amount')));
+    root.querySelectorAll('.nf-slot[data-famt]').forEach(slot => {
+      const i = +slot.dataset.famt;
+      const nf = numField({ value: (c.filters[i]?.amount ?? 1) * 100, min: 0, max: 100, step: 1, unit: '%', onInput: v => edit(`filters.${i}.amount`, v / 100, 'Filter amount') });
+      nf.dataset.famt = i; slot.replaceWith(nf);
+      const lab = root.querySelector(`[data-freset="${i}"]`);
+      if (lab) { lab.classList.add('scrub'); nf.scrubFrom(lab); lab.addEventListener('dblclick', () => { edit(`filters.${i}.amount`, 1, 'Reset filter amount'); sync(); }); }
+    });
     root.querySelectorAll('[data-fdel]').forEach(b => b.addEventListener('click', () => store.transact('Remove filter', p => { const x = p.clips.find(y => y.id === clip().id); x.filters.splice(+b.dataset.fdel, 1); })));
     root.querySelector('#insAddFilter')?.addEventListener('change', e => { const v = e.target.value; if (!v) return; store.transact('Add filter', p => p.clips.find(y => y.id === clip().id).filters.push({ id: uid('flt'), type: v, amount: 1 })); });
-    // Speed slider goes through ops.setSpeed so the duration follows
-    const sp = bindings.find(b => b.path === 'speed');
-    if (sp) {
-      const el = document.getElementById(sp.id), num = document.getElementById(sp.id + 'n');
-      const f = v => { const c0 = clip(); store.update('Speed', p => { for (const id of store.selection.clipIds) { const x = p.clips.find(y => y.id === id); if (!x || x.type === 'image') continue; x.duration = x.duration * x.speed / v; x.speed = v; } }, { coalesce: 'speed' + c0.id }); };
-      el.addEventListener('input', () => f(+el.value)); num.addEventListener('change', () => f(clamp(+num.value, 0.1, 10)));
-    }
+    // Text case (the site's Text Case tool)
+    root.querySelectorAll('[data-case]').forEach(b => b.addEventListener('click', () => {
+      const f = CASES[b.dataset.case]; if (!f) return;
+      store.transact('Text case', p => { for (const id of store.selection.clipIds) { const x = p.clips.find(y => y.id === id); if (x?.text) x.text.content = f(x.text.content || ''); } });
+    }));
+    // Crop aspect presets: symmetric crop so the visible part has that aspect
+    root.querySelectorAll('[data-crop]').forEach(b => b.addEventListener('click', () => {
+      const a = CROP_ASPECTS.find(x => x.id === b.dataset.crop); if (!a) return;
+      store.transact('Crop ' + (a.label || a.id), p => {
+        for (const id of store.selection.clipIds) {
+          const x = p.clips.find(y => y.id === id); if (!x || (x.type !== 'video' && x.type !== 'image')) continue;
+          x.crop = cropFor(x, a);
+        }
+      });
+    }));
+  }
+
+  function cropFor(x, a) {
+    if (!a.w || !a.h) return { l: 0, t: 0, r: 0, b: 0 };
+    const m = store.getMedia(x.mediaId);
+    const W = m?.width || store.project.settings.width, H = m?.height || store.project.settings.height;
+    const src = W / H, want = a.w / a.h;
+    if (src > want) { const e = (1 - want / src) / 2; return { l: e, r: e, t: 0, b: 0 }; }
+    const e = (1 - src / want) / 2; return { l: 0, r: 0, t: e, b: e };
+  }
+  const cropAspectOf = x => {
+    const cr = x.crop || {};
+    return CROP_ASPECTS.find(a => { const k = cropFor(x, a); return ['l', 'r', 't', 'b'].every(s => Math.abs((cr[s] || 0) - k[s]) < 1e-4); })?.id;
+  };
+
+  // Speed goes through here so the duration follows (as ops.setSpeed does)
+  function setSpeed(v) {
+    v = Math.max(0.01, +v || 1);
+    const c0 = clip();
+    store.update('Speed', p => { for (const id of store.selection.clipIds) { const x = p.clips.find(y => y.id === id); if (!x || x.type === 'image' || x.type === 'text' || x.type === 'color' || x.type === 'material' || x.type === 'adjustment') continue; x.duration = x.duration * x.speed / v; x.speed = v; } }, { coalesce: 'speed' + c0.id });
   }
 
   function editTransition(path, v) {
@@ -336,7 +416,8 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
       if (!v) store.transact('Remove transition', p => { p.clips.find(x => x.id === c.id)['transition' + side] = null; });
       else store.transact('Set transition', p => { p.clips.find(x => x.id === c.id)['transition' + side] = { type: v, duration: Math.min(cur?.duration || 1, c.duration / 2) }; });
     } else if (cur) {
-      store.update('Transition length', p => { p.clips.find(x => x.id === c.id)['transition' + side].duration = Math.min(v, c.duration / 2); }, { coalesce: 'tr' + side + c.id });
+      v = Math.max(store.frame(), Math.min(v, c.duration));
+      store.update('Transition length', p => { p.clips.find(x => x.id === c.id)['transition' + side].duration = v; }, { coalesce: 'tr' + side + c.id });
     }
   }
 
@@ -349,28 +430,34 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
     const params = res.uniforms.filter(u => u.param);
     box.innerHTML = params.map((u, i) => {
       const cur = c.materialParams?.[u.param] ?? u.value;
-      if (u.type === 'float') return `<div class="prop"><label title="${esc(u.param)}">${esc(u.param)}</label><input type="range" data-mp="${i}" min="${u.min ?? 0}" max="${u.max ?? 1}" step="${((u.max ?? 1) - (u.min ?? 0)) / 200}" value="${cur}"><input type="number" data-mpn="${i}" value="${(+cur).toFixed(3)}" step="0.01"></div>`;
+      if (u.type === 'float') return `<div class="prop"><label title="${esc(u.param)} — drag to change, double-click to reset" data-mpl="${i}">${esc(u.param)}</label><div class="nf-slot" data-mp="${i}"></div></div>`;
       if (u.type === 'vec3' || u.type === 'vec4') { const hex = '#' + [0, 1, 2].map(k => Math.round(Math.max(0, Math.min(1, cur[k] ?? 0)) * 255).toString(16).padStart(2, '0')).join(''); return `<div class="prop wide"><label>${esc(u.param)}</label><input type="color" data-mpc="${i}" value="${hex}"></div>`; }
       return '';
     }).join('') || '<div class="dim" style="font-size:11.5px">Add Scalar / Vector Parameter nodes in the editor to get sliders here.</div>';
     const setParam = (u, v) => store.update('Material param', p => { const x = p.clips.find(y => y.id === c.id); x.materialParams = { ...(x.materialParams || {}), [u.param]: v }; }, { coalesce: 'mp' + c.id + u.param });
-    box.querySelectorAll('[data-mp]').forEach(r => r.addEventListener('input', () => { const u = params[+r.dataset.mp]; box.querySelector(`[data-mpn="${r.dataset.mp}"]`).value = (+r.value).toFixed(3); setParam(u, +r.value); }));
-    box.querySelectorAll('[data-mpn]').forEach(r => r.addEventListener('change', () => { const u = params[+r.dataset.mpn]; box.querySelector(`[data-mp="${r.dataset.mpn}"]`).value = r.value; setParam(u, +r.value); }));
+    box.querySelectorAll('.nf-slot[data-mp]').forEach(slot => {
+      const i = +slot.dataset.mp, u = params[i], lo = u.min ?? 0, hi = u.max ?? 1;
+      const cur = c.materialParams?.[u.param] ?? u.value;
+      const nf = numField({ value: +cur || 0, min: lo, max: hi, step: (hi - lo) / 200 || 0.01, decimals: 3, onInput: v => setParam(u, v) });
+      nf.dataset.mp = i; slot.replaceWith(nf);
+      const lab = box.querySelector(`[data-mpl="${i}"]`);
+      if (lab) { lab.classList.add('scrub'); nf.scrubFrom(lab); lab.addEventListener('dblclick', () => { setParam(u, u.value); nf.setValue(+u.value || 0); }); }
+    });
     box.querySelectorAll('[data-mpc]').forEach(r => r.addEventListener('input', () => { const u = params[+r.dataset.mpc]; const h = r.value; const v = [1, 3, 5].map(k => parseInt(h.substr(k, 2), 16) / 255); if (u.type === 'vec4') v.push(1); setParam(u, v); }));
   }
 
   function sync() {
     const c = clip(); if (!c) return;
     root.querySelectorAll('[data-voice]').forEach(b => b.classList.toggle('primary', (c.audio.voice || 'none') === b.dataset.voice));
+    root.querySelectorAll('[data-famt]').forEach(nf => nf.setValue?.((c.filters[+nf.dataset.famt]?.amount ?? 1) * 100));
+    if (root.querySelector('[data-crop]')) { const a = cropAspectOf(c); root.querySelectorAll('[data-crop]').forEach(b => b.classList.toggle('primary', b.dataset.crop === a)); }
     for (const b of bindings) {
       const el = document.getElementById(b.id); if (!el) continue;
       let v = get(c, b.path);
       if (b.kind === 'slider') {
-        const num = document.getElementById(b.id + 'n');
-        const ui = v == null ? b.toUI(b.def ?? 0) : b.toUI(v);
-        if (document.activeElement !== el) el.value = ui;
-        if (document.activeElement !== num) num.value = +(+ui).toFixed(2);
-        if (b.path.startsWith('transition')) { el.disabled = num.disabled = !get(c, b.path.split('.')[0]); }
+        if (!b.nf) continue;
+        b.nf.setValue(v == null ? b.toUI(b.def ?? 0) : b.toUI(v));
+        if (b.path.startsWith('transition')) b.nf.setDisabled(!get(c, b.path.split('.')[0]));
       } else if (b.kind === 'toggle') el.classList.toggle('on', !!v);
       else if (b.kind === 'tbtn') el.classList.toggle('primary', !!v);
       else if (b.kind === 'select') { if (document.activeElement !== el) el.value = v ?? ''; }
@@ -383,7 +470,7 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
     const c = clip();
     if (!c) return 'none:' + store.project.clips.length + ':' + store.project.media.length + ':' + store.project.settings.width + 'x' + store.project.settings.height + store.project.name + store.duration().toFixed(2);
     return [store.selection.clipIds.join(','), c.type, tab, c.filters.length, c.filters.map(f => f.type).join(), c.materialId, store.project.materials.length,
-      c.audio.detached, store.getMedia(c.mediaId)?.hasAudio, tab === 'speed' ? c.duration.toFixed(3) : ''].join('|');
+      c.audio.detached, store.getMedia(c.mediaId)?.hasAudio, tab === 'speed' ? c.duration.toFixed(3) : '', c.mask?.type, c.gradBlur?.mode].join('|');
   }
   function refresh() { const k = keyOf(); if (k !== structKey) { structKey = k; build(); } else sync(); }
 

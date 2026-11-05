@@ -58,6 +58,7 @@ Owned by `js/app.js`. Shortcuts are ignored while typing in an input.
 | G | Guides: rule of thirds, title-safe, TikTok/Shorts UI zones (9:16) |
 | Ctrl + wheel / middle-drag on the player | Zoom / pan the preview · double-click the backdrop to reset |
 | Middle-drag on the timeline | Pan the timeline |
+| Drop a clip over another (timeline) | Overwrite — the clip underneath is trimmed / split / removed (Filmora) · hold Alt while dropping to slide into a free spot instead |
 | Drag a property label in the inspector | Scrub its value (Shift = fine) |
 | Right-click the player | Fit / Fill frame / Reset transform / Flip / Guides / Snapshot |
 

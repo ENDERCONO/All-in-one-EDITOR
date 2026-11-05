@@ -50,12 +50,39 @@ function splitClip(p, c, t) {
   return right;
 }
 
+// Keep only the [a, b) part (timeline time) of clip c, adjusting its source in-point
+function keepRange(c, a, b) {
+  if (c.reverse) c.in += (c.start + c.duration - b) * c.speed;
+  else c.in += (a - c.start) * c.speed;
+  c.start = a; c.duration = b - a;
+}
+
+// Overwrite edit (Filmora): whatever sits on `trackId` inside [a, b) is cut away —
+// trimmed, split around the range, or removed. `exclude` = ids that must not be touched.
+export function overwriteRange(p, trackId, a, b, exclude = new Set()) {
+  if (b - a <= FRAME_EPS) return;
+  const tr = p.tracks.find(t => t.id === trackId); if (!tr || tr.locked) return;
+  for (const o of [...p.clips]) {
+    if (o.trackId !== trackId || exclude.has(o.id)) continue;
+    const oa = o.start, ob = o.start + o.duration;
+    if (ob <= a + FRAME_EPS || oa >= b - FRAME_EPS) continue;          // no overlap
+    if (oa >= a - FRAME_EPS && ob <= b + FRAME_EPS) { p.clips.splice(p.clips.indexOf(o), 1); continue; } // fully covered
+    if (oa < a && ob > b) {                                              // range is inside: split around it
+      const right = deep(o); right.id = uid('clip'); right.transitionIn = null; right.audio.fadeIn = 0;
+      keepRange(right, b, ob); p.clips.push(right);
+      keepRange(o, oa, a); o.transitionOut = null; o.audio.fadeOut = 0;
+    } else if (oa < a) { keepRange(o, oa, a); o.transitionOut = null; o.audio.fadeOut = 0; }   // tail covered
+    else { keepRange(o, b, ob); o.transitionIn = null; o.audio.fadeIn = 0; }                    // head covered
+  }
+}
+
 function rippleShift(p, trackId, from, delta, exclude = new Set()) {
   for (const c of p.clips) if (c.trackId === trackId && !exclude.has(c.id) && c.start >= from - FRAME_EPS) c.start = Math.max(0, c.start + delta);
 }
 
 export const ops = {
   isFree: (trackId, start, dur, exclude) => isFree(store.project, trackId, start, dur, exclude),
+  overwriteRange,
   trackFor: (kind, start, dur, preferId) => trackFor(store.project, kind, start, dur, preferId),
 
   insertMedia(mediaId, { time = store.playhead, trackId = null, select = true } = {}) {
@@ -65,7 +92,9 @@ export const ops = {
     const dur = type === 'image' ? (m.animated ? loopLen : 5) : Math.max(store.frame(), m.duration || 5);
     let clip;
     store.transact('Add ' + m.name, p => {
-      const tid = trackFor(p, kindForType(type), time, dur, trackId);
+      const pref = trackId && p.tracks.find(t => t.id === trackId && t.kind === kindForType(type) && !t.locked);
+      if (pref) overwriteRange(p, pref.id, time, time + dur); // dropped on a track: overwrite what's there (Filmora)
+      const tid = pref ? pref.id : trackFor(p, kindForType(type), time, dur, trackId);
       clip = makeClip({ trackId: tid, type, mediaId, name: m.name, start: time, duration: dur });
       p.clips.push(clip);
     });

@@ -832,7 +832,9 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
             c.start = Math.max(0, f.start);
             c.trackId = f.newTop ? created[f.newTop - 1].id : f.trackId;
           }
-          resolveOverlaps(pj, finals.map(f => f.id));
+          // Filmora: dropping over clips overwrites them. Hold Alt to slide into a free spot instead.
+          if (overwriteMode) overwriteMoved(pj, finals.map(f => f.id));
+          else resolveOverlaps(pj, finals.map(f => f.id));
         });
       },
     };
@@ -853,6 +855,21 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
     if (index == null) index = kind === 'video' ? 0 : pj.tracks.length;
     pj.tracks.splice(index, 0, t);
     return t;
+  }
+
+  // Overwrite: each moved clip cuts away what's under it on its track (locked tracks fall back to resolveOverlaps)
+  let overwriteMode = true;
+  window.addEventListener('pointerup', e => { overwriteMode = !e.altKey; }, true);
+  function overwriteMoved(pj, movedIds) {
+    const ids = new Set(movedIds);
+    const locked = [];
+    for (const id of movedIds) {
+      const c = pj.clips.find(x => x.id === id); if (!c) continue;
+      const tr = pj.tracks.find(t => t.id === c.trackId);
+      if (tr?.locked) { locked.push(id); continue; }
+      ops.overwriteRange(pj, c.trackId, c.start, c.start + c.duration, ids);
+    }
+    if (locked.length) resolveOverlaps(pj, locked);
   }
 
   // No overlaps: shift to the nearest free spot (if close), else move into a new adjacent track.

@@ -497,6 +497,8 @@ void main() {
     for (int i = 0; i < 24; i++) acc += premul(SB(0.5 + (uv - 0.5) * (1.0 - 0.18 * a * float(i) / 23.0)));
     r = unpremul(acc / 24.0); direct = true;
   }
+  else if (t == F_tile_2x2) r = S(fract(uv * 2.0));
+  else if (t == F_tile_mirror) r = S(1.0 - abs(1.0 - mod(uv * 2.0, 2.0)));
   else if (t == F_motion_blur) {
     vec4 acc = vec4(0.0);
     for (int i = -12; i <= 12; i++) acc += premul(SM(uv + vec2(float(i) / 12.0 * 0.03 * a, 0.0)));
@@ -504,6 +506,43 @@ void main() {
   }
   r.rgb = clamp(r.rgb, 0.0, 1.0);
   outColor = direct ? r : mix(o, r, a);
+}`;
+
+// Layer mask (clip-local, moves with the clip). Shape coords in layer px, y down.
+const FS_MASK = HEAD + `
+uniform sampler2D u_tex; uniform vec2 u_size, u_c, u_half; uniform int u_mtype, u_inv; uniform float u_ang, u_feather;
+float sdBox(vec2 q, vec2 b) { vec2 d = abs(q) - b; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0); }
+void main() {
+  vec4 s = texture(u_tex, v_uv);
+  vec2 q = rot2((vec2(v_uv.x, 1.0 - v_uv.y) - 0.5 - u_c) * u_size, -u_ang);
+  float md = min(u_size.x, u_size.y), m = 1.0;
+  vec2 hb = max(u_half * u_size * 0.5, vec2(0.5));
+  if (u_mtype == 1) { float fw = max(u_feather * md * 0.5, 0.5); m = 1.0 - smoothstep(-fw, fw, q.y); }
+  else if (u_mtype == 2) { float rr = max(u_half.x * md * 0.5, 0.5); float fw = max(u_feather * rr, 0.5); m = 1.0 - smoothstep(-fw, fw, length(q) - rr); }
+  else if (u_mtype == 3) { float fw = max(u_feather * min(hb.x, hb.y), 0.5); m = 1.0 - smoothstep(-fw, fw, sdBox(q, hb)); }
+  else if (u_mtype == 4) { float fw = max(u_feather * min(hb.x, hb.y), 0.5); m = 1.0 - smoothstep(-fw, fw, (length(q / hb) - 1.0) * min(hb.x, hb.y)); }
+  if (u_inv == 1) m = 1.0 - m;
+  outColor = vec4(s.rgb, s.a * m);
+}`;
+
+// Gradient blur (port of the site's Gradient Blur tool): blur amount per pixel picks between
+// the sharp layer and three pre-blurred levels (σ/3, 2σ/3, σ).
+const FS_GRADBLUR = HEAD + `
+uniform sampler2D u_tex, u_b1, u_b2, u_b3; uniform int u_gmode; uniform vec2 u_size, u_dir, u_c;
+uniform float u_pmin, u_span, u_start, u_end;
+void main() {
+  vec2 p = vec2(v_uv.x, 1.0 - v_uv.y) * u_size; // layer px, y down
+  float t;
+  if (u_gmode == 0) t = (dot(p, u_dir) - u_pmin) / u_span;
+  else if (u_gmode == 1) t = abs(dot(p - u_c, u_dir)) / (u_span * 0.5);
+  else t = length((p - u_c) / (u_size * 0.5)) / 1.41421356;
+  // full blur at start, sharp by end (either order)
+  float v = abs(u_end - u_start) < 1e-5 ? (t <= u_start ? 1.0 : 0.0) : clamp((t - u_end) / (u_start - u_end), 0.0, 1.0);
+  v = v * v * (3.0 - 2.0 * v);
+  float k = v * 3.0;
+  vec4 c0 = premul(texture(u_tex, v_uv)), c1 = premul(texture(u_b1, v_uv)), c2 = premul(texture(u_b2, v_uv)), c3 = premul(texture(u_b3, v_uv));
+  vec4 r = k < 1.0 ? mix(c0, c1, k) : (k < 2.0 ? mix(c1, c2, k - 1.0) : mix(c2, c3, k - 2.0));
+  outColor = unpremul(r);
 }`;
 
 const FS_COMPOSITE = HEAD + `
@@ -540,10 +579,12 @@ vec3 blendMode(vec3 b, vec3 s, int m) {
 }
 void main() {
   vec2 p = vec2(v_uv.x - 0.5, 0.5 - v_uv.y) * u_frame;
-  vec2 uv = (u_inv * vec3(p, 1.0)).xy;
+  vec3 hh = u_inv * vec3(p, 1.0);           // homogeneous: 3D tilt gives a perspective divide
+  float front = step(1e-6, hh.z);
+  vec2 uv = hh.xy / max(hh.z, 1e-6);
   vec2 fw = max(fwidth(uv), vec2(1e-7));
   vec2 dlo = (uv - u_crop.xy) / fw, dhi = (u_crop.zw - uv) / fw;
-  float cov = clamp(min(min(dlo.x, dlo.y), min(dhi.x, dhi.y)) + 0.5, 0.0, 1.0);
+  float cov = clamp(min(min(dlo.x, dlo.y), min(dhi.x, dhi.y)) + 0.5, 0.0, 1.0) * front;
   vec4 s = texture(u_src, clamp(uv, u_crop.xy, u_crop.zw));
   float a = s.a * u_opacity * cov;
   if (u_mode < 0) { outColor = vec4(s.rgb, a); return; }
@@ -977,7 +1018,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     copy: makeProgram(FS_COPY), fill: makeProgram(FS_FILL), chroma: makeProgram(FS_CHROMA),
     color: makeProgram(FS_COLOR), blur: makeProgram(FS_BLUR), filter: makeProgram(FS_FILTER),
     composite: makeProgram(FS_COMPOSITE), transition: makeProgram(FS_TRANSITION),
-    hue: makeProgram(FS_HUE), filter2: makeProgram(FS_FILTER2), transition2: makeProgram(FS_TRANSITION2),
+    hue: makeProgram(FS_HUE), mask: makeProgram(FS_MASK), gradblur: makeProgram(FS_GRADBLUR), filter2: makeProgram(FS_FILTER2), transition2: makeProgram(FS_TRANSITION2),
   };
 
   // ---------- geometry ----------
@@ -1164,23 +1205,41 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     const f = Math.min(W / sw, H / sh);
     return [sw * f, sh * f];
   }
-  // Forward affine: layer uv (0..1, y down) -> project px (center origin). Returns [a,b,c,d,tx,ty]
-  // with P = [a c; b d] * uv + [tx, ty].
-  function clipMatrix(clip, sw, sh) {
+  const num = (v, d) => { const x = Number(v); return v === undefined || v === null || !isFinite(x) ? d : x; };
+  // Forward projective map: layer uv (0..1, y down) -> project px (center origin), as rows
+  // [X, Y, W] with P = (X·[u,v,1], Y·[u,v,1]) / (W·[u,v,1]). The layer is scaled, tilted in 3D
+  // (rotY, then rotX), rotated in-plane, projected with `perspective` (px camera distance, around
+  // the clip's center) and finally translated. With rotX = rotY = 0 this is the plain affine fit.
+  function clipHomography(clip, sw, sh) {
     const [bw, bh] = baseSize(clip, sw, sh);
     const tr = clip.transform || {};
-    const sc = tr.scale ?? 1;
-    const sx = sc * (tr.scaleX ?? 1) * (tr.flipH ? -1 : 1);
-    const sy = sc * (tr.scaleY ?? 1) * (tr.flipV ? -1 : 1);
-    const th = (tr.rotation || 0) * Math.PI / 180;
-    const c = Math.cos(th), s = Math.sin(th);
-    const a = c * sx * bw, b = s * sx * bw, cc = -s * sy * bh, d = c * sy * bh;
-    const tx = (tr.x || 0) - (a + cc) * 0.5, ty = (tr.y || 0) - (b + d) * 0.5;
-    return [a, b, cc, d, tx, ty];
+    const sc = num(tr.scale, 1);
+    const sx = sc * num(tr.scaleX, 1) * (tr.flipH ? -1 : 1);
+    const sy = sc * num(tr.scaleY, 1) * (tr.flipV ? -1 : 1);
+    const rad = d => num(d, 0) * Math.PI / 180;
+    const ry = rad(tr.rotY), rx = rad(tr.rotX), rz = rad(tr.rotation);
+    const cy = Math.cos(ry), sy_ = Math.sin(ry), cx = Math.cos(rx), sx_ = Math.sin(rx), cz = Math.cos(rz), sz = Math.sin(rz);
+    const R = ([x, y, z]) => {
+      [x, z] = [cy * x + sy_ * z, -sy_ * x + cy * z];
+      [y, z] = [cx * y - sx_ * z, sx_ * y + cx * z];
+      [x, y] = [cz * x - sz * y, sz * x + cz * y];
+      return [x, y, z];
+    };
+    const U = R([sx * bw, 0, 0]), V = R([0, sy * bh, 0]), O = R([-0.5 * sx * bw, -0.5 * sy * bh, 0]);
+    // camera must stay in front of every corner (typed 0 / negative perspective = strongest valid)
+    let nearZ = 0;
+    for (const u of [0, 1]) for (const v of [0, 1]) nearZ = Math.max(nearZ, -(O[2] + U[2] * u + V[2] * v));
+    const d = Math.max(10, nearZ * 1.15, num(tr.perspective, 1200));
+    const tx = num(tr.x, 0), ty = num(tr.y, 0);
+    const Wr = [U[2] / d, V[2] / d, 1 + O[2] / d];
+    const Xr = [U[0] + tx * Wr[0], V[0] + tx * Wr[1], O[0] + tx * Wr[2]];
+    const Yr = [U[1] + ty * Wr[0], V[1] + ty * Wr[1], O[1] + ty * Wr[2]];
+    return [Xr, Yr, Wr];
   }
   function cropRect(clip) {
     const cr = clip.crop || {};
-    const l = Math.max(0, cr.l || 0), t = Math.max(0, cr.t || 0), r = Math.max(0, cr.r || 0), b = Math.max(0, cr.b || 0);
+    const c01 = v => Math.max(0, Math.min(1, num(v, 0)));
+    const l = c01(cr.l), t = c01(cr.t), r = c01(cr.r), b = c01(cr.b);
     let lo = [l, t], hi = [1 - r, 1 - b];
     if (hi[0] < lo[0]) hi[0] = lo[0] = (lo[0] + hi[0]) / 2;
     if (hi[1] < lo[1]) hi[1] = lo[1] = (lo[1] + hi[1]) / 2;
@@ -1209,14 +1268,17 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
       return [{ x: -W / 2, y: -H / 2 }, { x: W / 2, y: -H / 2 }, { x: W / 2, y: H / 2 }, { x: -W / 2, y: H / 2 }];
     }
     const [sw, sh] = sourceDims(clip);
-    const [a, b, c, d, tx, ty] = clipMatrix(clip, sw, sh);
+    const [X, Y, Wr] = clipHomography(clip, sw, sh);
     const [l, t, r, bo] = cropRect(clip);
-    const pt = (u, v) => ({ x: a * u + c * v + tx, y: b * u + d * v + ty });
+    const pt = (u, v) => {
+      const w = Math.max(1e-3, Wr[0] * u + Wr[1] * v + Wr[2]);
+      return { x: (X[0] * u + X[1] * v + X[2]) / w, y: (Y[0] * u + Y[1] * v + Y[2]) / w };
+    };
     return [pt(l, t), pt(r, t), pt(r, bo), pt(l, bo)];
   }
 
   // ---------- per-layer processing ----------
-  const posterLevels = col => { const v = Math.round(Number(col && col.posterize) || 0); return v >= 2 ? Math.min(64, v) : 0; };
+  const posterLevels = col => { const v = Math.round(Number(col && col.posterize) || 0); return v >= 2 ? Math.min(256, v) : 0; };
   // Uber color pass needed (everything except blur, which runs separately).
   function colorUber(col) {
     if (!col) return false;
@@ -1260,6 +1322,12 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     const colorOn = !colorNeutral(col);
     const hm = clip.hueMatch;
     const hueOn = !!(hm && hm.enabled && clip.type !== 'material' && (hm.colorize || (Number(hm.range) || 0) > 0));
+    const mk = clip.mask;
+    const MASK_TYPES = { linear: 1, radial: 2, rect: 3, ellipse: 4 };
+    const maskOn = !!(mk && MASK_TYPES[mk.type]);
+    const gb = clip.gradBlur;
+    const gbStrength = gb && gb.enabled ? Math.max(0, num(gb.strength, 40)) : 0;
+    const gbOn = gbStrength > 0;
     const filters = (clip.filters || []).filter(f => f && FILTER_INDEX.has(f.type) && (f.amount ?? 1) > 0);
     let mat = null;
     if (clip.materialId && materialsMod) {
@@ -1268,7 +1336,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     } else if (clip.materialId && !materialsMod) loadMaterials();
     if (clip.type === 'material' && !mat) return null;
 
-    if (!chroma && !hueOn && !colorOn && !filters.length && !mat) return { tex: srcTex, rt: null, sw, sh };
+    if (!chroma && !hueOn && !colorOn && !filters.length && !gbOn && !maskOn && !mat) return { tex: srcTex, rt: null, sw, sh };
 
     // Layer resolution: about the displayed size, never above the source size.
     const [bw, bh] = baseSize(clip, sw, sh);
@@ -1362,7 +1430,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     }
 
     if (colorOn) {
-      const n = k => Math.max(-1, Math.min(1, (Number(col[k]) || 0) / 100));
+      const n = k => Math.max(-10, Math.min(10, num(col[k], 0) / 100)); // typed values may exceed ±100
       if (colorUber(col)) {
         const clar = n('clarity');
         const low = clar ? blurCopy(cur.tex, lw, lh, 0.025) : null;
@@ -1383,9 +1451,9 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
         });
         if (low) release(low);
       }
-      const blur = Math.max(0, Math.min(100, Number(col.blur) || 0));
+      const blur = Math.max(0, num(col.blur, 0));
       if (blur > 0) {
-        const sigmaPx = blur / 100 * 0.02 * Math.max(lw, lh); // in layer px
+        const sigmaPx = Math.min(blur / 100 * 0.02, 0.2) * Math.max(lw, lh); // in layer px (capped)
         const ds = Math.max(1, Math.floor(sigmaPx / 4));
         const bw2 = Math.max(1, Math.round(lw / ds)), bh2 = Math.max(1, Math.round(lh / ds));
         step(P.blur, pr => { u2f(pr, 'u_dir', 1, 0); u1f(pr, 'u_sigma', sigmaPx / lw); }, bw2, bh2);
@@ -1398,25 +1466,62 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
       step(fi >= FILTER_V2 ? P.filter2 : P.filter, pr => {
         u2f(pr, 'u_res', lw, lh);
         u1i(pr, 'u_type', fi);
-        u1f(pr, 'u_amt', Math.max(0, Math.min(1, f.amount ?? 1)));
+        u1f(pr, 'u_amt', Math.max(0, Math.min(4, num(f.amount, 1))));
         u1f(pr, 'u_time', Math.max(0, t - clip.start));
       });
     }
 
+    if (gbOn) {
+      // strength = blur radius in project px at full blur → layer px (σ ≈ radius / 2), capped
+      const [bw0] = baseSize(clip, sw, sh);
+      const sigma = Math.min(gbStrength * 0.5 * lw / Math.max(1, bw0), 0.25 * Math.max(lw, lh));
+      const big = Math.max(lw, lh);
+      const levels = [1 / 3, 2 / 3, 1].map(f => blurCopy(cur.tex, lw, lh, Math.max(0.5, sigma * f) / big));
+      const mode = { linear: 0, band: 1, radial: 2 }[gb.mode] ?? 0;
+      const ang = num(gb.angle, 90) * Math.PI / 180, dx = Math.cos(ang), dy = Math.sin(ang);
+      let pmin = Infinity, pmax = -Infinity;
+      for (const [x, y] of [[0, 0], [lw, 0], [0, lh], [lw, lh]]) { const q = x * dx + y * dy; pmin = Math.min(pmin, q); pmax = Math.max(pmax, q); }
+      step(P.gradblur, pr => {
+        levels.forEach((lv, i) => { bindTex(1 + i, lv.tex); u1i(pr, 'u_b' + (i + 1), 1 + i); });
+        u1i(pr, 'u_gmode', mode);
+        u2f(pr, 'u_size', lw, lh); u2f(pr, 'u_dir', dx, dy);
+        u2f(pr, 'u_c', (0.5 + num(gb.x, 0)) * lw, (0.5 + num(gb.y, 0)) * lh);
+        u1f(pr, 'u_pmin', pmin); u1f(pr, 'u_span', Math.max(1e-6, pmax - pmin));
+        u1f(pr, 'u_start', num(gb.start, 0)); u1f(pr, 'u_end', num(gb.end, 0.5));
+      });
+      for (const lv of levels) release(lv);
+    }
+
     if (mat && clip.type !== 'material') runMaterial();
+
+    if (maskOn) {
+      step(P.mask, pr => {
+        u1i(pr, 'u_mtype', MASK_TYPES[mk.type]);
+        u2f(pr, 'u_size', lw, lh);
+        u2f(pr, 'u_c', num(mk.x, 0), num(mk.y, 0));
+        u2f(pr, 'u_half', Math.abs(num(mk.w, 0.5)), Math.abs(num(mk.h, 0.5)));
+        u1f(pr, 'u_ang', num(mk.angle, 0) * Math.PI / 180);
+        u1f(pr, 'u_feather', Math.max(0, num(mk.feather, 0.15)));
+        u1i(pr, 'u_inv', mk.invert ? 1 : 0);
+      });
+    }
 
     return { tex: cur.tex, rt: cur.rt, sw, sh };
   }
 
   function inverseFor(clip, sw, sh) {
-    const [a, b, c, d, tx, ty] = clipMatrix(clip, sw, sh);
-    const det = a * d - b * c;
+    const [[a, b, c], [d, e, f], [g, h, k]] = clipHomography(clip, sw, sh);
+    const A = e * k - f * h, B = -(d * k - f * g), C = d * h - e * g;
+    const det = a * A + b * B + c * C;
     if (!isFinite(det) || Math.abs(det) < 1e-9) return null;
-    const ia = d / det, ib = -b / det, ic = -c / det, id = a / det;
-    // uv = Ainv * (P - T)
-    const itx = -(ia * tx + ic * ty), ity = -(ib * tx + id * ty);
-    // column-major mat3; v flipped to GL convention (v_gl = 1 - v)
-    return new Float32Array([ia, -ib, 0, ic, -id, 0, itx, 1 - ity, 1]);
+    // inverse rows (adjugate / det): uv_h = Hinv * [px, py, 1]
+    const i0 = [A / det, -(b * k - c * h) / det, (b * f - c * e) / det];
+    const i1 = [B / det, (a * k - c * g) / det, -(a * f - c * d) / det];
+    const i2 = [C / det, -(a * h - b * g) / det, (a * e - b * d) / det];
+    // exact inverse: for points in front of the camera the homogeneous w comes out > 0
+    // GL flip (v_gl = 1 - v → row1 = row2 - row1); column-major mat3
+    const r1 = [i2[0] - i1[0], i2[1] - i1[1], i2[2] - i1[2]];
+    return new Float32Array([i0[0], r1[0], i2[0], i0[1], r1[1], i2[1], i0[2], r1[2], i2[2]]);
   }
   const identityInv = () => {
     const { width: W, height: H } = settings();

@@ -874,7 +874,12 @@ function estimateNodeSize(n) {
   const inline = d.params.filter(p => !d.inputs.some(i => i.name === p.name) && p.type !== 'text' && !(DETAILS_ONLY_PARAMS[n.type] || []).includes(p.name));
   const bools = inline.some(p => p.type === 'bool') ? 1 : 0;
   const h = 30 + (d.subtitle ? 12 : 0) + 10 + Math.max(d.inputs.length, d.outputs.length) * 23 + (inline.length - (bools ? inline.filter(p => p.type === 'bool').length : 0) + bools) * 24 + (inline.length ? 8 : 0);
-  return { w: n.type === 'output' ? 190 : 150, h };
+  let w = n.type === 'output' ? 190 : 150;
+  if (d.inputs.some(i => d.params.some(p => p.name === i.name))) w = Math.max(w, 185);
+  if (inline.some(p => p.type === 'select' || p.type === 'media')) w = Math.max(w, 235);
+  const longest = Math.max(0, ...inline.map(p => (p.label || '').length));
+  w = Math.max(w, 90 + longest * 7);
+  return { w, h };
 }
 const DETAILS_ONLY_PARAMS = { scalarParameter: ['min', 'max'], vectorParameter: ['alpha'], if: ['threshold'] };
 
