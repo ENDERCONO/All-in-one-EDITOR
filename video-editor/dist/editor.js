@@ -599,6 +599,7 @@
     convertForImport: () => convertForImport,
     copyFileNames: () => copyFileNames,
     downloadUrl: () => downloadUrl,
+    explainDlError: () => explainDlError,
     isMediaLink: () => isMediaLink,
     openImportFromUrl: () => openImportFromUrl
   });
@@ -693,6 +694,16 @@
     }
     return new File([data], outName, { type: kind === "audio" ? "audio/mpeg" : kind === "image" ? "image/png" : "video/mp4" });
   }
+  function explainDlError(msg) {
+    msg = String(msg || "");
+    if (/not a bot|sign in to confirm/i.test(msg))
+      return 'YouTube is blocking the downloader server ("not a bot" check). Fixes: open the site on your PC with START-SERVER.bat, or give the server a cookies.txt from your signed-in browser (env var YTDLP_COOKIES_TEXT on Render).';
+    if (/age|confirm your age/i.test(msg)) return "Age-restricted: the server needs a cookies.txt from a signed-in browser.";
+    if (/private video/i.test(msg)) return "That video is private.";
+    if (/unsupported url/i.test(msg)) return "That site or link isn't supported.";
+    if (/HTTP Error 404/i.test(msg)) return "Nothing at that link (404). Check the URL.";
+    return msg;
+  }
   async function downloadUrl(url2, { kind = "video", quality = "720", onProgress, isCancelled } = {}) {
     url2 = url2.trim();
     if (DIRECT_RE.test(url2)) {
@@ -720,7 +731,7 @@
       await sleep(800);
       const p = await (await fetch(`${base}/api/dl/progress/${st.id}`, { cache: "no-store" })).json();
       title = p.title || title;
-      if (p.state === "error") throw new Error(p.error || "Download failed");
+      if (p.state === "error") throw new Error(explainDlError(p.error || "Download failed"));
       const msg = p.state === "setup" ? `First run: the server is installing its downloader (${p.setupPhase || ""} ${p.setupPct || 0}%)\u2026` : p.state === "retrying" ? "YouTube refused \u2014 retrying with another player client\u2026" : p.state === "updating" ? "Updating the downloader\u2026" : `${title || "Downloading"} \xB7 ${p.pct || 0}%${p.speed ? " \xB7 " + p.speed : ""}${p.eta ? " \xB7 ETA " + p.eta : ""}`;
       onProgress?.({ state: p.state, pct: p.pct || 0, title, speed: p.speed, eta: p.eta, msg });
       if (p.state === "done" && p.filename) {
