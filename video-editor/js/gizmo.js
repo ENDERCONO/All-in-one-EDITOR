@@ -2,6 +2,8 @@
 // Coordinates: project px with (0,0) = frame center (+y down), mapped onto the
 // canvas' on-screen rectangle.
 
+import { evalClip, anyAnim, setValue } from './keyframes.js';
+
 const SVGNS = 'http://www.w3.org/2000/svg';
 const VISUAL = new Set(['video', 'image', 'text', 'color', 'material']);
 const SNAP_PX = 7;          // screen px
@@ -96,7 +98,8 @@ export function createGizmo({ layer, canvas, store, renderer }) {
     box.style.display = '';
     box.classList.toggle('locked', !!store.getTrack(clip.trackId)?.locked);
     outline.setAttribute('points', sq.map(p => p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' '));
-    const rot = (clip.transform?.rotation || 0);
+    const atr = evalClip(clip, store.playhead).transform || {};
+    const rot = (atr.rotation || 0);
     for (const h of handles) {
       const a = sq[h.a], b = sq[h.b];
       const x = (a.x + b.x) / 2, y = (a.y + b.y) / 2;
@@ -114,7 +117,7 @@ export function createGizmo({ layer, canvas, store, renderer }) {
     rotHandle.setAttribute('cx', rp.x.toFixed(1)); rotHandle.setAttribute('cy', rp.y.toFixed(1));
     rotLine.setAttribute('x1', tm.x.toFixed(1)); rotLine.setAttribute('y1', tm.y.toFixed(1));
     rotLine.setAttribute('x2', rp.x.toFixed(1)); rotLine.setAttribute('y2', rp.y.toFixed(1));
-    const ct = m.toScreen({ x: clip.transform?.x || 0, y: clip.transform?.y || 0 });
+    const ct = m.toScreen({ x: atr.x || 0, y: atr.y || 0 });
     centerDot.setAttribute('cx', ct.x.toFixed(1)); centerDot.setAttribute('cy', ct.y.toFixed(1));
   }
   function schedule() { if (!rafPending) { rafPending = true; requestAnimationFrame(refresh); } }
@@ -142,7 +145,11 @@ export function createGizmo({ layer, canvas, store, renderer }) {
       const c = project.clips.find(x => x.id === clipId);
       if (!c) return;
       c.transform = c.transform || { x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, flipH: false, flipV: false };
-      fn(c.transform, c);
+      if (!anyAnim(c)) { fn(c.transform, c); return; }
+      // animated clip: edit the values seen at the playhead; animated ones become keys there (auto-key)
+      const seen = evalClip(c, store.playhead).transform, proxy = { ...seen };
+      fn(proxy, c);
+      for (const k of Object.keys(proxy)) if (proxy[k] !== seen[k]) setValue(c, 'transform.' + k, proxy[k], store.playhead - c.start);
     }, { coalesce: 'gizmo-' + clipId });
   }
 
@@ -179,7 +186,7 @@ export function createGizmo({ layer, canvas, store, renderer }) {
     if (!clip) return;
     if (store.getTrack(clip.trackId)?.locked) return;
     e.preventDefault();
-    const tr = clip.transform || {};
+    const tr = evalClip(clip, store.playhead).transform || {};
     const c = { x: tr.x || 0, y: tr.y || 0 };
     const th = (tr.rotation || 0) * Math.PI / 180;
     const local = q => { const dx = q.x - c.x, dy = q.y - c.y; return { x: dx * Math.cos(th) + dy * Math.sin(th), y: -dx * Math.sin(th) + dy * Math.cos(th) }; };

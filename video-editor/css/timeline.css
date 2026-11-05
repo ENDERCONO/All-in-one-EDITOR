@@ -152,3 +152,6 @@
 
 /* Middle-button panning */
 .tl.panning, .tl.panning * { cursor: grabbing !important; }
+/* keyframe diamonds on clips */
+.tl-kf { position: absolute; bottom: 3px; width: 10px; height: 10px; margin-left: -5px; background: #ffb020; border: 1px solid #000; transform: rotate(45deg); z-index: 3; cursor: ew-resize; box-shadow: 0 0 0 1px #ffb02055; }
+.tl-kf:hover { background: #ffd060; }

@@ -647,6 +647,159 @@
     }
   });
 
+  // js/keyframes.js
+  function slope(keys, i) {
+    const k = keys[i];
+    if (k.interp === "user" && Number.isFinite(+k.tan)) return +k.tan;
+    const a = keys[i - 1], b = keys[i + 1];
+    if (!a || !b) return 0;
+    if (k.v >= a.v && k.v >= b.v || k.v <= a.v && k.v <= b.v) return 0;
+    return (b.v - a.v) / Math.max(EPS, b.t - a.t);
+  }
+  function evalKeys(keys, lt) {
+    const n = keys.length;
+    if (!n) return NaN;
+    if (lt <= keys[0].t) return keys[0].v;
+    if (lt >= keys[n - 1].t) return keys[n - 1].v;
+    let i = 0;
+    while (i < n - 2 && keys[i + 1].t <= lt) i++;
+    const a = keys[i], b = keys[i + 1], h2 = Math.max(EPS, b.t - a.t), s = (lt - a.t) / h2;
+    switch (a.interp) {
+      case "constant":
+        return a.v;
+      case "linear":
+        return a.v + (b.v - a.v) * s;
+      case "ease": {
+        const e = s * s * (3 - 2 * s);
+        return a.v + (b.v - a.v) * e;
+      }
+      default: {
+        const m0 = slope(keys, i) * h2, m1 = slope(keys, i + 1) * h2;
+        const s2 = s * s, s3 = s2 * s;
+        return (2 * s3 - 3 * s2 + 1) * a.v + (s3 - 2 * s2 + s) * m0 + (-2 * s3 + 3 * s2) * b.v + (s3 - s2) * m1;
+      }
+    }
+  }
+  function evalProp(clip, path, lt) {
+    const keys = keysOf(clip, path);
+    if (!keys.length) return baseOf(clip, path);
+    let v = evalKeys(keys, lt);
+    const p = PROP.get(path);
+    if (p?.min != null) v = Math.max(p.min, v);
+    if (p?.max != null) v = Math.min(p.max, v);
+    return v;
+  }
+  function evalClip(clip, t) {
+    if (!clip || !anyAnim(clip)) return clip;
+    const lt = localTime(clip, t), tr = { ...clip.transform || {} };
+    for (const path of Object.keys(clip.keyframes)) {
+      if (!hasAnim(clip, path) || !PROP.has(path)) continue;
+      tr[path.split(".")[1]] = evalProp(clip, path, lt);
+    }
+    return { ...clip, transform: tr };
+  }
+  function keyIndexAt(clip, path, lt, tol = 1 / 120) {
+    return keysOf(clip, path).findIndex((k) => Math.abs(k.t - lt) <= tol);
+  }
+  function upsertKey(clip, path, lt, v, interp) {
+    clip.keyframes = clip.keyframes || {};
+    const a = clip.keyframes[path] = clip.keyframes[path] || [];
+    const i = a.findIndex((k) => Math.abs(k.t - lt) <= 1 / 120);
+    if (i >= 0) {
+      a[i].v = v;
+      if (interp) a[i].interp = interp;
+    } else a.push({ t: Math.max(0, lt), v, interp: interp || (a.length ? a[a.length - 1].interp : "auto") || "auto" });
+    sortKeys(a);
+  }
+  function removeKeyAt(clip, path, lt) {
+    const a = keysOf(clip, path);
+    const i = a.findIndex((k) => Math.abs(k.t - lt) <= 1 / 120);
+    if (i < 0) return false;
+    const v = a[i].v;
+    a.splice(i, 1);
+    if (!a.length) {
+      clip.transform = clip.transform || {};
+      clip.transform[path.split(".")[1]] = v;
+      delete clip.keyframes[path];
+    }
+    return true;
+  }
+  function toggleKey(clip, path, lt) {
+    if (keyIndexAt(clip, path, lt) >= 0) {
+      removeKeyAt(clip, path, lt);
+      return false;
+    }
+    upsertKey(clip, path, lt, evalProp(clip, path, lt));
+    return true;
+  }
+  function setValue(clip, path, v, lt) {
+    if (hasAnim(clip, path)) {
+      upsertKey(clip, path, lt, v);
+      return;
+    }
+    const k = path.split(".")[1];
+    clip.transform = clip.transform || {};
+    clip.transform[k] = v;
+  }
+  function shiftKeys(clip, d) {
+    if (!clip?.keyframes || !d) return;
+    for (const a of Object.values(clip.keyframes)) for (const k of a || []) k.t = Math.round((k.t - d) * 1e6) / 1e6;
+  }
+  function keyTimes(clip) {
+    const s = /* @__PURE__ */ new Set();
+    for (const a of Object.values(clip?.keyframes || {})) for (const k of a || []) s.add(Math.round(k.t * 1e3) / 1e3);
+    return [...s].sort((a, b) => a - b);
+  }
+  function moveKeysAt(clip, from, to) {
+    for (const a of Object.values(clip?.keyframes || {})) {
+      for (const k of a || []) if (Math.abs(k.t - from) <= 1 / 240) k.t = Math.max(0, to);
+      sortKeys(a || []);
+    }
+  }
+  function deleteKeysAt(clip, at) {
+    for (const path of Object.keys(clip?.keyframes || {})) removeKeyAt(clip, path, at);
+  }
+  function setInterpAt(clip, at, interp) {
+    for (const a of Object.values(clip?.keyframes || {})) for (const k of a || []) if (Math.abs(k.t - at) <= 1 / 240) {
+      k.interp = interp;
+      if (interp !== "user") delete k.tan;
+    }
+  }
+  var ANIM_PROPS, INTERPS, PROP, isAnimPath, EPS, baseOf, keysOf, hasAnim, anyAnim, localTime, sortKeys;
+  var init_keyframes = __esm({
+    "js/keyframes.js"() {
+      ANIM_PROPS = [
+        { path: "transform.x", label: "Position X", unit: "px", color: "#ff5a5a", def: 0 },
+        { path: "transform.y", label: "Position Y", unit: "px", color: "#5ad16b", def: 0 },
+        { path: "transform.scale", label: "Scale", unit: "\xD7", color: "#4aa8ff", def: 1, min: 0.01 },
+        { path: "transform.scaleX", label: "Width", unit: "\xD7", color: "#41d6d6", def: 1, min: 0.01 },
+        { path: "transform.scaleY", label: "Height", unit: "\xD7", color: "#c97dff", def: 1, min: 0.01 },
+        { path: "transform.rotation", label: "Rotation", unit: "\xB0", color: "#ffcc33", def: 0 },
+        { path: "transform.opacity", label: "Opacity", unit: "", color: "#e0e0e0", def: 1, min: 0, max: 1 }
+      ];
+      INTERPS = [
+        { id: "auto", label: "Auto (smooth)" },
+        { id: "user", label: "User tangent" },
+        { id: "linear", label: "Linear" },
+        { id: "constant", label: "Constant (hold)" },
+        { id: "ease", label: "Ease in / out" }
+      ];
+      PROP = new Map(ANIM_PROPS.map((p) => [p.path, p]));
+      isAnimPath = (path) => PROP.has(path);
+      EPS = 1e-4;
+      baseOf = (clip, path) => {
+        const k = path.split(".")[1];
+        const v = clip.transform?.[k];
+        return Number.isFinite(+v) ? +v : PROP.get(path)?.def ?? 0;
+      };
+      keysOf = (clip, path) => clip?.keyframes?.[path] || [];
+      hasAnim = (clip, path) => keysOf(clip, path).length > 0;
+      anyAnim = (clip) => !!clip?.keyframes && Object.values(clip.keyframes).some((a) => a && a.length);
+      localTime = (clip, t) => t - clip.start;
+      sortKeys = (a) => a.sort((x, y) => x.t - y.t);
+    }
+  });
+
   // js/framereader.js
   var framereader_exports = {};
   __export(framereader_exports, {
@@ -2413,7 +2566,8 @@ ${e.message}`);
         c.fill,
         c.groupId,
         c.disabled,
-        c.audio?.voice
+        c.audio?.voice,
+        c.keyframes ? keyTimes(c).join() : ""
       ]);
     }
     function buildClipInner(c, row) {
@@ -2440,6 +2594,10 @@ ${e.message}`);
       if (c.type === "audio") {
         const vy = volToY(c.audio?.volume || 0, h2);
         html += `<div class="tl-vol" data-part="vol" style="top:${vy}px" title="Volume ${(c.audio?.volume || 0).toFixed(1)} dB"></div>`;
+      }
+      if (anyAnim(c)) for (const kt of keyTimes(c)) {
+        if (kt < -1e-6 || kt > c.duration + 1e-6) continue;
+        html += `<div class="tl-kf" data-kft="${kt}" style="left:${(kt * z).toFixed(1)}px" title="Keyframe at ${kt.toFixed(2)} s \xB7 drag to move \xB7 double-click to go there \xB7 right-click for more"></div>`;
       }
       html += `<div class="tl-trim l" data-part="trimL"></div><div class="tl-trim r" data-part="trimR"></div>`;
       return html;
@@ -2980,6 +3138,71 @@ ${e.message}`);
       snapEl.hidden = false;
       snapEl.style.left = X(at) + "px";
     }
+    const kfOf = (ev) => {
+      const d = ev.target.closest?.(".tl-kf");
+      if (!d) return null;
+      const el2 = d.closest(".tl-clip");
+      const clip = el2 && store2.getClip(el2.dataset.clip);
+      return clip ? { d, clip, at: +d.dataset.kft } : null;
+    };
+    content.addEventListener("pointerdown", (ev) => {
+      if (ev.button !== 0) return;
+      const k = kfOf(ev);
+      if (!k) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      closeMenu();
+      const { clip, at } = k, fr = store2.frame(), x0 = ev.clientX;
+      if (!store2.selection.clipIds.includes(clip.id)) store2.select(clip.id);
+      let cur = at, moved = false;
+      const move = (e) => {
+        let nt = at + (e.clientX - x0) / zoom();
+        nt = clamp(Math.round(nt / fr) * fr, 0, clip.duration);
+        if (Math.abs(nt - cur) < 1e-6) return;
+        moved = true;
+        const from = cur;
+        cur = nt;
+        store2.update("Move keyframe", (pj) => {
+          const c = pj.clips.find((x) => x.id === clip.id);
+          if (c) moveKeysAt(c, from, nt);
+        }, { coalesce: "kf:" + clip.id + ":" + at });
+      };
+      const up = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        if (!moved) store2.setPlayhead(clip.start + at);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    }, true);
+    content.addEventListener("dblclick", (ev) => {
+      const k = kfOf(ev);
+      if (!k) return;
+      ev.stopPropagation();
+      store2.setPlayhead(k.clip.start + k.at);
+    }, true);
+    content.addEventListener("contextmenu", (ev) => {
+      const k = kfOf(ev);
+      if (!k) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const { clip, at } = k;
+      const interp = Object.values(clip.keyframes || {}).flat().find((x) => Math.abs(x.t - at) <= 1 / 240)?.interp || "auto";
+      openMenu(ev.clientX, ev.clientY, [
+        { label: "Go to keyframe", action: () => store2.setPlayhead(clip.start + at) },
+        { label: "Interpolation", sub: INTERPS.map((i) => ({ label: i.label, checked: interp === i.id, action: () => store2.transact("Keyframe interpolation", (pj) => {
+          const c = pj.clips.find((x) => x.id === clip.id);
+          if (c) setInterpAt(c, at, i.id);
+        }) })) },
+        "-",
+        { label: "Keyframe Graph\u2026", kbd: "Alt+K", action: () => window.dispatchEvent(new CustomEvent("ve:openCurves", { detail: { id: clip.id } })) },
+        "-",
+        { label: "Delete keyframe", action: () => store2.transact("Delete keyframe", (pj) => {
+          const c = pj.clips.find((x) => x.id === clip.id);
+          if (c) deleteKeysAt(c, at);
+        }) }
+      ]);
+    }, true);
     content.addEventListener("pointerdown", (ev) => {
       if (ev.button !== 0) return;
       closeMenu();
@@ -3360,6 +3583,7 @@ ${e.message}`);
             Object.assign(clip, { start: o.start, duration: o.duration, in: o.in, transitionIn: o.ti, transitionOut: o.to });
           }, (pj) => {
             const c = pj.clips.find((x) => x.id === clip.id);
+            shiftKeys(c, f.start - o.start);
             Object.assign(c, { start: f.start, duration: f.duration, in: f.in, transitionIn: f.ti, transitionOut: f.to });
             if (c.audio) {
               c.audio.fadeIn = Math.min(c.audio.fadeIn || 0, c.duration);
@@ -3945,6 +4169,7 @@ ${e.message}`);
           pj.clips.find((x) => x.id === id).groupId = null;
         })) },
         "-",
+        { label: "Keyframe Graph\u2026", kbd: "Alt+K", disabled: !visual, action: () => window.dispatchEvent(new CustomEvent("ve:openCurves", { detail: { id: clip.id } })) },
         { label: "Rename", kbd: "F2", action: () => act("rename") },
         { label: clip.disabled ? "Enable Clip" : "Disable Clip", kbd: "E", disabled: locked, action: () => call("toggleDisabled", ids) },
         { label: "Edit Properties", kbd: "Alt+E", action: () => window.dispatchEvent(new CustomEvent("ve:openClip", { detail: { id: clip.id } })) },
@@ -4239,6 +4464,7 @@ ${e.message}`);
       init_icons();
       init_catalog();
       init_audio();
+      init_keyframes();
       RULER_H = 28;
       X0 = 0;
       SNAP_PX = 8;
@@ -7316,6 +7542,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       return [W2, H];
     }
     function getClipQuad(clip) {
+      clip = evalClip(clip, store2.playhead);
       if (clip.type === "adjustment") {
         const { width: W2, height: H } = settings();
         return [{ x: -W2 / 2, y: -H / 2 }, { x: W2 / 2, y: -H / 2 }, { x: W2 / 2, y: H / 2 }, { x: -W2 / 2, y: H / 2 }];
@@ -7681,7 +7908,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
         canvasH = canvas.height;
       }
       const st = settings();
-      const list = store2.renderListAt(t);
+      const list = store2.renderListAt(t).map((e) => ({ ...e, clip: evalClip(e.clip, t), transition: e.transition && e.transition.other ? { ...e.transition, other: evalClip(e.transition.other, t) } : e.transition }));
       let frameA = acquire(canvasW, canvasH);
       let frameB = acquire(canvasW, canvasH);
       const bg = hexToRgb2(st.background || "#000000");
@@ -7788,6 +8015,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
   var materialsMod, materialsPromise, ident, DEFINES, FILTER_INDEX, TRANSITION_INDEX, BLEND_INDEX, FILTER_V2, FILTER_V3, TRANSITION_V2, COLOR_KEYS, VS, HEAD, FS_COPY, FS_PANZOOM, FS_FILL, FS_CHROMA, FS_COLOR, FS_HUE, FS_BLUR, FS_FILTER, FS_FILTER2, FS_FILTER3, FS_MASK, FS_GRADBLUR, FS_COMPOSITE, TR_COMMON, FS_TRANSITION, FS_TRANSITION2, VISUAL3, FULLFRAME;
   var init_renderer = __esm({
     "js/renderer.js"() {
+      init_keyframes();
       init_catalog();
       materialsMod = null;
       materialsPromise = null;
@@ -8939,7 +9167,8 @@ void main() {
       box2.style.display = "";
       box2.classList.toggle("locked", !!store2.getTrack(clip.trackId)?.locked);
       outline.setAttribute("points", sq.map((p) => p.x.toFixed(1) + "," + p.y.toFixed(1)).join(" "));
-      const rot = clip.transform?.rotation || 0;
+      const atr = evalClip(clip, store2.playhead).transform || {};
+      const rot = atr.rotation || 0;
       for (const h2 of handles) {
         const a = sq[h2.a], b = sq[h2.b];
         const x = (a.x + b.x) / 2, y = (a.y + b.y) / 2;
@@ -8967,7 +9196,7 @@ void main() {
       rotLine.setAttribute("y1", tm.y.toFixed(1));
       rotLine.setAttribute("x2", rp.x.toFixed(1));
       rotLine.setAttribute("y2", rp.y.toFixed(1));
-      const ct = m.toScreen({ x: clip.transform?.x || 0, y: clip.transform?.y || 0 });
+      const ct = m.toScreen({ x: atr.x || 0, y: atr.y || 0 });
       centerDot.setAttribute("cx", ct.x.toFixed(1));
       centerDot.setAttribute("cy", ct.y.toFixed(1));
     }
@@ -9005,7 +9234,13 @@ void main() {
         const c = project.clips.find((x) => x.id === clipId);
         if (!c) return;
         c.transform = c.transform || { x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, flipH: false, flipV: false };
-        fn(c.transform, c);
+        if (!anyAnim(c)) {
+          fn(c.transform, c);
+          return;
+        }
+        const seen = evalClip(c, store2.playhead).transform, proxy = { ...seen };
+        fn(proxy, c);
+        for (const k of Object.keys(proxy)) if (proxy[k] !== seen[k]) setValue(c, "transform." + k, proxy[k], store2.playhead - c.start);
       }, { coalesce: "gizmo-" + clipId });
     }
     const round = (v, d = 3) => Math.round(v * 10 ** d) / 10 ** d;
@@ -9046,7 +9281,7 @@ void main() {
       if (!clip) return;
       if (store2.getTrack(clip.trackId)?.locked) return;
       e.preventDefault();
-      const tr = clip.transform || {};
+      const tr = evalClip(clip, store2.playhead).transform || {};
       const c = { x: tr.x || 0, y: tr.y || 0 };
       const th = (tr.rotation || 0) * Math.PI / 180;
       const local = (q) => {
@@ -9183,6 +9418,7 @@ void main() {
   var SVGNS, VISUAL4, SNAP_PX2, ROT_HANDLE_PX;
   var init_gizmo = __esm({
     "js/gizmo.js"() {
+      init_keyframes();
       SVGNS = "http://www.w3.org/2000/svg";
       VISUAL4 = /* @__PURE__ */ new Set(["video", "image", "text", "color", "material"]);
       SNAP_PX2 = 7;
@@ -15687,6 +15923,602 @@ ${c.text}
     }
   });
 
+  // js/curves.js
+  var curves_exports = {};
+  __export(curves_exports, {
+    openCurveEditor: () => openCurveEditor
+  });
+  function openCurveEditor({ store: store2, clipId }) {
+    document.querySelector(".cv-back")?.remove();
+    const clip = () => store2.getClip(clipId);
+    if (!clip()) return null;
+    const fps = store2.project.settings.fps || 30, fr = 1 / fps;
+    const shown = new Set(ANIM_PROPS.filter((p) => hasAnim(clip(), p.path)).map((p) => p.path));
+    let normalize = shown.size > 1;
+    let sel = [];
+    let view2 = null;
+    let drag = null;
+    const back = document.createElement("div");
+    back.className = "modal-back cv-back";
+    back.innerHTML = `<div class="modal cv-modal" role="dialog" aria-label="Keyframe Graph">
+    <div class="modal-head"><span>Keyframe Graph <small class="dim cv-name"></small></span><button class="icon-btn cv-x" title="Close (Esc)">\u2715</button></div>
+    <div class="cv-toolbar">
+      ${INTERPS.map((i) => `<button class="btn" data-interp="${i.id}" title="Selected keys: ${esc7(i.label)}">${esc7(i.label.split(" (")[0])}</button>`).join("")}
+      <span class="cv-sep"></span>
+      <button class="btn" data-do="addkey" title="Add keys at the playhead for the shown properties (K)">Add key</button>
+      <button class="btn" data-do="del" title="Delete selected keys (Delete)">Delete</button>
+      <span class="cv-sep"></span>
+      <button class="btn" data-do="frame" title="Frame all (F)">Frame all</button>
+      <label class="cv-norm" title="Each curve fills the height (compare shapes of different units)"><input type="checkbox" class="cv-normbox"> Normalized</label>
+      <span class="cv-spacer"></span><span class="dim cv-readout"></span>
+    </div>
+    <div class="cv-body">
+      <div class="cv-list"></div>
+      <div class="cv-canvas-wrap"><canvas class="cv-canvas"></canvas><div class="cv-empty" hidden>No keyframes yet. Click <b>\u25C6</b> next to a property (here or in the inspector) to add one at the playhead, move the playhead, change the value \u2014 the curve appears here.</div></div>
+    </div>
+  </div>`;
+    (document.getElementById("modalRoot") || document.body).appendChild(back);
+    const $2 = (s) => back.querySelector(s);
+    const cv = $2(".cv-canvas"), g = cv.getContext("2d"), wrap = $2(".cv-canvas-wrap");
+    $2(".cv-normbox").checked = normalize;
+    const visibleProps = () => ANIM_PROPS.filter((p) => shown.has(p.path));
+    const lt = () => store2.playhead - (clip()?.start || 0);
+    function range(path) {
+      const ks = keysOf(clip(), path);
+      let lo = Infinity, hi = -Infinity;
+      if (ks.length) {
+        const c = clip();
+        const n = 60, a = Math.min(0, ks[0].t), b = Math.max(c.duration, ks[ks.length - 1].t);
+        for (let i = 0; i <= n; i++) {
+          const v = evalKeys(ks, a + (b - a) * i / n);
+          lo = Math.min(lo, v);
+          hi = Math.max(hi, v);
+        }
+      } else {
+        const v = evalProp(clip(), path, lt());
+        lo = hi = v;
+      }
+      if (hi - lo < 1e-6) {
+        const m = Math.max(1, Math.abs(lo) * 0.1);
+        lo -= m;
+        hi += m;
+      }
+      return { lo, hi };
+    }
+    const yOf = (path, v) => {
+      if (!normalize) return v;
+      const r = range(path);
+      return (v - r.lo) / (r.hi - r.lo);
+    };
+    const vOf = (path, y) => {
+      if (!normalize) return y;
+      const r = range(path);
+      return r.lo + y * (r.hi - r.lo);
+    };
+    function frameAll() {
+      const c = clip();
+      if (!c) return;
+      let t0 = 0, t1 = Math.max(fr * 10, c.duration), y0 = Infinity, y1 = -Infinity;
+      for (const p of visibleProps()) {
+        const ks = keysOf(c, p.path);
+        for (const k of ks) {
+          t0 = Math.min(t0, k.t);
+          t1 = Math.max(t1, k.t);
+        }
+        const n = 80;
+        for (let i = 0; i <= n; i++) {
+          const y = yOf(p.path, evalProp(c, p.path, t0 + (t1 - t0) * i / n));
+          y0 = Math.min(y0, y);
+          y1 = Math.max(y1, y);
+        }
+      }
+      if (!isFinite(y0)) {
+        y0 = 0;
+        y1 = 1;
+      }
+      if (y1 - y0 < 1e-6) {
+        y0 -= 1;
+        y1 += 1;
+      }
+      const mt = (t1 - t0) * 0.04, my = (y1 - y0) * 0.12;
+      view2 = { t0: t0 - mt, t1: t1 + mt, y0: y0 - my, y1: y1 + my };
+    }
+    let W2 = 0, H = 0;
+    const plotW = () => W2 - PAD_L - PAD_R, plotH = () => H - RULER - PAD_B;
+    const tx = (t) => PAD_L + (t - view2.t0) / (view2.t1 - view2.t0) * plotW();
+    const ty = (y) => RULER + (1 - (y - view2.y0) / (view2.y1 - view2.y0)) * plotH();
+    const xt = (x) => view2.t0 + (x - PAD_L) / plotW() * (view2.t1 - view2.t0);
+    const yy = (y) => view2.y0 + (1 - (y - RULER) / plotH()) * (view2.y1 - view2.y0);
+    const pxPerSec = () => plotW() / (view2.t1 - view2.t0);
+    const pxPerY = () => plotH() / (view2.y1 - view2.y0);
+    let raf = 0;
+    const redraw = () => {
+      if (!raf) raf = requestAnimationFrame(() => {
+        raf = 0;
+        draw();
+      });
+    };
+    function niceStep(span, px, minPx) {
+      const raw = span / Math.max(1, px / minPx);
+      const p = Math.pow(10, Math.floor(Math.log10(raw)));
+      for (const m of [1, 2, 5, 10]) if (m * p >= raw) return m * p;
+      return 10 * p;
+    }
+    function draw() {
+      const c = clip();
+      if (!c) {
+        close();
+        return;
+      }
+      const r = wrap.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+      W2 = Math.max(200, r.width);
+      H = Math.max(150, r.height);
+      if (cv.width !== Math.round(W2 * dpr) || cv.height !== Math.round(H * dpr)) {
+        cv.width = Math.round(W2 * dpr);
+        cv.height = Math.round(H * dpr);
+        cv.style.width = W2 + "px";
+        cv.style.height = H + "px";
+      }
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (!view2) frameAll();
+      g.fillStyle = "#15161b";
+      g.fillRect(0, 0, W2, H);
+      g.fillStyle = "#1c1e25";
+      g.fillRect(tx(0), RULER, tx(c.duration) - tx(0), plotH());
+      g.font = "11px Inter, sans-serif";
+      g.textBaseline = "middle";
+      const ts = niceStep(view2.t1 - view2.t0, plotW(), 70);
+      g.strokeStyle = "#262833";
+      g.fillStyle = "#8a8fa0";
+      g.lineWidth = 1;
+      for (let t = Math.ceil(view2.t0 / ts) * ts; t <= view2.t1; t += ts) {
+        const x = Math.round(tx(t)) + 0.5;
+        g.beginPath();
+        g.moveTo(x, RULER);
+        g.lineTo(x, H - PAD_B);
+        g.stroke();
+        g.fillText(t.toFixed(ts < 0.1 ? 2 : ts < 1 ? 1 : 0) + "s", x + 3, RULER / 2);
+      }
+      const ys = niceStep(view2.y1 - view2.y0, plotH(), 34);
+      for (let y = Math.ceil(view2.y0 / ys) * ys; y <= view2.y1; y += ys) {
+        const py = Math.round(ty(y)) + 0.5;
+        g.beginPath();
+        g.moveTo(PAD_L, py);
+        g.lineTo(W2 - PAD_R, py);
+        g.stroke();
+        g.fillText(normalize ? (y * 100).toFixed(0) + "%" : Math.abs(ys) < 1 ? y.toFixed(2) : y.toFixed(0), 6, py);
+      }
+      g.fillStyle = "#101116";
+      g.fillRect(0, 0, W2, RULER);
+      g.fillStyle = "#8a8fa0";
+      for (let t = Math.ceil(view2.t0 / ts) * ts; t <= view2.t1; t += ts) g.fillText(t.toFixed(ts < 0.1 ? 2 : ts < 1 ? 1 : 0) + "s", tx(t) + 3, RULER / 2);
+      for (const p of visibleProps()) {
+        const ks = keysOf(c, p.path);
+        g.strokeStyle = p.color;
+        g.lineWidth = 2;
+        g.beginPath();
+        const n = Math.max(2, Math.ceil(plotW() / 2));
+        for (let i = 0; i <= n; i++) {
+          const t = view2.t0 + (view2.t1 - view2.t0) * i / n;
+          const y = ty(yOf(p.path, evalProp(c, p.path, t)));
+          i ? g.lineTo(tx(t), y) : g.moveTo(tx(t), y);
+        }
+        g.globalAlpha = ks.length ? 1 : 0.35;
+        g.stroke();
+        g.globalAlpha = 1;
+        ks.forEach((k, i) => {
+          const x = tx(k.t), y = ty(yOf(p.path, k.v)), on = sel.some((s2) => s2.path === p.path && s2.i === i);
+          g.save();
+          g.translate(x, y);
+          g.rotate(Math.PI / 4);
+          g.fillStyle = on ? "#ffffff" : p.color;
+          g.strokeStyle = "#000";
+          g.lineWidth = 1.5;
+          const s = on ? 6 : 5;
+          g.fillRect(-s, -s, s * 2, s * 2);
+          g.strokeRect(-s, -s, s * 2, s * 2);
+          g.restore();
+        });
+      }
+      const th = tangentHandles();
+      if (th) for (const h2 of th.handles) {
+        g.strokeStyle = "#ffffffaa";
+        g.lineWidth = 1;
+        g.beginPath();
+        g.moveTo(th.x, th.y);
+        g.lineTo(h2.x, h2.y);
+        g.stroke();
+        g.fillStyle = "#ffffff";
+        g.beginPath();
+        g.arc(h2.x, h2.y, 4, 0, Math.PI * 2);
+        g.fill();
+      }
+      const px = tx(lt());
+      g.strokeStyle = "#ff4d4d";
+      g.lineWidth = 1.5;
+      g.beginPath();
+      g.moveTo(px, 0);
+      g.lineTo(px, H);
+      g.stroke();
+      if (drag?.kind === "box") {
+        g.strokeStyle = "#4aa8ff";
+        g.fillStyle = "#4aa8ff22";
+        const b = drag.box;
+        g.fillRect(b.x, b.y, b.w, b.h);
+        g.strokeRect(b.x, b.y, b.w, b.h);
+      }
+      $2(".cv-empty").hidden = visibleProps().some((p) => hasAnim(c, p.path));
+      readout();
+    }
+    function tangentHandles() {
+      if (sel.length !== 1) return null;
+      const c = clip(), { path, i } = sel[0], ks = keysOf(c, path), k = ks[i];
+      if (!k || k.interp === "constant" || k.interp === "linear" || k.interp === "ease") return null;
+      const a = ks[i - 1], b = ks[i + 1];
+      let m = k.interp === "user" && Number.isFinite(+k.tan) ? +k.tan : !a || !b || k.v >= a.v && k.v >= b.v || k.v <= a.v && k.v <= b.v ? 0 : (b.v - a.v) / Math.max(1e-4, b.t - a.t);
+      const r = normalize ? range(path) : { lo: 0, hi: 1 };
+      const sy = -m / (normalize ? r.hi - r.lo : 1) * pxPerY() / pxPerSec();
+      const len = Math.hypot(1, sy), dx = TAN_PX / len, dy = TAN_PX * sy / len;
+      const x = tx(k.t), y = ty(yOf(path, k.v));
+      return { x, y, path, i, handles: [{ x: x - dx, y: y - dy, side: -1 }, { x: x + dx, y: y + dy, side: 1 }] };
+    }
+    function readout() {
+      const c = clip();
+      $2(".cv-name").textContent = "\xB7 " + (c?.name || "");
+      if (sel.length === 1) {
+        const k = keysOf(c, sel[0].path)[sel[0].i];
+        const p = ANIM_PROPS.find((x) => x.path === sel[0].path);
+        if (k) {
+          $2(".cv-readout").textContent = `${p.label}: ${k.v.toFixed(3)} at ${k.t.toFixed(3)} s \xB7 ${k.interp}`;
+          return;
+        }
+      }
+      $2(".cv-readout").textContent = sel.length ? sel.length + " keys selected" : "Playhead " + lt().toFixed(2) + " s";
+    }
+    function renderList() {
+      const c = clip();
+      if (!c) return;
+      $2(".cv-list").innerHTML = ANIM_PROPS.map((p) => {
+        const n = keysOf(c, p.path).length, on = keyIndexAt(c, p.path, lt()) >= 0;
+        return `<div class="cv-prop${shown.has(p.path) ? " shown" : ""}" data-p="${p.path}">
+        <input type="checkbox" ${shown.has(p.path) ? "checked" : ""} title="Show this curve"><i style="background:${p.color}"></i>
+        <span>${esc7(p.label)}</span><small>${n ? n + " key" + (n > 1 ? "s" : "") : ""}</small>
+        <button class="kf-btn${n ? " anim" : ""}${on ? " on" : ""}" title="Keyframe at the playhead (add / remove)">\u25C6</button></div>`;
+      }).join("");
+      $2(".cv-list").querySelectorAll(".cv-prop").forEach((row) => {
+        const path = row.dataset.p;
+        row.querySelector("input").onchange = (e) => {
+          e.target.checked ? shown.add(path) : shown.delete(path);
+          sel = sel.filter((s) => shown.has(s.path));
+          view2 = null;
+          renderList();
+          redraw();
+        };
+        row.querySelector(".kf-btn").onclick = () => {
+          shown.add(path);
+          store2.transact("Keyframe", (pj) => {
+            const x = pj.clips.find((y) => y.id === clipId);
+            if (x) toggleKey(x, path, store2.playhead - x.start);
+          });
+          view2 = null;
+        };
+        row.querySelector("span").onclick = () => {
+          shown.add(path);
+          sel = keysOf(clip(), path).map((k, i) => ({ path, i }));
+          renderList();
+          redraw();
+        };
+      });
+    }
+    function keyAt(x, y) {
+      const c = clip();
+      let best = null;
+      for (const p of visibleProps()) keysOf(c, p.path).forEach((k, i) => {
+        const d = Math.hypot(tx(k.t) - x, ty(yOf(p.path, k.v)) - y);
+        if (d <= HIT && (!best || d < best.d)) best = { path: p.path, i, d };
+      });
+      return best;
+    }
+    function curveAt(x, y) {
+      const c = clip(), t = xt(x);
+      let best = null;
+      for (const p of visibleProps()) {
+        const d = Math.abs(ty(yOf(p.path, evalProp(c, p.path, t))) - y);
+        if (d <= 12 && (!best || d < best.d)) best = { path: p.path, d, t };
+      }
+      return best;
+    }
+    const local = (e) => {
+      const r = cv.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+    let dragSeq = 0;
+    cv.addEventListener("pointerdown", (e) => {
+      const p = local(e);
+      cv.setPointerCapture?.(e.pointerId);
+      if (e.button === 1 || e.button === 2) {
+        drag = { kind: "pan", x0: p.x, y0: p.y, v0: { ...view2 } };
+        e.preventDefault();
+        return;
+      }
+      if (e.button !== 0) return;
+      if (p.y < RULER) {
+        drag = { kind: "scrub" };
+        store2.setPlayhead(clip().start + clamp3(Math.round(xt(p.x) / fr) * fr, 0, clip().duration));
+        return;
+      }
+      const th = tangentHandles();
+      const hh = th && th.handles.find((h2) => Math.hypot(h2.x - p.x, h2.y - p.y) <= HIT);
+      if (hh) {
+        drag = { kind: "tan", th, side: hh.side, id: ++dragSeq };
+        return;
+      }
+      const k = keyAt(p.x, p.y);
+      if (k) {
+        const isSel = sel.some((s) => s.path === k.path && s.i === k.i);
+        if (e.shiftKey) sel = isSel ? sel.filter((s) => !(s.path === k.path && s.i === k.i)) : [...sel, { path: k.path, i: k.i }];
+        else if (!isSel) sel = [{ path: k.path, i: k.i }];
+        const c = clip();
+        drag = {
+          kind: "keys",
+          x0: p.x,
+          y0: p.y,
+          id: ++dragSeq,
+          moved: false,
+          orig: sel.map((s) => {
+            const ks = keysOf(c, s.path);
+            const kk = ks[s.i];
+            return { ...s, t: kk.t, v: kk.v, lo: ks[s.i - 1]?.t ?? -Infinity, hi: ks[s.i + 1]?.t ?? Infinity };
+          })
+        };
+        renderList();
+        redraw();
+        return;
+      }
+      if (!e.shiftKey) sel = [];
+      drag = { kind: "box", x0: p.x, y0: p.y, box: { x: p.x, y: p.y, w: 0, h: 0 }, base: [...sel] };
+      redraw();
+    });
+    cv.addEventListener("pointermove", (e) => {
+      if (!drag) {
+        const p2 = local(e);
+        cv.style.cursor = p2.y < RULER ? "col-resize" : keyAt(p2.x, p2.y) ? "move" : "default";
+        return;
+      }
+      const p = local(e);
+      if (drag.kind === "pan") {
+        const v0 = drag.v0, dt = (p.x - drag.x0) / plotW() * (v0.t1 - v0.t0), dy = (p.y - drag.y0) / plotH() * (v0.y1 - v0.y0);
+        view2 = { t0: v0.t0 - dt, t1: v0.t1 - dt, y0: v0.y0 + dy, y1: v0.y1 + dy };
+        redraw();
+        return;
+      }
+      if (drag.kind === "scrub") {
+        store2.setPlayhead(clip().start + clamp3(Math.round(xt(p.x) / fr) * fr, 0, clip().duration));
+        return;
+      }
+      if (drag.kind === "box") {
+        const b = { x: Math.min(drag.x0, p.x), y: Math.min(drag.y0, p.y), w: Math.abs(p.x - drag.x0), h: Math.abs(p.y - drag.y0) };
+        drag.box = b;
+        const c = clip();
+        const inside = [];
+        for (const pr of visibleProps()) keysOf(c, pr.path).forEach((k, i) => {
+          const x = tx(k.t), y = ty(yOf(pr.path, k.v));
+          if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) inside.push({ path: pr.path, i });
+        });
+        sel = [...drag.base, ...inside.filter((s) => !drag.base.some((q) => q.path === s.path && q.i === s.i))];
+        redraw();
+        return;
+      }
+      if (drag.kind === "keys") {
+        let dx = p.x - drag.x0, dy = p.y - drag.y0;
+        if (!drag.moved && Math.hypot(dx, dy) < 3) return;
+        drag.moved = true;
+        if (e.shiftKey) {
+          if (Math.abs(dx) > Math.abs(dy)) dy = 0;
+          else dx = 0;
+        }
+        const dt = dx / pxPerSec(), dY = -dy / pxPerY();
+        store2.update("Move keys", (pj) => {
+          const c = pj.clips.find((x) => x.id === clipId);
+          if (!c) return;
+          for (const o of drag.orig) {
+            const k = c.keyframes?.[o.path]?.[o.i];
+            if (!k) continue;
+            let nt = o.t + dt;
+            if (!e.altKey) nt = Math.round(nt / fr) * fr;
+            k.t = clamp3(nt, o.lo + 1e-3, o.hi - 1e-3);
+            const r = normalize ? range(o.path) : null;
+            k.v = o.v + (normalize ? dY * (r.hi - r.lo) : dY);
+            const pi = ANIM_PROPS.find((x) => x.path === o.path);
+            if (pi?.min != null) k.v = Math.max(pi.min, k.v);
+            if (pi?.max != null) k.v = Math.min(pi.max, k.v);
+          }
+        }, { coalesce: "curves-keys-" + drag.id });
+        return;
+      }
+      if (drag.kind === "tan") {
+        const { th } = drag;
+        let ddx = (p.x - th.x) * drag.side, ddy = (p.y - th.y) * drag.side;
+        if (ddx < 2) ddx = 2;
+        const r = normalize ? range(th.path) : { lo: 0, hi: 1 };
+        const m = -(ddy / pxPerY()) * (normalize ? r.hi - r.lo : 1) / (ddx / pxPerSec());
+        store2.update("Edit tangent", (pj) => {
+          const c = pj.clips.find((x) => x.id === clipId);
+          const k = c?.keyframes?.[th.path]?.[th.i];
+          if (k) {
+            k.interp = "user";
+            k.tan = m;
+          }
+        }, { coalesce: "curves-tan-" + drag.id });
+      }
+    });
+    const endDrag = () => {
+      if (drag?.kind === "box") redraw();
+      drag = null;
+    };
+    cv.addEventListener("pointerup", endDrag);
+    cv.addEventListener("pointercancel", endDrag);
+    cv.addEventListener("contextmenu", (e) => e.preventDefault());
+    cv.addEventListener("dblclick", (e) => {
+      const p = local(e);
+      if (p.y < RULER || keyAt(p.x, p.y)) return;
+      const hit = curveAt(p.x, p.y) || (visibleProps().length === 1 ? { path: visibleProps()[0].path, t: xt(p.x) } : null);
+      if (!hit) return;
+      const t = clamp3(Math.round(xt(p.x) / fr) * fr, 0, clip().duration);
+      const v = curveAt(p.x, p.y) ? evalProp(clip(), hit.path, t) : vOf(hit.path, yy(p.y));
+      store2.transact("Add key", (pj) => {
+        const c = pj.clips.find((x) => x.id === clipId);
+        if (c) upsertKey(c, hit.path, t, v);
+      });
+      sel = [{ path: hit.path, i: keyIndexAt(clip(), hit.path, t) }];
+    });
+    cv.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const p = local(e), k = Math.exp((e.deltaMode === 1 ? e.deltaY * 30 : e.deltaY) * 15e-4);
+      if (e.ctrlKey || e.shiftKey) {
+        const y = yy(p.y);
+        view2 = { ...view2, y0: y - (y - view2.y0) * k, y1: y + (view2.y1 - y) * k };
+      } else {
+        const t = xt(p.x);
+        view2 = { ...view2, t0: t - (t - view2.t0) * k, t1: t + (view2.t1 - t) * k };
+      }
+      redraw();
+    }, { passive: false });
+    back.querySelectorAll("[data-interp]").forEach((b) => b.onclick = () => {
+      if (!sel.length) return;
+      const id = b.dataset.interp;
+      store2.transact("Key interpolation", (pj) => {
+        const c = pj.clips.find((x) => x.id === clipId);
+        for (const s of sel) {
+          const k = c?.keyframes?.[s.path]?.[s.i];
+          if (k) {
+            k.interp = id;
+            if (id !== "user") delete k.tan;
+            else if (!Number.isFinite(+k.tan)) k.tan = 0;
+          }
+        }
+      });
+    });
+    function deleteSel() {
+      if (!sel.length) return;
+      const list = [...sel].sort((a, b) => b.i - a.i);
+      store2.transact("Delete keys", (pj) => {
+        const c = pj.clips.find((x) => x.id === clipId);
+        if (!c?.keyframes) return;
+        for (const s of list) {
+          const a = c.keyframes[s.path];
+          if (!a || !a[s.i]) continue;
+          const v = a[s.i].v;
+          a.splice(s.i, 1);
+          if (!a.length) {
+            c.transform[s.path.split(".")[1]] = v;
+            delete c.keyframes[s.path];
+          }
+        }
+      });
+      sel = [];
+    }
+    function addKeys() {
+      const props = visibleProps();
+      if (!props.length) return;
+      store2.transact("Add keys", (pj) => {
+        const c = pj.clips.find((x) => x.id === clipId);
+        if (c) for (const p of props) upsertKey(c, p.path, store2.playhead - c.start, evalProp(c, p.path, store2.playhead - c.start));
+      });
+    }
+    $2('[data-do="del"]').onclick = deleteSel;
+    $2('[data-do="addkey"]').onclick = addKeys;
+    $2('[data-do="frame"]').onclick = () => {
+      frameAll();
+      redraw();
+    };
+    $2(".cv-normbox").onchange = (e) => {
+      normalize = e.target.checked;
+      view2 = null;
+      redraw();
+    };
+    const onProject = () => {
+      if (!clip()) {
+        close();
+        return;
+      }
+      sel = sel.filter((s) => keysOf(clip(), s.path)[s.i]);
+      renderList();
+      redraw();
+    };
+    const onPlayhead = () => {
+      renderList();
+      redraw();
+    };
+    const offProject = store2.on("project", onProject), offPh = store2.on("playhead", onPlayhead);
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(redraw) : null;
+    ro?.observe(wrap);
+    function close() {
+      try {
+        typeof offProject === "function" && offProject();
+        typeof offPh === "function" && offPh();
+      } catch (e) {
+      }
+      store2.off?.("project", onProject);
+      store2.off?.("playhead", onPlayhead);
+      ro?.disconnect();
+      cancelAnimationFrame(raf);
+      back.remove();
+      closed = true;
+    }
+    let closed = false;
+    $2(".cv-x").onclick = close;
+    back.addEventListener("pointerdown", (e) => {
+      if (e.target === back) close();
+    });
+    back.tabIndex = -1;
+    back.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Escape") close();
+      else if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        deleteSel();
+      } else if (e.key.toLowerCase() === "f") {
+        frameAll();
+        redraw();
+      } else if (e.key.toLowerCase() === "k") addKeys();
+      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        e.shiftKey ? store2.redo() : store2.undo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        store2.redo();
+      } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        e.preventDefault();
+        store2.setPlayhead(Math.max(0, store2.playhead + (e.key === "ArrowLeft" ? -fr : fr)));
+      }
+    });
+    renderList();
+    draw();
+    back.focus();
+    back.__cv = { keyXY: (path, i) => {
+      const k = keysOf(clip(), path)[i];
+      return k && { x: tx(k.t), y: ty(yOf(path, k.v)) };
+    }, sel: () => sel };
+    return { close, get closed() {
+      return closed;
+    } };
+  }
+  var clamp3, esc7, RULER, PAD_L, PAD_R, PAD_B, HIT, TAN_PX;
+  var init_curves = __esm({
+    "js/curves.js"() {
+      init_keyframes();
+      clamp3 = (v, a, b) => Math.max(a, Math.min(b, v));
+      esc7 = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+      RULER = 24;
+      PAD_L = 56;
+      PAD_R = 14;
+      PAD_B = 14;
+      HIT = 7;
+      TAN_PX = 46;
+    }
+  });
+
   // js/app.js
   init_state();
   init_catalog();
@@ -15695,6 +16527,7 @@ ${c.text}
   // js/ops.js
   init_state();
   init_catalog();
+  init_keyframes();
   var deep2 = (o) => JSON.parse(JSON.stringify(o));
   var VISUAL = /* @__PURE__ */ new Set(["video", "image", "text", "color", "material"]);
   var kindForType = (type) => type === "audio" ? "audio" : "video";
@@ -15736,12 +16569,14 @@ ${c.text}
     c.duration = d1;
     c.transitionOut = null;
     right.transitionIn = null;
+    shiftKeys(right, d1);
     c.audio.fadeOut = 0;
     right.audio.fadeIn = 0;
     p.clips.push(right);
     return right;
   }
   function keepRange(c, a, b) {
+    shiftKeys(c, a - c.start);
     if (c.reverse) c.in += (c.start + c.duration - b) * c.speed;
     else c.in += (a - c.start) * c.speed;
     c.start = a;
@@ -15915,6 +16750,7 @@ ${c.text}
         const c = p.clips.find((x) => x.id === c0.id);
         const d = t - c.start;
         if (!c.reverse) c.in += d * c.speed;
+        shiftKeys(c, d);
         c.start = t;
         c.duration -= d;
       }));
@@ -18098,7 +18934,10 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
   }
 
   // js/inspector.js
+  init_keyframes();
   var get = (o, path) => path.split(".").reduce((a, k) => a == null ? a : a[k], o);
+  var playheadRef = () => 0;
+  var vget = (c, path) => c && isAnimPath(path) && hasAnim(c, path) ? evalProp(c, path, playheadRef() - c.start) : get(c, path);
   var set = (o, path, v) => {
     const ks = path.split(".");
     const last2 = ks.pop();
@@ -18120,6 +18959,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
   };
   function createInspector({ root, store: store2, ops: ops2, materialsApi, audioApi, pickColor, openProjectSettings }) {
     let tab = null, structKey = "", bindings = [];
+    playheadRef = () => store2.playhead;
     const collapsed = new Set(JSON.parse(localStorage.getItem("ve.ins.collapsed") || "[]"));
     const clip = () => store2.selectedClips()[0] || null;
     function edit(path, v, label, { discrete = false } = {}) {
@@ -18134,7 +18974,8 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
           if (path.startsWith("audio.fx.")) x.audio.fx = { ...defaultAudioFx(), ...x.audio.fx || {} };
           if (path.startsWith("mask.") && !x.mask) x.mask = defaultMask();
           if (path.startsWith("gradBlur.") && !x.gradBlur) x.gradBlur = defaultGradBlur();
-          set(x, path, v);
+          if (isAnimPath(path) && hasAnim(x, path)) setValue(x, path, v, store2.playhead - x.start);
+          else set(x, path, v);
         }
       }, { coalesce: discrete ? void 0 : ids.join(",") + ":" + path });
     }
@@ -18146,7 +18987,8 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     };
     function slider2(label, path, { min, max, step = 1, toUI = (v) => v, fromUI = (v) => v, def = 0, unit = "", decimals, hardMin, hardMax } = {}) {
       const id = ctl({ kind: "slider", path, toUI, fromUI, def, opts: { min, max, step, unit, decimals, hardMin, hardMax } });
-      return `<div class="prop" title="Drag the label or the field to change \xB7 double-click the label to reset"><label data-reset="${id}">${label}</label><div class="nf-slot" id="${id}"></div></div>`;
+      const kf = isAnimPath(path) ? `<button class="kf-btn" data-kf="${path}" title="Keyframe at the playhead (add / remove). Once a property has keys, changing it adds a key here.">\u25C6</button>` : "";
+      return `<div class="prop${kf ? " has-kf" : ""}" title="Drag the label or the field to change \xB7 double-click the label to reset"><label data-reset="${id}">${label}</label><div class="kf-row"><div class="nf-slot" id="${id}"></div>${kf}</div></div>`;
     }
     function toggle(label, path, { onLabel } = {}) {
       const id = ctl({ kind: "toggle", path });
@@ -18169,6 +19011,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       const fixed = c.type === "color" || c.type === "material";
       const W2 = store2.project.settings.width, H = store2.project.settings.height;
       return section("transform", "Transform", `
+      <div class="btn-row kf-tools"><button class="btn" data-do="curves" title="Keyframe graph: edit the animation curves (Alt+K)">Keyframe Graph\u2026</button><span class="dim">\u25C6 = keyframe at the playhead</span></div>
       ${slider2("Scale", "transform.scale", { min: 0, max: 500, step: 1, ...pctS, def: 1 })}
       ${slider2("Width", "transform.scaleX", { min: 0, max: 500, step: 1, ...pctS, def: 1 })}
       ${slider2("Height", "transform.scaleY", { min: 0, max: 500, step: 1, ...pctS, def: 1 })}
@@ -18425,7 +19268,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
             if (b.path.startsWith("transition")) return editTransition(b.path, val, typed);
             edit(b.path, val, lab?.textContent || b.path.split(".").pop(), { discrete: typed });
           };
-          const cur = get(clip(), b.path);
+          const cur = vget(clip(), b.path);
           const nf = numField({
             value: ui(b.toUI(cur ?? b.def ?? 0)),
             min: o.min,
@@ -18569,6 +19412,17 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         if (!v) return;
         store2.transact("Add filter", (p) => p.clips.find((y) => y.id === clip().id).filters.push({ id: uid("flt"), type: v, amount: 1 }));
       });
+      root.querySelectorAll("[data-kf]").forEach((b) => b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const path = b.dataset.kf, ids = store2.selection.clipIds;
+        store2.transact("Keyframe", (p) => {
+          for (const id of ids) {
+            const x = p.clips.find((y) => y.id === id);
+            if (x) toggleKey(x, path, store2.playhead - x.start);
+          }
+        });
+      }));
+      on('[data-do="curves"]', () => window.dispatchEvent(new CustomEvent("ve:openCurves", { detail: { id: clip().id } })));
       root.querySelectorAll("[data-cz]").forEach((b) => b.addEventListener("click", () => window.dispatchEvent(new CustomEvent("ve:cropZoom", { detail: { tab: b.dataset.cz } }))));
       root.querySelectorAll("[data-tpreset]").forEach((b) => b.addEventListener("click", () => {
         const pr = TITLE_PRESETS.find((t) => t.id === b.dataset.tpreset);
@@ -18741,10 +19595,15 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         const a = cropAspectOf(c);
         root.querySelectorAll("[data-crop]").forEach((b) => b.classList.toggle("primary", b.dataset.crop === a));
       }
+      root.querySelectorAll("[data-kf]").forEach((b) => {
+        const path = b.dataset.kf, an = hasAnim(c, path);
+        b.classList.toggle("anim", an);
+        b.classList.toggle("on", an && keyIndexAt(c, path, store2.playhead - c.start) >= 0);
+      });
       for (const b of bindings) {
         const el2 = document.getElementById(b.id);
         if (!el2) continue;
-        let v = get(c, b.path);
+        let v = vget(c, b.path);
         if (b.kind === "slider") {
           if (!b.nf) continue;
           b.nf.setValue(v == null ? b.toUI(b.def ?? 0) : b.toUI(v));
@@ -18793,6 +19652,15 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     store2.on("materials", () => {
       structKey = "";
       refresh();
+    });
+    let phRaf = 0;
+    store2.on("playhead", () => {
+      if (phRaf) return;
+      phRaf = requestAnimationFrame(() => {
+        phRaf = 0;
+        const c = clip();
+        if (c && anyAnim(c)) sync();
+      });
     });
     window.addEventListener("ve:openClip", (e) => {
       store2.select([e.detail.id]);
@@ -19505,6 +20373,14 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       }
     };
     window.addEventListener("ve:cropZoom", (e) => actions.crop(e.detail?.tab));
+    const openCurves = (id) => {
+      const c = store.getClip(id || store.selectedClips()[0]?.id);
+      if (!c) return toast2("Select a clip to open its keyframe graph");
+      if (c.type === "audio") return toast2("Keyframes animate visual clips (position, scale, rotation, opacity)");
+      playback.pause();
+      Promise.resolve().then(() => (init_curves(), curves_exports)).then((m) => m.openCurveEditor({ store, clipId: c.id })).catch((e) => toast2("Could not open the keyframe graph: " + e.message));
+    };
+    window.addEventListener("ve:openCurves", (e) => openCurves(e.detail?.id));
     window.addEventListener("ve:clipAction", (e) => {
       const f = clipActions[e.detail?.act];
       if (f) f(e.detail.arg);
@@ -20377,6 +21253,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       });
       if (alt && k === "Enter") return run(actions.fullscreen);
       if (alt && lk === "c") return run(actions.crop);
+      if (alt && lk === "k") return run(() => openCurves());
       if (alt && lk === "e") return run(() => {
         const c = store.selectedClips()[0];
         if (c) window.dispatchEvent(new CustomEvent("ve:openClip", { detail: { id: c.id } }));

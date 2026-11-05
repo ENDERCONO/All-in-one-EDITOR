@@ -5,6 +5,7 @@
 // materials.js. Clip geometry is computed in top-down "image uv" and converted
 // once in the composite matrix. Alpha is straight (not premultiplied).
 
+import { evalClip } from './keyframes.js';
 import { FILTERS, TRANSITIONS, BLEND_MODES } from './catalog.js';
 
 let materialsMod = null;
@@ -1353,6 +1354,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
   }
 
   function getClipQuad(clip) {
+    clip = evalClip(clip, store.playhead);
     if (clip.type === 'adjustment') {
       const { width: W, height: H } = settings();
       return [{ x: -W / 2, y: -H / 2 }, { x: W / 2, y: -H / 2 }, { x: W / 2, y: H / 2 }, { x: -W / 2, y: H / 2 }];
@@ -1675,7 +1677,8 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     frameNo++;
     if (canvas.width !== canvasW || canvas.height !== canvasH) { canvasW = canvas.width; canvasH = canvas.height; }
     const st = settings();
-    const list = store.renderListAt(t);
+    // keyframed properties resolved at t (preview and export)
+    const list = store.renderListAt(t).map(e => ({ ...e, clip: evalClip(e.clip, t), transition: e.transition && e.transition.other ? { ...e.transition, other: evalClip(e.transition.other, t) } : e.transition }));
 
     let frameA = acquire(canvasW, canvasH);
     let frameB = acquire(canvasW, canvasH);

@@ -432,6 +432,14 @@ async function boot() {
     locate: () => { const c = store.selectedClips()[0]; if (c?.mediaId) library.locate?.(c.mediaId); },
   };
   window.addEventListener('ve:cropZoom', e => actions.crop(e.detail?.tab));
+  const openCurves = id => {
+    const c = store.getClip(id || store.selectedClips()[0]?.id);
+    if (!c) return toast('Select a clip to open its keyframe graph');
+    if (c.type === 'audio') return toast('Keyframes animate visual clips (position, scale, rotation, opacity)');
+    playback.pause();
+    import('./curves.js').then(m => m.openCurveEditor({ store, clipId: c.id })).catch(e => toast('Could not open the keyframe graph: ' + e.message));
+  };
+  window.addEventListener('ve:openCurves', e => openCurves(e.detail?.id));
   window.addEventListener('ve:clipAction', e => { const f = clipActions[e.detail?.act]; if (f) f(e.detail.arg); });
   window.addEventListener('ve:openClip', e => { const c = store.getClip(e.detail?.id); if (c?.type === 'text') inspector.showTab('titles'); });
 
@@ -931,6 +939,7 @@ async function boot() {
     if (ctrl && alt && (k === 'ArrowRight' || k === 'ArrowLeft')) return run(() => { if (!ops.rotateBy(k === 'ArrowRight' ? 90 : -90)) toast('Select a visual clip to rotate'); });
     if (alt && k === 'Enter') return run(actions.fullscreen);
     if (alt && lk === 'c') return run(actions.crop);
+    if (alt && lk === 'k') return run(() => openCurves());
     if (alt && lk === 'e') return run(() => { const c = store.selectedClips()[0]; if (c) window.dispatchEvent(new CustomEvent('ve:openClip', { detail: { id: c.id } })); });
     if (!ctrl && !alt && k === 'F2') return run(renameClip);
     if (alt && (k === '[' || e.code === 'BracketLeft')) return run(actions.trimStart);

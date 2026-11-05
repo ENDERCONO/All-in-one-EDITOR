@@ -1,0 +1,18 @@
+/* Keyframe Graph (js/curves.js) */
+.cv-modal { width: min(1280px, 96vw); height: min(760px, 92vh); display: flex; flex-direction: column; padding: 0; }
+.cv-toolbar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.cv-toolbar .btn { padding: 4px 10px; font-size: 12px; }
+.cv-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+.cv-spacer { flex: 1; }
+.cv-norm { display: flex; align-items: center; gap: 5px; color: var(--text); font-size: 12px; }
+.cv-readout { font: 11.5px var(--mono); }
+.cv-body { flex: 1; display: flex; min-height: 0; }
+.cv-list { width: 210px; flex: none; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--border); padding: 6px 0; }
+.cv-prop { display: flex; align-items: center; gap: 7px; padding: 5px 10px; color: var(--text-dim); }
+.cv-prop.shown { color: var(--text); }
+.cv-prop i { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.cv-prop span { flex: 1; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cv-prop small { color: var(--text-faint); font-size: 10.5px; }
+.cv-canvas-wrap { position: relative; flex: 1; min-width: 0; }
+.cv-canvas { position: absolute; inset: 0; display: block; touch-action: none; }
+.cv-empty { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 420px; text-align: center; color: var(--text-dim); background: #15161bdd; padding: 14px 18px; border-radius: 8px; pointer-events: none; line-height: 1.5; }

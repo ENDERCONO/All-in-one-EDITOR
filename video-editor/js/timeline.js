@@ -5,6 +5,7 @@ import { uid, clamp, dbToGain, FRAME_EPS } from './state.js';
 import { icon } from './icons.js';
 import { TRANSITIONS, FILTERS } from './catalog.js';
 import { VOICE_FILTERS, AUDIO_PRESETS } from './audio.js';
+import { shiftKeys, keyTimes, moveKeysAt, deleteKeysAt, setInterpAt, INTERPS, anyAnim } from './keyframes.js';
 
 const HEAD_W = 150;      // track header column
 const RULER_H = 28;
@@ -174,7 +175,7 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
   function clipSig(c, row) {
     return JSON.stringify([c.name, c.type, c.speed, c.reverse, c.filters?.length, c.materialId, c.chroma?.enabled,
       c.audio?.mute, c.audio?.detached, c.audio?.volume, c.audio?.fadeIn, c.audio?.fadeOut, c.transitionIn, c.transitionOut,
-      zoom(), row.h, row.track.locked, clipHasAudio(c), c.text?.content, c.fill, c.groupId, c.disabled, c.audio?.voice]);
+      zoom(), row.h, row.track.locked, clipHasAudio(c), c.text?.content, c.fill, c.groupId, c.disabled, c.audio?.voice, c.keyframes ? keyTimes(c).join() : '']);
   }
 
   function buildClipInner(c, row) {
@@ -202,6 +203,11 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
     if (c.type === 'audio') {
       const vy = volToY(c.audio?.volume || 0, h);
       html += `<div class="tl-vol" data-part="vol" style="top:${vy}px" title="Volume ${(c.audio?.volume || 0).toFixed(1)} dB"></div>`;
+    }
+    // keyframe diamonds (all animated properties, merged by time)
+    if (anyAnim(c)) for (const kt of keyTimes(c)) {
+      if (kt < -1e-6 || kt > c.duration + 1e-6) continue;
+      html += `<div class="tl-kf" data-kft="${kt}" style="left:${(kt * z).toFixed(1)}px" title="Keyframe at ${kt.toFixed(2)} s · drag to move · double-click to go there · right-click for more"></div>`;
     }
     html += `<div class="tl-trim l" data-part="trimL"></div><div class="tl-trim r" data-part="trimR"></div>`;
     return html;
@@ -652,6 +658,42 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
   }
 
   // ---------------------------------------------------------------- pointer interactions on clips / lanes
+  // ---------------------------------------------------------------- keyframe diamonds
+  const kfOf = ev => { const d = ev.target.closest?.('.tl-kf'); if (!d) return null; const el = d.closest('.tl-clip'); const clip = el && store.getClip(el.dataset.clip); return clip ? { d, clip, at: +d.dataset.kft } : null; };
+  content.addEventListener('pointerdown', ev => {
+    if (ev.button !== 0) return;
+    const k = kfOf(ev); if (!k) return;
+    ev.preventDefault(); ev.stopPropagation(); closeMenu();
+    const { clip, at } = k, fr = store.frame(), x0 = ev.clientX;
+    if (!store.selection.clipIds.includes(clip.id)) store.select(clip.id);
+    let cur = at, moved = false;
+    const move = e => {
+      let nt = at + (e.clientX - x0) / zoom();
+      nt = clamp(Math.round(nt / fr) * fr, 0, clip.duration);
+      if (Math.abs(nt - cur) < 1e-6) return;
+      moved = true;
+      const from = cur; cur = nt;
+      store.update('Move keyframe', pj => { const c = pj.clips.find(x => x.id === clip.id); if (c) moveKeysAt(c, from, nt); }, { coalesce: 'kf:' + clip.id + ':' + at });
+    };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); if (!moved) store.setPlayhead(clip.start + at); };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+  }, true);
+  content.addEventListener('dblclick', ev => { const k = kfOf(ev); if (!k) return; ev.stopPropagation(); store.setPlayhead(k.clip.start + k.at); }, true);
+  content.addEventListener('contextmenu', ev => {
+    const k = kfOf(ev); if (!k) return;
+    ev.preventDefault(); ev.stopPropagation();
+    const { clip, at } = k;
+    const interp = Object.values(clip.keyframes || {}).flat().find(x => Math.abs(x.t - at) <= 1 / 240)?.interp || 'auto';
+    openMenu(ev.clientX, ev.clientY, [
+      { label: 'Go to keyframe', action: () => store.setPlayhead(clip.start + at) },
+      { label: 'Interpolation', sub: INTERPS.map(i => ({ label: i.label, checked: interp === i.id, action: () => store.transact('Keyframe interpolation', pj => { const c = pj.clips.find(x => x.id === clip.id); if (c) setInterpAt(c, at, i.id); }) })) },
+      '-',
+      { label: 'Keyframe Graph…', kbd: 'Alt+K', action: () => window.dispatchEvent(new CustomEvent('ve:openCurves', { detail: { id: clip.id } })) },
+      '-',
+      { label: 'Delete keyframe', action: () => store.transact('Delete keyframe', pj => { const c = pj.clips.find(x => x.id === clip.id); if (c) deleteKeysAt(c, at); }) },
+    ]);
+  }, true);
+
   content.addEventListener('pointerdown', ev => {
     if (ev.button !== 0) return;
     closeMenu();
@@ -975,6 +1017,7 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
         if (Math.abs(f.start - o.start) < 1e-9 && Math.abs(f.duration - o.duration) < 1e-9) { Object.assign(clip, { transitionIn: o.ti, transitionOut: o.to }); return; }
         commit('Trim clip', () => { Object.assign(clip, { start: o.start, duration: o.duration, in: o.in, transitionIn: o.ti, transitionOut: o.to }); }, pj => {
           const c = pj.clips.find(x => x.id === clip.id);
+          shiftKeys(c, f.start - o.start); // keep keyframes on the same frames when the left edge moves
           Object.assign(c, { start: f.start, duration: f.duration, in: f.in, transitionIn: f.ti, transitionOut: f.to });
           if (c.audio) { c.audio.fadeIn = Math.min(c.audio.fadeIn || 0, c.duration); c.audio.fadeOut = Math.min(c.audio.fadeOut || 0, c.duration); }
         });
@@ -1431,6 +1474,7 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
       { label: 'Create Compound Clip (group)', kbd: 'Ctrl+G', disabled: sel.length < 2, action: () => (ops?.group ? ops.group() : fallbackGroup(ids)) },
       { label: 'Ungroup', kbd: 'Ctrl+Alt+G', disabled: !sel.some(c => c.groupId), action: () => (ops?.ungroup ? ops.ungroup() : store.transact('Ungroup', pj => ids.forEach(id => { pj.clips.find(x => x.id === id).groupId = null; }))) },
       '-',
+      { label: 'Keyframe Graph…', kbd: 'Alt+K', disabled: !visual, action: () => window.dispatchEvent(new CustomEvent('ve:openCurves', { detail: { id: clip.id } })) },
       { label: 'Rename', kbd: 'F2', action: () => act('rename') },
       { label: clip.disabled ? 'Enable Clip' : 'Disable Clip', kbd: 'E', disabled: locked, action: () => call('toggleDisabled', ids) },
       { label: 'Edit Properties', kbd: 'Alt+E', action: () => window.dispatchEvent(new CustomEvent('ve:openClip', { detail: { id: clip.id } })) },

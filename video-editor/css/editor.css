@@ -301,3 +301,12 @@ input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-o
 .lib-sub.giphy-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; text-transform: none; letter-spacing: 0; font-weight: 500; }
 .lib-sub.giphy-credit { text-align: right; opacity: .7; }
 .giphy-setup { text-align: left; line-height: 1.5; }
+
+/* keyframe diamonds in the inspector */
+.kf-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.kf-row > :first-child { flex: 1; min-width: 0; }
+.kf-btn { flex: none; width: 20px; height: 20px; padding: 0; border: 0; background: transparent; color: var(--text-faint); font-size: 12px; line-height: 20px; cursor: pointer; border-radius: 4px; }
+.kf-btn:hover { background: var(--panel-3); color: var(--text); }
+.kf-btn.anim { color: var(--text-dim); }
+.kf-btn.on { color: #ffb020; text-shadow: 0 0 6px #ffb02088; }
+.kf-tools { align-items: center; }

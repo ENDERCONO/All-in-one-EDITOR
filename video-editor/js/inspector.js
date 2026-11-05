@@ -5,8 +5,11 @@ import { mediaRuntime, uid, defaultColor, defaultHueMatch, defaultAudioFx, defau
 import { BLEND_MODES, FILTERS, TRANSITIONS, FONTS, MASK_TYPES, CROP_ASPECTS, TITLE_PRESETS } from './catalog.js';
 import { icon } from './icons.js';
 import { numField } from './numfield.js';
+import { isAnimPath, hasAnim, anyAnim, evalProp, setValue, toggleKey, keyIndexAt } from './keyframes.js';
 
 const get = (o, path) => path.split('.').reduce((a, k) => (a == null ? a : a[k]), o);
+let playheadRef = () => 0;
+const vget = (c, path) => (c && isAnimPath(path) && hasAnim(c, path) ? evalProp(c, path, playheadRef() - c.start) : get(c, path));
 const set = (o, path, v) => { const ks = path.split('.'); const last = ks.pop(); const t = ks.reduce((a, k) => (a[k] ??= {}), o); t[last] = v; };
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const CASES = {
@@ -19,6 +22,7 @@ const tc = (s, fps) => { s = Math.max(0, s); const f = Math.floor((s % 1) * fps 
 
 export function createInspector({ root, store, ops, materialsApi, audioApi, pickColor, openProjectSettings }) {
   let tab = null, structKey = '', bindings = [];
+  playheadRef = () => store.playhead;
   const collapsed = new Set(JSON.parse(localStorage.getItem('ve.ins.collapsed') || '[]'));
   const clip = () => store.selectedClips()[0] || null;
 
@@ -32,7 +36,8 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
         if (path.startsWith('audio.fx.')) x.audio.fx = { ...defaultAudioFx(), ...(x.audio.fx || {}) };
         if (path.startsWith('mask.') && !x.mask) x.mask = defaultMask();
         if (path.startsWith('gradBlur.') && !x.gradBlur) x.gradBlur = defaultGradBlur();
-        set(x, path, v);
+        if (isAnimPath(path) && hasAnim(x, path)) setValue(x, path, v, store.playhead - x.start); // auto-key
+        else set(x, path, v);
       }
     }, { coalesce: discrete ? undefined : ids.join(',') + ':' + path });
   }
@@ -45,7 +50,8 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
   // hardMin/hardMax (UI units) only where a value would break things.
   function slider(label, path, { min, max, step = 1, toUI = v => v, fromUI = v => v, def = 0, unit = '', decimals, hardMin, hardMax } = {}) {
     const id = ctl({ kind: 'slider', path, toUI, fromUI, def, opts: { min, max, step, unit, decimals, hardMin, hardMax } });
-    return `<div class="prop" title="Drag the label or the field to change · double-click the label to reset"><label data-reset="${id}">${label}</label><div class="nf-slot" id="${id}"></div></div>`;
+    const kf = isAnimPath(path) ? `<button class="kf-btn" data-kf="${path}" title="Keyframe at the playhead (add / remove). Once a property has keys, changing it adds a key here.">◆</button>` : '';
+    return `<div class="prop${kf ? ' has-kf' : ''}" title="Drag the label or the field to change · double-click the label to reset"><label data-reset="${id}">${label}</label><div class="kf-row"><div class="nf-slot" id="${id}"></div>${kf}</div></div>`;
   }
   function toggle(label, path, { onLabel } = {}) {
     const id = ctl({ kind: 'toggle', path });
@@ -70,6 +76,7 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
     const fixed = c.type === 'color' || c.type === 'material';
     const W = store.project.settings.width, H = store.project.settings.height;
     return section('transform', 'Transform', `
+      <div class="btn-row kf-tools"><button class="btn" data-do="curves" title="Keyframe graph: edit the animation curves (Alt+K)">Keyframe Graph…</button><span class="dim">◆ = keyframe at the playhead</span></div>
       ${slider('Scale', 'transform.scale', { min: 0, max: 500, step: 1, ...pctS, def: 1 })}
       ${slider('Width', 'transform.scaleX', { min: 0, max: 500, step: 1, ...pctS, def: 1 })}
       ${slider('Height', 'transform.scaleY', { min: 0, max: 500, step: 1, ...pctS, def: 1 })}
@@ -331,7 +338,7 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
           if (b.path.startsWith('transition')) return editTransition(b.path, val, typed);
           edit(b.path, val, (lab?.textContent || b.path.split('.').pop()), { discrete: typed });
         };
-        const cur = get(clip(), b.path);
+        const cur = vget(clip(), b.path);
         const nf = numField({ value: ui(b.toUI(cur ?? b.def ?? 0)), min: o.min, max: o.max, step: o.step, unit: o.unit, decimals: o.decimals,
           hardMin: o.hardMin, hardMax: o.hardMax, onInput: apply, title: (lab?.textContent || '') + ' — drag to change (Shift fine, Ctrl coarse), click to type' });
         nf.id = b.id; if (lab) nf.setAttribute('aria-label', lab.textContent); el.replaceWith(nf); b.nf = nf;
@@ -403,6 +410,12 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
     });
     root.querySelectorAll('[data-fdel]').forEach(b => b.addEventListener('click', () => store.transact('Remove filter', p => { const x = p.clips.find(y => y.id === clip().id); x.filters.splice(+b.dataset.fdel, 1); })));
     root.querySelector('#insAddFilter')?.addEventListener('change', e => { const v = e.target.value; if (!v) return; store.transact('Add filter', p => p.clips.find(y => y.id === clip().id).filters.push({ id: uid('flt'), type: v, amount: 1 })); });
+    root.querySelectorAll('[data-kf]').forEach(b => b.addEventListener('click', e => {
+      e.stopPropagation();
+      const path = b.dataset.kf, ids = store.selection.clipIds;
+      store.transact('Keyframe', p => { for (const id of ids) { const x = p.clips.find(y => y.id === id); if (x) toggleKey(x, path, store.playhead - x.start); } });
+    }));
+    on('[data-do="curves"]', () => window.dispatchEvent(new CustomEvent('ve:openCurves', { detail: { id: clip().id } })));
     root.querySelectorAll('[data-cz]').forEach(b => b.addEventListener('click', () => window.dispatchEvent(new CustomEvent('ve:cropZoom', { detail: { tab: b.dataset.cz } }))));
     // Title style presets: replace the look, keep the words
     root.querySelectorAll('[data-tpreset]').forEach(b => b.addEventListener('click', () => {
@@ -495,9 +508,14 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
     root.querySelectorAll('[data-voice]').forEach(b => b.classList.toggle('primary', (c.audio.voice || 'none') === b.dataset.voice));
     root.querySelectorAll('[data-famt]').forEach(nf => nf.setValue?.((c.filters[+nf.dataset.famt]?.amount ?? 1) * 100));
     if (root.querySelector('[data-crop]')) { const a = cropAspectOf(c); root.querySelectorAll('[data-crop]').forEach(b => b.classList.toggle('primary', b.dataset.crop === a)); }
+    root.querySelectorAll('[data-kf]').forEach(b => {
+      const path = b.dataset.kf, an = hasAnim(c, path);
+      b.classList.toggle('anim', an);
+      b.classList.toggle('on', an && keyIndexAt(c, path, store.playhead - c.start) >= 0);
+    });
     for (const b of bindings) {
       const el = document.getElementById(b.id); if (!el) continue;
-      let v = get(c, b.path);
+      let v = vget(c, b.path);
       if (b.kind === 'slider') {
         if (!b.nf) continue;
         b.nf.setValue(v == null ? b.toUI(b.def ?? 0) : b.toUI(v));
@@ -521,6 +539,8 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
   store.on('selection', refresh);
   store.on('project', refresh);
   store.on('materials', () => { structKey = ''; refresh(); });
+  let phRaf = 0;
+  store.on('playhead', () => { if (phRaf) return; phRaf = requestAnimationFrame(() => { phRaf = 0; const c = clip(); if (c && anyAnim(c)) sync(); }); });
   window.addEventListener('ve:openClip', e => { store.select([e.detail.id]); });
   refresh();
   return { refresh, showTab(t) { tab = t; structKey = ''; refresh(); } };

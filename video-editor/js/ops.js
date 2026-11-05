@@ -1,6 +1,7 @@
 // Data-level edit operations. Every op is one undo step.
 import { store, makeClip, makeTrack, uid, FRAME_EPS, defaultAudioFx } from './state.js';
 import { TITLE_PRESETS } from './catalog.js';
+import { shiftKeys } from './keyframes.js';
 
 const deep = o => JSON.parse(JSON.stringify(o));
 const VISUAL = new Set(['video', 'image', 'text', 'color', 'material']);
@@ -45,6 +46,7 @@ function splitClip(p, c, t) {
   else right.in = c.in + d1 * c.speed;
   c.duration = d1;
   c.transitionOut = null; right.transitionIn = null;
+  shiftKeys(right, d1); // the right half's animation stays on the same frames
   c.audio.fadeOut = 0; right.audio.fadeIn = 0;
   p.clips.push(right);
   return right;
@@ -52,6 +54,7 @@ function splitClip(p, c, t) {
 
 // Keep only the [a, b) part (timeline time) of clip c, adjusting its source in-point
 function keepRange(c, a, b) {
+  shiftKeys(c, a - c.start);
   if (c.reverse) c.in += (c.start + c.duration - b) * c.speed;
   else c.in += (a - c.start) * c.speed;
   c.start = a; c.duration = b - a;
@@ -200,6 +203,7 @@ export const ops = {
     store.transact('Trim start', p => cs.forEach(c0 => {
       const c = p.clips.find(x => x.id === c0.id); const d = t - c.start;
       if (!c.reverse) c.in += d * c.speed;
+      shiftKeys(c, d);
       c.start = t; c.duration -= d;
     }));
   },

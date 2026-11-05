@@ -68,6 +68,10 @@ Owned by `js/app.js`. Shortcuts are ignored while typing in an input.
 | Alt + C | Crop and Zoom window (Crop / Pan & Zoom tabs; Space plays, ← → step frames, Enter applies, Esc cancels) |
 | Alt + E | Edit properties of the selected clip |
 | Ctrl + Alt + → / ← | Rotate 90° clockwise / counter-clockwise |
+| Alt + K | Keyframe Graph (curve editor) of the selected clip |
+| ◆ next to a property (inspector) | Add / remove a keyframe at the playhead; once a property has keys, any change (slider or on-video handles) keys it at the playhead |
+| Keyframe Graph | click / Shift-click / box-select keys · drag = move (snaps to frames, Alt free, Shift one axis) · drag the round handles = tangent · double-click a curve = add key · Delete · F frame all · K add keys at playhead · wheel zoom time · Ctrl/Shift+wheel zoom values · middle/right drag pan · ← → step frames |
+| Timeline ◆ on a clip | drag = move that keyframe · double-click = go there · right-click = interpolation / delete |
 | Top-left ⛶ button | Whole editor full screen |
 | Drop a clip over another (timeline) | Overwrite — the clip underneath is trimmed / split / removed (Filmora) · hold Alt while dropping to slide into a free spot instead |
 | Drag a property label in the inspector | Scrub its value (Shift = fine) |
