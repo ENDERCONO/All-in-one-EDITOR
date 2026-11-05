@@ -65,6 +65,28 @@ services, no proxy pools. Ask the user before anything that reads their data.
 4. **Right-click Copy/Paste of transitions** in the timeline menu is not tested on the
    latest build (Ctrl+C / Ctrl+V works).
 
+## Prompt for a cloud (non-local) session
+
+> Continue the All-in-one EDITOR project (branch `main`). Read `video-editor/docs/HANDOFF.md`
+> (especially "Tested on the user's PC") and `CLAUDE.md` first. You can't reach the user's
+> PC, so make code changes only; the local tests happen later on the PC.
+> Do: (1) `START-SERVER.bat`: when `node` fails but Volta is installed
+> (`C:\Program Files\Volta\volta.exe` exists), say "run `volta install node@lts`" instead of
+> only "install Node.js"; print which server the editor will use (this PC, port 3000).
+> (2) `server.js`: friendly message for "only works when logged-in" (site needs an account);
+> ASCII-only `[downloader]` log lines (no em dashes, they print as `â€”` on Windows);
+> log one line per download with the URL, the site, which attempt worked or the final
+> reason; on a local (non-Render) server, fetch ffmpeg at boot instead of on first download.
+> Keep `/api/dl/ping`'s fields and add `local: !process.env.RENDER`.
+> (3) `video-editor/js/integrations.js`: the dialog/progress always says "via this PC" or
+> "via the online server", and on failure says which server failed and why. If the online
+> server fails with the YouTube bot check, say "Start START-SERVER.bat on your PC; YouTube
+> works there". Mirror `friendlyDlError` in `explainDlError`.
+> (4) `node video-editor/build.mjs`, run the smoke test (`video-editor/tests/smoke.mjs`, make
+> the media with ffmpeg), commit and push to `main`.
+> Rules: no covert data collection, no third-party YouTube bypass/scraping services, no proxy
+> pools, nothing that reads the user's data without asking.
+
 ## Prompt for the next session
 
 > Continue the All-in-one EDITOR project in this repo (branch `main`). Read
