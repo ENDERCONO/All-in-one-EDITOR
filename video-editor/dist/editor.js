@@ -694,7 +694,7 @@
     if (/HTTP Error 404/i.test(msg)) return "Nothing at that link (404). Check the URL.";
     return msg;
   }
-  async function downloadUrl(url2, { kind = "video", quality = "720", onProgress, isCancelled } = {}) {
+  async function downloadUrl(url2, { kind = "video", quality = "720", cookiesFile = null, onProgress, isCancelled } = {}) {
     url2 = url2.trim();
     if (DIRECT_RE.test(url2)) {
       onProgress?.({ state: "downloading", pct: 0, msg: "Downloading " + url2 });
@@ -711,7 +711,15 @@
     if (!found) throw new Error("Can't reach a downloader server. Run START-SERVER.bat on your PC (the editor then uses it automatically), or try again in a minute (the online server may be waking up).");
     const base = found.base;
     onProgress?.({ state: "connecting", pct: 0, msg: `Downloading via ${found.where}\u2026` });
-    const st = await (await fetch(`${base}/api/dl/start?url=${encodeURIComponent(url2)}&kind=${kind}&format=mp3&quality=${quality}`)).json();
+    let cookieToken = "";
+    if (cookiesFile) {
+      onProgress?.({ state: "connecting", pct: 0, msg: "Sending your YouTube login for this download\u2026" });
+      const r = await fetch(`${base}/api/dl/cookies`, { method: "POST", headers: { "Content-Type": "text/plain" }, body: cookiesFile });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.token) throw new Error(j.error || "The server rejected the cookies file");
+      cookieToken = j.token;
+    }
+    const st = await (await fetch(`${base}/api/dl/start?url=${encodeURIComponent(url2)}&kind=${kind}&format=mp3&quality=${quality}${cookieToken ? "&cookies=" + cookieToken : ""}`)).json();
     if (!st.id) throw new Error(st.error || "Download failed to start");
     let title = "";
     for (; ; ) {
@@ -743,6 +751,7 @@
       <label>Get</label><select id="iuKind"><option value="video">Video (with sound)</option><option value="audio">Audio only (MP3)</option><option value="mute">Video only (no sound)</option></select>
       <label>Quality</label><select id="iuQ"><option value="">Best</option><option value="1080">1080p</option><option value="720" selected>720p</option><option value="480">480p</option></select>
       <label>Then</label><label style="display:flex;gap:6px;align-items:center;color:var(--text)"><input type="checkbox" id="iuAdd" checked> add to the timeline at the playhead</label>
+      <label>YouTube login<br><span class="dim" style="font-size:11px">only if YouTube says "not a bot"</span></label><div><input type="file" id="iuCookies" accept=".txt,text/plain" style="font-size:11.5px"><div class="dim" style="font-size:11px;margin-top:4px">Export <b>cookies.txt</b> from your browser while signed in to YouTube (a "cookies.txt" export extension). Used for this download only, then deleted on the server.</div></div>
     </div><div id="iuStatus" style="margin-top:12px;color:var(--text-dim);min-height:36px;white-space:pre-line"></div>
     <div class="dim" style="font-size:11.5px">Uses the same downloader as the site's Converter tab (the local server, or the online one). Direct media links download straight into your browser.</div></div>
     <div class="modal-foot"><button class="btn" data-x>Close</button><button class="btn primary" id="iuGo">Import</button></div></div>`;
@@ -769,11 +778,13 @@
       if (!links.length) return say("Paste at least one http(s) link.");
       $2("#iuGo").disabled = true;
       const kind = $2("#iuKind").value, quality = $2("#iuQ").value, add = $2("#iuAdd").checked;
+      const cf = $2("#iuCookies").files[0] || null;
+      const cookiesText = cf ? await cf.text() : null;
       let done = 0;
       for (const url2 of links) {
         if (cancelled) return;
         try {
-          const file = await downloadUrl(url2, { kind, quality, onProgress: (p) => say(p.msg || ""), isCancelled: () => cancelled });
+          const file = await downloadUrl(url2, { kind, quality, cookiesFile: cookiesText, onProgress: (p) => say(p.msg || ""), isCancelled: () => cancelled });
           say(`Importing ${file.name}\u2026`);
           await importFiles2([file], add);
           done++;

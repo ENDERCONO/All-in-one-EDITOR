@@ -86,7 +86,7 @@ export function explainDlError(msg) {
 // go through the site's downloader (yt-dlp on the server). onProgress({ state, pct, title, speed, eta, msg }).
 export const isMediaLink = s => /^https?:\/\/\S+$/i.test(String(s).trim());
 const DIRECT_RE = /\.(mp4|webm|mov|m4v|mp3|wav|ogg|m4a|flac|png|jpe?g|gif|webp)(\?|#|$)/i;
-export async function downloadUrl(url, { kind = 'video', quality = '720', onProgress, isCancelled } = {}) {
+export async function downloadUrl(url, { kind = 'video', quality = '720', cookiesFile = null, onProgress, isCancelled } = {}) {
   url = url.trim();
   if (DIRECT_RE.test(url)) {
     onProgress?.({ state: 'downloading', pct: 0, msg: 'Downloading ' + url });
@@ -97,7 +97,16 @@ export async function downloadUrl(url, { kind = 'video', quality = '720', onProg
   if (!found) throw new Error("Can't reach a downloader server. Run START-SERVER.bat on your PC (the editor then uses it automatically), or try again in a minute (the online server may be waking up).");
   const base = found.base;
   onProgress?.({ state: 'connecting', pct: 0, msg: `Downloading via ${found.where}…` });
-  const st = await (await fetch(`${base}/api/dl/start?url=${encodeURIComponent(url)}&kind=${kind}&format=mp3&quality=${quality}`)).json();
+  // optional: the user's own cookies.txt, used for this one download and deleted by the server
+  let cookieToken = '';
+  if (cookiesFile) {
+    onProgress?.({ state: 'connecting', pct: 0, msg: 'Sending your YouTube login for this download…' });
+    const r = await fetch(`${base}/api/dl/cookies`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: cookiesFile });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.token) throw new Error(j.error || 'The server rejected the cookies file');
+    cookieToken = j.token;
+  }
+  const st = await (await fetch(`${base}/api/dl/start?url=${encodeURIComponent(url)}&kind=${kind}&format=mp3&quality=${quality}${cookieToken ? '&cookies=' + cookieToken : ''}`)).json();
   if (!st.id) throw new Error(st.error || 'Download failed to start');
   let title = '';
   for (;;) {
@@ -128,6 +137,7 @@ export function openImportFromUrl({ importFiles, toast }) {
       <label>Get</label><select id="iuKind"><option value="video">Video (with sound)</option><option value="audio">Audio only (MP3)</option><option value="mute">Video only (no sound)</option></select>
       <label>Quality</label><select id="iuQ"><option value="">Best</option><option value="1080">1080p</option><option value="720" selected>720p</option><option value="480">480p</option></select>
       <label>Then</label><label style="display:flex;gap:6px;align-items:center;color:var(--text)"><input type="checkbox" id="iuAdd" checked> add to the timeline at the playhead</label>
+      <label>YouTube login<br><span class="dim" style="font-size:11px">only if YouTube says "not a bot"</span></label><div><input type="file" id="iuCookies" accept=".txt,text/plain" style="font-size:11.5px"><div class="dim" style="font-size:11px;margin-top:4px">Export <b>cookies.txt</b> from your browser while signed in to YouTube (a "cookies.txt" export extension). Used for this download only, then deleted on the server.</div></div>
     </div><div id="iuStatus" style="margin-top:12px;color:var(--text-dim);min-height:36px;white-space:pre-line"></div>
     <div class="dim" style="font-size:11.5px">Uses the same downloader as the site's Converter tab (the local server, or the online one). Direct media links download straight into your browser.</div></div>
     <div class="modal-foot"><button class="btn" data-x>Close</button><button class="btn primary" id="iuGo">Import</button></div></div>`;
@@ -143,11 +153,13 @@ export function openImportFromUrl({ importFiles, toast }) {
     if (!links.length) return say('Paste at least one http(s) link.');
     $('#iuGo').disabled = true;
     const kind = $('#iuKind').value, quality = $('#iuQ').value, add = $('#iuAdd').checked;
+    const cf = $('#iuCookies').files[0] || null;
+    const cookiesText = cf ? await cf.text() : null;
     let done = 0;
     for (const url of links) {
       if (cancelled) return;
       try {
-        const file = await downloadUrl(url, { kind, quality, onProgress: p => say(p.msg || ''), isCancelled: () => cancelled });
+        const file = await downloadUrl(url, { kind, quality, cookiesFile: cookiesText, onProgress: p => say(p.msg || ''), isCancelled: () => cancelled });
         say(`Importing ${file.name}…`);
         await importFiles([file], add);
         done++;

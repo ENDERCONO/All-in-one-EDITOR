@@ -931,17 +931,19 @@ function trackRunning() {
 
 // Args every yt-dlp call gets. The cookie file is copied into the job's own
 // folder because yt-dlp writes cookies back on exit.
-function ytdlpCommonArgs(dir) {
+function ytdlpCommonArgs(dir, cookieOverride) {
   const a = ['--no-warnings', '--ignore-config'];
   // YouTube now needs a JavaScript runtime to unlock its formats. yt-dlp only
   // looks for Deno by default — point it at the Node running this server.
   if (getYtdlpInfo().jsRuntimes) a.push('--js-runtimes', 'node:' + process.execPath);
   const ff = ffmpegPath();
   if (ff && ff !== 'ffmpeg') a.push('--ffmpeg-location', ff);
-  if (fs.existsSync(COOKIES_PATH)) {
+  // a cookies file the user sent with this download wins over the server's own
+  const src = cookieOverride && fs.existsSync(cookieOverride) ? cookieOverride : COOKIES_PATH;
+  if (fs.existsSync(src)) {
     try {
       const c = path.join(dir, 'cookies.txt');
-      fs.copyFileSync(COOKIES_PATH, c);
+      fs.copyFileSync(src, c);
       a.push('--cookies', c);
     } catch (e) {}
   }
@@ -1000,7 +1002,7 @@ const isYouTube = u => /(youtube\.com|youtu\.be|youtube-nocookie\.com)\//i.test(
 
 function ytdlpOnce(job, o, withCover, extraArgs = []) {
   const args = [
-    ...ytdlpCommonArgs(job.dir),
+    ...ytdlpCommonArgs(job.dir, job.cookiesPath),
     ...extraArgs,
     '--newline', '--no-playlist', '--no-mtime',
     '-N', '8', // parallel fragment downloads — saturates the connection
@@ -1192,6 +1194,29 @@ app.get('/api/dl/expand', async (req, res) => {
   }
 });
 
+// A cookies.txt the user picks in the editor, sent for ONE download. It is held
+// in a temp file, used once by the next /api/dl/start with that token, and deleted
+// right after (or after 15 minutes if never used). Nothing is kept or shared.
+const cookieUploads = new Map(); // token -> { path, timer }
+function dropCookieUpload(token) {
+  const u = cookieUploads.get(token); if (!u) return null;
+  clearTimeout(u.timer); cookieUploads.delete(token);
+  return u;
+}
+app.post('/api/dl/cookies', express.raw({ type: '*/*', limit: '512kb' }), (req, res) => {
+  const body = req.body;
+  if (!Buffer.isBuffer(body) || !body.length) return res.status(400).json({ error: 'No cookies file' });
+  const text = body.toString('utf8');
+  if (!/\.youtube\.com|youtube/i.test(text)) return res.status(400).json({ error: 'That file has no YouTube cookies. Export cookies.txt while signed in to YouTube.' });
+  const token = require('crypto').randomBytes(16).toString('hex');
+  const file = path.join(os.tmpdir(), 'aio-cookies-' + token + '.txt');
+  fs.writeFileSync(file, text);
+  const timer = setTimeout(() => { dropCookieUpload(token); fs.rm(file, { force: true }, () => {}); }, 15 * 60 * 1000);
+  timer.unref();
+  cookieUploads.set(token, { path: file, timer });
+  res.json({ token });
+});
+
 app.get('/api/dl/start', (req, res) => {
   const url = String(req.query.url || '').trim();
   if (!/^https?:\/\/\S+$/i.test(url)) return res.status(400).json({ error: 'That does not look like a link' });
@@ -1205,6 +1230,8 @@ app.get('/api/dl/start', (req, res) => {
     dir: path.join(DL_DIR, id), createdAt: Date.now(),
   };
   if (dlSetup.phase !== 'ready' && !(fs.existsSync(YTDLP_PATH) && ffmpegPath())) job.state = 'setup';
+  const up = dropCookieUpload(String(req.query.cookies || ''));
+  if (up) job.cookiesPath = up.path;
   dlJobs.set(id, job);
   res.json({ id });
   runDlJob(job, { url, kind, format, quality }).catch(e => {
@@ -1212,6 +1239,8 @@ app.get('/api/dl/start', (req, res) => {
     job.state = 'error';
     job.error = String(e && e.message || e).slice(0, 400);
     console.error('[downloader]', url, '—', job.error);
+  }).finally(() => {
+    if (job.cookiesPath) fs.rm(job.cookiesPath, { force: true }, () => {});
   });
 });
 
