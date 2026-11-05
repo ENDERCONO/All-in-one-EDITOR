@@ -35,6 +35,22 @@ Key pieces:
 Rules the user set: no covert data collection, no third-party YouTube bypass/scraping
 services, no proxy pools. Ask the user before anything that reads their data.
 
+## Tested on the user's PC (2026-11-05)
+
+- Node.js: the PC has **Volta** installed; `node` failed until a toolchain was added
+  (`volta install node@lts` → v26.13.0). `START-SERVER.bat` should mention Volta in its
+  "no Node" message.
+- `npm install` + `node server.js` work; ffmpeg is fetched on the first download (~20 s).
+- Local downloads OK: YouTube video (Me at the zoo, 12 s, no bot check on the home
+  connection), direct `.mp4` (video and MP3), archive.org (came back as a 330 MB `.avi`).
+- Vimeo now needs login; the raw yt-dlp text reaches the user. Add a friendly message for
+  "only works when logged-in".
+- Server log prints `â€”` on the Windows console: use ASCII in `[downloader]` log lines.
+- Not yet done: TikTok / Instagram / X links (need real public links from the user), the
+  smoke test (Playwright + Chromium now installed in a temp folder; needs `NODE_PATH` to it
+  and a media dir made with `bin/ffmpeg.exe`), step 4 (reporting), AI features.
+- The online (Render) server is still blocked by YouTube; that can't be fixed by a push.
+
 ## Open items
 
 1. **Make the local flow fully automatic on Windows.** Confirm `START-SERVER.bat` works
