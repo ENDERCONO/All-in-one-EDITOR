@@ -686,6 +686,8 @@
   }
   function explainDlError(msg) {
     msg = String(msg || "");
+    if (/only available to logged|log in to (view|watch|access)|login required|sign in to (view|watch|access)|members? only/i.test(msg))
+      return "This site only shares this video with a logged-in account (Vimeo and similar). Log in there in your browser, export cookies.txt and pick it under YouTube login, or try another link.";
     if (/not a bot|sign in to confirm/i.test(msg))
       return 'YouTube is blocking the downloader server ("not a bot" check). Fixes: open the site on your PC with START-SERVER.bat, or give the server a cookies.txt from your signed-in browser (env var YTDLP_COOKIES_TEXT on Render).';
     if (/age|confirm your age/i.test(msg)) return "Age-restricted: the server needs a cookies.txt from a signed-in browser.";
@@ -731,7 +733,12 @@
       await sleep(800);
       const p = await (await fetch(`${base}/api/dl/progress/${st.id}`, { cache: "no-store" })).json();
       title = p.title || title;
-      if (p.state === "error") throw new Error(explainDlError(p.error || "Download failed"));
+      if (p.state === "error") {
+        const why = explainDlError(p.error || "Download failed");
+        if (/not a bot|sign in to confirm/i.test(p.error || "") && found.where !== "this PC")
+          throw new Error(`YouTube blocked the ${found.where}. Start START-SERVER.bat on your PC; YouTube works there.`);
+        throw new Error(`Failed via ${found.where}: ${why}`);
+      }
       const msg = p.state === "setup" ? `First run: the server is installing its downloader (${p.setupPhase || ""} ${p.setupPct || 0}%)\u2026` : p.state === "retrying" ? "YouTube refused \u2014 retrying with another player client\u2026" : p.state === "updating" ? "Updating the downloader\u2026" : `${title || "Downloading"} \xB7 ${p.pct || 0}%${p.speed ? " \xB7 " + p.speed : ""}${p.eta ? " \xB7 ETA " + p.eta : ""}`;
       onProgress?.({ state: p.state, pct: p.pct || 0, title, speed: p.speed, eta: p.eta, msg });
       if (p.state === "done" && p.filename) {

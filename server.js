@@ -963,6 +963,8 @@ const PERMANENT_DL_ERROR = /private video|video unavailable|this video is not av
 
 function friendlyDlError(msg) {
   msg = String(msg || '');
+  if (/only available to logged[- ]in|log in to (view|watch|access)|login required|sign in to (view|watch|access)|members? only|requires? (a )?(login|log in|an account)/i.test(msg))
+    return 'This site only shares this video with a logged-in account (Vimeo and similar). Log in on that site in your browser, export cookies.txt and pick it in Import from URL > YouTube login, or try another link.';
   if (/\[On this PC/.test(msg))
     return 'YouTube\'s bot check blocked this PC, even with your browser\'s login. ' + LOCAL_COOKIE_HINT.replace(/^\[|\]$/g, '');
   if (/not a bot|sign in to confirm you/i.test(msg))
@@ -1053,7 +1055,7 @@ function ytdlpOnce(job, o, withCover, extraArgs = []) {
 
 // Don't let a slow / unreachable GitHub stall downloads: wait at most `ms` for an
 // in-flight yt-dlp update, then carry on with the binary we have.
-const waitUpdate = (p, ms = 20000) => Promise.race([p, new Promise(r => setTimeout(() => { console.log('[downloader] update still running — continuing with the current yt-dlp'); r(); }, ms))]).catch(() => {});
+const waitUpdate = (p, ms = 20000) => Promise.race([p, new Promise(r => setTimeout(() => { console.log('[downloader] update still running - continuing with the current yt-dlp'); r(); }, ms))]).catch(() => {});
 
 async function runDlJob(job, o) {
   await ensureDlTools();
@@ -1073,6 +1075,7 @@ async function runDlJob(job, o) {
       try {
         await ytdlpOnce(job, o, attempt === 0, plan[attempt]);
         lastErr = null;
+        console.log(`[downloader] attempt ${attempt + 1} of ${plan.length} worked${plan[attempt].length ? ' (' + plan[attempt].join(' ') + ')' : ''}`);
         break;
       } catch (e) {
         lastErr = e;
@@ -1149,6 +1152,7 @@ app.get('/api/dl/ping', (req, res) => {
     ok: true, setup: dlSetup.phase, ytdlp: fs.existsSync(YTDLP_PATH), ffmpeg: !!ffmpegPath(),
     version: fs.existsSync(YTDLP_PATH) ? getYtdlpInfo().version : null,
     cookies: fs.existsSync(COOKIES_PATH),
+    local: !process.env.RENDER,
   });
 });
 
@@ -1240,9 +1244,11 @@ app.get('/api/dl/start', (req, res) => {
     if (job.cancelled) return;
     job.state = 'error';
     job.error = String(e && e.message || e).slice(0, 400);
-    console.error('[downloader]', url, '—', job.error);
+    console.error('[downloader]', url, '-', job.error);
   }).finally(() => {
     if (job.cookiesPath) fs.rm(job.cookiesPath, { force: true }, () => {});
+    let host = '?'; try { host = new URL(url).hostname; } catch (e) {}
+    console.log(`[downloader] ${host} -> ${job.state}${job.error ? ': ' + String(job.error).slice(0, 160) : ''}`);
   });
 });
 
@@ -1472,4 +1478,8 @@ if (process.env.RENDER) ensureDlTools().catch(e => console.warn('[downloader] to
 setInterval(() => { updateYtdlp(); }, 12 * 60 * 60 * 1000).unref();
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Claude Arena running on http://localhost:${PORT}`));
+server.listen(PORT, () => {
+  console.log(`Claude Arena running on http://localhost:${PORT}`);
+  // On your own PC, fetch the downloader tools now so the first download isn't slow
+  if (!process.env.RENDER) ensureDlTools().catch(e => console.warn('[downloader] tools not ready yet:', e.message));
+});

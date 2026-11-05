@@ -20,7 +20,8 @@ if not exist node_modules (
 
 echo.
 echo  Server starting - KEEP THIS WINDOW OPEN while you use the site.
-echo  Site: http://localhost:3000
+echo  Site:      http://localhost:3000
+echo  Downloads: the editor uses THIS PC's server automatically (port 3000).
 echo.
 
 start "" /b cmd /c "timeout /t 2 >nul & start http://localhost:3000"
@@ -34,6 +35,13 @@ exit /b 0
 echo.
 echo  Node.js is NOT installed on this PC, so the server can't start.
 echo.
+if exist "%ProgramFiles%\Volta\volta.exe" (
+  echo  Volta is installed. Run this in a new terminal, then double-click START-SERVER.bat again:
+  echo      volta install node@lts
+  echo.
+  pause
+  exit /b 1
+)
 echo  1. Go to https://nodejs.org and install the LTS version (the default options are fine).
 echo  2. Close this window and double-click START-SERVER.bat again.
 echo.
