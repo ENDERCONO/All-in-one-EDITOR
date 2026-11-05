@@ -13,3 +13,6 @@ node_modules/
 
 # Optional YouTube sign-in cookies for the downloader — private, never commit
 cookies.txt
+
+# Local copy of transformers.js for offline dev (the site loads it from jsDelivr)
+video-editor/vendor/transformers/
