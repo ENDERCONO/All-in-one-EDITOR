@@ -55,6 +55,11 @@ Owned by `js/app.js`. Shortcuts are ignored while typing in an input.
 | Ctrl + F | Search the library |
 | Ctrl + Alt + S | Snapshot (PNG) |
 | Ctrl + Shift + A | Deselect all |
+| G | Guides: rule of thirds, title-safe, TikTok/Shorts UI zones (9:16) |
+| Ctrl + wheel / middle-drag on the player | Zoom / pan the preview · double-click the backdrop to reset |
+| Middle-drag on the timeline | Pan the timeline |
+| Drag a property label in the inspector | Scrub its value (Shift = fine) |
+| Right-click the player | Fit / Fill frame / Reset transform / Flip / Guides / Snapshot |
 
 ## Material editor (hold key + click, Unreal layout)
 

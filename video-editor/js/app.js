@@ -526,7 +526,7 @@ async function boot() {
       { label: 'Theme: Unreal Engine', run: () => setTheme('unreal'), checked: document.documentElement.dataset.theme === 'unreal' },
       { sep: true }, { label: 'Snapping', kbd: 'N', run: actions.snap, checked: store.snap },
       { label: 'Zoom In', kbd: 'Ctrl+=', run: actions.zoomIn }, { label: 'Zoom Out', kbd: 'Ctrl+-', run: actions.zoomOut }, { label: 'Zoom to Fit', kbd: 'Shift+Z', run: actions.zoomFit }, { label: 'Zoom to Selection', kbd: 'F', run: () => zoomToSelection() }, { label: 'Maximize Panel Under Mouse', kbd: '`', run: () => toggleMaximize() },
-      { sep: true }, { label: 'Full Screen Preview', kbd: 'Alt+Enter', run: actions.fullscreen }, { label: 'Reset Panel Layout', run: resetLayout },
+      { sep: true }, { label: 'Guides (thirds · safe zones)', kbd: 'G', run: () => toggleGuides(), checked: !$('#guides').hidden }, { label: 'Full Screen Preview', kbd: 'Alt+Enter', run: actions.fullscreen }, { label: 'Reset Panel Layout', run: resetLayout },
     ],
     Help: () => [{ label: 'Keyboard Shortcuts', kbd: 'Ctrl+Alt+K', run: actions.shortcuts }, { label: 'About', run: () => modal('About', '<p>AIO Video Editor — a Filmora-style editor that runs entirely in your browser: WebGL compositing, Web Audio mixing, an Unreal-style material node editor, and WebCodecs export.</p>', [{ label: 'Close', primary: true }]) }],
   };
@@ -544,7 +544,7 @@ async function boot() {
       ['Ctrl+B', 'Split at playhead'], ['C / V', 'Blade / selection tool'], ['Del', 'Delete'], ['Shift+Del', 'Ripple delete'], ['Alt+[ / Alt+] · Q / W', 'Trim start / end to playhead'],
       ['Ctrl+C / X / V', 'Copy / cut / paste (an image on the clipboard goes onto the timeline)'], ['Ctrl+D', 'Duplicate'], ['Ctrl+A', 'Select all'], ['Ctrl+Z / Ctrl+Y', 'Undo / redo'],
       ['Ctrl+Alt+D', 'Detach audio'], ['Alt+F', 'Freeze frame'], ['M', 'Add marker'], ['N', 'Snapping'], ['Ctrl+= / Ctrl+-', 'Zoom timeline'], ['Shift+Z', 'Zoom to fit'], ['Ctrl+G / Ctrl+Alt+G', 'Group / ungroup'],
-      ['Ctrl+Alt+C / Ctrl+Alt+V', 'Copy / paste effects'], ['Alt+← / →', 'Nudge clip 1 frame (Shift = 10)'], ['Ctrl+↑ / ↓', 'Move clip to track above / below'], ['Alt+D', 'Duplicate to track above'], ['Shift+↑ / ↓', 'Previous / next marker'], ['Shift+Home / End', 'Start / end of selected clip'], ['Ctrl+Shift+K', 'Split all tracks'], ['Ctrl+Shift+Backspace', 'Close gaps'], ['Ctrl+Shift+M', 'Mute / unmute clip'], ['Shift+R', 'Reverse clip'], ['Ctrl+R', 'Speed'], ['Ctrl+L', 'Loop playback (in/out, selection or all)'], ['X / Alt+X', 'Mark selected clip as in/out / clear'], ['+ / -', 'Clip volume ±1 dB (Shift: opacity ±5%)'], ['F', 'Zoom timeline to selection'], ['`', 'Maximize panel under the mouse'], ['Ctrl+F', 'Search the library'], ['Ctrl+Alt+S', 'Snapshot PNG'], ['Ctrl+Alt+M', 'New material'], ['Ctrl+I', 'Import'], ['Ctrl+N / O / S', 'New / open / save'], ['Ctrl+E', 'Export'], ['Ctrl+T', 'Add title'], ['Alt+Enter', 'Full-screen preview']];
+      ['Ctrl+Alt+C / Ctrl+Alt+V', 'Copy / paste effects'], ['Alt+← / →', 'Nudge clip 1 frame (Shift = 10)'], ['Ctrl+↑ / ↓', 'Move clip to track above / below'], ['Alt+D', 'Duplicate to track above'], ['Shift+↑ / ↓', 'Previous / next marker'], ['Shift+Home / End', 'Start / end of selected clip'], ['Ctrl+Shift+K', 'Split all tracks'], ['Ctrl+Shift+Backspace', 'Close gaps'], ['Ctrl+Shift+M', 'Mute / unmute clip'], ['Shift+R', 'Reverse clip'], ['Ctrl+R', 'Speed'], ['Ctrl+L', 'Loop playback (in/out, selection or all)'], ['X / Alt+X', 'Mark selected clip as in/out / clear'], ['+ / -', 'Clip volume ±1 dB (Shift: opacity ±5%)'], ['F', 'Zoom timeline to selection'], ['`', 'Maximize panel under the mouse'], ['G', 'Guides: thirds + safe zones'], ['Ctrl+wheel / middle-drag on player', 'Zoom / pan the preview'], ['Ctrl+F', 'Search the library'], ['Ctrl+Alt+S', 'Snapshot PNG'], ['Ctrl+Alt+M', 'New material'], ['Ctrl+I', 'Import'], ['Ctrl+N / O / S', 'New / open / save'], ['Ctrl+E', 'Export'], ['Ctrl+T', 'Add title'], ['Alt+Enter', 'Full-screen preview']];
     modal('Keyboard Shortcuts', `<div class="form-grid" style="grid-template-columns:190px 1fr">${rows.map(([k, v]) => `<span class="tc" style="color:var(--accent)">${k}</span><span>${v}</span>`).join('')}</div>`, [{ label: 'Close', primary: true }], { width: 560 });
   }
 
@@ -580,6 +580,84 @@ async function boot() {
     (hoverPanel || $('#player')).classList.add('maxed'); layoutPreview();
     setTimeout(layoutPreview, 50);
   }
+
+  // ---------- Guides overlay (G) ----------
+  function drawGuides() {
+    const g = $('#guides'), s = store.project.settings;
+    const portrait = s.height > s.width;
+    g.innerHTML = '<div class="g-third" style="left:33.33%;top:0;bottom:0;width:1px"></div><div class="g-third" style="left:66.66%;top:0;bottom:0;width:1px"></div><div class="g-third" style="top:33.33%;left:0;right:0;height:1px"></div><div class="g-third" style="top:66.66%;left:0;right:0;height:1px"></div><div class="g-safe"></div><div class="g-center"></div>'
+      + (portrait ? '<div class="g-social" style="top:0;height:9%"><span>TikTok / Shorts UI</span></div><div class="g-social" style="bottom:0;height:20%"><span>captions · buttons</span></div><div class="g-social" style="top:35%;bottom:20%;left:auto;width:13%"></div>' : '');
+  }
+  function toggleGuides() { const g = $('#guides'); g.hidden = !g.hidden; drawGuides(); try { localStorage.setItem('ve.guides', g.hidden ? '0' : '1'); } catch (e) {} }
+  store.on('project', () => { if (!$('#guides').hidden) drawGuides(); });
+  try { if (localStorage.getItem('ve.guides') === '1') { $('#guides').hidden = false; drawGuides(); } } catch (e) {}
+
+  // ---------- Preview zoom / pan (Ctrl+wheel, middle-drag, double-click backdrop to reset) ----------
+  let pv = { z: 1, x: 0, y: 0 };
+  const applyPv = () => { $('#previewStage').style.transform = pv.z === 1 && !pv.x && !pv.y ? '' : `translate(${pv.x}px, ${pv.y}px) scale(${pv.z})`; gizmo?.refresh?.(); };
+  const pwrap = $('#previewWrap');
+  pwrap.addEventListener('wheel', e => {
+    if (!(e.ctrlKey || e.metaKey || e.altKey)) return;
+    e.preventDefault();
+    const nz = clamp(pv.z * (e.deltaY < 0 ? 1.15 : 1 / 1.15), 0.25, 8);
+    const r = pwrap.getBoundingClientRect(), mx = e.clientX - r.left - r.width / 2, my = e.clientY - r.top - r.height / 2;
+    pv.x = mx - (mx - pv.x) * nz / pv.z; pv.y = my - (my - pv.y) * nz / pv.z; pv.z = nz;
+    if (Math.abs(pv.z - 1) < 0.02) pv = { z: 1, x: 0, y: 0 };
+    applyPv(); status(`Preview zoom ${Math.round(pv.z * 100)}% · double-click the backdrop to reset`);
+  }, { passive: false });
+  pwrap.addEventListener('pointerdown', e => {
+    if (e.button !== 1) return;
+    e.preventDefault(); pwrap.classList.add('panning'); pwrap.setPointerCapture(e.pointerId);
+    const s0 = { x: e.clientX - pv.x, y: e.clientY - pv.y };
+    const mv = ev => { pv.x = ev.clientX - s0.x; pv.y = ev.clientY - s0.y; applyPv(); };
+    const up = () => { pwrap.classList.remove('panning'); pwrap.removeEventListener('pointermove', mv); pwrap.removeEventListener('pointerup', up); };
+    pwrap.addEventListener('pointermove', mv); pwrap.addEventListener('pointerup', up);
+  });
+  pwrap.addEventListener('auxclick', e => { if (e.button === 1) e.preventDefault(); });
+  pwrap.addEventListener('dblclick', e => { if (e.target === pwrap) { pv = { z: 1, x: 0, y: 0 }; applyPv(); } });
+
+  // ---------- Right-click on the player ----------
+  pwrap.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    const c = store.selectedClips()[0]; const vis = c && c.type !== 'audio';
+    showMenu(e.clientX, e.clientY, [
+      { label: 'Fit to frame', disabled: !vis, run: () => document.querySelector('#inspector [data-do="fit"]') ? document.querySelector('#inspector [data-do="fit"]').click() : store.transact('Fit', p => { const x = p.clips.find(y => y.id === c.id); Object.assign(x.transform, { scale: 1, scaleX: 1, scaleY: 1 }); }) },
+      { label: 'Fill frame (crop to cover)', disabled: !vis, run: () => { const n = autoFill(); toast(n ? 'Filled the frame' : 'Select a video or image clip'); } },
+      { label: 'Reset transform', disabled: !vis, run: () => store.transact('Reset transform', p => { const x = p.clips.find(y => y.id === c.id); x.transform = { ...x.transform, x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, rotation: 0, flipH: false, flipV: false }; }) },
+      { label: 'Flip horizontal', disabled: !vis, run: () => store.transact('Flip', p => { const x = p.clips.find(y => y.id === c.id); x.transform.flipH = !x.transform.flipH; }) },
+      { sep: true },
+      { label: 'Guides (thirds · safe zones)', kbd: 'G', checked: !$('#guides').hidden, run: toggleGuides },
+      { label: 'Reset preview zoom', disabled: pv.z === 1 && !pv.x && !pv.y, run: () => { pv = { z: 1, x: 0, y: 0 }; applyPv(); } },
+      { label: 'Snapshot (PNG)', kbd: 'Ctrl+Alt+S', run: actions.snapshot },
+    ]);
+  });
+  // Scale selected visual clips so they cover the frame (handy after switching to 9:16)
+  function autoFill() {
+    const s = store.project.settings; let n = 0;
+    store.transact('Fill frame', p => { for (const id of store.selection.clipIds) { const x = p.clips.find(y => y.id === id); const m = x && store.getMedia(x.mediaId); if (!m?.width || x.type === 'audio') continue; const fit = Math.min(s.width / m.width, s.height / m.height), fill = Math.max(s.width / m.width, s.height / m.height); Object.assign(x.transform, { scale: fill / fit, scaleX: 1, scaleY: 1, x: 0, y: 0 }); n++; } });
+    return n;
+  }
+
+  // ---------- Focus hygiene: buttons / selects shouldn't keep keyboard focus ----------
+  // (otherwise Space re-presses the last clicked button and a select swallows shortcuts)
+  document.addEventListener('pointerup', e => {
+    const b = e.target.closest?.('button, input[type="range"], input[type="checkbox"], input[type="color"]');
+    if (b && !b.closest('.modal-back')) setTimeout(() => { if (document.activeElement === b) b.blur(); }, 0);
+  }, true);
+  document.addEventListener('change', e => { if (e.target.tagName === 'SELECT' && !e.target.closest('.modal-back')) e.target.blur(); }, true);
+
+  // ---------- Status bar: what's selected ----------
+  function selInfo() {
+    const sel = store.selectedClips();
+    const tr = store.selection.transition && store.getClip(store.selection.transition.clipId);
+    let txt = '';
+    if (tr) { const t = tr[store.selection.transition.side === 'out' ? 'transitionOut' : 'transitionIn']; if (t) txt = `Transition · ${t.type.replace(/_/g, ' ')} · ${t.duration.toFixed(2)} s · Del to remove · Ctrl+C to copy`; }
+    else if (sel.length === 1) { const c = sel[0]; txt = `${c.name} · ${tc(c.start)} → ${tc(c.start + c.duration)} · ${c.duration.toFixed(2)} s${c.speed !== 1 ? ` · ${c.speed}x` : ''}`; }
+    else if (sel.length > 1) { const a = Math.min(...sel.map(c => c.start)), b = Math.max(...sel.map(c => c.start + c.duration)); txt = `${sel.length} clips · ${tc(a)} → ${tc(b)}`; }
+    const s = store.project.settings;
+    $('#statusInfo').textContent = (txt ? txt + '   ·   ' : '') + `${s.width}×${s.height} · ${s.fps} fps`;
+  }
+  store.on('selection', selInfo); store.on('project', selInfo); selInfo();
 
   // ---------- Keyboard shortcuts (Filmora layout) ----------
   function isTyping(t) { return t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) && !(t.type === 'range' || t.type === 'checkbox' || t.type === 'color' || t.type === 'button')); }
@@ -633,6 +711,7 @@ async function boot() {
       case 'r': if (sh) return run(() => ops.toggleReverse()); return;
       case 'x': return run(() => { const sel = store.selectedClips(); if (!sel.length) return toast('Select a clip to mark its range'); const a = Math.min(...sel.map(c => c.start)), b = Math.max(...sel.map(c => c.start + c.duration)); store.transact('Mark clip', p => { p.settings.markIn = a; p.settings.markOut = b; }); toast('In/out set to the selected clip'); });
       case 'f': return run(zoomToSelection);
+      case 'g': return run(toggleGuides);
       case '+': case '=': return run(() => { const v = sh ? ops.opacityStep(0.05) : ops.volumeStep(1); if (v != null) status(sh ? `Opacity ${Math.round(v * 100)}%` : `Volume ${v.toFixed(1)} dB`); });
       case '-': case '_': return run(() => { const v = sh ? ops.opacityStep(-0.05) : ops.volumeStep(-1); if (v != null) status(sh ? `Opacity ${Math.round(v * 100)}%` : `Volume ${v.toFixed(1)} dB`); });
       case '`': return run(toggleMaximize);

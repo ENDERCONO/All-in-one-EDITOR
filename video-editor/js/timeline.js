@@ -7,7 +7,7 @@ import { TRANSITIONS } from './catalog.js';
 
 const HEAD_W = 150;      // track header column
 const RULER_H = 28;
-const X0 = 12;           // px before t=0
+const X0 = 0;            // t = 0 sits on the left wall (clear start of the timeline)
 const SNAP_PX = 8;
 const BOTTOM_PAD = 36;
 const VISUAL = new Set(['video', 'image', 'text', 'color', 'material', 'adjustment']);
@@ -710,7 +710,8 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
     drag = d;
     d.lastEv = ev;
     content.setPointerCapture?.(ev.pointerId);
-    const move = e => { d.lastEv = e; d.move(e); autoScroll(e); };
+    let lp = 0;
+    const move = e => { d.lastEv = e; d.move(e); autoScroll(e); if (!lp) lp = requestAnimationFrame(() => { lp = 0; store.emit('livepreview'); }); };
     const up = e => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);

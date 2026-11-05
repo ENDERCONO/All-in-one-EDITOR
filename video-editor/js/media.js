@@ -266,6 +266,11 @@ export function createLibrary({ store, ops, audio, materials }) {
     d.innerHTML = `<div class="lib-thumb" style="${thumbUrl ? `background-image:url('${thumbUrl}')` : ''}">${thumbHtml}${badge ? `<span class="badge">${badge}</span>` : ''}<button class="add" title="Add to timeline">${icon('plus', 14)}</button></div><div class="lib-name"></div>`;
     d.querySelector('.lib-name').textContent = name;
     d.addEventListener('dragstart', e => dragData(e, kind, id));
+    if (kind === 'media') { // hover-scrub through the filmstrip
+      const th = d.querySelector('.lib-thumb');
+      th.addEventListener('mousemove', e => { const fs = mediaRuntime.get(id)?.filmstrip; if (!fs || fs.length < 2) return; const r = th.getBoundingClientRect(); const i = Math.min(fs.length - 1, Math.max(0, Math.floor((e.clientX - r.left) / r.width * fs.length))); th.style.backgroundImage = `url('${fs[i].url}')`; });
+      th.addEventListener('mouseleave', () => { const u = mediaRuntime.get(id)?.thumb; if (u) th.style.backgroundImage = `url('${u}')`; });
+    }
     d.addEventListener('click', e => {
       if (e.target.closest('.add')) { (onAdd || onDbl)?.(); return; }
       selected = kind + ':' + id; grid.querySelectorAll('.lib-item').forEach(x => x.classList.toggle('selected', x === d)); onClick?.();
@@ -288,7 +293,7 @@ export function createLibrary({ store, ops, audio, materials }) {
     if (tab === 'media' || tab === 'audio') {
       if (tab === 'media' && !q) {
         const imp = document.createElement('div'); imp.className = 'lib-item lib-import-card';
-        imp.innerHTML = `<div class="lib-thumb">+</div><div class="lib-name">Import Media (or Ctrl+V)</div>`;
+        imp.innerHTML = `<div class="lib-thumb">+</div><div class="lib-name" title="Click, drop files, or paste with Ctrl+V">Import Media</div>`;
         imp.onclick = () => document.getElementById('importInput').click();
         add(imp);
       }

@@ -79,6 +79,8 @@ export function createPlayback({ store, sources, renderer, audio, onFrame }) {
       refreshTimer = setTimeout(() => { try { audio?.refresh(); } catch (e) {} }, 120);
     } else { lastWall = 0; requestStill(); }
   });
+  // timeline drags mutate the project without an undo step; show the result live
+  store.on('livepreview', () => { if (!store.playing) { lastWall = 0; requestStill(); } });
   store.on('media', () => { if (!store.playing) { lastWall = 0; requestStill(); } });
   store.on('materials', () => { if (!store.playing) { lastWall = 0; requestStill(); } });
   window.addEventListener('ve:pause', pause);

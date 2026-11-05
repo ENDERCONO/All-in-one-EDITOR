@@ -1377,10 +1377,15 @@
       drag = d;
       d.lastEv = ev;
       content.setPointerCapture?.(ev.pointerId);
+      let lp = 0;
       const move = (e) => {
         d.lastEv = e;
         d.move(e);
         autoScroll(e);
+        if (!lp) lp = requestAnimationFrame(() => {
+          lp = 0;
+          store2.emit("livepreview");
+        });
       };
       const up = (e) => {
         window.removeEventListener("pointermove", move);
@@ -2405,7 +2410,7 @@
       init_icons();
       init_catalog();
       RULER_H = 28;
-      X0 = 12;
+      X0 = 0;
       SNAP_PX = 8;
       BOTTOM_PAD = 36;
       VISUAL2 = /* @__PURE__ */ new Set(["video", "image", "text", "color", "material", "adjustment"]);
@@ -13075,6 +13080,12 @@ ${notes}`;
         requestStill();
       }
     });
+    store2.on("livepreview", () => {
+      if (!store2.playing) {
+        lastWall = 0;
+        requestStill();
+      }
+    });
     store2.on("media", () => {
       if (!store2.playing) {
         lastWall = 0;
@@ -13460,6 +13471,20 @@ ${notes}`;
       d.innerHTML = `<div class="lib-thumb" style="${thumbUrl ? `background-image:url('${thumbUrl}')` : ""}">${thumbHtml}${badge ? `<span class="badge">${badge}</span>` : ""}<button class="add" title="Add to timeline">${icon("plus", 14)}</button></div><div class="lib-name"></div>`;
       d.querySelector(".lib-name").textContent = name;
       d.addEventListener("dragstart", (e) => dragData(e, kind, id));
+      if (kind === "media") {
+        const th = d.querySelector(".lib-thumb");
+        th.addEventListener("mousemove", (e) => {
+          const fs = mediaRuntime.get(id)?.filmstrip;
+          if (!fs || fs.length < 2) return;
+          const r = th.getBoundingClientRect();
+          const i = Math.min(fs.length - 1, Math.max(0, Math.floor((e.clientX - r.left) / r.width * fs.length)));
+          th.style.backgroundImage = `url('${fs[i].url}')`;
+        });
+        th.addEventListener("mouseleave", () => {
+          const u = mediaRuntime.get(id)?.thumb;
+          if (u) th.style.backgroundImage = `url('${u}')`;
+        });
+      }
       d.addEventListener("click", (e) => {
         if (e.target.closest(".add")) {
           (onAdd || onDbl)?.();
@@ -13488,7 +13513,7 @@ ${notes}`;
         if (tab === "media" && !q) {
           const imp = document.createElement("div");
           imp.className = "lib-item lib-import-card";
-          imp.innerHTML = `<div class="lib-thumb">+</div><div class="lib-name">Import Media (or Ctrl+V)</div>`;
+          imp.innerHTML = `<div class="lib-thumb">+</div><div class="lib-name" title="Click, drop files, or paste with Ctrl+V">Import Media</div>`;
           imp.onclick = () => document.getElementById("importInput").click();
           add(imp);
         }
@@ -13927,11 +13952,35 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
             el2.value = num.value;
             apply(+num.value);
           });
-          root.querySelector(`[data-reset="${b.id}"]`)?.addEventListener("dblclick", () => {
+          const lab = root.querySelector(`[data-reset="${b.id}"]`);
+          lab?.addEventListener("dblclick", () => {
             if (b.path.startsWith("transition")) return;
             edit(b.path, b.def, "Reset");
             sync();
           });
+          if (lab) {
+            lab.classList.add("scrub");
+            lab.title = "Drag to change \xB7 Shift = fine \xB7 double-click to reset";
+            lab.addEventListener("pointerdown", (e) => {
+              if (e.button !== 0) return;
+              e.preventDefault();
+              lab.setPointerCapture(e.pointerId);
+              const min = +el2.min, max = +el2.max, st = +el2.step || 0.01, x0 = e.clientX, v0 = +el2.value;
+              const mv = (ev) => {
+                const k = (max - min) / 300 * (ev.shiftKey ? 0.1 : 1);
+                let v = Math.max(min, Math.min(max, v0 + (ev.clientX - x0) * k));
+                v = Math.round(v / st) * st;
+                el2.value = v;
+                el2.dispatchEvent(new Event("input"));
+              };
+              const up = () => {
+                lab.removeEventListener("pointermove", mv);
+                lab.removeEventListener("pointerup", up);
+              };
+              lab.addEventListener("pointermove", mv);
+              lab.addEventListener("pointerup", up);
+            });
+          }
         } else if (b.kind === "toggle") {
           el2.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -15097,6 +15146,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         { label: "Zoom to Selection", kbd: "F", run: () => zoomToSelection() },
         { label: "Maximize Panel Under Mouse", kbd: "`", run: () => toggleMaximize() },
         { sep: true },
+        { label: "Guides (thirds \xB7 safe zones)", kbd: "G", run: () => toggleGuides(), checked: !$("#guides").hidden },
         { label: "Full Screen Preview", kbd: "Alt+Enter", run: actions.fullscreen },
         { label: "Reset Panel Layout", run: resetLayout }
       ],
@@ -15158,6 +15208,8 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         ["+ / -", "Clip volume \xB11 dB (Shift: opacity \xB15%)"],
         ["F", "Zoom timeline to selection"],
         ["`", "Maximize panel under the mouse"],
+        ["G", "Guides: thirds + safe zones"],
+        ["Ctrl+wheel / middle-drag on player", "Zoom / pan the preview"],
         ["Ctrl+F", "Search the library"],
         ["Ctrl+Alt+S", "Snapshot PNG"],
         ["Ctrl+Alt+M", "New material"],
@@ -15217,6 +15269,150 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       layoutPreview();
       setTimeout(layoutPreview, 50);
     }
+    function drawGuides() {
+      const g = $("#guides"), s = store.project.settings;
+      const portrait = s.height > s.width;
+      g.innerHTML = '<div class="g-third" style="left:33.33%;top:0;bottom:0;width:1px"></div><div class="g-third" style="left:66.66%;top:0;bottom:0;width:1px"></div><div class="g-third" style="top:33.33%;left:0;right:0;height:1px"></div><div class="g-third" style="top:66.66%;left:0;right:0;height:1px"></div><div class="g-safe"></div><div class="g-center"></div>' + (portrait ? '<div class="g-social" style="top:0;height:9%"><span>TikTok / Shorts UI</span></div><div class="g-social" style="bottom:0;height:20%"><span>captions \xB7 buttons</span></div><div class="g-social" style="top:35%;bottom:20%;left:auto;width:13%"></div>' : "");
+    }
+    function toggleGuides() {
+      const g = $("#guides");
+      g.hidden = !g.hidden;
+      drawGuides();
+      try {
+        localStorage.setItem("ve.guides", g.hidden ? "0" : "1");
+      } catch (e) {
+      }
+    }
+    store.on("project", () => {
+      if (!$("#guides").hidden) drawGuides();
+    });
+    try {
+      if (localStorage.getItem("ve.guides") === "1") {
+        $("#guides").hidden = false;
+        drawGuides();
+      }
+    } catch (e) {
+    }
+    let pv = { z: 1, x: 0, y: 0 };
+    const applyPv = () => {
+      $("#previewStage").style.transform = pv.z === 1 && !pv.x && !pv.y ? "" : `translate(${pv.x}px, ${pv.y}px) scale(${pv.z})`;
+      gizmo?.refresh?.();
+    };
+    const pwrap = $("#previewWrap");
+    pwrap.addEventListener("wheel", (e) => {
+      if (!(e.ctrlKey || e.metaKey || e.altKey)) return;
+      e.preventDefault();
+      const nz = clamp(pv.z * (e.deltaY < 0 ? 1.15 : 1 / 1.15), 0.25, 8);
+      const r = pwrap.getBoundingClientRect(), mx = e.clientX - r.left - r.width / 2, my = e.clientY - r.top - r.height / 2;
+      pv.x = mx - (mx - pv.x) * nz / pv.z;
+      pv.y = my - (my - pv.y) * nz / pv.z;
+      pv.z = nz;
+      if (Math.abs(pv.z - 1) < 0.02) pv = { z: 1, x: 0, y: 0 };
+      applyPv();
+      status(`Preview zoom ${Math.round(pv.z * 100)}% \xB7 double-click the backdrop to reset`);
+    }, { passive: false });
+    pwrap.addEventListener("pointerdown", (e) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      pwrap.classList.add("panning");
+      pwrap.setPointerCapture(e.pointerId);
+      const s0 = { x: e.clientX - pv.x, y: e.clientY - pv.y };
+      const mv = (ev) => {
+        pv.x = ev.clientX - s0.x;
+        pv.y = ev.clientY - s0.y;
+        applyPv();
+      };
+      const up = () => {
+        pwrap.classList.remove("panning");
+        pwrap.removeEventListener("pointermove", mv);
+        pwrap.removeEventListener("pointerup", up);
+      };
+      pwrap.addEventListener("pointermove", mv);
+      pwrap.addEventListener("pointerup", up);
+    });
+    pwrap.addEventListener("auxclick", (e) => {
+      if (e.button === 1) e.preventDefault();
+    });
+    pwrap.addEventListener("dblclick", (e) => {
+      if (e.target === pwrap) {
+        pv = { z: 1, x: 0, y: 0 };
+        applyPv();
+      }
+    });
+    pwrap.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      const c = store.selectedClips()[0];
+      const vis = c && c.type !== "audio";
+      showMenu(e.clientX, e.clientY, [
+        { label: "Fit to frame", disabled: !vis, run: () => document.querySelector('#inspector [data-do="fit"]') ? document.querySelector('#inspector [data-do="fit"]').click() : store.transact("Fit", (p) => {
+          const x = p.clips.find((y) => y.id === c.id);
+          Object.assign(x.transform, { scale: 1, scaleX: 1, scaleY: 1 });
+        }) },
+        { label: "Fill frame (crop to cover)", disabled: !vis, run: () => {
+          const n = autoFill();
+          toast(n ? "Filled the frame" : "Select a video or image clip");
+        } },
+        { label: "Reset transform", disabled: !vis, run: () => store.transact("Reset transform", (p) => {
+          const x = p.clips.find((y) => y.id === c.id);
+          x.transform = { ...x.transform, x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, rotation: 0, flipH: false, flipV: false };
+        }) },
+        { label: "Flip horizontal", disabled: !vis, run: () => store.transact("Flip", (p) => {
+          const x = p.clips.find((y) => y.id === c.id);
+          x.transform.flipH = !x.transform.flipH;
+        }) },
+        { sep: true },
+        { label: "Guides (thirds \xB7 safe zones)", kbd: "G", checked: !$("#guides").hidden, run: toggleGuides },
+        { label: "Reset preview zoom", disabled: pv.z === 1 && !pv.x && !pv.y, run: () => {
+          pv = { z: 1, x: 0, y: 0 };
+          applyPv();
+        } },
+        { label: "Snapshot (PNG)", kbd: "Ctrl+Alt+S", run: actions.snapshot }
+      ]);
+    });
+    function autoFill() {
+      const s = store.project.settings;
+      let n = 0;
+      store.transact("Fill frame", (p) => {
+        for (const id of store.selection.clipIds) {
+          const x = p.clips.find((y) => y.id === id);
+          const m = x && store.getMedia(x.mediaId);
+          if (!m?.width || x.type === "audio") continue;
+          const fit = Math.min(s.width / m.width, s.height / m.height), fill = Math.max(s.width / m.width, s.height / m.height);
+          Object.assign(x.transform, { scale: fill / fit, scaleX: 1, scaleY: 1, x: 0, y: 0 });
+          n++;
+        }
+      });
+      return n;
+    }
+    document.addEventListener("pointerup", (e) => {
+      const b = e.target.closest?.('button, input[type="range"], input[type="checkbox"], input[type="color"]');
+      if (b && !b.closest(".modal-back")) setTimeout(() => {
+        if (document.activeElement === b) b.blur();
+      }, 0);
+    }, true);
+    document.addEventListener("change", (e) => {
+      if (e.target.tagName === "SELECT" && !e.target.closest(".modal-back")) e.target.blur();
+    }, true);
+    function selInfo() {
+      const sel = store.selectedClips();
+      const tr = store.selection.transition && store.getClip(store.selection.transition.clipId);
+      let txt = "";
+      if (tr) {
+        const t = tr[store.selection.transition.side === "out" ? "transitionOut" : "transitionIn"];
+        if (t) txt = `Transition \xB7 ${t.type.replace(/_/g, " ")} \xB7 ${t.duration.toFixed(2)} s \xB7 Del to remove \xB7 Ctrl+C to copy`;
+      } else if (sel.length === 1) {
+        const c = sel[0];
+        txt = `${c.name} \xB7 ${tc2(c.start)} \u2192 ${tc2(c.start + c.duration)} \xB7 ${c.duration.toFixed(2)} s${c.speed !== 1 ? ` \xB7 ${c.speed}x` : ""}`;
+      } else if (sel.length > 1) {
+        const a = Math.min(...sel.map((c) => c.start)), b = Math.max(...sel.map((c) => c.start + c.duration));
+        txt = `${sel.length} clips \xB7 ${tc2(a)} \u2192 ${tc2(b)}`;
+      }
+      const s = store.project.settings;
+      $("#statusInfo").textContent = (txt ? txt + "   \xB7   " : "") + `${s.width}\xD7${s.height} \xB7 ${s.fps} fps`;
+    }
+    store.on("selection", selInfo);
+    store.on("project", selInfo);
+    selInfo();
     function isTyping(t) {
       return t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) && !(t.type === "range" || t.type === "checkbox" || t.type === "color" || t.type === "button"));
     }
@@ -15322,6 +15518,8 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
           });
         case "f":
           return run(zoomToSelection);
+        case "g":
+          return run(toggleGuides);
         case "+":
         case "=":
           return run(() => {

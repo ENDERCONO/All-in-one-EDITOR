@@ -205,3 +205,17 @@ input[type="color"] { width: 28px; height: 22px; padding: 0; border: 1px solid v
 
 .chip-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 5px; }
 .chip-grid .btn { padding: 5px 6px; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Guides overlay (G): thirds, center, title-safe, social UI safe zone */
+#guides { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+#guides .g-third { position: absolute; background: #ffffff40; }
+#guides .g-safe { position: absolute; inset: 5%; border: 1px dashed #ffffff55; }
+#guides .g-center { position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; }
+#guides .g-center::before, #guides .g-center::after { content: ''; position: absolute; background: #ffffff80; }
+#guides .g-center::before { left: 8px; top: 0; width: 1px; height: 18px; } #guides .g-center::after { top: 8px; left: 0; height: 1px; width: 18px; }
+#guides .g-social { position: absolute; left: 0; right: 0; background: #ff3b5c22; border: 1px solid #ff3b5c66; }
+#guides .g-social span { position: absolute; left: 6px; top: 3px; font-size: 10px; color: #ff9aac; letter-spacing: .03em; }
+#previewStage { transform-origin: center center; }
+#previewWrap.panning { cursor: grabbing; }
+.prop > label.scrub { cursor: ew-resize; }
+.prop > label.scrub:hover { color: var(--text); }

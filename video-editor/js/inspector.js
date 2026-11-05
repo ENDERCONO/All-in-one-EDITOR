@@ -250,7 +250,23 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
         const apply = v => { if (!isFinite(v) || b.path === 'speed') return; let val = b.fromUI(v); if (b.path.startsWith('transition')) return editTransition(b.path, val); edit(b.path, val); };
         el.addEventListener('input', () => { num.value = +(+el.value).toFixed(2); apply(+el.value); });
         num.addEventListener('change', () => { el.value = num.value; apply(+num.value); });
-        root.querySelector(`[data-reset="${b.id}"]`)?.addEventListener('dblclick', () => { if (b.path.startsWith('transition')) return; edit(b.path, b.def, 'Reset'); sync(); });
+        const lab = root.querySelector(`[data-reset="${b.id}"]`);
+        lab?.addEventListener('dblclick', () => { if (b.path.startsWith('transition')) return; edit(b.path, b.def, 'Reset'); sync(); });
+        // Drag the label left/right to scrub the value (Shift = fine)
+        if (lab) {
+          lab.classList.add('scrub'); lab.title = 'Drag to change · Shift = fine · double-click to reset';
+          lab.addEventListener('pointerdown', e => {
+            if (e.button !== 0) return; e.preventDefault(); lab.setPointerCapture(e.pointerId);
+            const min = +el.min, max = +el.max, st = +el.step || 0.01, x0 = e.clientX, v0 = +el.value;
+            const mv = ev => {
+              const k = (max - min) / 300 * (ev.shiftKey ? 0.1 : 1);
+              let v = Math.max(min, Math.min(max, v0 + (ev.clientX - x0) * k)); v = Math.round(v / st) * st;
+              el.value = v; el.dispatchEvent(new Event('input'));
+            };
+            const up = () => { lab.removeEventListener('pointermove', mv); lab.removeEventListener('pointerup', up); };
+            lab.addEventListener('pointermove', mv); lab.addEventListener('pointerup', up);
+          });
+        }
       } else if (b.kind === 'toggle') {
         el.addEventListener('click', e => { e.stopPropagation(); edit(b.path, !get(clip(), b.path)); });
       } else if (b.kind === 'tbtn') {
