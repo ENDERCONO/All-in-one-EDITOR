@@ -44,6 +44,12 @@
       grayscale: false
     };
   }
+  function defaultMask() {
+    return { type: "none", x: 0, y: 0, w: 0.5, h: 0.5, angle: 0, feather: 0.15, invert: false };
+  }
+  function defaultGradBlur() {
+    return { enabled: false, mode: "linear", angle: 90, start: 0, end: 0.5, strength: 40, x: 0, y: 0 };
+  }
   function defaultHueMatch() {
     return { enabled: false, from: "#ff0000", to: "#0066ff", range: 30, colorize: false };
   }
@@ -76,13 +82,15 @@
       in: 0,
       speed: 1,
       reverse: false,
-      transform: { x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, flipH: false, flipV: false },
+      transform: { x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, flipH: false, flipV: false, rotX: 0, rotY: 0, perspective: 1200 },
       crop: { l: 0, t: 0, r: 0, b: 0 },
       blend: "normal",
       color: defaultColor(),
       filters: [],
       chroma: { enabled: false, color: "#00ff00", similarity: 0.35, smoothness: 0.08, spill: 0.5, edgeFeather: 0 },
       hueMatch: defaultHueMatch(),
+      mask: defaultMask(),
+      gradBlur: defaultGradBlur(),
       materialId: null,
       materialParams: {},
       audio: { volume: 0, pan: 0, pitch: 0, fadeIn: 0, fadeOut: 0, mute: false, keepPitch: true, detached: false, voice: "none", voiceMix: 1, fx: defaultAudioFx() },
@@ -349,7 +357,7 @@
   });
 
   // js/catalog.js
-  var ASPECTS, RESOLUTIONS, FPS_OPTIONS, BLEND_MODES, FILTERS, TRANSITIONS, FONTS, TITLE_PRESETS, SAMPLE_COLORS;
+  var ASPECTS, RESOLUTIONS, MASK_TYPES, CROP_ASPECTS, FPS_OPTIONS, BLEND_MODES, FILTERS, TRANSITIONS, FONTS, TITLE_PRESETS, SAMPLE_COLORS;
   var init_catalog = __esm({
     "js/catalog.js"() {
       ASPECTS = [
@@ -368,6 +376,14 @@
         { label: "1440p", short: 1440 },
         { label: "4K", short: 2160 }
       ];
+      MASK_TYPES = [
+        { id: "none", label: "None" },
+        { id: "linear", label: "Linear (gradient)" },
+        { id: "radial", label: "Radial" },
+        { id: "rect", label: "Rectangle" },
+        { id: "ellipse", label: "Ellipse" }
+      ];
+      CROP_ASPECTS = [{ id: "free", label: "Free" }, { id: "16:9", w: 16, h: 9 }, { id: "9:16", w: 9, h: 16 }, { id: "1:1", w: 1, h: 1 }, { id: "4:5", w: 4, h: 5 }, { id: "4:3", w: 4, h: 3 }, { id: "21:9", w: 21, h: 9 }];
       FPS_OPTIONS = [23.976, 24, 25, 29.97, 30, 50, 60];
       BLEND_MODES = [
         { id: "normal", label: "Normal" },
@@ -435,7 +451,10 @@
         { id: "twirl", label: "Twirl", category: "Distort" },
         { id: "tilt_shift", label: "Tilt Shift", category: "Lens" },
         { id: "zoom_blur", label: "Zoom Blur", category: "Lens" },
-        { id: "motion_blur", label: "Motion Blur", category: "Lens" }
+        { id: "motion_blur", label: "Motion Blur", category: "Lens" },
+        // ---- v3: from the site's Seamless Tile tool ----
+        { id: "tile_2x2", label: "Tile 2\xD72", category: "Distort" },
+        { id: "tile_mirror", label: "Mirror Tile (seamless)", category: "Distort" }
       ];
       TRANSITIONS = [
         { id: "dissolve", label: "Dissolve", category: "Basic" },
@@ -570,6 +589,213 @@
         close: '<path d="M6 6l12 12M18 6 6 18"/>',
         chevron: '<path d="m6 9 6 6 6-6"/>'
       };
+    }
+  });
+
+  // js/integrations.js
+  var integrations_exports = {};
+  __export(integrations_exports, {
+    apiBase: () => apiBase,
+    convertForImport: () => convertForImport,
+    copyFileNames: () => copyFileNames,
+    openImportFromUrl: () => openImportFromUrl
+  });
+  async function ping(base, ms) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), ms);
+    try {
+      const r = await fetch(base + "/api/dl/ping", { signal: ctrl.signal, cache: "no-store" });
+      const j = await r.json();
+      if (j?.ok) return base;
+    } catch (e) {
+    } finally {
+      clearTimeout(t);
+    }
+    throw new Error("no server");
+  }
+  async function apiBase(onStatus) {
+    if (cachedBase !== void 0 && cachedBase !== null) return cachedBase;
+    try {
+      if (window.parent !== window && typeof window.parent.resolveApiBase === "function") {
+        cachedBase = await window.parent.resolveApiBase(onStatus);
+        return cachedBase;
+      }
+    } catch (e) {
+    }
+    const local = [];
+    if (/^https?:$/.test(location.protocol)) local.push(location.origin);
+    for (const c of ["http://localhost:3000", "http://127.0.0.1:3000"]) if (location.origin !== c) local.push(c);
+    try {
+      cachedBase = await Promise.any(local.map((b) => ping(b, 1500)));
+      return cachedBase;
+    } catch (e) {
+    }
+    let saved = "";
+    try {
+      saved = (localStorage.getItem("apiBase") || "").replace(/\/+$/, "");
+    } catch (e) {
+    }
+    for (const b of [...new Set([saved, DEFAULT_ONLINE_API].filter(Boolean))]) {
+      const slow = setTimeout(() => onStatus?.("Waking up the online server (free hosting sleeps) \u2014 up to a minute\u2026"), 2500);
+      try {
+        cachedBase = await ping(b, 9e4);
+        return cachedBase;
+      } catch (e) {
+      } finally {
+        clearTimeout(slow);
+      }
+    }
+    cachedBase = null;
+    return null;
+  }
+  async function convertForImport(file, kind, onStatus) {
+    const target = kind === "audio" ? "mp3" : kind === "image" ? "png" : "mp4";
+    const outName = (file.name || "media").replace(/\.[^.]+$/, "") + "." + target;
+    const base = await apiBase(onStatus).catch(() => null);
+    if (base !== null && base !== void 0) {
+      try {
+        onStatus?.(`Converting ${file.name} \u2192 ${target.toUpperCase()} on the server\u2026`);
+        const r = await fetch(`${base}/api/convert/start?name=${encodeURIComponent(file.name || "input")}&target=${target}`, { method: "POST", body: file });
+        const { id, error } = await r.json();
+        if (!id) throw new Error(error || "convert failed");
+        for (; ; ) {
+          await sleep(700);
+          const p = await (await fetch(`${base}/api/convert/progress/${id}`, { cache: "no-store" })).json();
+          if (p.state === "error") throw new Error(p.error || "convert failed");
+          if (p.state === "done") break;
+          onStatus?.(`Converting ${file.name}\u2026 ${p.pct || 0}%`);
+        }
+        const blob = await (await fetch(`${base}/api/convert/file/${id}`)).blob();
+        return new File([blob], outName, { type: kind === "audio" ? "audio/mpeg" : kind === "image" ? "image/png" : "video/mp4" });
+      } catch (e) {
+        console.warn("server convert failed, trying ffmpeg.wasm", e);
+      }
+    }
+    let host = null;
+    try {
+      if (window.parent !== window && typeof window.parent.loadSharedFFmpeg === "function") host = window.parent;
+    } catch (e) {
+    }
+    if (!host) throw new Error("No converter available (open the editor from the main site, or run the server)");
+    onStatus?.(`Converting ${file.name} in the browser (ffmpeg.wasm)\u2026`);
+    const ff = await host.loadSharedFFmpeg();
+    const inName = "in_" + Date.now() + "_" + (file.name || "media").replace(/[^\w.-]/g, "_");
+    await ff.writeFile(inName, new Uint8Array(await file.arrayBuffer()));
+    const args = kind === "audio" ? ["-i", inName, "-vn", "-b:a", "192k", outName] : kind === "image" ? ["-i", inName, "-frames:v", "1", outName] : ["-i", inName, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", outName];
+    await ff.exec(args);
+    const data = await ff.readFile(outName);
+    try {
+      await ff.deleteFile(inName);
+      await ff.deleteFile(outName);
+    } catch (e) {
+    }
+    return new File([data], outName, { type: kind === "audio" ? "audio/mpeg" : kind === "image" ? "image/png" : "video/mp4" });
+  }
+  function openImportFromUrl({ importFiles: importFiles2, toast: toast3 }) {
+    const back = document.createElement("div");
+    back.className = "modal-back";
+    back.innerHTML = `<div class="modal" style="width:560px">
+    <div class="modal-head"><span>Import from URL</span><button class="icon-btn" data-x>\u2715</button></div>
+    <div class="modal-body"><div class="form-grid">
+      <label>Links</label><textarea id="iuLinks" rows="4" placeholder="YouTube, TikTok, Instagram, X, direct .mp4 / .mp3 / .png links\u2026 one per line" spellcheck="false" style="width:100%;resize:vertical"></textarea>
+      <label>Get</label><select id="iuKind"><option value="video">Video (with sound)</option><option value="audio">Audio only (MP3)</option><option value="mute">Video only (no sound)</option></select>
+      <label>Quality</label><select id="iuQ"><option value="">Best</option><option value="1080">1080p</option><option value="720" selected>720p</option><option value="480">480p</option></select>
+      <label>Then</label><label style="display:flex;gap:6px;align-items:center;color:var(--text)"><input type="checkbox" id="iuAdd" checked> add to the timeline at the playhead</label>
+    </div><div id="iuStatus" style="margin-top:12px;color:var(--text-dim);min-height:36px;white-space:pre-line"></div>
+    <div class="dim" style="font-size:11.5px">Uses the same downloader as the site's Converter tab (the local server, or the online one). Direct media links download straight into your browser.</div></div>
+    <div class="modal-foot"><button class="btn" data-x>Close</button><button class="btn primary" id="iuGo">Import</button></div></div>`;
+    document.getElementById("modalRoot").appendChild(back);
+    const $2 = (s) => back.querySelector(s);
+    let cancelled = false;
+    back.querySelectorAll("[data-x]").forEach((b) => b.onclick = () => {
+      cancelled = true;
+      back.remove();
+    });
+    back.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Escape") {
+        cancelled = true;
+        back.remove();
+      }
+    });
+    setTimeout(() => $2("#iuLinks").focus(), 30);
+    const say = (m) => {
+      $2("#iuStatus").textContent = m;
+    };
+    $2("#iuGo").onclick = async () => {
+      const links = $2("#iuLinks").value.split(/\s+/).map((s) => s.trim()).filter((s) => /^https?:\/\//i.test(s));
+      if (!links.length) return say("Paste at least one http(s) link.");
+      $2("#iuGo").disabled = true;
+      const kind = $2("#iuKind").value, quality = $2("#iuQ").value, add = $2("#iuAdd").checked;
+      let done = 0;
+      for (const url2 of links) {
+        if (cancelled) return;
+        try {
+          let file = null;
+          if (/\.(mp4|webm|mov|m4v|mp3|wav|ogg|m4a|flac|png|jpe?g|gif|webp)(\?|#|$)/i.test(url2)) {
+            say(`Downloading ${url2}\u2026`);
+            try {
+              const r = await fetch(url2);
+              if (r.ok) {
+                const b = await r.blob();
+                file = new File([b], decodeURIComponent(url2.split("/").pop().split(/[?#]/)[0]) || "download", { type: b.type });
+              }
+            } catch (e) {
+            }
+          }
+          if (!file) {
+            const base = await apiBase(say);
+            if (base === null || base === void 0) throw new Error("No downloader server reachable (run the site's server, or check your connection)");
+            const st = await (await fetch(`${base}/api/dl/start?url=${encodeURIComponent(url2)}&kind=${kind}&format=mp3&quality=${quality}`)).json();
+            if (!st.id) throw new Error(st.error || "Download failed to start");
+            let title = "";
+            for (; ; ) {
+              if (cancelled) return;
+              await sleep(800);
+              const p = await (await fetch(`${base}/api/dl/progress/${st.id}`, { cache: "no-store" })).json();
+              title = p.title || title;
+              if (p.state === "error") throw new Error(p.error || "Download failed");
+              if (p.state === "setup") say(`First run: the server is fetching its downloader (${p.setupPhase || ""} ${p.setupPct || 0}%)\u2026`);
+              else say(`${title || url2}
+${p.state} ${p.pct || 0}% ${p.speed || ""} ${p.eta ? "\xB7 ETA " + p.eta : ""}`);
+              if (p.state === "done" && p.filename) {
+                const b = await (await fetch(`${base}/api/dl/file/${st.id}`)).blob();
+                file = new File([b], p.filename, { type: b.type || (kind === "audio" ? "audio/mpeg" : "video/mp4") });
+                break;
+              }
+            }
+          }
+          say(`Importing ${file.name}\u2026`);
+          await importFiles2([file], add);
+          done++;
+        } catch (e) {
+          say(`\u2715 ${url2}
+${e.message}`);
+          toast3?.("Import from URL failed: " + e.message);
+          await sleep(1500);
+        }
+      }
+      $2("#iuGo").disabled = false;
+      if (done) {
+        say(`Imported ${done} of ${links.length}.`);
+        toast3?.(`Imported ${done} file(s) from URL`);
+      }
+    };
+  }
+  async function copyFileNames(names, toast3) {
+    const text = names.join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      toast3?.(`Copied ${names.length} file name(s)`);
+    } catch (e) {
+      prompt("Copy the file names:", text);
+    }
+  }
+  var DEFAULT_ONLINE_API, cachedBase, sleep;
+  var init_integrations = __esm({
+    "js/integrations.js"() {
+      DEFAULT_ONLINE_API = "https://all-in-one-editor.onrender.com";
+      sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     }
   });
 
@@ -1536,7 +1762,8 @@
               c.start = Math.max(0, f.start);
               c.trackId = f.newTop ? created[f.newTop - 1].id : f.trackId;
             }
-            resolveOverlaps(pj, finals.map((f) => f.id));
+            if (overwriteMode) overwriteMoved(pj, finals.map((f) => f.id));
+            else resolveOverlaps(pj, finals.map((f) => f.id));
           });
         }
       };
@@ -1561,6 +1788,25 @@
       if (index == null) index = kind === "video" ? 0 : pj.tracks.length;
       pj.tracks.splice(index, 0, t);
       return t;
+    }
+    let overwriteMode = true;
+    window.addEventListener("pointerup", (e) => {
+      overwriteMode = !e.altKey;
+    }, true);
+    function overwriteMoved(pj, movedIds) {
+      const ids = new Set(movedIds);
+      const locked = [];
+      for (const id of movedIds) {
+        const c = pj.clips.find((x) => x.id === id);
+        if (!c) continue;
+        const tr = pj.tracks.find((t) => t.id === c.trackId);
+        if (tr?.locked) {
+          locked.push(id);
+          continue;
+        }
+        ops2.overwriteRange(pj, c.trackId, c.start, c.start + c.duration, ids);
+      }
+      if (locked.length) resolveOverlaps(pj, locked);
     }
     function resolveOverlaps(pj, movedIds) {
       const moved = movedIds.map((id) => pj.clips.find((c) => c.id === id)).filter(Boolean).sort((a, b) => a.start - b.start);
@@ -2668,7 +2914,7 @@
       }
       outVars.set(id, ov);
     });
-    const hOrder = ["hash", "noise", "voronoi", "hue", "blend"];
+    const hOrder = ["hash", "noise", "voronoi", "hue", "blend", "normals", "heightNormal"];
     const code = [
       "// ---- generated by materials.js: " + String(material.name || "material").replace(/[\r\n]/g, " ") + " ----",
       ...uniforms.map((u) => `uniform ${u.type} ${u.name}; // ${u.param.replace(/[\r\n]/g, " ")}`),
@@ -2727,7 +2973,12 @@ void main() { outColor = aio_material(v_uv); }
     const inline = d.params.filter((p) => !d.inputs.some((i) => i.name === p.name) && p.type !== "text" && !(DETAILS_ONLY_PARAMS[n.type] || []).includes(p.name));
     const bools = inline.some((p) => p.type === "bool") ? 1 : 0;
     const h2 = 30 + (d.subtitle ? 12 : 0) + 10 + Math.max(d.inputs.length, d.outputs.length) * 23 + (inline.length - (bools ? inline.filter((p) => p.type === "bool").length : 0) + bools) * 24 + (inline.length ? 8 : 0);
-    return { w: n.type === "output" ? 190 : 150, h: h2 };
+    let w = n.type === "output" ? 190 : 150;
+    if (d.inputs.some((i) => d.params.some((p) => p.name === i.name))) w = Math.max(w, 185);
+    if (inline.some((p) => p.type === "select" || p.type === "media")) w = Math.max(w, 235);
+    const longest = Math.max(0, ...inline.map((p) => (p.label || "").length));
+    w = Math.max(w, 90 + longest * 7);
+    return { w, h: h2 };
   }
   function autoLayout(nodes, links, sizeOf = estimateNodeSize) {
     const out = nodes.find((n) => n.type === "output");
@@ -2797,6 +3048,46 @@ void main() { outColor = aio_material(v_uv); }
     const t = MATERIAL_TEMPLATES[key];
     if (!t) return makeDefaultMaterial(name);
     return { id: uid("mat"), name: name || t.name, ...t.build() };
+  }
+  function scrubLabel(lab, w) {
+    const inp = w && w.matches && w.matches('input[type="number"]') ? w : null;
+    if (!inp || inp.disabled) return lab;
+    lab.classList.add("mat-scrub");
+    lab.title = (lab.title ? lab.title + " \xB7 " : "") + "Drag to change \xB7 Shift = fine";
+    lab.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || e.altKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        lab.setPointerCapture(e.pointerId);
+      } catch (err) {
+      }
+      const x0 = e.clientX, v0 = parseFloat(inp.value) || 0, st = +inp.dataset.step || 0.01;
+      const per = Math.max(st, Math.abs(v0) * 5e-3);
+      let moved = false;
+      scrubActive = true;
+      const mv = (ev) => {
+        const dx = ev.clientX - x0;
+        if (!moved && Math.abs(dx) < 2) return;
+        moved = true;
+        const fine = ev.shiftKey ? 0.1 : 1, q = st * fine;
+        const v = +(Math.round((v0 + dx * per * fine) / q) * q).toFixed(6);
+        if (String(v) !== inp.value) {
+          inp.value = v;
+          inp.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      };
+      const up = () => {
+        scrubActive = false;
+        lab.removeEventListener("pointermove", mv);
+        lab.removeEventListener("pointerup", up);
+        lab.removeEventListener("pointercancel", up);
+      };
+      lab.addEventListener("pointermove", mv);
+      lab.addEventListener("pointerup", up);
+      lab.addEventListener("pointercancel", up);
+    });
+    return lab;
   }
   function h(tag, attrs = {}, ...kids) {
     const el2 = document.createElement(tag);
@@ -2974,9 +3265,8 @@ void main() { outColor = aio_material(v_uv); }
     store2.on("media", onMedia);
     function widget(def, value, onChange, { disabled } = {}) {
       const num = (v, cb) => {
-        const i = h("input", { type: "number", step: def.step ?? 0.01, value: v ?? 0, disabled: !!disabled });
-        if (def.min !== void 0) i.min = def.min;
-        if (def.max !== void 0) i.max = def.max;
+        const i = h("input", { type: "number", step: def.step ?? "any", value: v ?? 0, disabled: !!disabled });
+        i.dataset.step = def.step ?? 0.01;
         i.addEventListener("input", () => {
           const x = parseFloat(i.value);
           if (isFinite(x)) cb(x);
@@ -3041,7 +3331,7 @@ void main() { outColor = aio_material(v_uv); }
         if (el2) el2.querySelector(".mat-node-head").replaceWith(nodeHead(node));
         markErrors();
       }
-      if (!details.contains(document.activeElement)) renderDetails();
+      if (!details.contains(document.activeElement) && !scrubActive) renderDetails();
       else updateDetailsCode();
       renderWires();
       commit("Edit " + NODE_TYPES[node.type].title);
@@ -3078,14 +3368,19 @@ void main() { outColor = aio_material(v_uv); }
       for (const inp of d.inputs) {
         const linked = mat.links.some((l) => l.to.node === n.id && l.to.pin === inp.name);
         const t = pinType(n, inp.name, "in");
+        const lbl = h("span", { class: "lbl" }, inp.label);
         const row = h(
           "div",
           { class: "mat-pin in" + (linked ? " linked" : ""), "data-pin": inp.name, "data-dir": "in", title: `${inp.label} (${inp.type})` },
           h("i", { class: "dot", style: `--pc:${PIN_COLORS[t]}` }),
-          h("span", { class: "lbl" }, inp.label)
+          lbl
         );
         const pd = d.params.find((p) => p.name === inp.name);
-        if (pd && !linked) row.append(widget(pd, n.params[pd.name], (v) => setParam(n, pd.name, v, "node", true)));
+        if (pd && !linked) {
+          const w = widget(pd, n.params[pd.name], (v) => setParam(n, pd.name, v, "node", true));
+          row.append(w);
+          scrubLabel(lbl, w);
+        }
         ins.append(row);
       }
       for (const o of d.outputs) {
@@ -3104,12 +3399,8 @@ void main() { outColor = aio_material(v_uv); }
         const bools = inline.filter((p) => p.type === "bool");
         if (bools.length) box2.append(h("div", { class: "mat-bools" }, ...bools.map((p) => widget(p, n.params[p.name], (v) => setParam(n, p.name, v, "node", false)))));
         for (const p of inline.filter((p2) => p2.type !== "bool")) {
-          box2.append(h(
-            "div",
-            { class: "mat-prow" },
-            h("span", {}, p.label),
-            widget(p, n.params[p.name], (v) => setParam(n, p.name, v, "node", p.type === "float" || p.type === "vec2"))
-          ));
+          const w = widget(p, n.params[p.name], (v) => setParam(n, p.name, v, "node", p.type === "float" || p.type === "vec2"));
+          box2.append(h("div", { class: "mat-prow" }, scrubLabel(h("span", {}, p.label), w), w));
         }
         el2.append(box2);
       }
@@ -3498,12 +3789,8 @@ void main() { outColor = aio_material(v_uv); }
         if (d.desc) rows.push(h("div", { class: "mat-dim" }, d.desc));
         for (const p of d.params) {
           const linked = d.inputs.some((i) => i.name === p.name) && mat.links.some((l) => l.to.node === n.id && l.to.pin === p.name);
-          rows.push(h(
-            "div",
-            { class: "mat-drow" },
-            h("label", { title: p.name }, p.label + (linked ? " (linked)" : "")),
-            widget(p, n.params[p.name], (v) => setParam(n, p.name, v, "details", true), { disabled: linked })
-          ));
+          const w = widget(p, n.params[p.name], (v) => setParam(n, p.name, v, "details", true), { disabled: linked });
+          rows.push(h("div", { class: "mat-drow" }, scrubLabel(h("label", { title: p.name }, p.label + (linked ? " (linked)" : "")), w), w));
         }
         if (!d.params.length) rows.push(h("div", { class: "mat-dim" }, "This node has no properties."));
         details.append(sec(d.title + (d.titleOf ? " \u2014 " + d.titleOf(n) : ""), ...rows));
@@ -4085,7 +4372,7 @@ void main() { outColor = aio_material(v_uv); }
       }
     };
   }
-  var DIM, TYPE_BY_DIM, widestOf, HELPERS, HELPER_DEPS, CATEGORIES, PIN_COLORS, F, anyIn, uvIn, channelOuts, NODE_TYPES, makeLink, FALLBACK_CODE, CompileError, DETAILS_ONLY_PARAMS, MATERIAL_TEMPLATES, clone, DETAILS_ONLY, KEY_NODES, editorClipboard, openEditor, PREVIEW_VS;
+  var DIM, TYPE_BY_DIM, widestOf, HELPERS, HELPER_DEPS, CATEGORIES, PIN_COLORS, F, anyIn, uvIn, channelOuts, NODE_TYPES, makeLink, FALLBACK_CODE, CompileError, DETAILS_ONLY_PARAMS, MATERIAL_TEMPLATES, clone, DETAILS_ONLY, KEY_NODES, editorClipboard, scrubActive, openEditor, PREVIEW_VS;
   var init_materials = __esm({
     "js/materials.js"() {
       init_state();
@@ -4161,6 +4448,42 @@ vec3 aio_hueShift(vec3 c, float turns) {
 vec3 aio_overlay(vec3 a, vec3 b) { return mix(2.0 * a * b, 1.0 - 2.0 * (1.0 - a) * (1.0 - b), step(0.5, a)); }
 vec3 aio_softlight(vec3 a, vec3 b) { a = clamp(a, 0.0, 1.0); return mix(2.0 * a * b + a * a * (1.0 - 2.0 * b), sqrt(a) * (2.0 * b - 1.0) + 2.0 * a * (1.0 - b), step(0.5, b)); }`
       };
+      HELPERS.normals = `
+// Normal-map blending (ported from the site's Normal Mix tool). Normals are unit vectors in -1..1.
+vec3 aio_nrmDecode(vec3 c) { vec3 n = c * 2.0 - 1.0; float l = length(n); return l < 1e-6 ? vec3(0.0, 0.0, 1.0) : n / l; }
+vec3 aio_nrmStrength(vec3 n, float s) {
+  if (s == 1.0) return n;
+  vec2 t = n.xy * s; float z2 = 1.0 - dot(t, t);
+  return normalize(vec3(t, z2 > 0.0 ? sqrt(z2) : 1e-3));
+}
+vec3 aio_nrmBlend(vec3 a, vec3 b, int m) {
+  if (m == 1) return normalize(vec3(a.xy + b.xy, a.z));                       // Whiteout / UDN
+  if (m == 2) {                                                                 // Partial derivative
+    float az = abs(a.z) < 1e-4 ? 1e-4 : a.z; float bz = abs(b.z) < 1e-4 ? 1e-4 : b.z;
+    return normalize(vec3(a.xy / az + b.xy / bz, 1.0));
+  }
+  if (m == 3) return normalize(a + b);                                          // Linear
+  vec3 t = vec3(a.xy, a.z + 1.0); vec3 u = vec3(-b.xy, b.z);                   // RNM (Barr\xE9-Brisebois & Hill)
+  float tz = abs(t.z) < 1e-5 ? 1e-5 : t.z;
+  return normalize(t * dot(t, u) / tz - u);
+}`;
+      HELPERS.heightNormal = `
+float aio_lum(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+// Sobel of the luminance -> tangent-space normal (-1..1). uv y points up, so "top" is +y.
+vec3 aio_heightNormal(sampler2D tex, vec2 uv, float stepPx, float strength) {
+  vec2 px = max(stepPx, 0.01) / vec2(textureSize(tex, 0));
+  float tl = aio_lum(texture(tex, uv + px * vec2(-1.0,  1.0)).rgb);
+  float  t = aio_lum(texture(tex, uv + px * vec2( 0.0,  1.0)).rgb);
+  float tr = aio_lum(texture(tex, uv + px * vec2( 1.0,  1.0)).rgb);
+  float  l = aio_lum(texture(tex, uv + px * vec2(-1.0,  0.0)).rgb);
+  float  r = aio_lum(texture(tex, uv + px * vec2( 1.0,  0.0)).rgb);
+  float bl = aio_lum(texture(tex, uv + px * vec2(-1.0, -1.0)).rgb);
+  float  b = aio_lum(texture(tex, uv + px * vec2( 0.0, -1.0)).rgb);
+  float br = aio_lum(texture(tex, uv + px * vec2( 1.0, -1.0)).rgb);
+  float dx = (tr + 2.0 * r + br) - (tl + 2.0 * l + bl);
+  float dy = (tl + 2.0 * t + tr) - (bl + 2.0 * b + br);
+  return normalize(vec3(-dx * strength, -dy * strength, 1.0));
+}`;
       HELPER_DEPS = { noise: ["hash"], voronoi: ["hash"] };
       CATEGORIES = {
         Output: { color: "#8a2424" },
@@ -4661,6 +4984,81 @@ vec3 aio_softlight(vec3 a, vec3 b) { a = clamp(a, 0.0, 1.0); return mix(2.0 * a 
             return { out: `clamp((1.0 - distance(${c.in("a", t)}, ${c.in("b", t)}) / max(${c.in("radius")}, 1e-5)) / max(1.0 - ${c.in("hardness")}, 1e-5), 0.0, 1.0)` };
           }
         },
+        luminance: {
+          title: "Luminance",
+          category: "Color",
+          inputs: [{ name: "color", label: "Input", type: "vec3", default: [1, 1, 1] }],
+          outputs: [{ name: "out", type: "float" }],
+          params: [],
+          desc: "Rec.709 luminance of an RGB color.",
+          glsl: (c) => ({ out: `dot(${c.in("color")}, vec3(0.2126, 0.7152, 0.0722))` })
+        },
+        channelPack: {
+          title: "Channel Pack",
+          category: "Utility",
+          inputs: [F("r", 0, { label: "R" }), F("g", 0, { label: "G" }), F("b", 0, { label: "B" }), F("a", 1, { label: "A" })],
+          outputs: [{ name: "rgba", label: "RGBA", type: "vec4" }, { name: "rgb", label: "RGB", type: "vec3" }, { name: "a", label: "A", type: "float" }],
+          params: [F("r", 0, { label: "R" }), F("g", 0, { label: "G" }), F("b", 0, { label: "B" }), F("a", 1, { label: "A" })],
+          desc: "Packs four greyscale values into one RGBA color (like the Channel Compositor tool).",
+          glsl(c) {
+            c.line(`vec4 ${c.id}_p = vec4(${c.in("r")}, ${c.in("g")}, ${c.in("b")}, ${c.in("a")});`);
+            return { rgba: `${c.id}_p`, rgb: `${c.id}_p.rgb`, a: `${c.id}_p.a` };
+          }
+        },
+        normalBlend: {
+          title: "Normal Blend (RNM)",
+          category: "Texture",
+          inputs: [
+            { name: "base", label: "Base Normal", type: "vec3", default: [0.5, 0.5, 1] },
+            { name: "detail", label: "Detail Normal", type: "vec3", default: [0.5, 0.5, 1] },
+            F("strength", 1, { label: "Detail Strength" })
+          ],
+          outputs: [{ name: "rgb", label: "RGB", type: "vec3" }],
+          params: [
+            {
+              name: "method",
+              label: "Method",
+              type: "select",
+              default: "rnm",
+              options: [["rnm", "Reoriented (RNM)"], ["udn", "Whiteout / UDN"], ["pd", "Partial derivative"], ["linear", "Linear"]]
+            },
+            F("strength", 1, { label: "Detail Strength" }),
+            { name: "flipY", label: "Flip detail green (DirectX)", type: "bool", default: false }
+          ],
+          desc: "Blends two tangent-space normal maps (RGB 0..1) with proper vector math, like the Normal Mix tool.",
+          subtitle: (n) => (NODE_TYPES.normalBlend.params[0].options.find((o) => o[0] === n.params.method) || ["", ""])[1],
+          glsl(c) {
+            c.helper("normals");
+            const m = { rnm: 0, udn: 1, pd: 2, linear: 3 }[c.p("method")] ?? 0;
+            c.line(`vec3 ${c.id}_b = aio_nrmDecode(${c.in("base")});`);
+            c.line(`vec3 ${c.id}_d = (${c.in("detail")}) * 2.0 - 1.0;`);
+            if (c.p("flipY")) c.line(`${c.id}_d.y = -${c.id}_d.y;`);
+            c.line(`${c.id}_d = aio_nrmStrength(aio_nrmDecode(${c.id}_d * 0.5 + 0.5), ${c.in("strength")});`);
+            return { rgb: `clamp(aio_nrmBlend(${c.id}_b, ${c.id}_d, ${m}) * 0.5 + 0.5, 0.0, 1.0)` };
+          }
+        },
+        heightToNormal: {
+          title: "Height to Normal",
+          category: "Texture",
+          inputs: [uvIn(), F("strength", 2, { label: "Strength" })],
+          outputs: [{ name: "rgb", label: "Normal", type: "vec3" }, { name: "height", label: "Height", type: "float" }],
+          params: [
+            { name: "texture", label: "Height Map", type: "media", default: "" },
+            F("strength", 2, { label: "Strength" }),
+            F("step", 1, { label: "Sample Offset (px)", min: 0.1 }),
+            { name: "flipY", label: "Flip green (DirectX)", type: "bool", default: false }
+          ],
+          desc: "Sobel filter of a texture's luminance \u2192 tangent-space normal map (RGB 0..1).",
+          subtitle: (n, media) => n.params.texture ? media(n.params.texture)?.name || "Missing image" : "Source (clip frame)",
+          glsl(c) {
+            c.helper("heightNormal");
+            const tex = c.p("texture") ? c.texture(c.p("texture")) : "u_src";
+            c.line(`vec2 ${c.id}_uv = ${c.in("uv")};`);
+            c.line(`vec3 ${c.id}_n = aio_heightNormal(${tex}, ${c.id}_uv, ${lit(c.p("step"))}, ${c.in("strength")});`);
+            if (c.p("flipY")) c.line(`${c.id}_n.y = -${c.id}_n.y;`);
+            return { rgb: `(${c.id}_n * 0.5 + 0.5)`, height: `aio_lum(texture(${tex}, ${c.id}_uv).rgb)` };
+          }
+        },
         edgeFresnel: {
           title: "Fresnel (Edge)",
           category: "Procedural",
@@ -4842,6 +5240,74 @@ vec3 aio_softlight(vec3 a, vec3 b) { a = clamp(a, 0.0, 1.0); return mix(2.0 * a 
             g.l(tg, "a", out, "opacity");
           })
         },
+        compositor: {
+          name: "Channel Compositor (R/G/B/A from 4 images)",
+          build: () => graph((g) => {
+            const out = g.n("output", 0, 0);
+            const pack = g.n("channelPack", 0, 0);
+            const lums = ["R", "G", "B", "A"].map(() => g.n("luminance", 0, 0));
+            const tss = lums.map(() => g.n("textureSample", 0, 0));
+            ["r", "g", "b", "a"].forEach((ch, i) => {
+              g.l(tss[i], "rgb", lums[i], "color");
+              g.l(lums[i], "out", pack, ch);
+            });
+            g.l(pack, "rgb", out, "baseColor");
+            g.l(pack, "a", out, "opacity");
+          })
+        },
+        normalmix: {
+          name: "Normal Mix (two normal maps)",
+          build: () => graph((g) => {
+            const out = g.n("output", 0, 0);
+            const nb = g.n("normalBlend", 0, 0);
+            const base = g.n("textureSample", 0, 0);
+            const tc4 = g.n("texCoord", 0, 0, { tilingU: 4, tilingV: 4 });
+            const det = g.n("textureSample", 0, 0);
+            const str = g.n("scalarParameter", 0, 0, { name: "Detail Strength", value: 1, min: 0, max: 2 });
+            g.l(base, "rgb", nb, "base");
+            g.l(tc4, "uv", det, "uv");
+            g.l(det, "rgb", nb, "detail");
+            g.l(str, "out", nb, "strength");
+            g.l(nb, "rgb", out, "baseColor");
+          })
+        },
+        mirrortile: {
+          name: "Seamless mirror tile",
+          build: () => graph((g) => {
+            const out = g.n("output", 0, 0);
+            const tc4 = g.n("texCoord", 0, 0);
+            const tiles = g.n("scalarParameter", 0, 0, { name: "Tiles", value: 2, min: 1, max: 8 });
+            const mul = g.n("multiply", 0, 0);
+            const half = g.n("multiply", 0, 0, { b: 0.5 });
+            const fr = g.n("frac", 0, 0);
+            const dbl = g.n("multiply", 0, 0, { b: 2 });
+            const sub = g.n("subtract", 0, 0, { b: 1 });
+            const ab = g.n("abs", 0, 0);
+            const om = g.n("oneMinus", 0, 0);
+            const ts = g.n("textureSample", 0, 0);
+            g.l(tc4, "uv", mul, "a");
+            g.l(tiles, "out", mul, "b");
+            g.l(mul, "out", half, "a");
+            g.l(half, "out", fr, "x");
+            g.l(fr, "out", dbl, "a");
+            g.l(dbl, "out", sub, "a");
+            g.l(sub, "out", ab, "x");
+            g.l(ab, "out", om, "x");
+            g.l(om, "out", ts, "uv");
+            g.l(ts, "rgb", out, "baseColor");
+            g.l(ts, "a", out, "opacity");
+          })
+        },
+        heightnormal: {
+          name: "Height \u2192 Normal map",
+          build: () => graph((g) => {
+            const out = g.n("output", 0, 0);
+            const hn = g.n("heightToNormal", 0, 0);
+            const str = g.n("scalarParameter", 0, 0, { name: "Normal Strength", value: 2, min: 0, max: 10 });
+            g.l(str, "out", hn, "strength");
+            g.l(hn, "rgb", out, "baseColor");
+          })
+        },
         vignette: {
           name: "Vignette tint",
           build: () => graph((g) => {
@@ -4899,6 +5365,7 @@ vec3 aio_softlight(vec3 a, vec3 b) { a = clamp(a, 0.0, 1.0); return mix(2.0 * a 
         h: "append"
       };
       editorClipboard = null;
+      scrubActive = false;
       openEditor = null;
       PREVIEW_VS = `#version 300 es
 in vec2 a_pos;
@@ -4981,6 +5448,8 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       composite: makeProgram(FS_COMPOSITE),
       transition: makeProgram(FS_TRANSITION),
       hue: makeProgram(FS_HUE),
+      mask: makeProgram(FS_MASK),
+      gradblur: makeProgram(FS_GRADBLUR),
       filter2: makeProgram(FS_FILTER2),
       transition2: makeProgram(FS_TRANSITION2)
     };
@@ -5195,21 +5664,39 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       const f = Math.min(W / sw, H / sh);
       return [sw * f, sh * f];
     }
-    function clipMatrix(clip, sw, sh) {
+    const num = (v, d) => {
+      const x = Number(v);
+      return v === void 0 || v === null || !isFinite(x) ? d : x;
+    };
+    function clipHomography(clip, sw, sh) {
       const [bw, bh] = baseSize(clip, sw, sh);
       const tr = clip.transform || {};
-      const sc = tr.scale ?? 1;
-      const sx = sc * (tr.scaleX ?? 1) * (tr.flipH ? -1 : 1);
-      const sy = sc * (tr.scaleY ?? 1) * (tr.flipV ? -1 : 1);
-      const th = (tr.rotation || 0) * Math.PI / 180;
-      const c = Math.cos(th), s = Math.sin(th);
-      const a = c * sx * bw, b = s * sx * bw, cc = -s * sy * bh, d = c * sy * bh;
-      const tx = (tr.x || 0) - (a + cc) * 0.5, ty = (tr.y || 0) - (b + d) * 0.5;
-      return [a, b, cc, d, tx, ty];
+      const sc = num(tr.scale, 1);
+      const sx = sc * num(tr.scaleX, 1) * (tr.flipH ? -1 : 1);
+      const sy = sc * num(tr.scaleY, 1) * (tr.flipV ? -1 : 1);
+      const rad = (d2) => num(d2, 0) * Math.PI / 180;
+      const ry = rad(tr.rotY), rx = rad(tr.rotX), rz = rad(tr.rotation);
+      const cy = Math.cos(ry), sy_ = Math.sin(ry), cx = Math.cos(rx), sx_ = Math.sin(rx), cz = Math.cos(rz), sz = Math.sin(rz);
+      const R = ([x, y, z]) => {
+        [x, z] = [cy * x + sy_ * z, -sy_ * x + cy * z];
+        [y, z] = [cx * y - sx_ * z, sx_ * y + cx * z];
+        [x, y] = [cz * x - sz * y, sz * x + cz * y];
+        return [x, y, z];
+      };
+      const U = R([sx * bw, 0, 0]), V = R([0, sy * bh, 0]), O = R([-0.5 * sx * bw, -0.5 * sy * bh, 0]);
+      let nearZ = 0;
+      for (const u of [0, 1]) for (const v of [0, 1]) nearZ = Math.max(nearZ, -(O[2] + U[2] * u + V[2] * v));
+      const d = Math.max(10, nearZ * 1.15, num(tr.perspective, 1200));
+      const tx = num(tr.x, 0), ty = num(tr.y, 0);
+      const Wr = [U[2] / d, V[2] / d, 1 + O[2] / d];
+      const Xr = [U[0] + tx * Wr[0], V[0] + tx * Wr[1], O[0] + tx * Wr[2]];
+      const Yr = [U[1] + ty * Wr[0], V[1] + ty * Wr[1], O[1] + ty * Wr[2]];
+      return [Xr, Yr, Wr];
     }
     function cropRect(clip) {
       const cr = clip.crop || {};
-      const l = Math.max(0, cr.l || 0), t = Math.max(0, cr.t || 0), r = Math.max(0, cr.r || 0), b = Math.max(0, cr.b || 0);
+      const c01 = (v) => Math.max(0, Math.min(1, num(v, 0)));
+      const l = c01(cr.l), t = c01(cr.t), r = c01(cr.r), b = c01(cr.b);
       let lo = [l, t], hi = [1 - r, 1 - b];
       if (hi[0] < lo[0]) hi[0] = lo[0] = (lo[0] + hi[0]) / 2;
       if (hi[1] < lo[1]) hi[1] = lo[1] = (lo[1] + hi[1]) / 2;
@@ -5248,14 +5735,17 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
         return [{ x: -W / 2, y: -H / 2 }, { x: W / 2, y: -H / 2 }, { x: W / 2, y: H / 2 }, { x: -W / 2, y: H / 2 }];
       }
       const [sw, sh] = sourceDims(clip);
-      const [a, b, c, d, tx, ty] = clipMatrix(clip, sw, sh);
+      const [X, Y, Wr] = clipHomography(clip, sw, sh);
       const [l, t, r, bo] = cropRect(clip);
-      const pt = (u, v) => ({ x: a * u + c * v + tx, y: b * u + d * v + ty });
+      const pt = (u, v) => {
+        const w = Math.max(1e-3, Wr[0] * u + Wr[1] * v + Wr[2]);
+        return { x: (X[0] * u + X[1] * v + X[2]) / w, y: (Y[0] * u + Y[1] * v + Y[2]) / w };
+      };
       return [pt(l, t), pt(r, t), pt(r, bo), pt(l, bo)];
     }
     const posterLevels = (col) => {
       const v = Math.round(Number(col && col.posterize) || 0);
-      return v >= 2 ? Math.min(64, v) : 0;
+      return v >= 2 ? Math.min(256, v) : 0;
     };
     function colorUber(col) {
       if (!col) return false;
@@ -5321,6 +5811,12 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       const colorOn = !colorNeutral(col);
       const hm = clip.hueMatch;
       const hueOn = !!(hm && hm.enabled && clip.type !== "material" && (hm.colorize || (Number(hm.range) || 0) > 0));
+      const mk = clip.mask;
+      const MASK_TYPES2 = { linear: 1, radial: 2, rect: 3, ellipse: 4 };
+      const maskOn = !!(mk && MASK_TYPES2[mk.type]);
+      const gb = clip.gradBlur;
+      const gbStrength = gb && gb.enabled ? Math.max(0, num(gb.strength, 40)) : 0;
+      const gbOn = gbStrength > 0;
       const filters = (clip.filters || []).filter((f) => f && FILTER_INDEX.has(f.type) && (f.amount ?? 1) > 0);
       let mat = null;
       if (clip.materialId && materialsMod) {
@@ -5328,7 +5824,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
         if (m) mat = getMaterialProgram(m);
       } else if (clip.materialId && !materialsMod) loadMaterials();
       if (clip.type === "material" && !mat) return null;
-      if (!chroma && !hueOn && !colorOn && !filters.length && !mat) return { tex: srcTex, rt: null, sw, sh };
+      if (!chroma && !hueOn && !colorOn && !filters.length && !gbOn && !maskOn && !mat) return { tex: srcTex, rt: null, sw, sh };
       const [bw, bh] = baseSize(clip, sw, sh);
       const tr = clip.transform || {};
       const sc = Math.abs(tr.scale ?? 1);
@@ -5425,7 +5921,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
         });
       }
       if (colorOn) {
-        const n = (k) => Math.max(-1, Math.min(1, (Number(col[k]) || 0) / 100));
+        const n = (k) => Math.max(-10, Math.min(10, num(col[k], 0) / 100));
         if (colorUber(col)) {
           const clar = n("clarity");
           const low = clar ? blurCopy(cur.tex, lw, lh, 0.025) : null;
@@ -5459,9 +5955,9 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
           });
           if (low) release(low);
         }
-        const blur = Math.max(0, Math.min(100, Number(col.blur) || 0));
+        const blur = Math.max(0, num(col.blur, 0));
         if (blur > 0) {
-          const sigmaPx = blur / 100 * 0.02 * Math.max(lw, lh);
+          const sigmaPx = Math.min(blur / 100 * 0.02, 0.2) * Math.max(lw, lh);
           const ds = Math.max(1, Math.floor(sigmaPx / 4));
           const bw2 = Math.max(1, Math.round(lw / ds)), bh2 = Math.max(1, Math.round(lh / ds));
           step(P3.blur, (pr) => {
@@ -5479,20 +5975,63 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
         step(fi >= FILTER_V2 ? P3.filter2 : P3.filter, (pr) => {
           u2f(pr, "u_res", lw, lh);
           u1i(pr, "u_type", fi);
-          u1f(pr, "u_amt", Math.max(0, Math.min(1, f.amount ?? 1)));
+          u1f(pr, "u_amt", Math.max(0, Math.min(4, num(f.amount, 1))));
           u1f(pr, "u_time", Math.max(0, t - clip.start));
         });
       }
+      if (gbOn) {
+        const [bw0] = baseSize(clip, sw, sh);
+        const sigma = Math.min(gbStrength * 0.5 * lw / Math.max(1, bw0), 0.25 * Math.max(lw, lh));
+        const big2 = Math.max(lw, lh);
+        const levels = [1 / 3, 2 / 3, 1].map((f) => blurCopy(cur.tex, lw, lh, Math.max(0.5, sigma * f) / big2));
+        const mode = { linear: 0, band: 1, radial: 2 }[gb.mode] ?? 0;
+        const ang = num(gb.angle, 90) * Math.PI / 180, dx = Math.cos(ang), dy = Math.sin(ang);
+        let pmin = Infinity, pmax = -Infinity;
+        for (const [x, y] of [[0, 0], [lw, 0], [0, lh], [lw, lh]]) {
+          const q = x * dx + y * dy;
+          pmin = Math.min(pmin, q);
+          pmax = Math.max(pmax, q);
+        }
+        step(P3.gradblur, (pr) => {
+          levels.forEach((lv, i) => {
+            bindTex(1 + i, lv.tex);
+            u1i(pr, "u_b" + (i + 1), 1 + i);
+          });
+          u1i(pr, "u_gmode", mode);
+          u2f(pr, "u_size", lw, lh);
+          u2f(pr, "u_dir", dx, dy);
+          u2f(pr, "u_c", (0.5 + num(gb.x, 0)) * lw, (0.5 + num(gb.y, 0)) * lh);
+          u1f(pr, "u_pmin", pmin);
+          u1f(pr, "u_span", Math.max(1e-6, pmax - pmin));
+          u1f(pr, "u_start", num(gb.start, 0));
+          u1f(pr, "u_end", num(gb.end, 0.5));
+        });
+        for (const lv of levels) release(lv);
+      }
       if (mat && clip.type !== "material") runMaterial();
+      if (maskOn) {
+        step(P3.mask, (pr) => {
+          u1i(pr, "u_mtype", MASK_TYPES2[mk.type]);
+          u2f(pr, "u_size", lw, lh);
+          u2f(pr, "u_c", num(mk.x, 0), num(mk.y, 0));
+          u2f(pr, "u_half", Math.abs(num(mk.w, 0.5)), Math.abs(num(mk.h, 0.5)));
+          u1f(pr, "u_ang", num(mk.angle, 0) * Math.PI / 180);
+          u1f(pr, "u_feather", Math.max(0, num(mk.feather, 0.15)));
+          u1i(pr, "u_inv", mk.invert ? 1 : 0);
+        });
+      }
       return { tex: cur.tex, rt: cur.rt, sw, sh };
     }
     function inverseFor(clip, sw, sh) {
-      const [a, b, c, d, tx, ty] = clipMatrix(clip, sw, sh);
-      const det = a * d - b * c;
+      const [[a, b, c], [d, e, f], [g, h2, k]] = clipHomography(clip, sw, sh);
+      const A = e * k - f * h2, B = -(d * k - f * g), C = d * h2 - e * g;
+      const det = a * A + b * B + c * C;
       if (!isFinite(det) || Math.abs(det) < 1e-9) return null;
-      const ia = d / det, ib = -b / det, ic = -c / det, id = a / det;
-      const itx = -(ia * tx + ic * ty), ity = -(ib * tx + id * ty);
-      return new Float32Array([ia, -ib, 0, ic, -id, 0, itx, 1 - ity, 1]);
+      const i0 = [A / det, -(b * k - c * h2) / det, (b * f - c * e) / det];
+      const i1 = [B / det, (a * k - c * g) / det, -(a * f - c * d) / det];
+      const i2 = [C / det, -(a * h2 - b * g) / det, (a * e - b * d) / det];
+      const r1 = [i2[0] - i1[0], i2[1] - i1[1], i2[2] - i1[2]];
+      return new Float32Array([i0[0], r1[0], i2[0], i0[1], r1[1], i2[1], i0[2], r1[2], i2[2]]);
     }
     const identityInv = () => {
       const { width: W, height: H } = settings();
@@ -5643,7 +6182,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
     });
     return { render, setSize, getClipQuad, dispose, gl };
   }
-  var materialsMod, materialsPromise, ident, DEFINES, FILTER_INDEX, TRANSITION_INDEX, BLEND_INDEX, FILTER_V2, TRANSITION_V2, COLOR_KEYS, VS, HEAD, FS_COPY, FS_FILL, FS_CHROMA, FS_COLOR, FS_HUE, FS_BLUR, FS_FILTER, FS_FILTER2, FS_COMPOSITE, TR_COMMON, FS_TRANSITION, FS_TRANSITION2, VISUAL3, FULLFRAME;
+  var materialsMod, materialsPromise, ident, DEFINES, FILTER_INDEX, TRANSITION_INDEX, BLEND_INDEX, FILTER_V2, TRANSITION_V2, COLOR_KEYS, VS, HEAD, FS_COPY, FS_FILL, FS_CHROMA, FS_COLOR, FS_HUE, FS_BLUR, FS_FILTER, FS_FILTER2, FS_MASK, FS_GRADBLUR, FS_COMPOSITE, TR_COMMON, FS_TRANSITION, FS_TRANSITION2, VISUAL3, FULLFRAME;
   var init_renderer = __esm({
     "js/renderer.js"() {
       init_catalog();
@@ -6137,6 +6676,8 @@ void main() {
     for (int i = 0; i < 24; i++) acc += premul(SB(0.5 + (uv - 0.5) * (1.0 - 0.18 * a * float(i) / 23.0)));
     r = unpremul(acc / 24.0); direct = true;
   }
+  else if (t == F_tile_2x2) r = S(fract(uv * 2.0));
+  else if (t == F_tile_mirror) r = S(1.0 - abs(1.0 - mod(uv * 2.0, 2.0)));
   else if (t == F_motion_blur) {
     vec4 acc = vec4(0.0);
     for (int i = -12; i <= 12; i++) acc += premul(SM(uv + vec2(float(i) / 12.0 * 0.03 * a, 0.0)));
@@ -6144,6 +6685,38 @@ void main() {
   }
   r.rgb = clamp(r.rgb, 0.0, 1.0);
   outColor = direct ? r : mix(o, r, a);
+}`;
+      FS_MASK = HEAD + `
+uniform sampler2D u_tex; uniform vec2 u_size, u_c, u_half; uniform int u_mtype, u_inv; uniform float u_ang, u_feather;
+float sdBox(vec2 q, vec2 b) { vec2 d = abs(q) - b; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0); }
+void main() {
+  vec4 s = texture(u_tex, v_uv);
+  vec2 q = rot2((vec2(v_uv.x, 1.0 - v_uv.y) - 0.5 - u_c) * u_size, -u_ang);
+  float md = min(u_size.x, u_size.y), m = 1.0;
+  vec2 hb = max(u_half * u_size * 0.5, vec2(0.5));
+  if (u_mtype == 1) { float fw = max(u_feather * md * 0.5, 0.5); m = 1.0 - smoothstep(-fw, fw, q.y); }
+  else if (u_mtype == 2) { float rr = max(u_half.x * md * 0.5, 0.5); float fw = max(u_feather * rr, 0.5); m = 1.0 - smoothstep(-fw, fw, length(q) - rr); }
+  else if (u_mtype == 3) { float fw = max(u_feather * min(hb.x, hb.y), 0.5); m = 1.0 - smoothstep(-fw, fw, sdBox(q, hb)); }
+  else if (u_mtype == 4) { float fw = max(u_feather * min(hb.x, hb.y), 0.5); m = 1.0 - smoothstep(-fw, fw, (length(q / hb) - 1.0) * min(hb.x, hb.y)); }
+  if (u_inv == 1) m = 1.0 - m;
+  outColor = vec4(s.rgb, s.a * m);
+}`;
+      FS_GRADBLUR = HEAD + `
+uniform sampler2D u_tex, u_b1, u_b2, u_b3; uniform int u_gmode; uniform vec2 u_size, u_dir, u_c;
+uniform float u_pmin, u_span, u_start, u_end;
+void main() {
+  vec2 p = vec2(v_uv.x, 1.0 - v_uv.y) * u_size; // layer px, y down
+  float t;
+  if (u_gmode == 0) t = (dot(p, u_dir) - u_pmin) / u_span;
+  else if (u_gmode == 1) t = abs(dot(p - u_c, u_dir)) / (u_span * 0.5);
+  else t = length((p - u_c) / (u_size * 0.5)) / 1.41421356;
+  // full blur at start, sharp by end (either order)
+  float v = abs(u_end - u_start) < 1e-5 ? (t <= u_start ? 1.0 : 0.0) : clamp((t - u_end) / (u_start - u_end), 0.0, 1.0);
+  v = v * v * (3.0 - 2.0 * v);
+  float k = v * 3.0;
+  vec4 c0 = premul(texture(u_tex, v_uv)), c1 = premul(texture(u_b1, v_uv)), c2 = premul(texture(u_b2, v_uv)), c3 = premul(texture(u_b3, v_uv));
+  vec4 r = k < 1.0 ? mix(c0, c1, k) : (k < 2.0 ? mix(c1, c2, k - 1.0) : mix(c2, c3, k - 2.0));
+  outColor = unpremul(r);
 }`;
       FS_COMPOSITE = HEAD + `
 uniform sampler2D u_src, u_dst;
@@ -6179,10 +6752,12 @@ vec3 blendMode(vec3 b, vec3 s, int m) {
 }
 void main() {
   vec2 p = vec2(v_uv.x - 0.5, 0.5 - v_uv.y) * u_frame;
-  vec2 uv = (u_inv * vec3(p, 1.0)).xy;
+  vec3 hh = u_inv * vec3(p, 1.0);           // homogeneous: 3D tilt gives a perspective divide
+  float front = step(1e-6, hh.z);
+  vec2 uv = hh.xy / max(hh.z, 1e-6);
   vec2 fw = max(fwidth(uv), vec2(1e-7));
   vec2 dlo = (uv - u_crop.xy) / fw, dhi = (u_crop.zw - uv) / fw;
-  float cov = clamp(min(min(dlo.x, dlo.y), min(dhi.x, dhi.y)) + 0.5, 0.0, 1.0);
+  float cov = clamp(min(min(dlo.x, dlo.y), min(dhi.x, dhi.y)) + 0.5, 0.0, 1.0) * front;
   vec4 s = texture(u_src, clamp(uv, u_crop.xy, u_crop.zw));
   float a = s.a * u_opacity * cov;
   if (u_mode < 0) { outColor = vec4(s.rgb, a); return; }
@@ -13151,19 +13726,23 @@ ${notes}`;
   var ai_exports = {};
   __export(ai_exports, {
     AI_MODELS: () => AI_MODELS,
+    BG_MODELS: () => BG_MODELS,
     CAPTION_STYLES: () => CAPTION_STYLES,
     addCaptionTrack: () => addCaptionTrack,
     aiUnavailableReason: () => aiUnavailableReason,
     buildCaptions: () => buildCaptions,
     captionsToSrt: () => captionsToSrt,
     chunksToWords: () => chunksToWords,
+    cutoutPng: () => cutoutPng,
     fixTimings: () => fixTimings,
     groupWords: () => groupWords,
     isAIAvailable: () => isAIAvailable,
-    openAutoCaptions: () => openAutoCaptions
+    openAutoCaptions: () => openAutoCaptions,
+    openRemoveBackground: () => openRemoveBackground,
+    refineMask: () => refineMask
   });
-  function aiUnavailableReason() {
-    if (typeof location !== "undefined" && location.protocol === "file:") return "Auto captions need the site served over http(s) \u2014 open it from a web server (e.g. node server.js) instead of a file.";
+  function aiUnavailableReason(feature = "Auto captions") {
+    if (typeof location !== "undefined" && location.protocol === "file:") return feature + " need the site served over http(s) \u2014 open it from a web server (e.g. node server.js) instead of a file.";
     if (typeof Worker === "undefined") return "This browser does not support Web Workers.";
     if (typeof WebAssembly !== "object") return "This browser does not support WebAssembly.";
     return null;
@@ -13292,18 +13871,19 @@ ${c.text}
     }
     worker = null;
   }
-  function workerTranscribe(audioData, opts, on) {
+  function workerCall(msg, transfer, doneType, { signal } = {}, on = () => {
+  }) {
     return new Promise((resolve, reject) => {
       const w = getWorker2(), id = ++runSeq;
       const done = () => {
         w.removeEventListener("message", onMsg);
         w.removeEventListener("error", onErr);
-        opts.signal?.removeEventListener("abort", onAbort);
+        signal?.removeEventListener("abort", onAbort);
       };
       const onMsg = (e) => {
         const m = e.data || {};
         if (m.id !== id) return;
-        if (m.type === "result") {
+        if (m.type === doneType) {
           done();
           resolve(m);
         } else if (m.type === "error") {
@@ -13316,7 +13896,7 @@ ${c.text}
       const onErr = (e) => {
         done();
         killWorker();
-        const err = new Error("The speech worker crashed" + (e.message ? ": " + e.message : "") + ".");
+        const err = new Error("The AI worker crashed" + (e.message ? ": " + e.message : "") + ".");
         err.code = "worker";
         reject(err);
       };
@@ -13329,8 +13909,8 @@ ${c.text}
       };
       w.addEventListener("message", onMsg);
       w.addEventListener("error", onErr);
-      opts.signal?.addEventListener("abort", onAbort);
-      w.postMessage({ type: "run", id, audio: audioData, model: opts.model, language: opts.language || null, task: opts.task, device: opts.device, libUrl: opts.libUrl }, [audioData.buffer]);
+      signal?.addEventListener("abort", onAbort);
+      w.postMessage({ ...msg, id }, transfer);
     });
   }
   async function pickDevice() {
@@ -13535,7 +14115,357 @@ ${c.text}
     };
     return { el: back, close };
   }
-  var AI_MODELS, LANGUAGES, CAPTION_STYLES, BASE_TEXT, MIN_DUR, PAUSE, MAX_CHARS, CJK, isAIAvailable, joinWord, styleOf, srtTime, worker, runSeq, esc5, fmtT, mb, PREF_KEY2, loadPrefs2, savePrefs2;
+  function refineMask(mask, w, h2, { threshold = 50, hardness = 0, feather = 0 } = {}) {
+    const out = new Uint8ClampedArray(w * h2);
+    const c = clamp(threshold, 1, 99) / 100, half = Math.max(4e-3, 0.5 * (1 - clamp(hardness, 0, 100) / 100));
+    const lut = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v++) lut[v] = Math.round(clamp((v / 255 - (c - half)) / (2 * half), 0, 1) * 255);
+    for (let i = 0; i < out.length; i++) out[i] = lut[mask[i]];
+    const r = Math.round(feather);
+    if (r > 0) boxBlur(out, w, h2, r);
+    return out;
+  }
+  function boxBlur(a, w, h2, r) {
+    const tmp = new Uint8ClampedArray(a.length), n = 2 * r + 1;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let y = 0; y < h2; y++) {
+        let sum = 0;
+        const row = y * w;
+        for (let x = -r; x <= r; x++) sum += a[row + clamp(x, 0, w - 1)];
+        for (let x = 0; x < w; x++) {
+          tmp[row + x] = sum / n;
+          sum += a[row + Math.min(w - 1, x + r + 1)] - a[row + Math.max(0, x - r)];
+        }
+      }
+      for (let x = 0; x < w; x++) {
+        let sum = 0;
+        for (let y = -r; y <= r; y++) sum += tmp[clamp(y, 0, h2 - 1) * w + x];
+        for (let y = 0; y < h2; y++) {
+          a[y * w + x] = sum / n;
+          sum += tmp[Math.min(h2 - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x];
+        }
+      }
+    }
+  }
+  async function cutoutPng(bitmap, mask, w, h2, refine) {
+    const cv = document.createElement("canvas");
+    cv.width = w;
+    cv.height = h2;
+    const ctx = cv.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(bitmap, 0, 0, w, h2);
+    const img = ctx.getImageData(0, 0, w, h2);
+    const a = refine ? refineMask(mask, w, h2, refine) : mask;
+    for (let i = 0, j = 3; i < a.length; i++, j += 4) img.data[j] = Math.min(img.data[j], a[i]);
+    ctx.putImageData(img, 0, 0);
+    return new Promise((res, rej) => cv.toBlob((b) => b ? res(b) : rej(new Error("PNG encoding failed")), "image/png"));
+  }
+  function importViaApp(files, ms = 2e4) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("The editor did not import the new image.")), ms);
+      window.dispatchEvent(new CustomEvent("ve:importMedia", { detail: { files, resolve: (ids) => {
+        clearTimeout(timer);
+        resolve(ids || []);
+      } } }));
+    });
+  }
+  async function bitmapOf(rt) {
+    if (rt?.file) {
+      try {
+        return await createImageBitmap(rt.file, { imageOrientation: "from-image" });
+      } catch {
+      }
+    }
+    const im = rt?.image;
+    if (im) {
+      if (!im.complete) await new Promise((r) => {
+        im.onload = im.onerror = r;
+      });
+      return createImageBitmap(im);
+    }
+    throw new Error("The image is not loaded.");
+  }
+  function openRemoveBackground({ store: store2, ops: ops2, audio, mediaRuntime: mediaRuntime2, mediaIds = [], segment, libUrl } = {}) {
+    document.querySelector(".ai-back")?.remove();
+    const clips = store2.selectedClips().filter((c) => c.type === "image" && store2.getMedia(c.mediaId)?.kind === "image");
+    const ids = [.../* @__PURE__ */ new Set([...clips.map((c) => c.mediaId), ...mediaIds.filter((id) => store2.getMedia(id)?.kind === "image")])];
+    const items = ids.map((id) => ({ mediaId: id, media: store2.getMedia(id), bitmap: null, mask: null, w: 0, h: 0 }));
+    const unavailable = aiUnavailableReason("Local AI tools") || (!items.length ? "Select one or more image clips on the timeline (or images in the library) first." : null);
+    const prefs = { bgModel: BG_MODELS[0].id, ...loadPrefs2() };
+    const back = document.createElement("div");
+    back.className = "modal-back ai-back";
+    back.innerHTML = `<div class="modal ai-modal ai-rmbg" role="dialog" aria-label="Remove Background">
+    <div class="modal-head"><span>Remove Background <small class="ai-badge">local AI</small></span><button class="icon-btn ai-x" title="Close">\u2715</button></div>
+    <div class="modal-body">
+      ${unavailable ? `<div class="ai-msg ai-err ai-unavail">${esc5(unavailable)}</div>` : ""}
+      <div class="ai-cmp">
+        <figure><canvas class="ai-before"></canvas><figcaption>Before</figcaption></figure>
+        <figure><canvas class="ai-after ai-checker"></canvas><figcaption>After</figcaption></figure>
+      </div>
+      ${items.length > 1 ? `<div class="ai-pager"><button class="btn ai-prev">\u2039</button><span class="ai-page dim"></span><button class="btn ai-next">\u203A</button></div>` : ""}
+      <div class="form-grid ai-form">
+        <label>Images</label><div class="dim ai-count">${items.length ? esc5(items.map((i) => i.media.name).join(", ")) : "\u2014"}</div>
+        <label>Model</label><select data-k="bgModel">${BG_MODELS.map((m) => `<option value="${m.id}"${m.id === prefs.bgModel ? " selected" : ""}>${esc5(m.label)} (${m.size})</option>`).join("")}</select>
+        <label>Threshold</label><div class="ai-row"><input type="range" data-r="threshold" min="5" max="95" value="50"><span class="ai-val" data-v="threshold">50</span></div>
+        <label>Edge hardness</label><div class="ai-row"><input type="range" data-r="hardness" min="0" max="100" value="0"><span class="ai-val" data-v="hardness">0</span></div>
+        <label>Feather</label><div class="ai-row"><input type="range" data-r="feather" min="0" max="12" value="0"><span class="ai-val" data-v="feather">0 px</span></div>
+        <label></label><span class="dim ai-engine"></span>
+      </div>
+      <div class="ai-progress" hidden>
+        <div class="ai-step" data-step="download"><div class="ai-step-l"><span>Model download</span><span class="ai-pct"></span></div><div class="ai-bar"><i></i></div></div>
+        <div class="ai-step" data-step="infer"><div class="ai-step-l"><span>Segmentation</span><span class="ai-pct"></span></div><div class="ai-bar"><i></i></div></div>
+        <div class="ai-status dim"></div>
+      </div>
+      <div class="ai-msg ai-notice" hidden></div>
+      <div class="ai-msg ai-err ai-error" hidden></div>
+      <div class="ai-msg ai-ok ai-result" hidden></div>
+      <div class="ai-note dim ai-license"></div>
+    </div>
+    <div class="modal-foot"><span class="ai-spacer"></span><button class="btn ai-cancel">Cancel</button><button class="btn ai-go">Remove background</button><button class="btn primary ai-apply" disabled>Apply</button></div>
+  </div>`;
+    (document.getElementById("modalRoot") || document.body).appendChild(back);
+    const q = (s) => back.querySelector(s);
+    const refine = () => ({ threshold: +q('[data-r="threshold"]').value, hardness: +q('[data-r="hardness"]').value, feather: +q('[data-r="feather"]').value });
+    let busy = false, ctrl = null, cur = 0, applied = false;
+    pickDevice().then((d) => {
+      const e = q(".ai-engine");
+      if (e) e.textContent = d === "webgpu" ? "Engine: GPU (WebGPU)" : "Engine: CPU (WebAssembly)";
+    });
+    const license = () => {
+      q(".ai-license").textContent = (BG_MODELS.find((m) => m.id === q('[data-k="bgModel"]').value)?.note || "") + " Runs in your browser; the model is downloaded once, then cached.";
+    };
+    license();
+    q('[data-k="bgModel"]').onchange = license;
+    const PV = 300;
+    const pv = { key: -1, w: 0, h: 0, rgba: null, mask: null };
+    const drawPreview = () => {
+      const it = items[cur];
+      if (!it?.bitmap) return;
+      const k = Math.min(1, PV / Math.max(it.w, it.h)), w = Math.max(1, Math.round(it.w * k)), h2 = Math.max(1, Math.round(it.h * k));
+      const bc = q(".ai-before"), ac = q(".ai-after");
+      if (pv.key !== cur || pv.w !== w) {
+        bc.width = ac.width = w;
+        bc.height = ac.height = h2;
+        const bx = bc.getContext("2d", { willReadFrequently: true });
+        bx.clearRect(0, 0, w, h2);
+        bx.drawImage(it.bitmap, 0, 0, w, h2);
+        pv.rgba = bx.getImageData(0, 0, w, h2);
+        pv.key = cur;
+        pv.w = w;
+        pv.h = h2;
+        pv.mask = null;
+      }
+      if (it.mask && !pv.mask) {
+        const mc = document.createElement("canvas");
+        mc.width = it.w;
+        mc.height = it.h;
+        const id = new ImageData(it.w, it.h);
+        for (let i = 0; i < it.mask.length; i++) {
+          id.data[i * 4] = it.mask[i];
+          id.data[i * 4 + 3] = 255;
+        }
+        mc.getContext("2d").putImageData(id, 0, 0);
+        const sc = document.createElement("canvas");
+        sc.width = w;
+        sc.height = h2;
+        const sx = sc.getContext("2d", { willReadFrequently: true });
+        sx.drawImage(mc, 0, 0, w, h2);
+        const d = sx.getImageData(0, 0, w, h2).data;
+        pv.mask = new Uint8Array(w * h2);
+        for (let i = 0; i < pv.mask.length; i++) pv.mask[i] = d[i * 4];
+      }
+      const ax = ac.getContext("2d");
+      if (!pv.mask) {
+        ax.clearRect(0, 0, w, h2);
+        ax.globalAlpha = 0.35;
+        ax.drawImage(it.bitmap, 0, 0, w, h2);
+        ax.globalAlpha = 1;
+        return;
+      }
+      const r = refine();
+      const a = refineMask(pv.mask, w, h2, { ...r, feather: r.feather * w / it.w });
+      const out = new ImageData(new Uint8ClampedArray(pv.rgba.data), w, h2);
+      for (let i = 0, j = 3; i < a.length; i++, j += 4) out.data[j] = Math.min(out.data[j], a[i]);
+      ax.putImageData(out, 0, 0);
+    };
+    const page = () => {
+      if (q(".ai-page")) q(".ai-page").textContent = `${cur + 1} / ${items.length} \xB7 ${items[cur].media.name}`;
+      drawPreview();
+    };
+    if (q(".ai-prev")) {
+      q(".ai-prev").onclick = () => {
+        cur = (cur + items.length - 1) % items.length;
+        page();
+      };
+      q(".ai-next").onclick = () => {
+        cur = (cur + 1) % items.length;
+        page();
+      };
+    }
+    back.querySelectorAll("[data-r]").forEach((i) => i.oninput = () => {
+      q(`[data-v="${i.dataset.r}"]`).textContent = i.value + (i.dataset.r === "feather" ? " px" : "");
+      drawPreview();
+    });
+    Promise.all(items.map(async (it) => {
+      it.bitmap = await bitmapOf(mediaRuntime2.get(it.mediaId));
+      it.w = it.bitmap.width;
+      it.h = it.bitmap.height;
+    })).then(page).catch((e) => show(".ai-error", esc5("Could not read the image: " + e.message)));
+    const show = (sel, html) => {
+      const el2 = q(sel);
+      el2.hidden = !html;
+      el2.innerHTML = html || "";
+    };
+    const setBar = (step, frac, text) => {
+      const el2 = q(`[data-step="${step}"]`);
+      el2.classList.add("on");
+      el2.querySelector(".ai-bar i").style.width = (frac == null ? 0 : clamp(frac, 0, 1) * 100).toFixed(1) + "%";
+      el2.querySelector(".ai-bar").classList.toggle("indet", frac == null);
+      el2.querySelector(".ai-pct").textContent = text || "";
+    };
+    const hasMasks = () => items.length && items.every((i) => i.mask);
+    const setBusy = (b) => {
+      busy = b;
+      back.classList.toggle("ai-busy", b);
+      q('[data-k="bgModel"]').disabled = b;
+      q(".ai-go").disabled = b || !!unavailable;
+      q(".ai-apply").disabled = b || !hasMasks() || applied;
+      q(".ai-cancel").textContent = b ? "Cancel" : applied ? "Close" : "Cancel";
+    };
+    const close = () => {
+      if (busy) ctrl?.abort();
+      back.remove();
+    };
+    q(".ai-x").onclick = close;
+    q(".ai-cancel").onclick = () => {
+      if (busy) ctrl?.abort();
+      else close();
+    };
+    back.addEventListener("pointerdown", (e) => {
+      if (e.target === back && !busy) close();
+    });
+    back.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") close();
+      e.stopPropagation();
+    });
+    setBusy(false);
+    q(".ai-go").onclick = async () => {
+      if (busy || unavailable) return;
+      const model = q('[data-k="bgModel"]').value;
+      savePrefs2({ ...loadPrefs2(), bgModel: model });
+      show(".ai-error");
+      show(".ai-notice");
+      show(".ai-result");
+      q(".ai-progress").hidden = false;
+      back.querySelectorAll(".ai-step").forEach((s) => s.classList.remove("on", "done"));
+      const status2 = (t) => {
+        q(".ai-status").textContent = t;
+      };
+      ctrl = new AbortController();
+      const signal = ctrl.signal;
+      items.forEach((i) => {
+        i.mask = null;
+      });
+      pv.mask = null;
+      applied = false;
+      setBusy(true);
+      try {
+        const device = await pickDevice();
+        setBar("download", null, "checking cache\u2026");
+        const on = (m) => {
+          if (m.type === "status") status2(m.message);
+          else if (m.type === "notice") show(".ai-notice", esc5(m.message));
+          else if (m.type === "download") setBar("download", m.total ? m.loaded / m.total : null, m.total ? `${Math.round(m.loaded / m.total * 100)}% \xB7 ${mb(m.loaded)} / ${mb(m.total)}` : mb(m.loaded));
+        };
+        const run = segment || workerSegment;
+        for (let n = 0; n < items.length; n++) {
+          const it = items[n];
+          if (!it.bitmap) throw new Error("The image " + it.media.name + " could not be read.");
+          setBar("infer", items.length > 1 ? n / items.length : null, `${n + 1} / ${items.length}`);
+          const cv = document.createElement("canvas");
+          cv.width = it.w;
+          cv.height = it.h;
+          const cx = cv.getContext("2d", { willReadFrequently: true });
+          cx.drawImage(it.bitmap, 0, 0);
+          const px = cx.getImageData(0, 0, it.w, it.h);
+          const res = await run({ data: px.data, width: it.w, height: it.h }, { model, device, signal, libUrl }, on);
+          if (signal.aborted) throw Object.assign(new Error("Cancelled"), { code: "cancel" });
+          const dl = q('[data-step="download"]');
+          if (!dl.classList.contains("done")) {
+            dl.classList.add("done");
+            setBar("download", 1, dl.querySelector(".ai-pct").textContent.replace(/^\d+%|checking cache…/, "ready") || "ready");
+          }
+          if (!res?.mask || res.width !== it.w || res.height !== it.h) throw new Error("The model returned a mask of the wrong size.");
+          it.mask = res.mask instanceof Uint8Array ? res.mask : Uint8Array.from(res.mask);
+          if (n === cur) {
+            pv.mask = null;
+            drawPreview();
+          }
+        }
+        setBar("infer", 1, `${items.length} / ${items.length}`);
+        status2("");
+        cur = 0;
+        pv.mask = null;
+        page();
+        show(".ai-result", `Background found in ${items.length} image${items.length > 1 ? "s" : ""}. Adjust the edges, then <b>Apply</b>.`);
+      } catch (e) {
+        if (e.code === "cancel" || signal.aborted) {
+          status2("");
+          show(".ai-notice", "Cancelled.");
+          q(".ai-progress").hidden = true;
+        } else {
+          console.warn("[remove background]", e);
+          show(".ai-error", esc5(e.message || String(e)));
+          status2("");
+        }
+      } finally {
+        ctrl = null;
+        if (back.isConnected) setBusy(false);
+      }
+    };
+    q(".ai-apply").onclick = async () => {
+      if (busy || !hasMasks()) return;
+      setBusy(true);
+      q(".ai-apply").disabled = true;
+      const status2 = (t) => {
+        q(".ai-status").textContent = t;
+      };
+      try {
+        const r = refine(), map = /* @__PURE__ */ new Map();
+        for (const it of items) {
+          status2("Saving " + it.media.name + "\u2026");
+          const blob = await cutoutPng(it.bitmap, it.mask, it.w, it.h, r);
+          const base = it.media.name.replace(/\.[a-z0-9]{2,5}$/i, "");
+          const file = new File([blob], base + " (no bg).png", { type: "image/png" });
+          const [nid] = await importViaApp([file]);
+          if (!nid) throw new Error("Could not import " + file.name + ".");
+          map.set(it.mediaId, { id: nid, name: file.name });
+        }
+        const clipIds = new Set(clips.map((c) => c.id));
+        let swapped = 0;
+        if (clipIds.size) store2.transact("Remove background", (p) => {
+          for (const c of p.clips) {
+            const m = clipIds.has(c.id) && map.get(c.mediaId);
+            if (m) {
+              c.mediaId = m.id;
+              c.name = m.name;
+              swapped++;
+            }
+          }
+        });
+        applied = true;
+        status2("");
+        show(".ai-result", `<b>Background removed from ${map.size} image${map.size > 1 ? "s" : ""}</b>` + (swapped ? ` \xB7 ${swapped} clip${swapped > 1 ? "s now use" : " now uses"} the cut-out.` : " \xB7 added to the media library.") + '<br><span class="dim">The originals stay in the library' + (swapped ? " \xB7 Ctrl+Z swaps them back." : ".") + "</span>");
+      } catch (e) {
+        console.warn("[remove background]", e);
+        show(".ai-error", esc5(e.message || String(e)));
+        status2("");
+      } finally {
+        if (back.isConnected) setBusy(false);
+      }
+    };
+    return { el: back, close };
+  }
+  var AI_MODELS, LANGUAGES, CAPTION_STYLES, BASE_TEXT, MIN_DUR, PAUSE, MAX_CHARS, CJK, isAIAvailable, joinWord, styleOf, srtTime, worker, runSeq, workerTranscribe, workerSegment, esc5, fmtT, mb, PREF_KEY2, loadPrefs2, savePrefs2, BG_MODELS;
   var init_ai = __esm({
     "js/ai.js"() {
       init_state();
@@ -13633,6 +14563,22 @@ ${c.text}
       };
       worker = null;
       runSeq = 0;
+      workerTranscribe = (audioData, opts, on) => workerCall({
+        type: "run",
+        audio: audioData,
+        model: opts.model,
+        language: opts.language || null,
+        task: opts.task,
+        device: opts.device,
+        libUrl: opts.libUrl
+      }, [audioData.buffer], "result", opts, on);
+      workerSegment = (image, opts, on) => workerCall(
+        { type: "rmbg", image, model: opts.model, device: opts.device, libUrl: opts.libUrl },
+        [image.data.buffer],
+        "mask",
+        opts,
+        on
+      );
       esc5 = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
       fmtT = (s) => {
         s = Math.max(0, s);
@@ -13654,6 +14600,10 @@ ${c.text}
         } catch {
         }
       };
+      BG_MODELS = [
+        { id: "briaai/RMBG-1.4", label: "RMBG 1.4 \u2014 best edges", size: "~45 MB (GPU ~175 MB)", note: "BRIA RMBG-1.4 is licensed for non-commercial use." },
+        { id: "Xenova/modnet", label: "MODNet \u2014 fast, portraits", size: "~7 MB (GPU ~25 MB)", note: "" }
+      ];
     }
   });
 
@@ -13711,11 +14661,51 @@ ${c.text}
     p.clips.push(right);
     return right;
   }
+  function keepRange(c, a, b) {
+    if (c.reverse) c.in += (c.start + c.duration - b) * c.speed;
+    else c.in += (a - c.start) * c.speed;
+    c.start = a;
+    c.duration = b - a;
+  }
+  function overwriteRange(p, trackId, a, b, exclude = /* @__PURE__ */ new Set()) {
+    if (b - a <= FRAME_EPS) return;
+    const tr = p.tracks.find((t) => t.id === trackId);
+    if (!tr || tr.locked) return;
+    for (const o of [...p.clips]) {
+      if (o.trackId !== trackId || exclude.has(o.id)) continue;
+      const oa = o.start, ob = o.start + o.duration;
+      if (ob <= a + FRAME_EPS || oa >= b - FRAME_EPS) continue;
+      if (oa >= a - FRAME_EPS && ob <= b + FRAME_EPS) {
+        p.clips.splice(p.clips.indexOf(o), 1);
+        continue;
+      }
+      if (oa < a && ob > b) {
+        const right = deep2(o);
+        right.id = uid("clip");
+        right.transitionIn = null;
+        right.audio.fadeIn = 0;
+        keepRange(right, b, ob);
+        p.clips.push(right);
+        keepRange(o, oa, a);
+        o.transitionOut = null;
+        o.audio.fadeOut = 0;
+      } else if (oa < a) {
+        keepRange(o, oa, a);
+        o.transitionOut = null;
+        o.audio.fadeOut = 0;
+      } else {
+        keepRange(o, b, ob);
+        o.transitionIn = null;
+        o.audio.fadeIn = 0;
+      }
+    }
+  }
   function rippleShift(p, trackId, from, delta, exclude = /* @__PURE__ */ new Set()) {
     for (const c of p.clips) if (c.trackId === trackId && !exclude.has(c.id) && c.start >= from - FRAME_EPS) c.start = Math.max(0, c.start + delta);
   }
   var ops = {
     isFree: (trackId, start, dur, exclude) => isFree(store.project, trackId, start, dur, exclude),
+    overwriteRange,
     trackFor: (kind, start, dur, preferId) => trackFor(store.project, kind, start, dur, preferId),
     insertMedia(mediaId, { time = store.playhead, trackId = null, select = true } = {}) {
       const m = store.getMedia(mediaId);
@@ -13725,7 +14715,9 @@ ${c.text}
       const dur = type === "image" ? m.animated ? loopLen : 5 : Math.max(store.frame(), m.duration || 5);
       let clip;
       store.transact("Add " + m.name, (p) => {
-        const tid = trackFor(p, kindForType(type), time, dur, trackId);
+        const pref = trackId && p.tracks.find((t) => t.id === trackId && t.kind === kindForType(type) && !t.locked);
+        if (pref) overwriteRange(p, pref.id, time, time + dur);
+        const tid = pref ? pref.id : trackFor(p, kindForType(type), time, dur, trackId);
         clip = makeClip({ trackId: tid, type, mediaId, name: m.name, start: time, duration: dur });
         p.clips.push(clip);
       });
@@ -14698,18 +15690,32 @@ ${c.text}
   var importCount = 0;
   async function importFiles(files, { audio, addToTimeline = false, time, trackId, ops: ops2 } = {}) {
     const ids = [];
-    for (const file of files) {
+    for (let file of files) {
       const kind = kindOf(file);
       if (!kind) {
         window.dispatchEvent(new CustomEvent("ve:toast", { detail: `Can't import ${file.name || "that file"}` }));
         continue;
       }
-      const url2 = URL.createObjectURL(file);
-      const meta = await loadMeta(kind, url2);
-      if (!meta) {
-        window.dispatchEvent(new CustomEvent("ve:toast", { detail: `Couldn't read ${file.name}` }));
+      let url2 = URL.createObjectURL(file);
+      let meta = await loadMeta(kind, url2);
+      if (!meta || kind === "video" && !meta.width && !meta.duration) {
         URL.revokeObjectURL(url2);
-        continue;
+        const say = (m) => window.dispatchEvent(new CustomEvent("ve:status", { detail: m }));
+        try {
+          const { convertForImport: convertForImport2 } = await Promise.resolve().then(() => (init_integrations(), integrations_exports));
+          file = await convertForImport2(file, kind, say);
+          url2 = URL.createObjectURL(file);
+          meta = await loadMeta(kind, url2);
+        } catch (e) {
+          meta = null;
+          console.warn(e);
+          window.dispatchEvent(new CustomEvent("ve:toast", { detail: `Couldn't read ${file.name}: ${e.message}` }));
+        }
+        if (!meta) {
+          if (url2) URL.revokeObjectURL(url2);
+          continue;
+        }
+        say(`Converted ${file.name}`);
       }
       const id = uid("med");
       const name = file.name || `${kind === "image" ? "Pasted image" : "Clip"} ${++importCount}`;
@@ -14915,6 +15921,11 @@ ${c.text}
         b.innerHTML = icon("import", 14) + "Import";
         b.onclick = () => document.getElementById("importInput").click();
         actions.appendChild(b);
+        const u = document.createElement("button");
+        u.innerHTML = icon("link", 14) + "From URL";
+        u.title = "Import from a link (YouTube, TikTok, direct files\u2026) using the site's downloader";
+        u.onclick = () => window.dispatchEvent(new CustomEvent("ve:importUrl"));
+        actions.appendChild(u);
         if (tab === "audio") {
           const r = document.createElement("button");
           r.innerHTML = icon("mic", 14) + "Record";
@@ -15001,6 +16012,9 @@ Double-click or + to add at the playhead \xB7 drag onto the timeline`,
             onDbl: () => ops2.insertMedia(m.id, { time: store2.playhead }),
             onCtx: (e) => ctxMenu(e, [
               { label: "Add to timeline at playhead", run: () => ops2.insertMedia(m.id, { time: store2.playhead }) },
+              ...m.kind === "image" ? [{ label: "Remove background (AI)\u2026", run: () => window.dispatchEvent(new CustomEvent("ve:removeBg", { detail: { mediaIds: [m.id] } })) }] : [],
+              { label: "Copy file name", run: () => Promise.resolve().then(() => (init_integrations(), integrations_exports)).then((I) => I.copyFileNames([m.name], toast3)) },
+              { label: "Copy all file names", run: () => Promise.resolve().then(() => (init_integrations(), integrations_exports)).then((I) => I.copyFileNames(store2.project.media.map((x) => x.name), toast3)) },
               { label: "Rename", run: () => {
                 const n = prompt("Name", m.name);
                 if (n) store2.transact("Rename media", (p) => {
@@ -15152,6 +16166,255 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
   init_state();
   init_catalog();
   init_icons();
+
+  // js/numfield.js
+  var clampN = (v, a, b) => Math.min(b, Math.max(a, v));
+  var fin = (x) => typeof x === "number" && isFinite(x);
+  function evalExpr(str, cur) {
+    let s = String(str).trim().replace(/,/g, ".").replace(/[^\d.+\-*/()%^eE\s=]/g, "");
+    if (!s) return NaN;
+    let rel = null;
+    const m = /^([+\-*/])=(.*)$/.exec(s) || /^([+*/])(?![+*/])(.*)$/.exec(s);
+    if (m) {
+      rel = m[1];
+      s = m[2];
+    }
+    if (/[^\d.+\-*/()%^eE\s]/.test(s)) return NaN;
+    let v;
+    try {
+      v = Function('"use strict";return (' + s.replace(/\^/g, "**") + ")")();
+    } catch {
+      return NaN;
+    }
+    if (!fin(v)) return NaN;
+    if (rel === "+") return cur + v;
+    if (rel === "-") return cur - v;
+    if (rel === "*") return cur * v;
+    if (rel === "/") return v === 0 ? NaN : cur / v;
+    return v;
+  }
+  function numField({
+    value = 0,
+    min = -Infinity,
+    max = Infinity,
+    step = 1,
+    softMin,
+    softMax,
+    hardMin = -Infinity,
+    hardMax = Infinity,
+    unit = "",
+    decimals,
+    onInput,
+    onChange,
+    title
+  } = {}) {
+    const lo = fin(softMin) ? softMin : min, hi = fin(softMax) ? softMax : max;
+    const ranged = fin(lo) && fin(hi) && hi > lo;
+    step = +step || 0.01;
+    const dec = decimals ?? Math.min(3, Math.max(0, (String(step).split(".")[1] || "").length));
+    let v = +value || 0, editing = null, dragging = false, disabled = false;
+    const box2 = document.createElement("div");
+    box2.className = "nf";
+    box2.tabIndex = 0;
+    box2.setAttribute("role", "spinbutton");
+    box2.title = title || "Drag to change \xB7 Shift = fine \xB7 Ctrl = coarse \xB7 click to type (math ok, e.g. *2 or +10)";
+    box2.innerHTML = '<div class="nf-bar"></div><span class="nf-val"></span>';
+    const bar = box2.firstChild, txt = box2.lastChild;
+    if (ranged) {
+      box2.setAttribute("aria-valuemin", lo);
+      box2.setAttribute("aria-valuemax", hi);
+    } else bar.remove();
+    const fmt2 = (x) => {
+      const r = (+x).toFixed(dec);
+      return r === "-" + 0 .toFixed(dec) ? 0 .toFixed(dec) : r;
+    };
+    const tidy = (x) => +(+x).toFixed(Math.max(dec, 4) + 2);
+    function render() {
+      txt.innerHTML = fmt2(v) + (unit ? `<i>${unit}</i>` : "");
+      box2.setAttribute("aria-valuenow", v);
+      box2.setAttribute("aria-valuetext", fmt2(v) + unit);
+      if (ranged) {
+        const p = clampN((v - lo) / (hi - lo), 0, 1);
+        const z = lo < 0 && hi > 0 ? (0 - lo) / (hi - lo) : 0;
+        bar.style.left = Math.min(p, z) * 100 + "%";
+        bar.style.width = Math.abs(p - z) * 100 + "%";
+        box2.classList.toggle("nf-out", v < lo || v > hi);
+      }
+    }
+    const hard = (x) => clampN(x, hardMin, hardMax);
+    const emit = (x, final, typed = false) => {
+      x = tidy(hard(x));
+      if (x === v && !final) return;
+      v = x;
+      render();
+      onInput?.(v, { typed });
+      if (final) onChange?.(v);
+    };
+    function startScrub(e, el2) {
+      if (e.button !== 0 || disabled || editing) return;
+      e.preventDefault();
+      box2.focus({ preventScroll: true });
+      const v0 = v, x0 = e.clientX;
+      let acc = 0, lastX = e.clientX, moved = false, wasLocked = false;
+      const width = Math.max(120, box2.clientWidth || 160);
+      const perPx = ranged ? (hi - lo) / width : step;
+      const bLo = ranged ? Math.min(lo, v0) : -Infinity, bHi = ranged ? Math.max(hi, v0) : Infinity;
+      try {
+        el2.setPointerCapture(e.pointerId);
+      } catch {
+      }
+      const mv = (ev) => {
+        const isLocked = document.pointerLockElement === el2;
+        let dx = isLocked ? wasLocked ? ev.movementX : 0 : ev.clientX - lastX;
+        wasLocked = isLocked;
+        lastX = ev.clientX;
+        dx = clampN(dx || 0, -300, 300);
+        if (!moved) {
+          if (Math.abs(ev.clientX - x0) < 3) return;
+          moved = true;
+          dragging = true;
+          box2.classList.add("nf-drag");
+          acc = (ev.clientX - x0) * (ev.shiftKey ? 0.1 : ev.ctrlKey ? 10 : 1);
+          if (!navigator.webdriver) try {
+            const r = el2.requestPointerLock?.();
+            r?.catch?.(() => {
+            });
+          } catch {
+          }
+        } else acc += dx * (ev.shiftKey ? 0.1 : ev.ctrlKey ? 10 : 1);
+        const st = step * (ev.shiftKey ? 0.1 : 1);
+        let x = clampN(v0 + acc * perPx, bLo, bHi);
+        x = Math.round(x / st) * st;
+        emit(clampN(x, bLo, bHi), false);
+      };
+      const up = () => {
+        el2.removeEventListener("pointermove", mv);
+        el2.removeEventListener("pointerup", up);
+        el2.removeEventListener("pointercancel", up);
+        if (document.pointerLockElement === el2) document.exitPointerLock?.();
+        box2.classList.remove("nf-drag");
+        dragging = false;
+        if (moved) onChange?.(v);
+        else if (el2 === box2) beginEdit();
+      };
+      el2.addEventListener("pointermove", mv);
+      el2.addEventListener("pointerup", up);
+      el2.addEventListener("pointercancel", up);
+    }
+    box2.addEventListener("pointerdown", (e) => startScrub(e, box2));
+    function beginEdit(initial) {
+      if (editing || disabled) return;
+      const inp = document.createElement("input");
+      inp.type = "text";
+      inp.className = "nf-input";
+      inp.spellcheck = false;
+      inp.setAttribute("inputmode", "decimal");
+      inp.value = initial ?? String(tidy(+fmt2(v)) === tidy(v) ? fmt2(v) : tidy(v));
+      editing = { inp, start: v };
+      box2.classList.add("nf-editing");
+      box2.appendChild(inp);
+      inp.focus();
+      if (initial == null) inp.select();
+      let done = false;
+      const finish = (commit) => {
+        if (done) return;
+        done = true;
+        const val = commit ? evalExpr(inp.value, editing.start) : NaN;
+        const restore = editing.start;
+        editing = null;
+        box2.classList.remove("nf-editing");
+        inp.remove();
+        if (commit && fin(val)) emit(val, true, true);
+        else if (v !== restore) {
+          v = restore;
+          render();
+          onInput?.(v);
+        }
+        box2.focus({ preventScroll: true });
+      };
+      inp.addEventListener("keydown", (e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") {
+          e.preventDefault();
+          finish(true);
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          finish(false);
+        } else if (e.key === "Tab") finish(true);
+        else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+          e.preventDefault();
+          const cur = evalExpr(inp.value, editing.start);
+          const k = (e.key === "ArrowUp" ? 1 : -1) * step * (e.shiftKey ? 0.1 : e.ctrlKey ? 10 : 1);
+          emit((fin(cur) ? cur : v) + k, false);
+          inp.value = String(tidy(v));
+          inp.select();
+        }
+      });
+      inp.addEventListener("blur", () => finish(true));
+      inp.addEventListener("pointerdown", (e) => e.stopPropagation());
+    }
+    box2.addEventListener("keydown", (e) => {
+      if (editing || disabled) return;
+      const k = e.key;
+      if (k === "Enter" || k === "F2") {
+        e.preventDefault();
+        e.stopPropagation();
+        beginEdit();
+      } else if (/^[\d.+\-*/]$/.test(k) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        beginEdit(k);
+      } else if (k === "ArrowUp" || k === "ArrowRight" || k === "ArrowDown" || k === "ArrowLeft" || k === "PageUp" || k === "PageDown") {
+        e.preventDefault();
+        e.stopPropagation();
+        const dir = k === "ArrowUp" || k === "ArrowRight" || k === "PageUp" ? 1 : -1;
+        const mul = k.startsWith("Page") ? 10 : e.shiftKey ? 0.1 : e.ctrlKey ? 10 : 1;
+        emit(v + dir * step * mul, true);
+      } else if (k === "Home" && fin(lo)) {
+        e.preventDefault();
+        e.stopPropagation();
+        emit(lo, true);
+      } else if (k === "End" && fin(hi)) {
+        e.preventDefault();
+        e.stopPropagation();
+        emit(hi, true);
+      }
+    });
+    box2.addEventListener("wheel", (e) => {
+      if (disabled || document.activeElement !== box2 && !(editing && document.activeElement === editing.inp)) return;
+      e.preventDefault();
+      const dir = e.deltaY < 0 ? 1 : -1;
+      emit(v + dir * step * (e.shiftKey ? 0.1 : e.ctrlKey ? 10 : 1), false);
+      if (editing) {
+        editing.inp.value = String(tidy(v));
+        editing.start = v;
+      }
+    }, { passive: false });
+    box2.setValue = (x) => {
+      if (editing || dragging) return;
+      x = +x;
+      if (!fin(x)) x = 0;
+      if (x !== v || !txt.firstChild) {
+        v = x;
+        render();
+      }
+    };
+    box2.getValue = () => v;
+    box2.setDisabled = (b) => {
+      disabled = !!b;
+      box2.classList.toggle("nf-disabled", disabled);
+      box2.tabIndex = disabled ? -1 : 0;
+      box2.setAttribute("aria-disabled", disabled);
+    };
+    box2.scrubFrom = (el2) => {
+      el2.addEventListener("pointerdown", (e) => startScrub(e, el2));
+      el2.style.touchAction = "none";
+    };
+    render();
+    return box2;
+  }
+
+  // js/inspector.js
   var get = (o, path) => path.split(".").reduce((a, k) => a == null ? a : a[k], o);
   var set = (o, path, v) => {
     const ks = path.split(".");
@@ -15160,6 +16423,12 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     t[last2] = v;
   };
   var esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  var CASES = {
+    upper: (s) => s.toUpperCase(),
+    lower: (s) => s.toLowerCase(),
+    title: (s) => s.toLowerCase().replace(/(^|[\s\-_/(\["'“])(\p{L})/gu, (m, a, b) => a + b.toUpperCase()),
+    sentence: (s) => s.toLowerCase().replace(/(^\s*|[.!?…]\s+|\n\s*)(\p{L})/gu, (m, a, b) => a + b.toUpperCase())
+  };
   var tc = (s, fps) => {
     s = Math.max(0, s);
     const f = Math.floor(s % 1 * fps + 1e-6);
@@ -15170,7 +16439,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     let tab = null, structKey = "", bindings = [];
     const collapsed = new Set(JSON.parse(localStorage.getItem("ve.ins.collapsed") || "[]"));
     const clip = () => store2.selectedClips()[0] || null;
-    function edit(path, v, label) {
+    function edit(path, v, label, { discrete = false } = {}) {
       const c = clip();
       if (!c) return;
       const ids = store2.selection.clipIds;
@@ -15180,9 +16449,11 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
           if (!x) continue;
           if (path.startsWith("hueMatch.") && !x.hueMatch) x.hueMatch = defaultHueMatch();
           if (path.startsWith("audio.fx.")) x.audio.fx = { ...defaultAudioFx(), ...x.audio.fx || {} };
+          if (path.startsWith("mask.") && !x.mask) x.mask = defaultMask();
+          if (path.startsWith("gradBlur.") && !x.gradBlur) x.gradBlur = defaultGradBlur();
           set(x, path, v);
         }
-      }, { coalesce: ids.join(",") + ":" + path });
+      }, { coalesce: discrete ? void 0 : ids.join(",") + ":" + path });
     }
     let n = 0;
     const ctl = (fn) => {
@@ -15190,9 +16461,9 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       bindings.push({ id, ...fn });
       return id;
     };
-    function slider2(label, path, { min, max, step = 1, fmt: fmt2, toUI = (v) => v, fromUI = (v) => v, def = 0 } = {}) {
-      const id = ctl({ kind: "slider", path, toUI, fromUI, def });
-      return `<div class="prop" title="Double-click the label to reset"><label data-reset="${id}">${label}</label><input type="range" id="${id}" min="${min}" max="${max}" step="${step}"><input type="number" id="${id}n" min="${min}" max="${max}" step="${step}"></div>`;
+    function slider2(label, path, { min, max, step = 1, toUI = (v) => v, fromUI = (v) => v, def = 0, unit = "", decimals, hardMin, hardMax } = {}) {
+      const id = ctl({ kind: "slider", path, toUI, fromUI, def, opts: { min, max, step, unit, decimals, hardMin, hardMax } });
+      return `<div class="prop" title="Drag the label or the field to change \xB7 double-click the label to reset"><label data-reset="${id}">${label}</label><div class="nf-slot" id="${id}"></div></div>`;
     }
     function toggle(label, path, { onLabel } = {}) {
       const id = ctl({ kind: "toggle", path });
@@ -15210,16 +16481,22 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       const tid = toggleOf ? ctl({ kind: "toggle", path: toggleOf }) : null;
       return `<div class="sec ${collapsed.has(key) ? "collapsed" : ""}" data-sec="${key}"><div class="sec-head">${tid ? `<button class="switch" id="${tid}"></button>` : ""}<span>${title}</span><span class="chev">${icon("chevron", 14)}</span></div><div class="sec-body">${body}</div></div>`;
     }
+    const pctS = { toUI: (v) => v * 100, fromUI: (v) => v / 100, unit: "%" };
     function transformSec(c) {
       const fixed = c.type === "color" || c.type === "material";
+      const W = store2.project.settings.width, H = store2.project.settings.height;
       return section("transform", "Transform", `
-      ${slider2("Scale", "transform.scale", { min: 0, max: 500, step: 1, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 1 })}
-      ${slider2("Width", "transform.scaleX", { min: 0, max: 500, step: 1, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 1 })}
-      ${slider2("Height", "transform.scaleY", { min: 0, max: 500, step: 1, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 1 })}
-      ${slider2("Position X", "transform.x", { min: -store2.project.settings.width, max: store2.project.settings.width, step: 1 })}
-      ${slider2("Position Y", "transform.y", { min: -store2.project.settings.height, max: store2.project.settings.height, step: 1 })}
-      ${slider2("Rotate", "transform.rotation", { min: -180, max: 180, step: 0.5 })}
+      ${slider2("Scale", "transform.scale", { min: 0, max: 500, step: 1, ...pctS, def: 1 })}
+      ${slider2("Width", "transform.scaleX", { min: 0, max: 500, step: 1, ...pctS, def: 1 })}
+      ${slider2("Height", "transform.scaleY", { min: 0, max: 500, step: 1, ...pctS, def: 1 })}
+      ${slider2("Position X", "transform.x", { min: -W, max: W, step: 1, unit: "px" })}
+      ${slider2("Position Y", "transform.y", { min: -H, max: H, step: 1, unit: "px" })}
+      ${slider2("Rotate", "transform.rotation", { min: -180, max: 180, step: 0.5, decimals: 1, unit: "\xB0" })}
       <div class="prop wide"><label>Flip</label><div class="btn-row">${toggleBtn("Horizontal", "transform.flipH")}${toggleBtn("Vertical", "transform.flipV")}</div></div>
+      <div class="sub-head">3D Tilt</div>
+      ${slider2("Tilt X", "transform.rotX", { min: -90, max: 90, step: 0.5, decimals: 1, unit: "\xB0" })}
+      ${slider2("Tilt Y", "transform.rotY", { min: -90, max: 90, step: 0.5, decimals: 1, unit: "\xB0" })}
+      ${slider2("Perspective", "transform.perspective", { min: 200, max: 4e3, step: 10, def: 1200, unit: "px", hardMin: 10 })}
       ${fixed ? "" : `<div class="btn-row"><button class="btn" data-do="fit">Fit</button><button class="btn" data-do="fill">Fill frame</button><button class="btn" data-do="resetT">Reset</button></div>`}
     `);
     }
@@ -15227,31 +16504,58 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       const id = ctl({ kind: "tbtn", path });
       return `<button class="btn" id="${id}">${label}</button>`;
     }
+    function maskSec(c) {
+      const m = c.mask || defaultMask();
+      const pos = { min: -50, max: 50, step: 0.5, decimals: 1, ...pctS };
+      return section("mask", "Mask", `
+      ${select("Shape", "mask.type", MASK_TYPES)}
+      ${m.type === "none" ? "" : `
+      ${slider2("X", "mask.x", pos)}${slider2("Y", "mask.y", pos)}
+      ${m.type === "linear" ? "" : `${slider2("Width", "mask.w", { min: 0, max: 100, step: 0.5, decimals: 1, ...pctS, def: 0.5, hardMin: 0 })}${slider2("Height", "mask.h", { min: 0, max: 100, step: 0.5, decimals: 1, ...pctS, def: 0.5, hardMin: 0 })}`}
+      ${slider2("Angle", "mask.angle", { min: -180, max: 180, step: 0.5, decimals: 1, unit: "\xB0" })}
+      ${slider2("Feather", "mask.feather", { min: 0, max: 100, step: 0.5, decimals: 1, ...pctS, def: 0.15, hardMin: 0 })}
+      ${toggle("Invert", "mask.invert")}`}`);
+    }
+    function gradBlurSec(c) {
+      const g = c.gradBlur || defaultGradBlur();
+      const pos = { min: -50, max: 50, step: 0.5, decimals: 1, ...pctS };
+      return section("gradblur", "Gradient Blur", `
+      ${select("Mode", "gradBlur.mode", [{ id: "linear", label: "Linear" }, { id: "band", label: "Band (tilt-shift)" }, { id: "radial", label: "Radial" }])}
+      ${g.mode === "radial" ? "" : slider2("Angle", "gradBlur.angle", { min: -180, max: 180, step: 0.5, decimals: 1, unit: "\xB0", def: 90 })}
+      ${slider2("Start", "gradBlur.start", { min: 0, max: 100, step: 0.5, decimals: 1, ...pctS })}
+      ${slider2("End", "gradBlur.end", { min: 0, max: 100, step: 0.5, decimals: 1, ...pctS, def: 0.5 })}
+      ${slider2("Strength", "gradBlur.strength", { min: 0, max: 100, step: 0.5, decimals: 1, def: 40, hardMin: 0 })}
+      ${g.mode === "linear" ? "" : `${slider2("Center X", "gradBlur.x", pos)}${slider2("Center Y", "gradBlur.y", pos)}`}`, { toggleOf: "gradBlur.enabled" });
+    }
     function videoTab(c) {
       const mats = [{ id: "", label: "\u2014 None \u2014" }, ...store2.project.materials.map((m) => ({ id: m.id, label: m.name }))];
       const trans = [{ id: "", label: "None" }, ...TRANSITIONS.map((t) => ({ id: t.id, label: t.label }))];
+      const crop = { min: 0, max: 95, step: 0.5, decimals: 1, ...pctS, hardMin: 0, hardMax: 99 };
+      const fr = 1 / (store2.project.settings.fps || 30);
       let h2 = "";
       if (c.type === "color") h2 += section("fill", "Color", color("Fill", "fill"));
       if (c.type === "adjustment") h2 += '<div class="ins-empty" style="padding:8px 14px">Adjustment layer \u2014 its color, filters, hue match and material apply to every track below it. Opacity sets the strength.</div>';
       else h2 += transformSec(c);
       if (c.type === "video" || c.type === "image") h2 += section("crop", "Crop", `
-      ${slider2("Left", "crop.l", { min: 0, max: 95, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}
-      ${slider2("Right", "crop.r", { min: 0, max: 95, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}
-      ${slider2("Top", "crop.t", { min: 0, max: 95, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}
-      ${slider2("Bottom", "crop.b", { min: 0, max: 95, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}`);
-      h2 += section("comp", "Compositing", `${select("Blend Mode", "blend", BLEND_MODES)}${slider2("Opacity", "transform.opacity", { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 1 })}`);
+      <div class="prop wide"><label>Aspect</label><div class="seg">${CROP_ASPECTS.map((a) => `<button class="btn" data-crop="${a.id}">${esc(a.label || a.id)}</button>`).join("")}</div></div>
+      ${slider2("Left", "crop.l", crop)}
+      ${slider2("Right", "crop.r", crop)}
+      ${slider2("Top", "crop.t", crop)}
+      ${slider2("Bottom", "crop.b", crop)}`);
+      h2 += section("comp", "Compositing", `${select("Blend Mode", "blend", BLEND_MODES)}${slider2("Opacity", "transform.opacity", { min: 0, max: 100, ...pctS, def: 1, hardMin: 0 })}`);
+      h2 += maskSec(c) + gradBlurSec(c);
       if (c.type !== "material" && c.type !== "adjustment") h2 += section("chroma", "Chroma Key (Green Screen)", `
       ${color("Key color", "chroma.color", { pick: true })}
-      ${slider2("Tolerance", "chroma.similarity", { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 0.35 })}
-      ${slider2("Edge soft", "chroma.smoothness", { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 0.08 })}
-      ${slider2("Spill", "chroma.spill", { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 0.5 })}
-      ${slider2("Feather", "chroma.edgeFeather", { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}`, { toggleOf: "chroma.enabled" });
+      ${slider2("Tolerance", "chroma.similarity", { min: 0, max: 100, ...pctS, def: 0.35 })}
+      ${slider2("Edge soft", "chroma.smoothness", { min: 0, max: 100, ...pctS, def: 0.08 })}
+      ${slider2("Spill", "chroma.spill", { min: 0, max: 100, ...pctS, def: 0.5 })}
+      ${slider2("Feather", "chroma.edgeFeather", { min: 0, max: 100, ...pctS })}`, { toggleOf: "chroma.enabled" });
       h2 += section("material", "Material", `
       <div class="prop wide"><label>Material</label><div style="display:flex;gap:6px"><select id="insMat" style="flex:1">${mats.map((o) => `<option value="${o.id}" ${o.id === (c.materialId || "") ? "selected" : ""}>${esc(o.label)}</option>`).join("")}</select><button class="btn" data-do="editMat" title="Open node editor">Edit</button><button class="btn" data-do="newMat" title="New material">+</button></div></div>
       <div id="insMatParams"></div>`);
       h2 += section("trans", "Transitions", `
-      ${select("In", "transitionIn.type", trans)}${slider2("In length", "transitionIn.duration", { min: 0.1, max: 5, step: 0.05, def: 1 })}
-      ${select("Out", "transitionOut.type", trans)}${slider2("Out length", "transitionOut.duration", { min: 0.1, max: 5, step: 0.05, def: 1 })}`);
+      ${select("In", "transitionIn.type", trans)}${slider2("In length", "transitionIn.duration", { min: 0.1, max: 5, step: 0.05, def: 1, unit: "s", hardMin: fr })}
+      ${select("Out", "transitionOut.type", trans)}${slider2("Out length", "transitionOut.duration", { min: 0.1, max: 5, step: 0.05, def: 1, unit: "s", hardMin: fr })}`);
       return h2;
     }
     function titleTab(c) {
@@ -15259,24 +16563,25 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       const tid = ctl({ kind: "textarea", path: "text.content" });
       return section("text", "Text", `
       <textarea id="${tid}" rows="3" style="width:100%;resize:vertical"></textarea>
+      <div class="prop wide"><label>Case</label><div class="seg">${[["upper", "UPPER"], ["lower", "lower"], ["title", "Title Case"], ["sentence", "Sentence case"]].map(([k, l]) => `<button class="btn" data-case="${k}" title="Convert the text to ${l}">${l}</button>`).join("")}</div></div>
       ${select("Font", "text.font", fonts)}
-      ${slider2("Size", "text.size", { min: 8, max: 400, def: 96 })}
+      ${slider2("Size", "text.size", { min: 8, max: 400, def: 96, unit: "px", hardMin: 1 })}
       ${color("Color", "text.color")}
       <div class="prop wide"><label>Style</label><div class="btn-row">${toggleBtn("Bold", "text.bold")}${toggleBtn("Italic", "text.italic")}${toggleBtn("Shadow", "text.shadow")}</div></div>
       ${select("Align", "text.align", [{ id: "left", label: "Left" }, { id: "center", label: "Center" }, { id: "right", label: "Right" }])}
-      ${slider2("Line height", "text.lineHeight", { min: 0.6, max: 3, step: 0.05, def: 1.15 })}
-      ${slider2("Outline", "text.stroke", { min: 0, max: 40 })}
+      ${slider2("Line height", "text.lineHeight", { min: 0.6, max: 3, step: 0.05, def: 1.15, hardMin: 0.05 })}
+      ${slider2("Outline", "text.stroke", { min: 0, max: 40, unit: "px", hardMin: 0 })}
       ${color("Outline color", "text.strokeColor")}
       <div class="prop wide"><label>Background</label><div style="display:flex;gap:6px;align-items:center"><input type="color" id="insTextBg"><button class="btn" data-do="noBg">None</button></div></div>
     `);
     }
     function audioTab(c) {
       return section("audio", "Audio", `
-      ${slider2("Volume (dB)", "audio.volume", { min: -60, max: 12, step: 0.1 })}
+      ${slider2("Volume", "audio.volume", { min: -60, max: 12, step: 0.1, unit: " dB" })}
       ${slider2("Balance", "audio.pan", { min: -100, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}
-      ${slider2("Pitch (st)", "audio.pitch", { min: -12, max: 12, step: 0.1 })}
-      ${slider2("Fade in (s)", "audio.fadeIn", { min: 0, max: Math.min(10, c.duration / 2), step: 0.05 })}
-      ${slider2("Fade out (s)", "audio.fadeOut", { min: 0, max: Math.min(10, c.duration / 2), step: 0.05 })}
+      ${slider2("Pitch", "audio.pitch", { min: -12, max: 12, step: 0.1, unit: " st" })}
+      ${slider2("Fade in", "audio.fadeIn", { min: 0, max: Math.min(10, c.duration / 2), step: 0.05, unit: "s", hardMin: 0 })}
+      ${slider2("Fade out", "audio.fadeOut", { min: 0, max: Math.min(10, c.duration / 2), step: 0.05, unit: "s", hardMin: 0 })}
       ${toggle("Mute", "audio.mute")}
       ${toggle("Keep pitch", "audio.keepPitch", { onLabel: "when changing speed" })}
       ${c.type === "video" ? `<div class="btn-row"><button class="btn" data-do="detach">Detach audio</button></div>` : ""}
@@ -15284,38 +16589,38 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     }
     function voiceSecs() {
       const VF = audioApi?.VOICE_FILTERS || [], PR = audioApi?.AUDIO_PRESETS || [];
-      const pct = (l, k, d = 0) => slider2(l, "audio.fx." + k, { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: d });
+      const pct = (l, k, d = 0) => slider2(l, "audio.fx." + k, { min: 0, max: 100, ...pctS, def: d, hardMin: 0 });
       return (PR.length ? section("apresets", "Audio Presets", `<div class="chip-grid">${PR.map((p) => `<button class="btn" data-apreset="${p.id}" title="${esc(p.title || "")}">${esc(p.label)}</button>`).join("")}</div>`) : "") + (VF.length ? section("voice", "Voice Filters", `<div class="chip-grid">${VF.map((v) => `<button class="btn" data-voice="${v.id}" title="${esc(v.title || "")}">${esc(v.label)}</button>`).join("")}</div>
-        ${slider2("Filter mix", "audio.voiceMix", { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 1 })}`) : "") + section("afx", "Audio Effects", `
+        ${slider2("Filter mix", "audio.voiceMix", { min: 0, max: 100, ...pctS, def: 1, hardMin: 0 })}`) : "") + section("afx", "Audio Effects", `
         ${pct("Reverb", "reverb")}${pct("Reverb size", "reverbSize", 0.5)}
-        ${pct("Echo", "echo")}${slider2("Echo time (s)", "audio.fx.echoTime", { min: 0.02, max: 1.5, step: 0.01, def: 0.3 })}${pct("Echo repeats", "echoFeedback", 0.4)}
-        ${pct("Bit crush", "crush")}${slider2("Bit depth", "audio.fx.crushBits", { min: 1, max: 16, def: 8 })}${slider2("Sample rate", "audio.fx.crushRate", { min: 1e3, max: 44100, step: 100, def: 11025 })}
-        ${pct("Muffle", "lowpass")}${slider2("High-pass (Hz)", "audio.fx.highpass", { min: 0, max: 2e3, step: 10 })}${slider2("Bass boost (dB)", "audio.fx.bass", { min: 0, max: 18, step: 0.5 })}
-        ${pct("8D orbit", "orbit")}${slider2("Orbit speed (Hz)", "audio.fx.orbitSpeed", { min: 0.05, max: 2, step: 0.01, def: 0.25 })}
+        ${pct("Echo", "echo")}${slider2("Echo time", "audio.fx.echoTime", { min: 0.02, max: 1.5, step: 0.01, def: 0.3, unit: "s", hardMin: 1e-3 })}${pct("Echo repeats", "echoFeedback", 0.4)}
+        ${pct("Bit crush", "crush")}${slider2("Bit depth", "audio.fx.crushBits", { min: 1, max: 16, def: 8, hardMin: 1 })}${slider2("Sample rate", "audio.fx.crushRate", { min: 1e3, max: 44100, step: 100, def: 11025, unit: " Hz", hardMin: 100 })}
+        ${pct("Muffle", "lowpass")}${slider2("High-pass", "audio.fx.highpass", { min: 0, max: 2e3, step: 10, unit: " Hz", hardMin: 0 })}${slider2("Bass boost", "audio.fx.bass", { min: 0, max: 18, step: 0.5, unit: " dB" })}
+        ${pct("8D orbit", "orbit")}${slider2("Orbit speed", "audio.fx.orbitSpeed", { min: 0.05, max: 2, step: 0.01, def: 0.25, unit: " Hz", hardMin: 1e-3 })}
         <div class="btn-row"><button class="btn" data-do="resetAfx">Reset audio effects</button></div>`);
     }
     function colorTab() {
-      const s = (l, k, min = -100, max = 100) => slider2(l, "color." + k, { min, max });
+      const s = (l, k, min = -100, max = 100, o = {}) => slider2(l, "color." + k, { min, max, ...o });
       return section("basic", "Color", `
       ${s("Exposure", "exposure")}${s("Brightness", "brightness")}${s("Contrast", "contrast")}${s("Saturation", "saturation")}
-      ${s("Hue", "hue", -180, 180)}${s("Temperature", "temperature")}${s("Tint", "tint")}${s("Highlights", "highlights")}${s("Shadows", "shadows")}
+      ${s("Hue", "hue", -180, 180, { unit: "\xB0" })}${s("Temperature", "temperature")}${s("Tint", "tint")}${s("Highlights", "highlights")}${s("Shadows", "shadows")}
       ${s("Vibrance", "vibrance")}${s("Gamma", "gamma")}
     `) + section("levels", "Levels & Channels", `
       ${s("Blacks", "blacks")}${s("Whites", "whites")}${s("Fade", "fade", 0, 100)}
       ${s("Red", "red")}${s("Green", "green")}${s("Blue", "blue")}
-      ${s("Color levels", "posterize", 0, 64)}
+      ${s("Color levels", "posterize", 0, 64, { hardMin: 0 })}
       <div class="prop wide"><label>Toggle</label><div class="btn-row">${toggleBtn("Invert", "color.invert")}${toggleBtn("Grayscale", "color.grayscale")}</div></div>
     `) + section("huematch", "Auto Hue Match", `
       ${color("From", "hueMatch.from", { pick: true })}
       ${color("To", "hueMatch.to", { pick: true })}
-      ${slider2("Range (\xB0)", "hueMatch.range", { min: 1, max: 180, def: 30 })}
+      ${slider2("Range", "hueMatch.range", { min: 1, max: 180, def: 30, unit: "\xB0", hardMin: 0 })}
       ${toggle("Colorize", "hueMatch.colorize", { onLabel: "force every pixel to the To color" })}
-    `, { toggleOf: "hueMatch.enabled" }) + section("detail", "Detail", `${s("Sharpen", "sharpen", 0, 100)}${s("Clarity", "clarity")}${s("Noise / grain", "noise", 0, 100)}${s("Blur", "blur", 0, 100)}${s("Vignette", "vignette", 0, 100)}
+    `, { toggleOf: "hueMatch.enabled" }) + section("detail", "Detail", `${s("Sharpen", "sharpen", 0, 100)}${s("Clarity", "clarity")}${s("Noise / grain", "noise", 0, 100)}${s("Blur", "blur", 0, 100, { hardMin: 0 })}${s("Vignette", "vignette", 0, 100)}
       <div class="btn-row"><button class="btn" data-do="resetColor">Reset color</button></div>`);
     }
     function speedTab(c) {
       return section("speed", "Uniform Speed", `
-      ${slider2("Speed", "speed", { min: 0.1, max: 10, step: 0.05, def: 1 })}
+      ${slider2("Speed", "speed", { min: 0.1, max: 10, step: 0.05, def: 1, unit: "\xD7", hardMin: 0.01 })}
       <div class="btn-row">${[0.25, 0.5, 1, 1.5, 2, 4].map((s) => `<button class="btn" data-speed="${s}">${s}x</button>`).join("")}</div>
       <div class="prop wide"><label>Duration</label><span class="tc">${tc(c.duration, store2.project.settings.fps)}</span></div>
       ${toggle("Reverse", "reverse")}
@@ -15325,7 +16630,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     function effectsTab(c) {
       const rows = c.filters.map((f, i) => {
         const def = FILTERS.find((x) => x.id === f.type);
-        return `<div class="prop" title="${esc(def?.label || f.type)}"><label>${esc(def?.label || f.type)}</label><input type="range" min="0" max="100" data-famt="${i}" value="${f.amount * 100}"><button class="btn" data-fdel="${i}" title="Remove">\u2715</button></div>`;
+        return `<div class="prop has-btn" title="${esc(def?.label || f.type)}"><label data-freset="${i}">${esc(def?.label || f.type)}</label><div class="nf-slot" data-famt="${i}"></div><button class="btn icon" data-fdel="${i}" title="Remove">\u2715</button></div>`;
       }).join("");
       return section("effects", "Filters & Effects", `${rows || '<div class="dim">No filters. Drag one from the Filters or Effects tab, or add one here.</div>'}
       <div class="prop wide"><label>Add</label><select id="insAddFilter"><option value="">Choose\u2026</option>${FILTERS.map((f) => `<option value="${f.id}">${f.category} \xB7 ${f.label}</option>`).join("")}</select></div>`);
@@ -15390,7 +16695,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       root.querySelectorAll(".ins-tab[data-tab]").forEach((b) => b.onclick = () => {
         tab = b.dataset.tab;
         structKey = "";
-        build();
+        refresh();
       });
       root.querySelectorAll(".sec-head").forEach((h2) => h2.addEventListener("click", (e) => {
         if (e.target.closest(".switch")) return;
@@ -15404,48 +16709,41 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         const el2 = document.getElementById(b.id);
         if (!el2) continue;
         if (b.kind === "slider") {
-          const num = document.getElementById(b.id + "n");
-          const apply = (v) => {
-            if (!isFinite(v) || b.path === "speed") return;
-            let val = b.fromUI(v);
-            if (b.path.startsWith("transition")) return editTransition(b.path, val);
-            edit(b.path, val);
-          };
-          el2.addEventListener("input", () => {
-            num.value = +(+el2.value).toFixed(2);
-            apply(+el2.value);
-          });
-          num.addEventListener("change", () => {
-            el2.value = num.value;
-            apply(+num.value);
-          });
+          const o = b.opts, ui = (v) => isFinite(v) ? v : 0;
           const lab = root.querySelector(`[data-reset="${b.id}"]`);
-          lab?.addEventListener("dblclick", () => {
-            if (b.path.startsWith("transition")) return;
-            edit(b.path, b.def, "Reset");
-            sync();
+          const apply = (v, { typed } = {}) => {
+            if (!isFinite(v)) return;
+            const val = b.fromUI(v);
+            if (b.path === "speed") return setSpeed(val, typed);
+            if (b.path.startsWith("transition")) return editTransition(b.path, val, typed);
+            edit(b.path, val, lab?.textContent || b.path.split(".").pop(), { discrete: typed });
+          };
+          const cur = get(clip(), b.path);
+          const nf = numField({
+            value: ui(b.toUI(cur ?? b.def ?? 0)),
+            min: o.min,
+            max: o.max,
+            step: o.step,
+            unit: o.unit,
+            decimals: o.decimals,
+            hardMin: o.hardMin,
+            hardMax: o.hardMax,
+            onInput: apply,
+            title: (lab?.textContent || "") + " \u2014 drag to change (Shift fine, Ctrl coarse), click to type"
           });
+          nf.id = b.id;
+          if (lab) nf.setAttribute("aria-label", lab.textContent);
+          el2.replaceWith(nf);
+          b.nf = nf;
           if (lab) {
             lab.classList.add("scrub");
-            lab.title = "Drag to change \xB7 Shift = fine \xB7 double-click to reset";
-            lab.addEventListener("pointerdown", (e) => {
-              if (e.button !== 0) return;
-              e.preventDefault();
-              lab.setPointerCapture(e.pointerId);
-              const min = +el2.min, max = +el2.max, st = +el2.step || 0.01, x0 = e.clientX, v0 = +el2.value;
-              const mv = (ev) => {
-                const k = (max - min) / 300 * (ev.shiftKey ? 0.1 : 1);
-                let v = Math.max(min, Math.min(max, v0 + (ev.clientX - x0) * k));
-                v = Math.round(v / st) * st;
-                el2.value = v;
-                el2.dispatchEvent(new Event("input"));
-              };
-              const up = () => {
-                lab.removeEventListener("pointermove", mv);
-                lab.removeEventListener("pointerup", up);
-              };
-              lab.addEventListener("pointermove", mv);
-              lab.addEventListener("pointerup", up);
+            lab.title = "Drag to change \xB7 Shift = fine \xB7 Ctrl = coarse \xB7 double-click to reset";
+            nf.scrubFrom(lab);
+            lab.addEventListener("dblclick", () => {
+              if (b.path.startsWith("transition")) return;
+              if (b.path === "speed") return setSpeed(b.def, true);
+              edit(b.path, b.def, "Reset " + lab.textContent, { discrete: true });
+              sync();
             });
           }
         } else if (b.kind === "toggle") {
@@ -15486,7 +16784,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         }
       }
       const on = (sel, fn) => root.querySelector(sel)?.addEventListener("click", fn);
-      on('[data-do="resetT"]', () => edit("transform", { x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, rotation: 0, opacity: clip().transform.opacity, flipH: false, flipV: false }, "Reset transform"));
+      on('[data-do="resetT"]', () => edit("transform", { x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, rotation: 0, opacity: clip().transform.opacity, flipH: false, flipV: false, rotX: 0, rotY: 0, perspective: 1200 }, "Reset transform"));
       on('[data-do="fit"]', () => {
         edit("transform.scale", 1, "Fit");
         edit("transform.scaleX", 1);
@@ -15540,7 +16838,21 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         });
       }));
       root.querySelectorAll("[data-speed]").forEach((b) => b.addEventListener("click", () => ops2.setSpeed(+b.dataset.speed)));
-      root.querySelectorAll("[data-famt]").forEach((r) => r.addEventListener("input", () => edit(`filters.${r.dataset.famt}.amount`, r.value / 100, "Filter amount")));
+      root.querySelectorAll(".nf-slot[data-famt]").forEach((slot) => {
+        const i = +slot.dataset.famt;
+        const nf = numField({ value: (c.filters[i]?.amount ?? 1) * 100, min: 0, max: 100, step: 1, unit: "%", onInput: (v, m) => edit(`filters.${i}.amount`, v / 100, "Filter amount", { discrete: m?.typed }) });
+        nf.dataset.famt = i;
+        slot.replaceWith(nf);
+        const lab = root.querySelector(`[data-freset="${i}"]`);
+        if (lab) {
+          lab.classList.add("scrub");
+          nf.scrubFrom(lab);
+          lab.addEventListener("dblclick", () => {
+            edit(`filters.${i}.amount`, 1, "Reset filter amount", { discrete: true });
+            sync();
+          });
+        }
+      });
       root.querySelectorAll("[data-fdel]").forEach((b) => b.addEventListener("click", () => store2.transact("Remove filter", (p) => {
         const x = p.clips.find((y) => y.id === clip().id);
         x.filters.splice(+b.dataset.fdel, 1);
@@ -15550,25 +16862,60 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         if (!v) return;
         store2.transact("Add filter", (p) => p.clips.find((y) => y.id === clip().id).filters.push({ id: uid("flt"), type: v, amount: 1 }));
       });
-      const sp = bindings.find((b) => b.path === "speed");
-      if (sp) {
-        const el2 = document.getElementById(sp.id), num = document.getElementById(sp.id + "n");
-        const f = (v) => {
-          const c0 = clip();
-          store2.update("Speed", (p) => {
-            for (const id of store2.selection.clipIds) {
-              const x = p.clips.find((y) => y.id === id);
-              if (!x || x.type === "image") continue;
-              x.duration = x.duration * x.speed / v;
-              x.speed = v;
-            }
-          }, { coalesce: "speed" + c0.id });
-        };
-        el2.addEventListener("input", () => f(+el2.value));
-        num.addEventListener("change", () => f(clamp(+num.value, 0.1, 10)));
-      }
+      root.querySelectorAll("[data-case]").forEach((b) => b.addEventListener("click", () => {
+        const f = CASES[b.dataset.case];
+        if (!f) return;
+        store2.transact("Text case", (p) => {
+          for (const id of store2.selection.clipIds) {
+            const x = p.clips.find((y) => y.id === id);
+            if (x?.text) x.text.content = f(x.text.content || "");
+          }
+        });
+      }));
+      root.querySelectorAll("[data-crop]").forEach((b) => b.addEventListener("click", () => {
+        const a = CROP_ASPECTS.find((x) => x.id === b.dataset.crop);
+        if (!a) return;
+        store2.transact("Crop " + (a.label || a.id), (p) => {
+          for (const id of store2.selection.clipIds) {
+            const x = p.clips.find((y) => y.id === id);
+            if (!x || x.type !== "video" && x.type !== "image") continue;
+            x.crop = cropFor(x, a);
+          }
+        });
+      }));
     }
-    function editTransition(path, v) {
+    function cropFor(x, a) {
+      if (!a.w || !a.h) return { l: 0, t: 0, r: 0, b: 0 };
+      const m = store2.getMedia(x.mediaId);
+      const W = m?.width || store2.project.settings.width, H = m?.height || store2.project.settings.height;
+      const src = W / H, want = a.w / a.h;
+      if (src > want) {
+        const e2 = (1 - want / src) / 2;
+        return { l: e2, r: e2, t: 0, b: 0 };
+      }
+      const e = (1 - src / want) / 2;
+      return { l: 0, r: 0, t: e, b: e };
+    }
+    const cropAspectOf = (x) => {
+      const cr = x.crop || {};
+      return CROP_ASPECTS.find((a) => {
+        const k = cropFor(x, a);
+        return ["l", "r", "t", "b"].every((s) => Math.abs((cr[s] || 0) - k[s]) < 1e-4);
+      })?.id;
+    };
+    function setSpeed(v, discrete) {
+      v = Math.max(0.01, +v || 1);
+      const c0 = clip();
+      store2.update("Speed", (p) => {
+        for (const id of store2.selection.clipIds) {
+          const x = p.clips.find((y) => y.id === id);
+          if (!x || x.type === "image" || x.type === "text" || x.type === "color" || x.type === "material" || x.type === "adjustment") continue;
+          x.duration = x.duration * x.speed / v;
+          x.speed = v;
+        }
+      }, { coalesce: discrete ? void 0 : "speed" + c0.id });
+    }
+    function editTransition(path, v, discrete) {
       const side = path.startsWith("transitionIn") ? "In" : "Out";
       const c = clip();
       const cur = c["transition" + side];
@@ -15580,9 +16927,10 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
           p.clips.find((x) => x.id === c.id)["transition" + side] = { type: v, duration: Math.min(cur?.duration || 1, c.duration / 2) };
         });
       } else if (cur) {
+        v = Math.max(store2.frame(), Math.min(v, c.duration));
         store2.update("Transition length", (p) => {
-          p.clips.find((x) => x.id === c.id)["transition" + side].duration = Math.min(v, c.duration / 2);
-        }, { coalesce: "tr" + side + c.id });
+          p.clips.find((x) => x.id === c.id)["transition" + side].duration = v;
+        }, { coalesce: discrete ? void 0 : "tr" + side + c.id });
       }
     }
     async function renderMatParams(c) {
@@ -15601,27 +16949,34 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       const params = res.uniforms.filter((u) => u.param);
       box2.innerHTML = params.map((u, i) => {
         const cur = c.materialParams?.[u.param] ?? u.value;
-        if (u.type === "float") return `<div class="prop"><label title="${esc(u.param)}">${esc(u.param)}</label><input type="range" data-mp="${i}" min="${u.min ?? 0}" max="${u.max ?? 1}" step="${((u.max ?? 1) - (u.min ?? 0)) / 200}" value="${cur}"><input type="number" data-mpn="${i}" value="${(+cur).toFixed(3)}" step="0.01"></div>`;
+        if (u.type === "float") return `<div class="prop"><label title="${esc(u.param)} \u2014 drag to change, double-click to reset" data-mpl="${i}">${esc(u.param)}</label><div class="nf-slot" data-mp="${i}"></div></div>`;
         if (u.type === "vec3" || u.type === "vec4") {
           const hex = "#" + [0, 1, 2].map((k) => Math.round(Math.max(0, Math.min(1, cur[k] ?? 0)) * 255).toString(16).padStart(2, "0")).join("");
           return `<div class="prop wide"><label>${esc(u.param)}</label><input type="color" data-mpc="${i}" value="${hex}"></div>`;
         }
         return "";
       }).join("") || '<div class="dim" style="font-size:11.5px">Add Scalar / Vector Parameter nodes in the editor to get sliders here.</div>';
-      const setParam = (u, v) => store2.update("Material param", (p) => {
+      const setParam = (u, v, discrete) => store2.update("Material param", (p) => {
         const x = p.clips.find((y) => y.id === c.id);
+        if (!x) return;
         x.materialParams = { ...x.materialParams || {}, [u.param]: v };
-      }, { coalesce: "mp" + c.id + u.param });
-      box2.querySelectorAll("[data-mp]").forEach((r) => r.addEventListener("input", () => {
-        const u = params[+r.dataset.mp];
-        box2.querySelector(`[data-mpn="${r.dataset.mp}"]`).value = (+r.value).toFixed(3);
-        setParam(u, +r.value);
-      }));
-      box2.querySelectorAll("[data-mpn]").forEach((r) => r.addEventListener("change", () => {
-        const u = params[+r.dataset.mpn];
-        box2.querySelector(`[data-mp="${r.dataset.mpn}"]`).value = r.value;
-        setParam(u, +r.value);
-      }));
+      }, { coalesce: discrete ? void 0 : "mp" + c.id + u.param });
+      box2.querySelectorAll(".nf-slot[data-mp]").forEach((slot) => {
+        const i = +slot.dataset.mp, u = params[i], lo = u.min ?? 0, hi = u.max ?? 1;
+        const cur = c.materialParams?.[u.param] ?? u.value;
+        const nf = numField({ value: +cur || 0, min: lo, max: hi, step: (hi - lo) / 200 || 0.01, decimals: 3, onInput: (v, m) => setParam(u, v, m?.typed) });
+        nf.dataset.mp = i;
+        slot.replaceWith(nf);
+        const lab = box2.querySelector(`[data-mpl="${i}"]`);
+        if (lab) {
+          lab.classList.add("scrub");
+          nf.scrubFrom(lab);
+          lab.addEventListener("dblclick", () => {
+            setParam(u, u.value, true);
+            nf.setValue(+u.value || 0);
+          });
+        }
+      });
       box2.querySelectorAll("[data-mpc]").forEach((r) => r.addEventListener("input", () => {
         const u = params[+r.dataset.mpc];
         const h2 = r.value;
@@ -15634,18 +16989,19 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       const c = clip();
       if (!c) return;
       root.querySelectorAll("[data-voice]").forEach((b) => b.classList.toggle("primary", (c.audio.voice || "none") === b.dataset.voice));
+      root.querySelectorAll("[data-famt]").forEach((nf) => nf.setValue?.((c.filters[+nf.dataset.famt]?.amount ?? 1) * 100));
+      if (root.querySelector("[data-crop]")) {
+        const a = cropAspectOf(c);
+        root.querySelectorAll("[data-crop]").forEach((b) => b.classList.toggle("primary", b.dataset.crop === a));
+      }
       for (const b of bindings) {
         const el2 = document.getElementById(b.id);
         if (!el2) continue;
         let v = get(c, b.path);
         if (b.kind === "slider") {
-          const num = document.getElementById(b.id + "n");
-          const ui = v == null ? b.toUI(b.def ?? 0) : b.toUI(v);
-          if (document.activeElement !== el2) el2.value = ui;
-          if (document.activeElement !== num) num.value = +(+ui).toFixed(2);
-          if (b.path.startsWith("transition")) {
-            el2.disabled = num.disabled = !get(c, b.path.split(".")[0]);
-          }
+          if (!b.nf) continue;
+          b.nf.setValue(v == null ? b.toUI(b.def ?? 0) : b.toUI(v));
+          if (b.path.startsWith("transition")) b.nf.setDisabled(!get(c, b.path.split(".")[0]));
         } else if (b.kind === "toggle") el2.classList.toggle("on", !!v);
         else if (b.kind === "tbtn") el2.classList.toggle("primary", !!v);
         else if (b.kind === "select") {
@@ -15673,7 +17029,9 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         store2.project.materials.length,
         c.audio.detached,
         store2.getMedia(c.mediaId)?.hasAudio,
-        tab === "speed" ? c.duration.toFixed(3) : ""
+        tab === "speed" ? c.duration.toFixed(3) : "",
+        c.mask?.type,
+        c.gradBlur?.mode
       ].join("|");
     }
     function refresh() {
@@ -15702,6 +17060,35 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
 
   // js/app.js
   var $ = (s) => document.querySelector(s);
+  (function rangeFill() {
+    const upd = (el2) => {
+      if (el2?.type !== "range") return;
+      const lo = +el2.min || 0, hi = el2.max === "" ? 100 : +el2.max, v = +el2.value;
+      el2.style.setProperty("--fill", (hi > lo ? Math.min(100, Math.max(0, (v - lo) / (hi - lo) * 100)) : 0) + "%");
+    };
+    const all = (r) => r.querySelectorAll?.('input[type="range"]').forEach(upd);
+    document.addEventListener("input", (e) => upd(e.target), true);
+    const d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+    if (d?.set) Object.defineProperty(HTMLInputElement.prototype, "value", { ...d, set(v) {
+      d.set.call(this, v);
+      if (this.type === "range") upd(this);
+    } });
+    const start = () => {
+      all(document);
+      new MutationObserver((ms) => {
+        for (const m of ms) {
+          if (m.type === "attributes") upd(m.target);
+          else m.addedNodes.forEach((nd) => {
+            if (nd.nodeType === 1) {
+              upd(nd);
+              all(nd);
+            }
+          });
+        }
+      }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["value", "min", "max"] });
+    };
+    document.body ? start() : document.addEventListener("DOMContentLoaded", start);
+  })();
   var fpsInt = () => Math.round(store.project.settings.fps || 30);
   var tc3 = (s) => {
     s = Math.max(0, s);
@@ -16004,6 +17391,13 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     };
     const autoActions = {
       captions: () => openTool(lazyAI, "openAutoCaptions"),
+      removeBg: (mediaIds) => {
+        if (!mediaIds && !store.selectedClips().some((c) => c.type === "image")) return toast2("Select an image clip (or right-click an image in the library)");
+        lazyAI().then((m) => {
+          playback.pause();
+          m.openRemoveBackground({ store, ops, audio, mediaRuntime, mediaIds });
+        }).catch((e) => toast2("Could not open: " + e.message));
+      },
       silence: () => openTool(lazyAuto, "openSilenceRemover"),
       scenes: () => {
         if (!store.selectedClips().some((c) => c.type === "video")) return toast2("Select a video clip first");
@@ -16199,6 +17593,13 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         status(`Imported ${files.length} file(s)`);
       }
     });
+    const openImportUrl = () => Promise.resolve().then(() => (init_integrations(), integrations_exports)).then((m) => m.openImportFromUrl({
+      importFiles: (files, add) => importFiles(files, { audio, ops, addToTimeline: add, time: store.playhead }),
+      toast: toast2
+    }));
+    window.addEventListener("ve:importUrl", openImportUrl);
+    window.addEventListener("ve:status", (e) => status(e.detail));
+    window.addEventListener("ve:removeBg", (e) => autoActions.removeBg(e.detail?.mediaIds));
     window.addEventListener("ve:importMedia", async (e) => {
       try {
         e.detail.resolve(await importFiles([...e.detail.files], { audio }));
@@ -16568,6 +17969,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         { label: "Open Project\u2026", kbd: "Ctrl+O", run: actions.open },
         { sep: true },
         { label: "Import Media\u2026", kbd: "Ctrl+I", run: actions.import },
+        { label: "Import from URL\u2026", kbd: "Ctrl+Shift+I", run: () => openImportUrl() },
         { label: "Record Voiceover", run: actions.record },
         { sep: true },
         { label: "Save Project", kbd: "Ctrl+S", run: actions.save },
@@ -16631,6 +18033,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       ],
       "AI & Auto": () => [
         { label: "Auto Captions (local Whisper AI)\u2026", kbd: "Ctrl+Alt+T", run: autoActions.captions },
+        { label: "Remove Background (AI, images)\u2026", run: () => autoActions.removeBg() },
         { sep: true },
         { label: "Silence Remover\u2026", kbd: "Ctrl+Alt+R", run: autoActions.silence },
         { label: "Scene Detection (split at cuts)\u2026", run: autoActions.scenes },
@@ -16944,6 +18347,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       });
       if (ctrl && sh && k === "Backspace") return run(() => ops.closeGaps());
       if (ctrl && sh && lk === "a") return run(() => store.select([]));
+      if (ctrl && sh && lk === "i") return run(() => openImportUrl());
       if (ctrl && k === "ArrowUp") return run(() => ops.moveToTrack(-1));
       if (ctrl && k === "ArrowDown") return run(() => ops.moveToTrack(1));
       if (ctrl && !sh && !alt && lk === "r") return run(() => {

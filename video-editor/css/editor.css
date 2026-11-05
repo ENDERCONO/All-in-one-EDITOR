@@ -9,7 +9,7 @@
   --radius: 8px; --gap: 6px; --font: 'Inter', system-ui, sans-serif; --mono: 'JetBrains Mono', ui-monospace, monospace;
   --head-h: 34px; --track-h: 58px;
   --field-bg: #101216; --field-hover: #15181d; --field-border: #2a2f37; --field-border-hover: #3d444f;
-  --field-bar: rgba(46, 230, 197, .16); --field-bar-hover: rgba(46, 230, 197, .24); --field-radius: 5px;
+  --field-bar: rgba(46, 230, 197, .2); --field-bar-hover: rgba(46, 230, 197, .28); --field-radius: 5px;
   --track: #343a44; --thumb: #f2f4f6;
 }
 [data-theme="unreal"] {
@@ -20,7 +20,7 @@
   --clip-title: #8a5a1f; --clip-material: #6d3f9e; --clip-color: #8f3f3f; --clip-image: #2e6f7f;
   --radius: 2px; --gap: 4px;
   --field-bg: #0f0f0f; --field-hover: #141414; --field-border: #383838; --field-border-hover: #5a5a5a;
-  --field-bar: rgba(14, 134, 255, .2); --field-bar-hover: rgba(14, 134, 255, .3); --field-radius: 4px;
+  --field-bar: rgba(14, 134, 255, .26); --field-bar-hover: rgba(14, 134, 255, .36); --field-radius: 4px;
   --track: #3a3a3a; --thumb: #d8d8d8;
 }
 
@@ -159,7 +159,7 @@ input[type="color"] { width: 28px; height: 22px; padding: 0; border: 1px solid v
 .sec-head .chev { margin-left: auto; transition: transform .15s; color: var(--text-dim); }
 .sec.collapsed .chev { transform: rotate(-90deg); }
 .sec.collapsed .sec-body { display: none; }
-.sec-body { padding: 0 14px 12px; display: flex; flex-direction: column; gap: 9px; }
+.sec-body { padding: 0 14px 12px; display: flex; flex-direction: column; gap: 6px; }
 .switch { width: 30px; height: 16px; border-radius: 9px; background: var(--panel-3); position: relative; flex: none; border: 0; padding: 0; }
 .switch::after { content: ''; position: absolute; left: 2px; top: 2px; width: 12px; height: 12px; border-radius: 50%; background: #aaa; transition: left .15s; }
 .switch.on { background: var(--accent); }
@@ -267,7 +267,7 @@ input[type="range"]:disabled { opacity: .4; cursor: default; }
 [data-theme="unreal"] input[type="range"]::-moz-range-thumb { border-radius: 2px; width: 8px; height: 14px; }
 
 /* Number inputs in dialogs / modules: same box as the number field */
-input[type="number"] { background: var(--field-bg); border: 1px solid var(--field-border); border-radius: var(--field-radius); height: 24px; padding: 2px 6px;
+input[type="number"] { background: var(--field-bg); border: 1px solid var(--field-border); border-radius: var(--field-radius); padding: 3px 6px;
   font: 11.5px var(--mono); font-variant-numeric: tabular-nums; -moz-appearance: textfield; appearance: textfield; transition: border-color .1s, background-color .1s; }
 input[type="number"]:hover { background: var(--field-hover); border-color: var(--field-border-hover); }
 input[type="number"]:focus { border-color: var(--accent); }

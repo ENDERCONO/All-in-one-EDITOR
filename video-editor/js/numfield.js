@@ -61,11 +61,12 @@ export function numField({ value = 0, min = -Infinity, max = Infinity, step = 1,
     }
   }
   const hard = x => clampN(x, hardMin, hardMax);
-  const emit = (x, final) => {
+  // onInput(v, { typed }) — typed = a committed text entry / key step (callers can make it its own undo step)
+  const emit = (x, final, typed = false) => {
     x = tidy(hard(x));
     if (x === v && !final) return;
     v = x; render();
-    onInput?.(v);
+    onInput?.(v, { typed });
     if (final) onChange?.(v);
   };
 
@@ -74,19 +75,23 @@ export function numField({ value = 0, min = -Infinity, max = Infinity, step = 1,
     if (e.button !== 0 || disabled || editing) return;
     e.preventDefault();
     box.focus({ preventScroll: true });
-    const v0 = v, x0 = e.clientX; let acc = 0, lastX = e.clientX, moved = false, locked = false;
+    const v0 = v, x0 = e.clientX; let acc = 0, lastX = e.clientX, moved = false, wasLocked = false;
     const width = Math.max(120, box.clientWidth || 160);
     const perPx = ranged ? (hi - lo) / width : step;
     const bLo = ranged ? Math.min(lo, v0) : -Infinity, bHi = ranged ? Math.max(hi, v0) : Infinity;
     try { el.setPointerCapture(e.pointerId); } catch {}
     const mv = ev => {
-      const dx = document.pointerLockElement === el ? ev.movementX : ev.clientX - lastX;
-      lastX = ev.clientX;
+      // While locked the cursor stays put, so use movementX (skip the first event after locking: browsers report a jump there)
+      const isLocked = document.pointerLockElement === el;
+      let dx = isLocked ? (wasLocked ? ev.movementX : 0) : ev.clientX - lastX;
+      wasLocked = isLocked; lastX = ev.clientX;
+      dx = clampN(dx || 0, -300, 300);
       if (!moved) {
-        if (Math.abs(ev.clientX - x0) < 3 && !locked) return;
+        if (Math.abs(ev.clientX - x0) < 3) return;
         moved = true; dragging = true; box.classList.add('nf-drag');
-        acc = ev.clientX - x0;
-        try { const r = el.requestPointerLock?.(); r?.catch?.(() => {}); locked = true; } catch {}
+        acc = (ev.clientX - x0) * (ev.shiftKey ? 0.1 : ev.ctrlKey ? 10 : 1);
+        // Pointer lock keeps the cursor off the screen edges (skipped under automation, where it reports bogus movement)
+        if (!navigator.webdriver) try { const r = el.requestPointerLock?.(); r?.catch?.(() => {}); } catch {}
       } else acc += dx * (ev.shiftKey ? 0.1 : ev.ctrlKey ? 10 : 1);
       const st = step * (ev.shiftKey ? 0.1 : 1);
       let x = clampN(v0 + acc * perPx, bLo, bHi);
@@ -120,7 +125,7 @@ export function numField({ value = 0, min = -Infinity, max = Infinity, step = 1,
       const val = commit ? evalExpr(inp.value, editing.start) : NaN;
       const restore = editing.start;
       editing = null; box.classList.remove('nf-editing'); inp.remove();
-      if (commit && fin(val)) emit(val, true);
+      if (commit && fin(val)) emit(val, true, true);
       else if (v !== restore) { v = restore; render(); onInput?.(v); }
       box.focus({ preventScroll: true });
     };

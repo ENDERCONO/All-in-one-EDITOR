@@ -30,6 +30,10 @@ Last updated by the build session that created the editor.
 | Auto captions (local AI) | ✅* | `js/ai.js` + `js/ai-worker.js`: Whisper (tiny/base/small) via transformers.js 4.3.2 from jsDelivr, model from the Hugging Face hub, runs in the browser (WebGPU or WASM). Styles: Subtitle / TikTok / Clean / Word-by-word, .srt download. *Real model not testable in the build sandbox (hub blocked); needs http(s), not file:// |
 | Auto edit | ✅ | `js/autoedit.js`: silence remover (ripple / split / mark), scene detection, beat detection + cut to beat, auto reframe |
 | Polish | ✅ | t=0 on the left wall, live preview while dragging, guides (G), preview zoom/pan, player right-click menu, label scrubbing, status-bar selection info |
+| Unreal-style number fields | ✅ | `js/numfield.js`: drag to scrub (Shift fine / Ctrl coarse), click to type (no caps, math like `2*3`, `+10`), Esc cancels; native sliders restyled app-wide |
+| Masks / gradient blur / 3D tilt | ✅ | clip.mask (linear, radial, rect, ellipse), clip.gradBlur (site's Gradient Blur), transform.rotX/rotY/perspective; tile filters (site's Seamless Tile) |
+| Site integrations | ✅ | Import from URL (site downloader), auto-convert unsupported files on import (site converter / ffmpeg.wasm), copy file names, text case buttons, crop-to-aspect, AI background removal, material templates (Channel Compositor, Normal Mix, Seamless tile, Height → Normal) |
+| Overwrite on drop | ✅ | dropping clips over clips trims / splits / removes what's underneath (Alt = avoid) |
 | Material editor drops | ✅ | drag images (files or library) onto the graph → Texture Sample nodes |
 
 ## Known limitations / next ideas

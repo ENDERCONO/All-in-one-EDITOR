@@ -22,7 +22,7 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
   const collapsed = new Set(JSON.parse(localStorage.getItem('ve.ins.collapsed') || '[]'));
   const clip = () => store.selectedClips()[0] || null;
 
-  function edit(path, v, label) {
+  function edit(path, v, label, { discrete = false } = {}) {
     const c = clip(); if (!c) return;
     const ids = store.selection.clipIds;
     store.update(label || 'Edit ' + path.split('.').pop(), p => {
@@ -34,7 +34,7 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
         if (path.startsWith('gradBlur.') && !x.gradBlur) x.gradBlur = defaultGradBlur();
         set(x, path, v);
       }
-    }, { coalesce: ids.join(',') + ':' + path });
+    }, { coalesce: discrete ? undefined : ids.join(',') + ':' + path });
   }
 
   // ---------- control builders (return HTML; wired after insertion) ----------
@@ -281,7 +281,7 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
   }
 
   function wire(c) {
-    root.querySelectorAll('.ins-tab[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; structKey = ''; build(); });
+    root.querySelectorAll('.ins-tab[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; structKey = ''; refresh(); });
     root.querySelectorAll('.sec-head').forEach(h => h.addEventListener('click', e => {
       if (e.target.closest('.switch')) return;
       const s = h.parentElement; s.classList.toggle('collapsed');
@@ -293,24 +293,24 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
       if (b.kind === 'slider') {
         const o = b.opts, ui = v => (isFinite(v) ? v : 0);
         const lab = root.querySelector(`[data-reset="${b.id}"]`);
-        const apply = v => {
+        const apply = (v, { typed } = {}) => {
           if (!isFinite(v)) return;
           const val = b.fromUI(v);
-          if (b.path === 'speed') return setSpeed(val);
-          if (b.path.startsWith('transition')) return editTransition(b.path, val);
-          edit(b.path, val, (lab?.textContent || b.path.split('.').pop()));
+          if (b.path === 'speed') return setSpeed(val, typed);
+          if (b.path.startsWith('transition')) return editTransition(b.path, val, typed);
+          edit(b.path, val, (lab?.textContent || b.path.split('.').pop()), { discrete: typed });
         };
         const cur = get(clip(), b.path);
         const nf = numField({ value: ui(b.toUI(cur ?? b.def ?? 0)), min: o.min, max: o.max, step: o.step, unit: o.unit, decimals: o.decimals,
           hardMin: o.hardMin, hardMax: o.hardMax, onInput: apply, title: (lab?.textContent || '') + ' — drag to change (Shift fine, Ctrl coarse), click to type' });
-        nf.id = b.id; el.replaceWith(nf); b.nf = nf;
+        nf.id = b.id; if (lab) nf.setAttribute('aria-label', lab.textContent); el.replaceWith(nf); b.nf = nf;
         if (lab) {
           lab.classList.add('scrub'); lab.title = 'Drag to change · Shift = fine · Ctrl = coarse · double-click to reset';
           nf.scrubFrom(lab);
           lab.addEventListener('dblclick', () => {
             if (b.path.startsWith('transition')) return;
-            if (b.path === 'speed') return setSpeed(b.def);
-            edit(b.path, b.def, 'Reset ' + lab.textContent); sync();
+            if (b.path === 'speed') return setSpeed(b.def, true);
+            edit(b.path, b.def, 'Reset ' + lab.textContent, { discrete: true }); sync();
           });
         }
       } else if (b.kind === 'toggle') {
@@ -365,10 +365,10 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
     root.querySelectorAll('[data-speed]').forEach(b => b.addEventListener('click', () => ops.setSpeed(+b.dataset.speed)));
     root.querySelectorAll('.nf-slot[data-famt]').forEach(slot => {
       const i = +slot.dataset.famt;
-      const nf = numField({ value: (c.filters[i]?.amount ?? 1) * 100, min: 0, max: 100, step: 1, unit: '%', onInput: v => edit(`filters.${i}.amount`, v / 100, 'Filter amount') });
+      const nf = numField({ value: (c.filters[i]?.amount ?? 1) * 100, min: 0, max: 100, step: 1, unit: '%', onInput: (v, m) => edit(`filters.${i}.amount`, v / 100, 'Filter amount', { discrete: m?.typed }) });
       nf.dataset.famt = i; slot.replaceWith(nf);
       const lab = root.querySelector(`[data-freset="${i}"]`);
-      if (lab) { lab.classList.add('scrub'); nf.scrubFrom(lab); lab.addEventListener('dblclick', () => { edit(`filters.${i}.amount`, 1, 'Reset filter amount'); sync(); }); }
+      if (lab) { lab.classList.add('scrub'); nf.scrubFrom(lab); lab.addEventListener('dblclick', () => { edit(`filters.${i}.amount`, 1, 'Reset filter amount', { discrete: true }); sync(); }); }
     });
     root.querySelectorAll('[data-fdel]').forEach(b => b.addEventListener('click', () => store.transact('Remove filter', p => { const x = p.clips.find(y => y.id === clip().id); x.filters.splice(+b.dataset.fdel, 1); })));
     root.querySelector('#insAddFilter')?.addEventListener('change', e => { const v = e.target.value; if (!v) return; store.transact('Add filter', p => p.clips.find(y => y.id === clip().id).filters.push({ id: uid('flt'), type: v, amount: 1 })); });
@@ -403,13 +403,13 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
   };
 
   // Speed goes through here so the duration follows (as ops.setSpeed does)
-  function setSpeed(v) {
+  function setSpeed(v, discrete) {
     v = Math.max(0.01, +v || 1);
     const c0 = clip();
-    store.update('Speed', p => { for (const id of store.selection.clipIds) { const x = p.clips.find(y => y.id === id); if (!x || x.type === 'image' || x.type === 'text' || x.type === 'color' || x.type === 'material' || x.type === 'adjustment') continue; x.duration = x.duration * x.speed / v; x.speed = v; } }, { coalesce: 'speed' + c0.id });
+    store.update('Speed', p => { for (const id of store.selection.clipIds) { const x = p.clips.find(y => y.id === id); if (!x || x.type === 'image' || x.type === 'text' || x.type === 'color' || x.type === 'material' || x.type === 'adjustment') continue; x.duration = x.duration * x.speed / v; x.speed = v; } }, { coalesce: discrete ? undefined : 'speed' + c0.id });
   }
 
-  function editTransition(path, v) {
+  function editTransition(path, v, discrete) {
     const side = path.startsWith('transitionIn') ? 'In' : 'Out';
     const c = clip(); const cur = c['transition' + side];
     if (path.endsWith('.type')) {
@@ -417,7 +417,7 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
       else store.transact('Set transition', p => { p.clips.find(x => x.id === c.id)['transition' + side] = { type: v, duration: Math.min(cur?.duration || 1, c.duration / 2) }; });
     } else if (cur) {
       v = Math.max(store.frame(), Math.min(v, c.duration));
-      store.update('Transition length', p => { p.clips.find(x => x.id === c.id)['transition' + side].duration = v; }, { coalesce: 'tr' + side + c.id });
+      store.update('Transition length', p => { p.clips.find(x => x.id === c.id)['transition' + side].duration = v; }, { coalesce: discrete ? undefined : 'tr' + side + c.id });
     }
   }
 
@@ -434,14 +434,14 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
       if (u.type === 'vec3' || u.type === 'vec4') { const hex = '#' + [0, 1, 2].map(k => Math.round(Math.max(0, Math.min(1, cur[k] ?? 0)) * 255).toString(16).padStart(2, '0')).join(''); return `<div class="prop wide"><label>${esc(u.param)}</label><input type="color" data-mpc="${i}" value="${hex}"></div>`; }
       return '';
     }).join('') || '<div class="dim" style="font-size:11.5px">Add Scalar / Vector Parameter nodes in the editor to get sliders here.</div>';
-    const setParam = (u, v) => store.update('Material param', p => { const x = p.clips.find(y => y.id === c.id); x.materialParams = { ...(x.materialParams || {}), [u.param]: v }; }, { coalesce: 'mp' + c.id + u.param });
+    const setParam = (u, v, discrete) => store.update('Material param', p => { const x = p.clips.find(y => y.id === c.id); if (!x) return; x.materialParams = { ...(x.materialParams || {}), [u.param]: v }; }, { coalesce: discrete ? undefined : 'mp' + c.id + u.param });
     box.querySelectorAll('.nf-slot[data-mp]').forEach(slot => {
       const i = +slot.dataset.mp, u = params[i], lo = u.min ?? 0, hi = u.max ?? 1;
       const cur = c.materialParams?.[u.param] ?? u.value;
-      const nf = numField({ value: +cur || 0, min: lo, max: hi, step: (hi - lo) / 200 || 0.01, decimals: 3, onInput: v => setParam(u, v) });
+      const nf = numField({ value: +cur || 0, min: lo, max: hi, step: (hi - lo) / 200 || 0.01, decimals: 3, onInput: (v, m) => setParam(u, v, m?.typed) });
       nf.dataset.mp = i; slot.replaceWith(nf);
       const lab = box.querySelector(`[data-mpl="${i}"]`);
-      if (lab) { lab.classList.add('scrub'); nf.scrubFrom(lab); lab.addEventListener('dblclick', () => { setParam(u, u.value); nf.setValue(+u.value || 0); }); }
+      if (lab) { lab.classList.add('scrub'); nf.scrubFrom(lab); lab.addEventListener('dblclick', () => { setParam(u, u.value, true); nf.setValue(+u.value || 0); }); }
     });
     box.querySelectorAll('[data-mpc]').forEach(r => r.addEventListener('input', () => { const u = params[+r.dataset.mpc]; const h = r.value; const v = [1, 3, 5].map(k => parseInt(h.substr(k, 2), 16) / 255); if (u.type === 'vec4') v.push(1); setParam(u, v); }));
   }

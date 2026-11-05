@@ -10,6 +10,22 @@ import { importFiles, createLibrary } from './media.js';
 import { createInspector } from './inspector.js';
 
 const $ = s => document.querySelector(s);
+
+// Range sliders show their filled part through the CSS variable --fill (css/editor.css): kept in sync on input,
+// on programmatic .value writes, and for sliders added later.
+(function rangeFill() {
+  const upd = el => { if (el?.type !== 'range') return; const lo = +el.min || 0, hi = el.max === '' ? 100 : +el.max, v = +el.value; el.style.setProperty('--fill', (hi > lo ? Math.min(100, Math.max(0, (v - lo) / (hi - lo) * 100)) : 0) + '%'); };
+  const all = r => r.querySelectorAll?.('input[type="range"]').forEach(upd);
+  document.addEventListener('input', e => upd(e.target), true);
+  const d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  if (d?.set) Object.defineProperty(HTMLInputElement.prototype, 'value', { ...d, set(v) { d.set.call(this, v); if (this.type === 'range') upd(this); } });
+  const start = () => {
+    all(document);
+    new MutationObserver(ms => { for (const m of ms) { if (m.type === 'attributes') upd(m.target); else m.addedNodes.forEach(nd => { if (nd.nodeType === 1) { upd(nd); all(nd); } }); } })
+      .observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['value', 'min', 'max'] });
+  };
+  document.body ? start() : document.addEventListener('DOMContentLoaded', start);
+})();
 const fpsInt = () => Math.round(store.project.settings.fps || 30);
 const tc = s => { s = Math.max(0, s); const f = fpsInt(); const tot = Math.floor(s * f + 1e-6); const fr = tot % f, sec = Math.floor(tot / f); return [Math.floor(sec / 3600), Math.floor(sec / 60) % 60, sec % 60, fr].map(n => String(n).padStart(2, '0')).join(':'); };
 
