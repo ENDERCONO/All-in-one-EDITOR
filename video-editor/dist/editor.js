@@ -3870,6 +3870,7 @@ ${e.message}`);
         { label: "Trim Start to Playhead", kbd: "Alt+[", disabled: locked || !canTrim, action: () => call("trimStartTo", store2.playhead) },
         { label: "Trim End to Playhead", kbd: "Alt+]", disabled: locked || !canTrim, action: () => call("trimEndTo", store2.playhead) },
         { label: "Crop and Zoom", kbd: "Alt+C", disabled: locked || !(vid || clip.type === "image"), action: () => act("crop") },
+        { label: "Pan & Zoom\u2026", disabled: locked || !(vid || clip.type === "image"), action: () => act("panzoom") },
         { label: "Crop to Fit (fill frame)", disabled: locked || !(vid || clip.type === "image"), action: () => act("fill") },
         { label: "Rotate & Flip", disabled: locked || !visual, sub: [
           { label: "Rotate 90\xB0 CW", kbd: "Ctrl+Alt+Right", action: () => call("rotateBy", 90, ids) },
@@ -7035,6 +7036,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       gradblur: makeProgram(FS_GRADBLUR),
       filter2: makeProgram(FS_FILTER2),
       filter3: makeProgram(FS_FILTER3),
+      panzoom: makeProgram(FS_PANZOOM),
       transition2: makeProgram(FS_TRANSITION2)
     };
     const vao = gl.createVertexArray();
@@ -7359,6 +7361,21 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       release(r1);
       return r2;
     }
+    function panZoomRect(clip, t) {
+      const pz = clip.panZoom;
+      if (!pz || !pz.enabled || !(clip.type === "video" || clip.type === "image")) return null;
+      const a = pz.start || {}, b = pz.end || {};
+      let k = clip.duration > 0 ? Math.max(0, Math.min(1, (t - clip.start) / clip.duration)) : 0;
+      if (pz.ease !== "linear") k = k * k * (3 - 2 * k);
+      const L = (p, q, d) => {
+        const x2 = num(p, d), y2 = num(q, d);
+        return x2 + (y2 - x2) * k;
+      };
+      const w = Math.max(0.01, Math.min(1, L(a.w, b.w, 1))), h2 = Math.max(0.01, Math.min(1, L(a.h, b.h, 1)));
+      const x = Math.max(0, Math.min(1 - w, L(a.x, b.x, 0))), y = Math.max(0, Math.min(1 - h2, L(a.y, b.y, 0)));
+      if (w > 0.9999 && h2 > 0.9999) return null;
+      return [x, 1 - (y + h2), w, h2];
+    }
     function processLayer(clip, t, frameTex = null) {
       if (!clip || !VISUAL3.has(clip.type)) return null;
       const { width: W2, height: H } = settings();
@@ -7408,7 +7425,8 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
         if (m) mat = getMaterialProgram(m);
       } else if (clip.materialId && !materialsMod) loadMaterials();
       if (clip.type === "material" && !mat) return null;
-      if (!chroma && !hueOn && !colorOn && !filters.length && !gbOn && !maskOn && !mat) return { tex: srcTex, rt: null, sw, sh };
+      const pzRect = panZoomRect(clip, t);
+      if (!pzRect && !chroma && !hueOn && !colorOn && !filters.length && !gbOn && !maskOn && !mat) return { tex: srcTex, rt: null, sw, sh };
       const [bw, bh] = baseSize(clip, sw, sh);
       const tr = clip.transform || {};
       const sc = Math.abs(tr.scale ?? 1);
@@ -7443,6 +7461,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
         if (input.rt) release(input.rt);
         cur = { tex: out.tex, rt: out, w, h: h2 };
       };
+      if (pzRect) step(P3.panzoom, (pr) => gl.uniform4f(pr.loc("u_rect"), pzRect[0], pzRect[1], pzRect[2], pzRect[3]));
       const runMaterial = () => {
         const { prog, info } = mat;
         const out = acquire(lw, lh);
@@ -7766,7 +7785,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
     });
     return { render, setSize, getClipQuad, dispose, gl };
   }
-  var materialsMod, materialsPromise, ident, DEFINES, FILTER_INDEX, TRANSITION_INDEX, BLEND_INDEX, FILTER_V2, FILTER_V3, TRANSITION_V2, COLOR_KEYS, VS, HEAD, FS_COPY, FS_FILL, FS_CHROMA, FS_COLOR, FS_HUE, FS_BLUR, FS_FILTER, FS_FILTER2, FS_FILTER3, FS_MASK, FS_GRADBLUR, FS_COMPOSITE, TR_COMMON, FS_TRANSITION, FS_TRANSITION2, VISUAL3, FULLFRAME;
+  var materialsMod, materialsPromise, ident, DEFINES, FILTER_INDEX, TRANSITION_INDEX, BLEND_INDEX, FILTER_V2, FILTER_V3, TRANSITION_V2, COLOR_KEYS, VS, HEAD, FS_COPY, FS_PANZOOM, FS_FILL, FS_CHROMA, FS_COLOR, FS_HUE, FS_BLUR, FS_FILTER, FS_FILTER2, FS_FILTER3, FS_MASK, FS_GRADBLUR, FS_COMPOSITE, TR_COMMON, FS_TRANSITION, FS_TRANSITION2, VISUAL3, FULLFRAME;
   var init_renderer = __esm({
     "js/renderer.js"() {
       init_catalog();
@@ -7829,6 +7848,9 @@ float sn(float x) { float i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f
       FS_COPY = HEAD + `
 uniform sampler2D u_tex; uniform int u_flip;
 void main() { vec2 uv = v_uv; if (u_flip == 1) uv.y = 1.0 - uv.y; outColor = texture(u_tex, uv); }`;
+      FS_PANZOOM = HEAD + `
+uniform sampler2D u_tex; uniform vec4 u_rect;
+void main() { outColor = texture(u_tex, u_rect.xy + v_uv * u_rect.zw); }`;
       FS_FILL = HEAD + `
 uniform vec4 u_color;
 void main() { outColor = u_color; }`;
@@ -15213,6 +15235,458 @@ ${c.text}
     }
   });
 
+  // js/cropzoom.js
+  var cropzoom_exports = {};
+  __export(cropzoom_exports, {
+    openCropZoom: () => openCropZoom
+  });
+  function openCropZoom({ store: store2, mediaRuntime: mediaRuntime2, clipId, tab = "crop", onApplied }) {
+    const clip0 = store2.getClip(clipId);
+    if (!clip0 || !(clip0.type === "video" || clip0.type === "image")) return null;
+    const m = store2.getMedia(clip0.mediaId), rt = mediaRuntime2.get(clip0.mediaId);
+    if (!m || !rt) return null;
+    const S = store2.project.settings, fps = S.fps || 30;
+    const sw = m.width || 1920, sh = m.height || 1080;
+    const cr0 = clip0.crop || {};
+    let crop = { x: cr0.l || 0, y: cr0.t || 0, w: 1 - (cr0.l || 0) - (cr0.r || 0), h: 1 - (cr0.t || 0) - (cr0.b || 0) };
+    const pz0 = clip0.panZoom;
+    let pzOn = !!pz0?.enabled;
+    let pzStart = { ...full(), ...pz0?.start || {} }, pzEnd = { ...full(), ...pz0?.end || {} };
+    let ratio = "custom";
+    let cur = tab === "pan" ? "pan" : "crop";
+    const tc4 = (s) => {
+      s = Math.max(0, s);
+      const f = Math.floor(s % 1 * fps + 1e-6), t2 = Math.floor(s);
+      return [Math.floor(t2 / 3600), Math.floor(t2 / 60) % 60, t2 % 60, f].map((n) => String(n).padStart(2, "0")).join(":");
+    };
+    const ICON = {
+      prev: '<path d="M7 5v14M18 6l-8 6 8 6z"/>',
+      next: '<path d="M17 5v14M6 6l8 6-8 6z"/>',
+      play: '<path d="M7 5l12 7-12 7z"/>',
+      pause: '<path d="M7 5h3v14H7zM14 5h3v14h-3z"/>',
+      stop: '<rect x="6" y="6" width="12" height="12"/>',
+      zin: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5M9 12h6M12 9v6"/>',
+      zout: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5M9 12h6"/>',
+      pr: '<path d="M4 12h12M12 7l5 5-5 5M20 5v14"/>',
+      pl: '<path d="M20 12H8M12 7l-5 5 5 5M4 5v14"/>',
+      swap: '<path d="M4 8h14l-4-4M20 16H6l4 4"/>'
+    };
+    const ic = (n, sz = 18) => `<svg viewBox="0 0 24 24" width="${sz}" height="${sz}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON[n]}</svg>`;
+    const back = document.createElement("div");
+    back.className = "modal-back cz-back";
+    back.innerHTML = `<div class="modal cz-modal" role="dialog" aria-label="Crop and Zoom">
+    <div class="modal-head"><span>Crop and Zoom</span><button class="icon-btn cz-x" title="Close (Esc)">\u2715</button></div>
+    <div class="cz-tabs"><button class="cz-tab" data-t="crop">Crop</button><button class="cz-tab" data-t="pan">Pan &amp; Zoom</button></div>
+    <div class="cz-stage"><div class="cz-img"><canvas></canvas><div class="cz-ov"></div></div></div>
+    <div class="cz-transport">
+      <button class="icon-btn" data-do="prev" title="Previous frame">${ic("prev")}</button>
+      <button class="icon-btn" data-do="next" title="Next frame">${ic("next")}</button>
+      <button class="icon-btn" data-do="play" title="Play / pause (Space)">${ic("play")}</button>
+      <button class="icon-btn" data-do="stop" title="Stop">${ic("stop")}</button>
+      <span class="cz-tc cz-now"></span><input type="range" class="cz-scrub" min="0" max="1000" value="0"><span class="cz-tc cz-end"></span>
+    </div>
+    <div class="cz-opts">
+      <label>Ratio:</label><select class="cz-ratio">${RATIOS.map((r) => `<option value="${r.id}">${esc6(r.label || r.id)}</option>`).join("")}</select>
+      <input type="number" class="cz-wi" min="1" step="1"><span>\xD7</span><input type="number" class="cz-hi" min="1" step="1">
+      <label class="cz-pzon"><input type="checkbox" class="cz-enable"> Pan &amp; Zoom on</label>
+      <span class="cz-spacer"></span>
+      <span class="cz-pzbtns">
+        <button class="icon-btn" data-pz="zin" title="Zoom in (end closer)">${ic("zin")}</button>
+        <button class="icon-btn" data-pz="zout" title="Zoom out (start closer)">${ic("zout")}</button>
+        <button class="icon-btn" data-pz="pr" title="Pan to the right">${ic("pr")}</button>
+        <button class="icon-btn" data-pz="pl" title="Pan to the left">${ic("pl")}</button>
+        <button class="icon-btn" data-pz="swap" title="Swap start and end">${ic("swap")}</button>
+      </span>
+    </div>
+    <div class="modal-foot"><button class="btn" data-do="reset">Reset</button><span class="cz-spacer"></span><button class="btn primary" data-do="apply">Apply</button><button class="btn" data-do="cancel">Cancel</button></div>
+  </div>`;
+    (document.getElementById("modalRoot") || document.body).appendChild(back);
+    const $2 = (s) => back.querySelector(s);
+    const canvas = $2("canvas"), g = canvas.getContext("2d"), ov = $2(".cz-ov"), imgBox = $2(".cz-img"), stage = $2(".cz-stage");
+    let vid = null, playing = false, raf = 0;
+    let t = clamp2(store2.playhead, clip0.start, clip0.start + clip0.duration - 1 / fps);
+    const srcTime = (tt) => store2.sourceTime(clip0, tt);
+    if (clip0.type === "video") {
+      vid = document.createElement("video");
+      vid.muted = true;
+      vid.playsInline = true;
+      vid.preload = "auto";
+      vid.src = rt.url;
+      vid.addEventListener("seeked", draw);
+      vid.addEventListener("loadeddata", draw);
+    }
+    function draw() {
+      const el2 = vid || rt.image || rt.anim?.frames?.[0]?.bmp;
+      if (!el2) return;
+      if (vid && vid.readyState < 2) return;
+      g.drawImage(el2, 0, 0, canvas.width, canvas.height);
+    }
+    function seek(tt) {
+      t = clamp2(tt, clip0.start, clip0.start + clip0.duration - 1 / fps);
+      if (vid) {
+        const st = srcTime(t);
+        if (Math.abs(vid.currentTime - st) > 1e-3) vid.currentTime = st;
+        else draw();
+      } else draw();
+      syncTransport();
+    }
+    function play() {
+      if (!vid) return;
+      if (t >= clip0.start + clip0.duration - 2 / fps) seek(clip0.start);
+      playing = true;
+      vid.playbackRate = clamp2(clip0.speed || 1, 0.0625, 16);
+      vid.play().catch(() => {
+      });
+      const tick = () => {
+        if (!playing) return;
+        t = clip0.start + (vid.currentTime - srcTime(clip0.start)) / (clip0.speed || 1);
+        if (t >= clip0.start + clip0.duration) {
+          stopPlay();
+          seek(clip0.start + clip0.duration - 1 / fps);
+          return;
+        }
+        draw();
+        syncTransport();
+        raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+      syncTransport();
+    }
+    function stopPlay() {
+      playing = false;
+      cancelAnimationFrame(raf);
+      vid?.pause();
+      syncTransport();
+    }
+    function layout() {
+      const r = stage.getBoundingClientRect();
+      const k = Math.min((r.width - 24) / sw, (r.height - 24) / sh);
+      const w = Math.max(10, Math.floor(sw * k)), h2 = Math.max(10, Math.floor(sh * k));
+      imgBox.style.width = w + "px";
+      imgBox.style.height = h2 + "px";
+      canvas.width = Math.min(sw, w * devicePixelRatio);
+      canvas.height = Math.round(canvas.width * sh / sw);
+      canvas.style.width = w + "px";
+      canvas.style.height = h2 + "px";
+      draw();
+      renderOverlay();
+    }
+    const pixLock = () => {
+      if (cur === "pan") return 1;
+      const r = RATIOS.find((x) => x.id === ratio);
+      if (!r || r.id === "custom") return null;
+      const A = r.id === "original" ? sw / sh : r.id === "project" ? S.width / S.height : r.w / r.h;
+      return A / (sw / sh);
+    };
+    function fitLock(b, lock, anchor = "center") {
+      if (!lock) return b;
+      let w = b.w, h2 = b.w / lock;
+      if (h2 > 1) {
+        h2 = 1;
+        w = lock;
+      }
+      if (w > 1) {
+        w = 1;
+        h2 = 1 / lock;
+      }
+      const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      const nb = anchor === "center" ? { x: cx - w / 2, y: cy - h2 / 2, w, h: h2 } : { x: b.x, y: b.y, w, h: h2 };
+      nb.x = clamp2(nb.x, 0, 1 - w);
+      nb.y = clamp2(nb.y, 0, 1 - h2);
+      return nb;
+    }
+    function boxEl(cls, label) {
+      const d = document.createElement("div");
+      d.className = "cz-box " + cls;
+      d.innerHTML = `${label ? `<span class="cz-lab">${label}</span>` : ""}<i class="cz-g v1"></i><i class="cz-g v2"></i><i class="cz-g h1"></i><i class="cz-g h2"></i>` + ["nw", "n", "ne", "e", "se", "s", "sw", "w"].map((h2) => `<b class="cz-h ${h2}" data-h="${h2}"></b>`).join("") + (cls.includes("pz") ? '<span class="cz-cross">+</span>' : "");
+      ov.appendChild(d);
+      return d;
+    }
+    let boxes = [];
+    function renderOverlay() {
+      ov.innerHTML = "";
+      boxes = [];
+      ov.classList.toggle("dim", cur === "crop");
+      if (cur === "crop") boxes.push({ el: boxEl("crop", ""), get: () => crop, set: (b) => {
+        crop = b;
+      } });
+      else {
+        boxes.push({ el: boxEl("pz start", "Start"), get: () => pzStart, set: (b) => {
+          pzStart = b;
+        } });
+        boxes.push({ el: boxEl("pz end", "End"), get: () => pzEnd, set: (b) => {
+          pzEnd = b;
+        } });
+      }
+      boxes.forEach((bx) => wireBox(bx));
+      placeBoxes();
+    }
+    function placeBoxes() {
+      const W2 = imgBox.clientWidth, H = imgBox.clientHeight;
+      for (const bx of boxes) {
+        const b = bx.get();
+        Object.assign(bx.el.style, { left: b.x * W2 + "px", top: b.y * H + "px", width: b.w * W2 + "px", height: b.h * H + "px" });
+      }
+      if (cur === "crop") {
+        const b = crop;
+        ov.style.setProperty("--cx", b.x * 100 + "%");
+        ov.style.setProperty("--cy", b.y * 100 + "%");
+        ov.style.setProperty("--cw", b.w * 100 + "%");
+        ov.style.setProperty("--ch", b.h * 100 + "%");
+      }
+      syncFields();
+    }
+    function wireBox(bx) {
+      bx.el.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (cur === "pan" && !pzOn) {
+          pzOn = true;
+          syncFields();
+        }
+        const h2 = e.target.dataset?.h || "move";
+        const W2 = imgBox.clientWidth, H = imgBox.clientHeight, b0 = { ...bx.get() }, x0 = e.clientX, y0 = e.clientY;
+        const lock = pixLock(), MIN = 0.03;
+        bx.el.setPointerCapture?.(e.pointerId);
+        ov.querySelectorAll(".cz-box").forEach((x) => x.classList.toggle("front", x === bx.el));
+        const move = (ev) => {
+          const dx = (ev.clientX - x0) / W2, dy = (ev.clientY - y0) / H;
+          let { x, y, w, h: hh } = b0;
+          if (h2 === "move") {
+            x = clamp2(b0.x + dx, 0, 1 - b0.w);
+            y = clamp2(b0.y + dy, 0, 1 - b0.h);
+            bx.set({ x, y, w, h: hh });
+            placeBoxes();
+            return;
+          }
+          let l = b0.x, t2 = b0.y, r = b0.x + b0.w, bt = b0.y + b0.h;
+          if (h2.includes("w")) l = clamp2(b0.x + dx, 0, r - MIN);
+          if (h2.includes("e")) r = clamp2(r + dx, l + MIN, 1);
+          if (h2.includes("n")) t2 = clamp2(b0.y + dy, 0, bt - MIN);
+          if (h2.includes("s")) bt = clamp2(bt + dy, t2 + MIN, 1);
+          let nb = { x: l, y: t2, w: r - l, h: bt - t2 };
+          if (lock) {
+            if (h2 === "n" || h2 === "s") {
+              const w2 = nb.h * lock, cx = b0.x + b0.w / 2;
+              nb = { x: cx - w2 / 2, y: nb.y, w: w2, h: nb.h };
+            } else {
+              const h22 = nb.w / lock;
+              nb = { x: nb.x, y: h2.includes("n") ? bt - h22 : h2 === "e" || h2 === "w" ? b0.y + b0.h / 2 - h22 / 2 : t2, w: nb.w, h: h22 };
+            }
+            if (nb.w > 1 || nb.h > 1 || nb.x < 0 || nb.y < 0 || nb.x + nb.w > 1 || nb.y + nb.h > 1) {
+              const k = Math.min(1, nb.w > 1 ? 1 / nb.w : 1, nb.h > 1 ? 1 / nb.h : 1);
+              nb.w *= k;
+              nb.h *= k;
+              nb.x = clamp2(nb.x, 0, 1 - nb.w);
+              nb.y = clamp2(nb.y, 0, 1 - nb.h);
+            }
+          }
+          bx.set(nb);
+          placeBoxes();
+        };
+        const up = () => {
+          bx.el.removeEventListener("pointermove", move);
+          bx.el.removeEventListener("pointerup", up);
+          bx.el.removeEventListener("pointercancel", up);
+        };
+        bx.el.addEventListener("pointermove", move);
+        bx.el.addEventListener("pointerup", up);
+        bx.el.addEventListener("pointercancel", up);
+      });
+    }
+    function syncFields() {
+      const b = cur === "crop" ? crop : pzEnd;
+      const wi = $2(".cz-wi"), hi = $2(".cz-hi");
+      if (document.activeElement !== wi) wi.value = Math.round(b.w * sw);
+      if (document.activeElement !== hi) hi.value = Math.round(b.h * sh);
+      wi.title = hi.title = cur === "crop" ? "Crop size in source pixels" : "End box size in source pixels";
+      $2(".cz-ratio").value = cur === "pan" ? "original" : ratio;
+      $2(".cz-ratio").disabled = cur === "pan";
+      $2(".cz-enable").checked = pzOn;
+      $2(".cz-pzon").hidden = cur !== "pan";
+      $2(".cz-pzbtns").hidden = cur !== "pan";
+      back.querySelectorAll(".cz-tab").forEach((x) => x.classList.toggle("active", x.dataset.t === cur));
+      imgBox.classList.toggle("pz-off", cur === "pan" && !pzOn);
+    }
+    function syncTransport() {
+      $2(".cz-now").textContent = tc4(t);
+      $2(".cz-end").textContent = tc4(clip0.start + clip0.duration);
+      const sc = $2(".cz-scrub");
+      if (document.activeElement !== sc) sc.value = Math.round((t - clip0.start) / clip0.duration * 1e3);
+      $2('[data-do="play"]').innerHTML = ic(playing ? "pause" : "play");
+      $2('[data-do="play"]').disabled = !vid;
+    }
+    back.querySelectorAll(".cz-tab").forEach((b) => b.onclick = () => {
+      cur = b.dataset.t;
+      renderOverlay();
+    });
+    $2(".cz-ratio").onchange = (e) => {
+      ratio = e.target.value;
+      const l = pixLock();
+      if (l) {
+        crop = fitLock(crop, l);
+      }
+      placeBoxes();
+    };
+    const sizeEdit = (which) => {
+      const wv = +$2(".cz-wi").value, hv = +$2(".cz-hi").value;
+      if (!(wv > 0 && hv > 0)) return;
+      const target = cur === "crop" ? crop : pzEnd;
+      let nb = { ...target };
+      const lock = pixLock();
+      if (which === "w") {
+        nb.w = clamp2(wv / sw, 0.03, 1);
+        if (lock) nb.h = nb.w / lock;
+      } else {
+        nb.h = clamp2(hv / sh, 0.03, 1);
+        if (lock) nb.w = nb.h * lock;
+      }
+      nb.w = Math.min(nb.w, 1);
+      nb.h = Math.min(nb.h, 1);
+      const cx = target.x + target.w / 2, cy = target.y + target.h / 2;
+      nb.x = clamp2(cx - nb.w / 2, 0, 1 - nb.w);
+      nb.y = clamp2(cy - nb.h / 2, 0, 1 - nb.h);
+      if (cur === "crop") {
+        crop = nb;
+        ratio = lock ? ratio : "custom";
+      } else {
+        pzEnd = nb;
+        pzOn = true;
+      }
+      placeBoxes();
+    };
+    $2(".cz-wi").addEventListener("change", () => sizeEdit("w"));
+    $2(".cz-hi").addEventListener("change", () => sizeEdit("h"));
+    $2(".cz-enable").onchange = (e) => {
+      pzOn = e.target.checked;
+      syncFields();
+    };
+    const centered = (k) => ({ x: (1 - k) / 2, y: (1 - k) / 2, w: k, h: k });
+    back.querySelectorAll("[data-pz]").forEach((b) => b.onclick = () => {
+      const a = b.dataset.pz;
+      pzOn = true;
+      if (a === "zin") {
+        pzStart = full();
+        pzEnd = centered(0.6);
+      } else if (a === "zout") {
+        pzStart = centered(0.6);
+        pzEnd = full();
+      } else if (a === "pr") {
+        pzStart = { x: 0, y: 0.15, w: 0.7, h: 0.7 };
+        pzEnd = { x: 0.3, y: 0.15, w: 0.7, h: 0.7 };
+      } else if (a === "pl") {
+        pzStart = { x: 0.3, y: 0.15, w: 0.7, h: 0.7 };
+        pzEnd = { x: 0, y: 0.15, w: 0.7, h: 0.7 };
+      } else if (a === "swap") {
+        [pzStart, pzEnd] = [pzEnd, pzStart];
+      }
+      placeBoxes();
+    });
+    $2('[data-do="prev"]').onclick = () => {
+      stopPlay();
+      seek(t - 1 / fps);
+    };
+    $2('[data-do="next"]').onclick = () => {
+      stopPlay();
+      seek(t + 1 / fps);
+    };
+    $2('[data-do="play"]').onclick = () => playing ? stopPlay() : play();
+    $2('[data-do="stop"]').onclick = () => {
+      stopPlay();
+      seek(clip0.start);
+    };
+    $2(".cz-scrub").addEventListener("input", (e) => {
+      stopPlay();
+      seek(clip0.start + e.target.value / 1e3 * clip0.duration);
+    });
+    function close() {
+      stopPlay();
+      window.removeEventListener("resize", layout);
+      ro?.disconnect();
+      if (vid) {
+        vid.removeAttribute("src");
+        vid.load();
+      }
+      back.remove();
+    }
+    $2('[data-do="reset"]').onclick = () => {
+      if (cur === "crop") {
+        crop = full();
+        ratio = "custom";
+      } else {
+        pzOn = false;
+        pzStart = full();
+        pzEnd = full();
+      }
+      placeBoxes();
+    };
+    $2('[data-do="apply"]').onclick = () => {
+      const c = { l: crop.x, t: crop.y, r: Math.max(0, 1 - crop.x - crop.w), b: Math.max(0, 1 - crop.y - crop.h) };
+      const r6 = (v) => Math.round(v * 1e6) / 1e6;
+      Object.keys(c).forEach((k) => {
+        c[k] = r6(c[k]);
+      });
+      const pz = pzOn ? { enabled: true, start: { ...pzStart }, end: { ...pzEnd }, ease: clip0.panZoom?.ease || "smooth" } : null;
+      store2.transact("Crop and Zoom", (p) => {
+        const x = p.clips.find((y) => y.id === clipId);
+        if (!x) return;
+        x.crop = c;
+        if (pz) x.panZoom = pz;
+        else delete x.panZoom;
+        delete x.zoomSpot;
+      });
+      close();
+      onApplied?.();
+    };
+    $2('[data-do="cancel"]').onclick = close;
+    $2(".cz-x").onclick = close;
+    back.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Escape") close();
+      else if (e.key === " " && e.target.tagName !== "INPUT" && e.target.tagName !== "SELECT") {
+        e.preventDefault();
+        playing ? stopPlay() : play();
+      } else if (e.key === "ArrowLeft" && e.target.tagName !== "INPUT") {
+        stopPlay();
+        seek(t - 1 / fps);
+      } else if (e.key === "ArrowRight" && e.target.tagName !== "INPUT") {
+        stopPlay();
+        seek(t + 1 / fps);
+      } else if (e.key === "Enter" && e.target.tagName !== "INPUT") $2('[data-do="apply"]').click();
+    });
+    back.tabIndex = -1;
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(layout) : null;
+    ro?.observe(stage);
+    window.addEventListener("resize", layout);
+    layout();
+    seek(t);
+    syncFields();
+    renderOverlay();
+    back.focus();
+    return { close, el: back };
+  }
+  var RATIOS, clamp2, esc6, full;
+  var init_cropzoom = __esm({
+    "js/cropzoom.js"() {
+      RATIOS = [
+        { id: "custom", label: "Custom" },
+        { id: "original", label: "Original" },
+        { id: "project", label: "Project" },
+        { id: "16:9", w: 16, h: 9 },
+        { id: "9:16", w: 9, h: 16 },
+        { id: "1:1", w: 1, h: 1 },
+        { id: "4:3", w: 4, h: 3 },
+        { id: "3:4", w: 3, h: 4 },
+        { id: "4:5", w: 4, h: 5 },
+        { id: "21:9", w: 21, h: 9 }
+      ];
+      clamp2 = (v, a, b) => Math.max(a, Math.min(b, v));
+      esc6 = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+      full = () => ({ x: 0, y: 0, w: 1, h: 1 });
+    }
+  });
+
   // js/app.js
   init_state();
   init_catalog();
@@ -16511,8 +16985,8 @@ ${c.text}
     return (j.data || []).map((g) => {
       const im = g.images || {};
       const thumb = im.fixed_width_small?.webp || im.fixed_width_small?.url || im.fixed_width?.webp || im.fixed_width?.url;
-      const full = im.original?.webp || im.original?.url || im.downsized?.url;
-      return { id: g.id, title: g.title || "GIF", thumb, full, w: +im.original?.width || 0, h: +im.original?.height || 0 };
+      const full2 = im.original?.webp || im.original?.url || im.downsized?.url;
+      return { id: g.id, title: g.title || "GIF", thumb, full: full2, w: +im.original?.width || 0, h: +im.original?.height || 0 };
     }).filter((g) => g.thumb && g.full);
   }
   async function giphyFile(g) {
@@ -17746,6 +18220,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       if (c.type === "adjustment") h2 += '<div class="ins-empty" style="padding:8px 14px">Adjustment layer \u2014 its color, filters, hue match and material apply to every track below it. Opacity sets the strength.</div>';
       else h2 += transformSec(c);
       if (c.type === "video" || c.type === "image") h2 += section("crop", "Crop", `
+      <div class="btn-row"><button class="btn primary" data-cz="crop">Crop and Zoom\u2026</button><button class="btn" data-cz="pan">Pan &amp; Zoom\u2026</button>${c.panZoom?.enabled ? '<span class="dim" style="align-self:center">Pan &amp; Zoom on</span>' : ""}</div>
       <div class="prop wide"><label>Aspect</label><div class="seg">${CROP_ASPECTS.map((a) => `<button class="btn" data-crop="${a.id}">${esc(a.label || a.id)}</button>`).join("")}</div></div>
       ${slider2("Left", "crop.l", crop)}
       ${slider2("Right", "crop.r", crop)}
@@ -18094,6 +18569,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         if (!v) return;
         store2.transact("Add filter", (p) => p.clips.find((y) => y.id === clip().id).filters.push({ id: uid("flt"), type: v, amount: 1 }));
       });
+      root.querySelectorAll("[data-cz]").forEach((b) => b.addEventListener("click", () => window.dispatchEvent(new CustomEvent("ve:cropZoom", { detail: { tab: b.dataset.cz } }))));
       root.querySelectorAll("[data-tpreset]").forEach((b) => b.addEventListener("click", () => {
         const pr = TITLE_PRESETS.find((t) => t.id === b.dataset.tpreset);
         if (!pr) return;
@@ -18709,11 +19185,12 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         if (!ops.splitAt(store.playhead)) toast2("Put the playhead over a clip to split it");
       },
       addTitle: () => ops.addTextClip({ time: store.playhead }),
-      crop: () => {
-        if (!store.selectedClips().length) return toast2("Select a clip first");
-        inspector.showTab("video");
-        document.querySelector('[data-sec="crop"]')?.classList.remove("collapsed");
-        document.querySelector('[data-sec="crop"]')?.scrollIntoView({ block: "center" });
+      crop: (tab) => {
+        const c = store.selectedClips()[0];
+        if (!c) return toast2("Select a clip first");
+        if (c.type !== "video" && c.type !== "image") return toast2("Crop and Zoom works on video and image clips");
+        playback.pause();
+        Promise.resolve().then(() => (init_cropzoom(), cropzoom_exports)).then((m) => m.openCropZoom({ store, mediaRuntime, clipId: c.id, tab: typeof tab === "string" ? tab : "crop" })).catch((e) => toast2("Could not open Crop and Zoom: " + e.message));
       },
       speed: (e) => {
         if (!store.selectedClips().length) return toast2("Select a clip first");
@@ -18995,7 +19472,8 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       });
     };
     const clipActions = {
-      crop: () => actions.crop(),
+      crop: () => actions.crop("crop"),
+      panzoom: () => actions.crop("pan"),
       fill: () => {
         const n = autoFill();
         toast2(n ? "Filled the frame" : "Select a video or image clip");
@@ -19026,6 +19504,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         if (c?.mediaId) library.locate?.(c.mediaId);
       }
     };
+    window.addEventListener("ve:cropZoom", (e) => actions.crop(e.detail?.tab));
     window.addEventListener("ve:clipAction", (e) => {
       const f = clipActions[e.detail?.act];
       if (f) f(e.detail.arg);
@@ -19716,6 +20195,8 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         ...[2, 4].map((z) => ({ label: `Zoom ${z}\xD7 on this spot`, disabled: !zoomable, run: () => zoomOnSpot(e, c, z) })),
         { label: "Reset zoom", disabled: !c?.zoomSpot, run: () => resetZoom(c) },
         { label: "Crop corner to here", disabled: !zoomable, run: () => cropCorner(e, c) },
+        { label: "Crop and Zoom\u2026", kbd: "Alt+C", disabled: !zoomable, run: () => actions.crop("crop") },
+        { label: "Pan & Zoom\u2026", disabled: !zoomable, run: () => actions.crop("pan") },
         { label: "Reset crop", disabled: !hasCrop, run: () => store.transact("Reset crop", (p) => {
           const x = p.clips.find((y) => y.id === c.id);
           x.crop = { l: 0, r: 0, t: 0, b: 0 };

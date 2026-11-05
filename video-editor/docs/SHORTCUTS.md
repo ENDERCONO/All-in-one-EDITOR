@@ -65,7 +65,7 @@ Owned by `js/app.js`. Shortcuts are ignored while typing in an input.
 | Click / drag the ruler while playing | Jump there and keep playing |
 | E | Disable / enable the selected clips (skipped in playback and export) |
 | F2 | Rename the selected clip |
-| Alt + C | Crop and zoom (opens the Crop section) |
+| Alt + C | Crop and Zoom window (Crop / Pan & Zoom tabs; Space plays, ← → step frames, Enter applies, Esc cancels) |
 | Alt + E | Edit properties of the selected clip |
 | Ctrl + Alt + → / ← | Rotate 90° clockwise / counter-clockwise |
 | Top-left ⛶ button | Whole editor full screen |

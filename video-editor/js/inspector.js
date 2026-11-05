@@ -120,6 +120,7 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
     if (c.type === 'adjustment') h += '<div class="ins-empty" style="padding:8px 14px">Adjustment layer — its color, filters, hue match and material apply to every track below it. Opacity sets the strength.</div>';
     else h += transformSec(c);
     if (c.type === 'video' || c.type === 'image') h += section('crop', 'Crop', `
+      <div class="btn-row"><button class="btn primary" data-cz="crop">Crop and Zoom…</button><button class="btn" data-cz="pan">Pan &amp; Zoom…</button>${c.panZoom?.enabled ? '<span class="dim" style="align-self:center">Pan &amp; Zoom on</span>' : ''}</div>
       <div class="prop wide"><label>Aspect</label><div class="seg">${CROP_ASPECTS.map(a => `<button class="btn" data-crop="${a.id}">${esc(a.label || a.id)}</button>`).join('')}</div></div>
       ${slider('Left', 'crop.l', crop)}
       ${slider('Right', 'crop.r', crop)}
@@ -402,6 +403,7 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
     });
     root.querySelectorAll('[data-fdel]').forEach(b => b.addEventListener('click', () => store.transact('Remove filter', p => { const x = p.clips.find(y => y.id === clip().id); x.filters.splice(+b.dataset.fdel, 1); })));
     root.querySelector('#insAddFilter')?.addEventListener('change', e => { const v = e.target.value; if (!v) return; store.transact('Add filter', p => p.clips.find(y => y.id === clip().id).filters.push({ id: uid('flt'), type: v, amount: 1 })); });
+    root.querySelectorAll('[data-cz]').forEach(b => b.addEventListener('click', () => window.dispatchEvent(new CustomEvent('ve:cropZoom', { detail: { tab: b.dataset.cz } }))));
     // Title style presets: replace the look, keep the words
     root.querySelectorAll('[data-tpreset]').forEach(b => b.addEventListener('click', () => {
       const pr = TITLE_PRESETS.find(t => t.id === b.dataset.tpreset); if (!pr) return;

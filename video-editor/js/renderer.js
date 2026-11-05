@@ -59,6 +59,11 @@ const FS_COPY = HEAD + `
 uniform sampler2D u_tex; uniform int u_flip;
 void main() { vec2 uv = v_uv; if (u_flip == 1) uv.y = 1.0 - uv.y; outColor = texture(u_tex, uv); }`;
 
+// Pan & Zoom (Ken Burns): show only the source rectangle u_rect (x, y, w, h in GL uv), stretched to the layer.
+const FS_PANZOOM = HEAD + `
+uniform sampler2D u_tex; uniform vec4 u_rect;
+void main() { outColor = texture(u_tex, u_rect.xy + v_uv * u_rect.zw); }`;
+
 const FS_FILL = HEAD + `
 uniform vec4 u_color;
 void main() { outColor = u_color; }`;
@@ -1103,7 +1108,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     copy: makeProgram(FS_COPY), fill: makeProgram(FS_FILL), chroma: makeProgram(FS_CHROMA),
     color: makeProgram(FS_COLOR), blur: makeProgram(FS_BLUR), filter: makeProgram(FS_FILTER),
     composite: makeProgram(FS_COMPOSITE), transition: makeProgram(FS_TRANSITION),
-    hue: makeProgram(FS_HUE), mask: makeProgram(FS_MASK), gradblur: makeProgram(FS_GRADBLUR), filter2: makeProgram(FS_FILTER2), filter3: makeProgram(FS_FILTER3), transition2: makeProgram(FS_TRANSITION2),
+    hue: makeProgram(FS_HUE), mask: makeProgram(FS_MASK), gradblur: makeProgram(FS_GRADBLUR), filter2: makeProgram(FS_FILTER2), filter3: makeProgram(FS_FILTER3), panzoom: makeProgram(FS_PANZOOM), transition2: makeProgram(FS_TRANSITION2),
   };
 
   // ---------- geometry ----------
@@ -1385,6 +1390,21 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
 
   // Returns { tex, rt (owned or null), sw, sh } or null if not drawable.
   // `frameTex`: for adjustment clips, the frame composited so far (canvas-sized) is the source.
+  // Pan & Zoom: clip.panZoom = { enabled, start: {x,y,w,h}, end: {x,y,w,h}, ease } in source fractions
+  // (y down). Returns the rectangle at time t in GL uv (y up), or null when off / full frame.
+  function panZoomRect(clip, t) {
+    const pz = clip.panZoom;
+    if (!pz || !pz.enabled || !(clip.type === 'video' || clip.type === 'image')) return null;
+    const a = pz.start || {}, b = pz.end || {};
+    let k = clip.duration > 0 ? Math.max(0, Math.min(1, (t - clip.start) / clip.duration)) : 0;
+    if (pz.ease !== 'linear') k = k * k * (3 - 2 * k);
+    const L = (p, q, d) => { const x = num(p, d), y = num(q, d); return x + (y - x) * k; };
+    const w = Math.max(0.01, Math.min(1, L(a.w, b.w, 1))), h = Math.max(0.01, Math.min(1, L(a.h, b.h, 1)));
+    const x = Math.max(0, Math.min(1 - w, L(a.x, b.x, 0))), y = Math.max(0, Math.min(1 - h, L(a.y, b.y, 0)));
+    if (w > 0.9999 && h > 0.9999) return null;
+    return [x, 1 - (y + h), w, h];
+  }
+
   function processLayer(clip, t, frameTex = null) {
     if (!clip || !VISUAL.has(clip.type)) return null;
     const { width: W, height: H } = settings();
@@ -1421,7 +1441,8 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     } else if (clip.materialId && !materialsMod) loadMaterials();
     if (clip.type === 'material' && !mat) return null;
 
-    if (!chroma && !hueOn && !colorOn && !filters.length && !gbOn && !maskOn && !mat) return { tex: srcTex, rt: null, sw, sh };
+    const pzRect = panZoomRect(clip, t);
+    if (!pzRect && !chroma && !hueOn && !colorOn && !filters.length && !gbOn && !maskOn && !mat) return { tex: srcTex, rt: null, sw, sh };
 
     // Layer resolution: about the displayed size, never above the source size.
     const [bw, bh] = baseSize(clip, sw, sh);
@@ -1448,6 +1469,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
       if (input.rt) release(input.rt);
       cur = { tex: out.tex, rt: out, w, h };
     };
+    if (pzRect) step(P.panzoom, pr => gl.uniform4f(pr.loc('u_rect'), pzRect[0], pzRect[1], pzRect[2], pzRect[3]));
 
     const runMaterial = () => {
       const { prog, info } = mat;

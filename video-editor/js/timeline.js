@@ -1374,6 +1374,7 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
       { label: 'Trim Start to Playhead', kbd: 'Alt+[', disabled: locked || !canTrim, action: () => call('trimStartTo', store.playhead) },
       { label: 'Trim End to Playhead', kbd: 'Alt+]', disabled: locked || !canTrim, action: () => call('trimEndTo', store.playhead) },
       { label: 'Crop and Zoom', kbd: 'Alt+C', disabled: locked || !(vid || clip.type === 'image'), action: () => act('crop') },
+      { label: 'Pan & Zoom…', disabled: locked || !(vid || clip.type === 'image'), action: () => act('panzoom') },
       { label: 'Crop to Fit (fill frame)', disabled: locked || !(vid || clip.type === 'image'), action: () => act('fill') },
       { label: 'Rotate & Flip', disabled: locked || !visual, sub: [
         { label: 'Rotate 90° CW', kbd: 'Ctrl+Alt+Right', action: () => call('rotateBy', 90, ids) },

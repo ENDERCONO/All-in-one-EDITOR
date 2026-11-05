@@ -237,7 +237,12 @@ async function boot() {
     delete: () => { if (!ops.deleteSelectedTransition()) ops.deleteSelected(); }, rippleDelete: () => { if (!ops.deleteSelectedTransition()) ops.deleteSelected({ ripple: true }); },
     split: () => { if (!ops.splitAt(store.playhead)) toast('Put the playhead over a clip to split it'); },
     addTitle: () => ops.addTextClip({ time: store.playhead }),
-    crop: () => { if (!store.selectedClips().length) return toast('Select a clip first'); inspector.showTab('video'); document.querySelector('[data-sec="crop"]')?.classList.remove('collapsed'); document.querySelector('[data-sec="crop"]')?.scrollIntoView({ block: 'center' }); },
+    crop: (tab) => {
+      const c = store.selectedClips()[0]; if (!c) return toast('Select a clip first');
+      if (c.type !== 'video' && c.type !== 'image') return toast('Crop and Zoom works on video and image clips');
+      playback.pause();
+      import('./cropzoom.js').then(m => m.openCropZoom({ store, mediaRuntime, clipId: c.id, tab: typeof tab === 'string' ? tab : 'crop' })).catch(e => toast('Could not open Crop and Zoom: ' + e.message));
+    },
     speed: e => { if (!store.selectedClips().length) return toast('Select a clip first'); const r = (e?.currentTarget || $('[data-act="speed"]')).getBoundingClientRect(); showMenu(r.left, r.bottom + 4, [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 8].map(s => ({ label: s + 'x', run: () => ops.setSpeed(s) })).concat([{ sep: true }, { label: 'Custom…', run: () => inspector.showTab('speed') }])); },
     freeze: () => { if (!ops.freezeFrame()) toast('Put the playhead over a video clip'); },
     detach: () => { if (!ops.detachAudio()) toast('Select a video clip that has audio'); },
@@ -415,7 +420,8 @@ async function boot() {
     store.transact('Rename clip', p => { p.clips.find(x => x.id === c.id).name = n.trim(); });
   };
   const clipActions = {
-    crop: () => actions.crop(),
+    crop: () => actions.crop('crop'),
+    panzoom: () => actions.crop('pan'),
     fill: () => { const n = autoFill(); toast(n ? 'Filled the frame' : 'Select a video or image clip'); },
     audioTab: () => inspector.showTab('audio'),
     speedTab: () => inspector.showTab('speed'),
@@ -425,6 +431,7 @@ async function boot() {
     exportSel: () => { clipActions.selectRange(); openExport(); },
     locate: () => { const c = store.selectedClips()[0]; if (c?.mediaId) library.locate?.(c.mediaId); },
   };
+  window.addEventListener('ve:cropZoom', e => actions.crop(e.detail?.tab));
   window.addEventListener('ve:clipAction', e => { const f = clipActions[e.detail?.act]; if (f) f(e.detail.arg); });
   window.addEventListener('ve:openClip', e => { const c = store.getClip(e.detail?.id); if (c?.type === 'text') inspector.showTab('titles'); });
 
@@ -789,6 +796,8 @@ async function boot() {
       ...[2, 4].map(z => ({ label: `Zoom ${z}× on this spot`, disabled: !zoomable, run: () => zoomOnSpot(e, c, z) })),
       { label: 'Reset zoom', disabled: !c?.zoomSpot, run: () => resetZoom(c) },
       { label: 'Crop corner to here', disabled: !zoomable, run: () => cropCorner(e, c) },
+      { label: 'Crop and Zoom…', kbd: 'Alt+C', disabled: !zoomable, run: () => actions.crop('crop') },
+      { label: 'Pan & Zoom…', disabled: !zoomable, run: () => actions.crop('pan') },
       { label: 'Reset crop', disabled: !hasCrop, run: () => store.transact('Reset crop', p => { const x = p.clips.find(y => y.id === c.id); x.crop = { l: 0, r: 0, t: 0, b: 0 }; delete x.zoomSpot; }) },
       { sep: true },
       { label: 'Auto subtitles…', run: () => autoActions.captions() },
