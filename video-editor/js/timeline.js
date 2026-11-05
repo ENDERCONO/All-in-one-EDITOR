@@ -697,6 +697,27 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
     ev.preventDefault();
   });
 
+  // Double-click an empty part of a track lane → jump to where that track starts.
+  // Detected from pointer events: the first click re-renders the lanes, so the
+  // browser's own dblclick can land on an element that no longer exists.
+  let lastLaneClick = null;
+  scroll.addEventListener('pointerdown', ev => {
+    if (ev.button !== 0 || store.tool === 'blade') return;
+    const now = performance.now(), prev = lastLaneClick;
+    lastLaneClick = { t: now, x: ev.clientX, y: ev.clientY };
+    if (!prev || now - prev.t > 400 || Math.hypot(ev.clientX - prev.x, ev.clientY - prev.y) > 6) return;
+    lastLaneClick = null;
+    const hit = document.elementFromPoint(ev.clientX, ev.clientY);
+    if (!hit || hit.closest?.('.tl-clip, .tl-ph-ball, .tl-ruler, .tl-markers')) return;
+    const row = rowAtY(ev.clientY - content.getBoundingClientRect().top);
+    if (!row) return;
+    const first = store.clipsOnTrack(row.track.id)[0];
+    const t = first ? first.start : 0;
+    store.setPlayhead(store.snapTime(t));
+    scroll.scrollLeft = Math.max(0, X(t) - 40);
+    scrollToPlayhead();
+  }, true);
+
   content.addEventListener('dblclick', ev => {
     const hit = document.elementFromPoint(ev.clientX, ev.clientY) || ev.target;
     const clipEl = hit.closest?.('.tl-clip');
