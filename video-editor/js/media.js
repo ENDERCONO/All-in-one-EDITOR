@@ -95,12 +95,23 @@ let importCount = 0;
 // Import files into the media bin. Returns the created media ids.
 export async function importFiles(files, { audio, addToTimeline = false, time, trackId, ops } = {}) {
   const ids = [];
-  for (const file of files) {
+  for (let file of files) {
     const kind = kindOf(file);
     if (!kind) { window.dispatchEvent(new CustomEvent('ve:toast', { detail: `Can't import ${file.name || 'that file'}` })); continue; }
-    const url = URL.createObjectURL(file);
-    const meta = await loadMeta(kind, url);
-    if (!meta) { window.dispatchEvent(new CustomEvent('ve:toast', { detail: `Couldn't read ${file.name}` })); URL.revokeObjectURL(url); continue; }
+    let url = URL.createObjectURL(file);
+    let meta = await loadMeta(kind, url);
+    if (!meta || (kind === 'video' && !meta.width && !meta.duration)) {
+      // The browser can't decode it (HEVC .mov, .avi, .mkv, .flac…): convert with the site's converter and retry
+      URL.revokeObjectURL(url);
+      const say = m => window.dispatchEvent(new CustomEvent('ve:status', { detail: m }));
+      try {
+        const { convertForImport } = await import('./integrations.js');
+        file = await convertForImport(file, kind, say);
+        url = URL.createObjectURL(file); meta = await loadMeta(kind, url);
+      } catch (e) { meta = null; console.warn(e); window.dispatchEvent(new CustomEvent('ve:toast', { detail: `Couldn't read ${file.name}: ${e.message}` })); }
+      if (!meta) { if (url) URL.revokeObjectURL(url); continue; }
+      say(`Converted ${file.name}`);
+    }
     const id = uid('med');
     const name = file.name || `${kind === 'image' ? 'Pasted image' : 'Clip'} ${++importCount}`;
     const anim = kind === 'image' ? await decodeAnimated(file) : null;
@@ -246,6 +257,8 @@ export function createLibrary({ store, ops, audio, materials }) {
     if (tab === 'media' || tab === 'audio') {
       const b = document.createElement('button'); b.innerHTML = icon('import', 14) + 'Import';
       b.onclick = () => document.getElementById('importInput').click(); actions.appendChild(b);
+      const u = document.createElement('button'); u.innerHTML = icon('link', 14) + 'From URL'; u.title = 'Import from a link (YouTube, TikTok, direct files…) using the site\'s downloader';
+      u.onclick = () => window.dispatchEvent(new CustomEvent('ve:importUrl')); actions.appendChild(u);
       if (tab === 'audio') {
         const r = document.createElement('button'); r.innerHTML = icon('mic', 14) + 'Record';
         r.onclick = () => window.dispatchEvent(new CustomEvent('ve:record')); actions.appendChild(r);
@@ -309,6 +322,8 @@ export function createLibrary({ store, ops, audio, materials }) {
           onDbl: () => ops.insertMedia(m.id, { time: store.playhead }),
           onCtx: e => ctxMenu(e, [
             { label: 'Add to timeline at playhead', run: () => ops.insertMedia(m.id, { time: store.playhead }) },
+            { label: 'Copy file name', run: () => import('./integrations.js').then(I => I.copyFileNames([m.name], toast)) },
+            { label: 'Copy all file names', run: () => import('./integrations.js').then(I => I.copyFileNames(store.project.media.map(x => x.name), toast)) },
             { label: 'Rename', run: () => { const n = prompt('Name', m.name); if (n) store.transact('Rename media', p => { p.media.find(x => x.id === m.id).name = n; }); } },
             { sep: true },
             { label: 'Delete from project' + (used ? ' (removes its clips)' : ''), run: () => store.transact('Delete media', p => { p.media = p.media.filter(x => x.id !== m.id); p.clips = p.clips.filter(c => c.mediaId !== m.id); }) },

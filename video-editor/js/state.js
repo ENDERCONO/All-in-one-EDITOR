@@ -21,6 +21,10 @@ export function defaultColor() {
     gamma: 0, vibrance: 0, noise: 0, fade: 0, clarity: 0, blacks: 0, whites: 0,
     red: 0, green: 0, blue: 0, posterize: 0, invert: false, grayscale: false };
 }
+// Mask (Filmora "Mask" tab / the site's Gradient Editor): clip-local, x/y = center offset (-0.5..0.5 of the clip), w/h fraction of the clip
+export function defaultMask() { return { type: 'none', x: 0, y: 0, w: 0.5, h: 0.5, angle: 0, feather: 0.15, invert: false }; }
+// Gradient blur (the site's Gradient Blur tool): full blur at `start`, sharp again by `end` (0..1 along the direction)
+export function defaultGradBlur() { return { enabled: false, mode: 'linear', angle: 90, start: 0, end: 0.5, strength: 40, x: 0, y: 0 }; }
 export function defaultHueMatch() { return { enabled: false, from: '#ff0000', to: '#0066ff', range: 30, colorize: false }; }
 export function defaultAudioFx() {
   return { reverb: 0, reverbSize: 0.5, echo: 0, echoTime: 0.3, echoFeedback: 0.4, crush: 0, crushBits: 8, crushRate: 11025,
@@ -31,13 +35,15 @@ export function makeClip(over = {}) {
   const c = {
     id: uid('clip'), trackId: null, type: 'video', mediaId: null, name: 'Clip',
     start: 0, duration: 5, in: 0, speed: 1, reverse: false,
-    transform: { x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, flipH: false, flipV: false },
+    transform: { x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, flipH: false, flipV: false, rotX: 0, rotY: 0, perspective: 1200 },
     crop: { l: 0, t: 0, r: 0, b: 0 },
     blend: 'normal',
     color: defaultColor(),
     filters: [],
     chroma: { enabled: false, color: '#00ff00', similarity: 0.35, smoothness: 0.08, spill: 0.5, edgeFeather: 0 },
     hueMatch: defaultHueMatch(),
+    mask: defaultMask(),
+    gradBlur: defaultGradBlur(),
     materialId: null, materialParams: {},
     audio: { volume: 0, pan: 0, pitch: 0, fadeIn: 0, fadeOut: 0, mute: false, keepPitch: true, detached: false, voice: 'none', voiceMix: 1, fx: defaultAudioFx() },
     text: null, fill: null,

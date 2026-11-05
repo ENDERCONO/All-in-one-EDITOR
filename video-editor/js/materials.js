@@ -122,6 +122,42 @@ vec3 aio_hueShift(vec3 c, float turns) {
 vec3 aio_overlay(vec3 a, vec3 b) { return mix(2.0 * a * b, 1.0 - 2.0 * (1.0 - a) * (1.0 - b), step(0.5, a)); }
 vec3 aio_softlight(vec3 a, vec3 b) { a = clamp(a, 0.0, 1.0); return mix(2.0 * a * b + a * a * (1.0 - 2.0 * b), sqrt(a) * (2.0 * b - 1.0) + 2.0 * a * (1.0 - b), step(0.5, b)); }`,
 };
+HELPERS.normals = `
+// Normal-map blending (ported from the site's Normal Mix tool). Normals are unit vectors in -1..1.
+vec3 aio_nrmDecode(vec3 c) { vec3 n = c * 2.0 - 1.0; float l = length(n); return l < 1e-6 ? vec3(0.0, 0.0, 1.0) : n / l; }
+vec3 aio_nrmStrength(vec3 n, float s) {
+  if (s == 1.0) return n;
+  vec2 t = n.xy * s; float z2 = 1.0 - dot(t, t);
+  return normalize(vec3(t, z2 > 0.0 ? sqrt(z2) : 1e-3));
+}
+vec3 aio_nrmBlend(vec3 a, vec3 b, int m) {
+  if (m == 1) return normalize(vec3(a.xy + b.xy, a.z));                       // Whiteout / UDN
+  if (m == 2) {                                                                 // Partial derivative
+    float az = abs(a.z) < 1e-4 ? 1e-4 : a.z; float bz = abs(b.z) < 1e-4 ? 1e-4 : b.z;
+    return normalize(vec3(a.xy / az + b.xy / bz, 1.0));
+  }
+  if (m == 3) return normalize(a + b);                                          // Linear
+  vec3 t = vec3(a.xy, a.z + 1.0); vec3 u = vec3(-b.xy, b.z);                   // RNM (Barré-Brisebois & Hill)
+  float tz = abs(t.z) < 1e-5 ? 1e-5 : t.z;
+  return normalize(t * dot(t, u) / tz - u);
+}`;
+HELPERS.heightNormal = `
+float aio_lum(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+// Sobel of the luminance -> tangent-space normal (-1..1). uv y points up, so "top" is +y.
+vec3 aio_heightNormal(sampler2D tex, vec2 uv, float stepPx, float strength) {
+  vec2 px = max(stepPx, 0.01) / vec2(textureSize(tex, 0));
+  float tl = aio_lum(texture(tex, uv + px * vec2(-1.0,  1.0)).rgb);
+  float  t = aio_lum(texture(tex, uv + px * vec2( 0.0,  1.0)).rgb);
+  float tr = aio_lum(texture(tex, uv + px * vec2( 1.0,  1.0)).rgb);
+  float  l = aio_lum(texture(tex, uv + px * vec2(-1.0,  0.0)).rgb);
+  float  r = aio_lum(texture(tex, uv + px * vec2( 1.0,  0.0)).rgb);
+  float bl = aio_lum(texture(tex, uv + px * vec2(-1.0, -1.0)).rgb);
+  float  b = aio_lum(texture(tex, uv + px * vec2( 0.0, -1.0)).rgb);
+  float br = aio_lum(texture(tex, uv + px * vec2( 1.0, -1.0)).rgb);
+  float dx = (tr + 2.0 * r + br) - (tl + 2.0 * l + bl);
+  float dy = (tl + 2.0 * t + tr) - (bl + 2.0 * b + br);
+  return normalize(vec3(-dx * strength, -dy * strength, 1.0));
+}`;
 const HELPER_DEPS = { noise: ['hash'], voronoi: ['hash'] };
 
 /* ============================================================================
@@ -532,6 +568,61 @@ export const NODE_TYPES = {
       return { out: `clamp((1.0 - distance(${c.in('a', t)}, ${c.in('b', t)}) / max(${c.in('radius')}, 1e-5)) / max(1.0 - ${c.in('hardness')}, 1e-5), 0.0, 1.0)` };
     },
   },
+  luminance: {
+    title: 'Luminance', category: 'Color',
+    inputs: [{ name: 'color', label: 'Input', type: 'vec3', default: [1, 1, 1] }],
+    outputs: [{ name: 'out', type: 'float' }], params: [],
+    desc: 'Rec.709 luminance of an RGB color.',
+    glsl: c => ({ out: `dot(${c.in('color')}, vec3(0.2126, 0.7152, 0.0722))` }),
+  },
+  channelPack: {
+    title: 'Channel Pack', category: 'Utility',
+    inputs: [F('r', 0, { label: 'R' }), F('g', 0, { label: 'G' }), F('b', 0, { label: 'B' }), F('a', 1, { label: 'A' })],
+    outputs: [{ name: 'rgba', label: 'RGBA', type: 'vec4' }, { name: 'rgb', label: 'RGB', type: 'vec3' }, { name: 'a', label: 'A', type: 'float' }],
+    params: [F('r', 0, { label: 'R' }), F('g', 0, { label: 'G' }), F('b', 0, { label: 'B' }), F('a', 1, { label: 'A' })],
+    desc: 'Packs four greyscale values into one RGBA color (like the Channel Compositor tool).',
+    glsl(c) {
+      c.line(`vec4 ${c.id}_p = vec4(${c.in('r')}, ${c.in('g')}, ${c.in('b')}, ${c.in('a')});`);
+      return { rgba: `${c.id}_p`, rgb: `${c.id}_p.rgb`, a: `${c.id}_p.a` };
+    },
+  },
+  normalBlend: {
+    title: 'Normal Blend (RNM)', category: 'Texture',
+    inputs: [{ name: 'base', label: 'Base Normal', type: 'vec3', default: [0.5, 0.5, 1] },
+      { name: 'detail', label: 'Detail Normal', type: 'vec3', default: [0.5, 0.5, 1] }, F('strength', 1, { label: 'Detail Strength' })],
+    outputs: [{ name: 'rgb', label: 'RGB', type: 'vec3' }],
+    params: [{ name: 'method', label: 'Method', type: 'select', default: 'rnm',
+      options: [['rnm', 'Reoriented (RNM)'], ['udn', 'Whiteout / UDN'], ['pd', 'Partial derivative'], ['linear', 'Linear']] },
+      F('strength', 1, { label: 'Detail Strength' }), { name: 'flipY', label: 'Flip detail green (DirectX)', type: 'bool', default: false }],
+    desc: 'Blends two tangent-space normal maps (RGB 0..1) with proper vector math, like the Normal Mix tool.',
+    subtitle: n => (NODE_TYPES.normalBlend.params[0].options.find(o => o[0] === n.params.method) || ['', ''])[1],
+    glsl(c) {
+      c.helper('normals');
+      const m = { rnm: 0, udn: 1, pd: 2, linear: 3 }[c.p('method')] ?? 0;
+      c.line(`vec3 ${c.id}_b = aio_nrmDecode(${c.in('base')});`);
+      c.line(`vec3 ${c.id}_d = (${c.in('detail')}) * 2.0 - 1.0;`);
+      if (c.p('flipY')) c.line(`${c.id}_d.y = -${c.id}_d.y;`);
+      c.line(`${c.id}_d = aio_nrmStrength(aio_nrmDecode(${c.id}_d * 0.5 + 0.5), ${c.in('strength')});`);
+      return { rgb: `clamp(aio_nrmBlend(${c.id}_b, ${c.id}_d, ${m}) * 0.5 + 0.5, 0.0, 1.0)` };
+    },
+  },
+  heightToNormal: {
+    title: 'Height to Normal', category: 'Texture',
+    inputs: [uvIn(), F('strength', 2, { label: 'Strength' })],
+    outputs: [{ name: 'rgb', label: 'Normal', type: 'vec3' }, { name: 'height', label: 'Height', type: 'float' }],
+    params: [{ name: 'texture', label: 'Height Map', type: 'media', default: '' }, F('strength', 2, { label: 'Strength' }),
+      F('step', 1, { label: 'Sample Offset (px)', min: 0.1 }), { name: 'flipY', label: 'Flip green (DirectX)', type: 'bool', default: false }],
+    desc: 'Sobel filter of a texture\'s luminance → tangent-space normal map (RGB 0..1).',
+    subtitle: (n, media) => n.params.texture ? (media(n.params.texture)?.name || 'Missing image') : 'Source (clip frame)',
+    glsl(c) {
+      c.helper('heightNormal');
+      const tex = c.p('texture') ? c.texture(c.p('texture')) : 'u_src';
+      c.line(`vec2 ${c.id}_uv = ${c.in('uv')};`);
+      c.line(`vec3 ${c.id}_n = aio_heightNormal(${tex}, ${c.id}_uv, ${lit(c.p('step'))}, ${c.in('strength')});`);
+      if (c.p('flipY')) c.line(`${c.id}_n.y = -${c.id}_n.y;`);
+      return { rgb: `(${c.id}_n * 0.5 + 0.5)`, height: `aio_lum(texture(${tex}, ${c.id}_uv).rgb)` };
+    },
+  },
   edgeFresnel: {
     title: 'Fresnel (Edge)', category: 'Procedural',
     inputs: [uvIn(), F('width', 0.2, { label: 'Width' }), F('exponent', 2, { label: 'Exponent' })],
@@ -721,7 +812,7 @@ function compileInner(material) {
     outVars.set(id, ov);
   });
 
-  const hOrder = ['hash', 'noise', 'voronoi', 'hue', 'blend'];
+  const hOrder = ['hash', 'noise', 'voronoi', 'hue', 'blend', 'normals', 'heightNormal'];
   const code = [
     '// ---- generated by materials.js: ' + String(material.name || 'material').replace(/[\r\n]/g, ' ') + ' ----',
     ...uniforms.map(u => `uniform ${u.type} ${u.name}; // ${u.param.replace(/[\r\n]/g, ' ')}`),
@@ -950,6 +1041,58 @@ export const MATERIAL_TEMPLATES = {
       g.l(rgb, 'out', out, 'baseColor'); g.l(tg, 'a', out, 'opacity');
     }),
   },
+  compositor: {
+    name: 'Channel Compositor (R/G/B/A from 4 images)',
+    build: () => graph(g => {
+      const out = g.n('output', 0, 0);
+      const pack = g.n('channelPack', 0, 0);
+      const lums = ['R', 'G', 'B', 'A'].map(() => g.n('luminance', 0, 0));
+      const tss = lums.map(() => g.n('textureSample', 0, 0));
+      ['r', 'g', 'b', 'a'].forEach((ch, i) => { g.l(tss[i], 'rgb', lums[i], 'color'); g.l(lums[i], 'out', pack, ch); });
+      g.l(pack, 'rgb', out, 'baseColor'); g.l(pack, 'a', out, 'opacity');
+    }),
+  },
+  normalmix: {
+    name: 'Normal Mix (two normal maps)',
+    build: () => graph(g => {
+      const out = g.n('output', 0, 0);
+      const nb = g.n('normalBlend', 0, 0);
+      const base = g.n('textureSample', 0, 0);
+      const tc = g.n('texCoord', 0, 0, { tilingU: 4, tilingV: 4 });
+      const det = g.n('textureSample', 0, 0);
+      const str = g.n('scalarParameter', 0, 0, { name: 'Detail Strength', value: 1, min: 0, max: 2 });
+      g.l(base, 'rgb', nb, 'base'); g.l(tc, 'uv', det, 'uv'); g.l(det, 'rgb', nb, 'detail'); g.l(str, 'out', nb, 'strength');
+      g.l(nb, 'rgb', out, 'baseColor');
+    }),
+  },
+  mirrortile: {
+    name: 'Seamless mirror tile',
+    build: () => graph(g => {
+      const out = g.n('output', 0, 0);
+      const tc = g.n('texCoord', 0, 0);
+      const tiles = g.n('scalarParameter', 0, 0, { name: 'Tiles', value: 2, min: 1, max: 8 });
+      const mul = g.n('multiply', 0, 0);
+      const half = g.n('multiply', 0, 0, { b: 0.5 });
+      const fr = g.n('frac', 0, 0);
+      const dbl = g.n('multiply', 0, 0, { b: 2 });
+      const sub = g.n('subtract', 0, 0, { b: 1 });
+      const ab = g.n('abs', 0, 0);
+      const om = g.n('oneMinus', 0, 0);
+      const ts = g.n('textureSample', 0, 0);
+      g.l(tc, 'uv', mul, 'a'); g.l(tiles, 'out', mul, 'b'); g.l(mul, 'out', half, 'a'); g.l(half, 'out', fr, 'x');
+      g.l(fr, 'out', dbl, 'a'); g.l(dbl, 'out', sub, 'a'); g.l(sub, 'out', ab, 'x'); g.l(ab, 'out', om, 'x');
+      g.l(om, 'out', ts, 'uv'); g.l(ts, 'rgb', out, 'baseColor'); g.l(ts, 'a', out, 'opacity');
+    }),
+  },
+  heightnormal: {
+    name: 'Height → Normal map',
+    build: () => graph(g => {
+      const out = g.n('output', 0, 0);
+      const hn = g.n('heightToNormal', 0, 0);
+      const str = g.n('scalarParameter', 0, 0, { name: 'Normal Strength', value: 2, min: 0, max: 10 });
+      g.l(str, 'out', hn, 'strength'); g.l(hn, 'rgb', out, 'baseColor');
+    }),
+  },
   vignette: {
     name: 'Vignette tint',
     build: () => graph(g => {
@@ -994,6 +1137,38 @@ const KEY_NODES = {
   x: 'noise', k: 'clamp', w: 'time', g: 'desaturation', h: 'append',
 };
 let editorClipboard = null;
+let scrubActive = false;
+
+// Drag a label horizontally to scrub the number field next to it (Shift = fine). Values are never clamped.
+function scrubLabel(lab, w) {
+  const inp = w && w.matches && w.matches('input[type="number"]') ? w : null;
+  if (!inp || inp.disabled) return lab;
+  lab.classList.add('mat-scrub');
+  lab.title = (lab.title ? lab.title + ' · ' : '') + 'Drag to change · Shift = fine';
+  lab.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || e.altKey) return;
+    e.preventDefault(); e.stopPropagation();
+    try { lab.setPointerCapture(e.pointerId); } catch (err) { /* synthetic events */ }
+    const x0 = e.clientX, v0 = parseFloat(inp.value) || 0, st = +inp.dataset.step || 0.01;
+    const per = Math.max(st, Math.abs(v0) * 0.005);
+    let moved = false;
+    scrubActive = true;
+    const mv = ev => {
+      const dx = ev.clientX - x0;
+      if (!moved && Math.abs(dx) < 2) return;
+      moved = true;
+      const fine = ev.shiftKey ? 0.1 : 1, q = st * fine;
+      const v = +(Math.round((v0 + dx * per * fine) / q) * q).toFixed(6);
+      if (String(v) !== inp.value) { inp.value = v; inp.dispatchEvent(new Event('input', { bubbles: true })); }
+    };
+    const up = () => {
+      scrubActive = false;
+      lab.removeEventListener('pointermove', mv); lab.removeEventListener('pointerup', up); lab.removeEventListener('pointercancel', up);
+    };
+    lab.addEventListener('pointermove', mv); lab.addEventListener('pointerup', up); lab.addEventListener('pointercancel', up);
+  });
+  return lab;
+}
 let openEditor = null;
 
 function h(tag, attrs = {}, ...kids) {
@@ -1144,9 +1319,9 @@ export function openMaterialEditor({ store, mediaRuntime, materialId }) {
   /* ---------------- Param widgets ---------------- */
   function widget(def, value, onChange, { disabled } = {}) {
     const num = (v, cb) => {
-      const i = h('input', { type: 'number', step: def.step ?? 0.01, value: v ?? 0, disabled: !!disabled });
-      if (def.min !== undefined) i.min = def.min;
-      if (def.max !== undefined) i.max = def.max;
+      // No min/max attributes: any typed value is accepted (UE-style; slider ranges are only hints).
+      const i = h('input', { type: 'number', step: def.step ?? 'any', value: v ?? 0, disabled: !!disabled });
+      i.dataset.step = def.step ?? 0.01;
       i.addEventListener('input', () => { const x = parseFloat(i.value); if (isFinite(x)) cb(x); });
       return i;
     };
@@ -1197,7 +1372,7 @@ export function openMaterialEditor({ store, mediaRuntime, materialId }) {
       if (el) el.querySelector('.mat-node-head').replaceWith(nodeHead(node));
       markErrors();
     }
-    if (!details.contains(document.activeElement)) renderDetails(); else updateDetailsCode();
+    if (!details.contains(document.activeElement) && !scrubActive) renderDetails(); else updateDetailsCode();
     renderWires();
     commit('Edit ' + NODE_TYPES[node.type].title);
   }
@@ -1227,10 +1402,11 @@ export function openMaterialEditor({ store, mediaRuntime, materialId }) {
     for (const inp of d.inputs) {
       const linked = mat.links.some(l => l.to.node === n.id && l.to.pin === inp.name);
       const t = pinType(n, inp.name, 'in');
+      const lbl = h('span', { class: 'lbl' }, inp.label);
       const row = h('div', { class: 'mat-pin in' + (linked ? ' linked' : ''), 'data-pin': inp.name, 'data-dir': 'in', title: `${inp.label} (${inp.type})` },
-        h('i', { class: 'dot', style: `--pc:${PIN_COLORS[t]}` }), h('span', { class: 'lbl' }, inp.label));
+        h('i', { class: 'dot', style: `--pc:${PIN_COLORS[t]}` }), lbl);
       const pd = d.params.find(p => p.name === inp.name);
-      if (pd && !linked) row.append(widget(pd, n.params[pd.name], v => setParam(n, pd.name, v, 'node', true)));
+      if (pd && !linked) { const w = widget(pd, n.params[pd.name], v => setParam(n, pd.name, v, 'node', true)); row.append(w); scrubLabel(lbl, w); }
       ins.append(row);
     }
     for (const o of d.outputs) {
@@ -1245,8 +1421,8 @@ export function openMaterialEditor({ store, mediaRuntime, materialId }) {
       const bools = inline.filter(p => p.type === 'bool');
       if (bools.length) box.append(h('div', { class: 'mat-bools' }, ...bools.map(p => widget(p, n.params[p.name], v => setParam(n, p.name, v, 'node', false)))));
       for (const p of inline.filter(p => p.type !== 'bool')) {
-        box.append(h('div', { class: 'mat-prow' }, h('span', {}, p.label),
-          widget(p, n.params[p.name], v => setParam(n, p.name, v, 'node', p.type === 'float' || p.type === 'vec2'))));
+        const w = widget(p, n.params[p.name], v => setParam(n, p.name, v, 'node', p.type === 'float' || p.type === 'vec2'));
+        box.append(h('div', { class: 'mat-prow' }, scrubLabel(h('span', {}, p.label), w), w));
       }
       el.append(box);
     }
@@ -1541,8 +1717,8 @@ export function openMaterialEditor({ store, mediaRuntime, materialId }) {
       if (d.desc) rows.push(h('div', { class: 'mat-dim' }, d.desc));
       for (const p of d.params) {
         const linked = d.inputs.some(i => i.name === p.name) && mat.links.some(l => l.to.node === n.id && l.to.pin === p.name);
-        rows.push(h('div', { class: 'mat-drow' }, h('label', { title: p.name }, p.label + (linked ? ' (linked)' : '')),
-          widget(p, n.params[p.name], v => setParam(n, p.name, v, 'details', true), { disabled: linked })));
+        const w = widget(p, n.params[p.name], v => setParam(n, p.name, v, 'details', true), { disabled: linked });
+        rows.push(h('div', { class: 'mat-drow' }, scrubLabel(h('label', { title: p.name }, p.label + (linked ? ' (linked)' : '')), w), w));
       }
       if (!d.params.length) rows.push(h('div', { class: 'mat-dim' }, 'This node has no properties.'));
       details.append(sec(d.title + (d.titleOf ? ' — ' + d.titleOf(n) : ''), ...rows));

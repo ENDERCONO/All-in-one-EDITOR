@@ -194,3 +194,7 @@
   padding: 6px 14px; border-radius: 4px; background: var(--accent); color: var(--accent-ink); font-weight: 600; white-space: nowrap;
 }
 .mat-prev-panel.mat-drop-hot .mat-prev-wrap { outline: 2px dashed var(--accent); outline-offset: -4px; }
+
+/* UE-style scrubbable labels (drag horizontally; Shift = fine) */
+.mat-scrub { cursor: ew-resize; }
+.mat-scrub:hover { color: var(--text); }

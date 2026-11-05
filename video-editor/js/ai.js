@@ -183,24 +183,32 @@ function getWorker() {
 }
 function killWorker() { try { worker?.terminate(); } catch {} worker = null; }
 
-// Default transcriber: posts the audio to the worker and resolves with the worker's result message.
-function workerTranscribe(audioData, opts, on) {
+// One request to the worker: resolves with the message of type `done`, forwards the others to `on`.
+function workerCall(msg, transfer, doneType, { signal } = {}, on = () => {}) {
   return new Promise((resolve, reject) => {
     const w = getWorker(), id = ++runSeq;
-    const done = () => { w.removeEventListener('message', onMsg); w.removeEventListener('error', onErr); opts.signal?.removeEventListener('abort', onAbort); };
+    const done = () => { w.removeEventListener('message', onMsg); w.removeEventListener('error', onErr); signal?.removeEventListener('abort', onAbort); };
     const onMsg = e => {
       const m = e.data || {}; if (m.id !== id) return;
-      if (m.type === 'result') { done(); resolve(m); }
+      if (m.type === doneType) { done(); resolve(m); }
       else if (m.type === 'error') { done(); const err = new Error(m.message); err.code = m.code; reject(err); }
       else on(m);
     };
-    const onErr = e => { done(); killWorker(); const err = new Error('The speech worker crashed' + (e.message ? ': ' + e.message : '') + '.'); err.code = 'worker'; reject(err); };
+    const onErr = e => { done(); killWorker(); const err = new Error('The AI worker crashed' + (e.message ? ': ' + e.message : '') + '.'); err.code = 'worker'; reject(err); };
     const onAbort = () => { done(); killWorker(); const err = new Error('Cancelled'); err.code = 'cancel'; reject(err); };
     w.addEventListener('message', onMsg); w.addEventListener('error', onErr);
-    opts.signal?.addEventListener('abort', onAbort);
-    w.postMessage({ type: 'run', id, audio: audioData, model: opts.model, language: opts.language || null, task: opts.task, device: opts.device, libUrl: opts.libUrl }, [audioData.buffer]);
+    signal?.addEventListener('abort', onAbort);
+    w.postMessage({ ...msg, id }, transfer);
   });
 }
+
+// Default transcriber: posts the audio to the worker and resolves with the worker's result message.
+const workerTranscribe = (audioData, opts, on) => workerCall({ type: 'run', audio: audioData, model: opts.model, language: opts.language || null,
+  task: opts.task, device: opts.device, libUrl: opts.libUrl }, [audioData.buffer], 'result', opts, on);
+
+// Default segmenter: RGBA pixels → { mask: Uint8Array alpha, width, height }
+const workerSegment = (image, opts, on) => workerCall({ type: 'rmbg', image, model: opts.model, device: opts.device, libUrl: opts.libUrl },
+  [image.data.buffer], 'mask', opts, on);
 
 async function pickDevice() {
   try { if (navigator.gpu && await navigator.gpu.requestAdapter()) return 'webgpu'; } catch {}

@@ -298,6 +298,13 @@ async function boot() {
     const files = [...e.target.files]; e.target.value = '';
     if (files.length) { status('Importing…'); await importFiles(files, { audio }); status(`Imported ${files.length} file(s)`); }
   });
+  // Import from URL (the site's downloader) and status messages from background work
+  const openImportUrl = () => import('./integrations.js').then(m => m.openImportFromUrl({
+    importFiles: (files, add) => importFiles(files, { audio, ops, addToTimeline: add, time: store.playhead }), toast,
+  }));
+  window.addEventListener('ve:importUrl', openImportUrl);
+  window.addEventListener('ve:status', e => status(e.detail));
+
   // Import without adding to the timeline; resolves with the new media ids (used by the material editor)
   window.addEventListener('ve:importMedia', async e => {
     try { e.detail.resolve(await importFiles([...e.detail.files], { audio })); } catch (err) { e.detail.resolve([]); }
@@ -516,7 +523,7 @@ async function boot() {
   const menus = {
     File: () => [
       { label: 'New Project', kbd: 'Ctrl+N', run: actions.newProject }, { label: 'Open Project…', kbd: 'Ctrl+O', run: actions.open },
-      { sep: true }, { label: 'Import Media…', kbd: 'Ctrl+I', run: actions.import }, { label: 'Record Voiceover', run: actions.record },
+      { sep: true }, { label: 'Import Media…', kbd: 'Ctrl+I', run: actions.import }, { label: 'Import from URL…', kbd: 'Ctrl+Shift+I', run: () => openImportUrl() }, { label: 'Record Voiceover', run: actions.record },
       { sep: true }, { label: 'Save Project', kbd: 'Ctrl+S', run: actions.save }, { label: 'Save Project As…', kbd: 'Ctrl+Shift+S', run: async () => { const n = prompt('Project name', store.project.name); if (n) { store.transact('Rename project', p => { p.name = n; }); saveProject(); } } },
       { sep: true }, { label: 'Project Settings…', run: actions.projectSettings }, { label: 'Export…', kbd: 'Ctrl+E', run: actions.export },
     ],
@@ -702,6 +709,7 @@ async function boot() {
     if (ctrl && sh && (lk === 'k' || lk === 'b')) return run(() => { if (!ops.splitAll()) toast('Nothing under the playhead to split'); });
     if (ctrl && sh && k === 'Backspace') return run(() => ops.closeGaps());
     if (ctrl && sh && lk === 'a') return run(() => store.select([]));
+    if (ctrl && sh && lk === 'i') return run(() => openImportUrl());
     if (ctrl && k === 'ArrowUp') return run(() => ops.moveToTrack(-1));
     if (ctrl && k === 'ArrowDown') return run(() => ops.moveToTrack(1));
     if (ctrl && !sh && !alt && lk === 'r') return run(() => { if (!store.selectedClips().length) return toast('Select a clip first'); inspector.showTab('speed'); });

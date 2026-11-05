@@ -16,6 +16,12 @@ export const RESOLUTIONS = [
   { label: '1440p', short: 1440 }, { label: '4K', short: 2160 },
 ];
 
+export const MASK_TYPES = [
+  { id: 'none', label: 'None' }, { id: 'linear', label: 'Linear (gradient)' }, { id: 'radial', label: 'Radial' },
+  { id: 'rect', label: 'Rectangle' }, { id: 'ellipse', label: 'Ellipse' },
+];
+export const CROP_ASPECTS = [{ id: 'free', label: 'Free' }, { id: '16:9', w: 16, h: 9 }, { id: '9:16', w: 9, h: 16 }, { id: '1:1', w: 1, h: 1 }, { id: '4:5', w: 4, h: 5 }, { id: '4:3', w: 4, h: 3 }, { id: '21:9', w: 21, h: 9 }];
+
 export const FPS_OPTIONS = [23.976, 24, 25, 29.97, 30, 50, 60];
 
 export const BLEND_MODES = [
@@ -79,6 +85,9 @@ export const FILTERS = [
   { id: 'tilt_shift', label: 'Tilt Shift', category: 'Lens' },
   { id: 'zoom_blur', label: 'Zoom Blur', category: 'Lens' },
   { id: 'motion_blur', label: 'Motion Blur', category: 'Lens' },
+  // ---- v3: from the site's Seamless Tile tool ----
+  { id: 'tile_2x2', label: 'Tile 2×2', category: 'Distort' },
+  { id: 'tile_mirror', label: 'Mirror Tile (seamless)', category: 'Distort' },
 ];
 
 // Transitions. The renderer gets progress 0..1 (0 = all `other`, 1 = all `clip`).

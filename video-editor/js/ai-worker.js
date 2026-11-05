@@ -50,10 +50,11 @@ async function loadLib(libUrl) {
 }
 
 const NET_MSG = 'Download failed. Auto captions need an internet connection the first time: the speech library (cdn.jsdelivr.net) and the Whisper model (huggingface.co) are downloaded once, then cached by the browser.';
+const NET_MSG_BG = 'Download failed. Background removal needs an internet connection the first time: the AI library (cdn.jsdelivr.net) and the segmentation model (huggingface.co) are downloaded once, then cached by the browser.';
 const isNetErr = e => /fetch|network|load failed|locate file|status|40\d|50\d|unauthori[sz]ed|forbidden|not found|ERR_|offline|CORS|Unexpected token '<'/i.test(String(e?.message || e));
 
-async function getPipe(id, { model, device, dtype, word }, post) {
-  const key = model + '|' + device + '|' + JSON.stringify(dtype);
+async function getPipe(id, { model, device, dtype, word, task = 'automatic-speech-recognition' }, post) {
+  const key = task + '|' + model + '|' + device + '|' + JSON.stringify(dtype);
   if (pipes.has(key)) return pipes.get(key);
   const files = new Map();
   const progress_callback = p => {
@@ -66,7 +67,7 @@ async function getPipe(id, { model, device, dtype, word }, post) {
     for (const f of files.values()) { loaded += f.loaded; total += f.total; }
     post({ type: 'download', id, loaded, total, file: p.file });
   };
-  const pipe = await lib.pipeline('automatic-speech-recognition', model, { device, dtype, progress_callback });
+  const pipe = await lib.pipeline(task, model, { device, dtype, progress_callback });
   const entry = { pipe, word };
   pipes.set(key, entry);
   return entry;
@@ -163,8 +164,68 @@ async function run(msg) {
   post({ type: 'result', id, granularity: g, chunks, text: chunks.map(c => c.text).join(''), device: entry.device, model: entry.model });
 }
 
+// ---------------------------------------------------------------- background removal
+// in : { type: 'rmbg', id, image: { data: Uint8ClampedArray RGBA, width, height }, model, device, libUrl? }
+// out: status / download / notice as above, then { type: 'mask', id, mask: Uint8Array (width*height alpha), width, height, model, device }
+async function rmbg(msg) {
+  const { id, image } = msg;
+  const post = (m, t) => self.postMessage(m, t || []);
+  post({ type: 'status', id, stage: 'load', message: 'Loading AI engine…' });
+  try { await loadLib(msg.libUrl); } catch (e) {
+    return post(e?.net ? { type: 'error', id, code: 'download', message: NET_MSG_BG + ' (' + e.message + ')' }
+      : { type: 'error', id, code: 'model', message: 'Could not load the AI engine: ' + (e?.message || e) });
+  }
+  const models = [msg.model || 'briaai/RMBG-1.4', ...(msg.model === 'Xenova/modnet' ? [] : ['Xenova/modnet'])];
+  let device = msg.device === 'webgpu' ? 'webgpu' : 'wasm';
+  const dtypeFor = dev => (dev === 'webgpu' ? 'fp32' : 'q8');
+  let entry = null, lastErr = null;
+  const attempt = async () => {
+    for (const model of models) {
+      post({ type: 'status', id, stage: 'load', message: 'Loading model ' + model.split('/').pop() + ' (' + (device === 'webgpu' ? 'GPU' : 'CPU') + ')…' });
+      try {
+        entry = await getPipe(id, { task: 'background-removal', model, device, dtype: dtypeFor(device) }, post);
+        entry.model = model; entry.device = device;
+        if (model !== models[0]) post({ type: 'notice', id, message: models[0].split('/').pop() + ' could not be loaded — using ' + model.split('/').pop() + ' instead.' });
+        return true;
+      } catch (e) { lastErr = e; console.warn('[ai-worker] load failed', model, device, e?.message || e); if (isNetErr(e) && /fetch|network|ERR_/i.test(String(e?.message))) return false; }
+    }
+    return false;
+  };
+  let ok = await attempt();
+  if (!ok && device === 'webgpu' && !isNetErr(lastErr)) {
+    post({ type: 'notice', id, message: 'WebGPU did not work here — falling back to the CPU (slower).' });
+    device = 'wasm'; ok = await attempt();
+  }
+  if (!ok) {
+    return post(isNetErr(lastErr) ? { type: 'error', id, code: 'download', message: NET_MSG_BG + (lastErr?.message ? ' (' + lastErr.message + ')' : '') }
+      : { type: 'error', id, code: 'model', message: 'Could not load the segmentation model: ' + (lastErr?.message || lastErr) });
+  }
+  post({ type: 'status', id, stage: 'infer', message: 'Finding the subject…' });
+  try {
+    const { width, height } = image;
+    const raw = new lib.RawImage(image.data, width, height, 4);
+    let out = await entry.pipe(raw);
+    if (Array.isArray(out)) out = out[0];
+    if (out && out.mask) out = out.mask; // image-segmentation style result
+    let mask;
+    if (out?.channels === 4) { mask = new Uint8Array(width * height); const d = out.data; for (let i = 0; i < mask.length; i++) mask[i] = d[i * 4 + 3]; }
+    else if (out?.channels === 1) mask = Uint8Array.from(out.data);
+    else throw new Error('unexpected model output');
+    if (out.width !== width || out.height !== height) {
+      // nearest resample to the original size (pipeline normally already returns it)
+      const m2 = new Uint8Array(width * height);
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) m2[y * width + x] = mask[Math.min(out.height - 1, (y * out.height / height) | 0) * out.width + Math.min(out.width - 1, (x * out.width / width) | 0)];
+      mask = m2;
+    }
+    post({ type: 'mask', id, mask, width, height, model: entry.model, device: entry.device }, [mask.buffer]);
+  } catch (e) {
+    post({ type: 'error', id, code: 'infer', message: 'Background removal failed: ' + (e?.message || e) });
+  }
+}
+
 self.onmessage = e => {
   const m = e.data || {};
-  if (m.type === 'run') run(m).catch(err => self.postMessage({ type: 'error', id: m.id, code: 'transcribe', message: String(err?.message || err) }));
+  if (m.type === 'rmbg') rmbg(m).catch(err => self.postMessage({ type: 'error', id: m.id, code: 'infer', message: String(err?.message || err) }));
+  else if (m.type === 'run') run(m).catch(err => self.postMessage({ type: 'error', id: m.id, code: 'transcribe', message: String(err?.message || err) }));
   else if (m.type === 'ping') self.postMessage({ type: 'pong', id: m.id });
 };
