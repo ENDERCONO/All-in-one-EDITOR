@@ -119,7 +119,7 @@ export async function downloadUrl(url, { kind = 'video', quality = '720', cookie
     if (p.state === 'error') {
       const why = explainDlError(p.error || 'Download failed');
       if (/not a bot|sign in to confirm/i.test(p.error || '') && found.where !== 'this PC')
-        throw new Error(`YouTube blocked the ${found.where}. Start START-SERVER.bat on your PC; YouTube works there.`);
+        throw new Error(`YouTube blocked the ${found.where}. Double-click START-SERVER.bat on your PC and try again; YouTube works there. To have it always running, double-click START-AT-LOGIN.bat once.`);
       throw new Error(`Failed via ${found.where}: ${why}`);
     }
     const msg = p.state === 'setup' ? `First run: the server is installing its downloader (${p.setupPhase || ''} ${p.setupPct || 0}%)…`
@@ -147,12 +147,16 @@ export function openImportFromUrl({ importFiles, toast }) {
       <label>YouTube login<br><span class="dim" style="font-size:11px">only if YouTube says "not a bot"</span></label><div><input type="file" id="iuCookies" accept=".txt,text/plain" style="font-size:11.5px"><div class="dim" style="font-size:11px;margin-top:4px">Export <b>cookies.txt</b> from your browser while signed in to YouTube (a "cookies.txt" export extension). Used for this download only, then deleted on the server.</div></div>
     </div><div id="iuStatus" style="margin-top:12px;color:var(--text-dim);min-height:36px;white-space:pre-line"></div>
     <div class="dim" style="font-size:11.5px">Uses the same downloader as the site's Converter tab (the local server, or the online one). Direct media links download straight into your browser.</div></div>
-    <div class="modal-foot"><button class="btn" data-x>Close</button><button class="btn primary" id="iuGo">Import</button></div></div>`;
+    <div class="modal-foot"><button class="btn" id="iuCancel" hidden>Cancel download</button><button class="btn" data-x>Close</button><button class="btn primary" id="iuGo">Import</button></div></div>`;
   document.getElementById('modalRoot').appendChild(back);
   const $ = s => back.querySelector(s);
-  let cancelled = false;
-  back.querySelectorAll('[data-x]').forEach(b => b.onclick = () => { cancelled = true; back.remove(); });
-  back.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') { cancelled = true; back.remove(); } });
+  // Closing the dialog keeps a running download going in the background (it still
+  // lands on the timeline and toasts when done); only "Cancel download" stops it.
+  let cancelled = false, running = false;
+  const close = () => { if (running) toast?.('The download keeps going in the background; you will get a message when it is done'); back.remove(); };
+  back.querySelectorAll('[data-x]').forEach(b => b.onclick = close);
+  back.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') close(); });
+  $('#iuCancel').onclick = () => { cancelled = true; $('#iuCancel').disabled = true; say('Cancelling…'); };
   setTimeout(() => $('#iuLinks').focus(), 30);
   const say = m => { $('#iuStatus').textContent = m; };
   $('#iuGo').onclick = async () => {
@@ -163,16 +167,22 @@ export function openImportFromUrl({ importFiles, toast }) {
     const cf = $('#iuCookies').files[0] || null;
     const cookiesText = cf ? await cf.text() : null;
     let done = 0;
+    cancelled = false; running = true;
+    $('#iuCancel').hidden = false; $('#iuCancel').disabled = false;
     for (const url of links) {
-      if (cancelled) return;
+      if (cancelled) break;
       try {
         const file = await downloadUrl(url, { kind, quality, cookiesFile: cookiesText, onProgress: p => say(p.msg || ''), isCancelled: () => cancelled });
         say(`Importing ${file.name}…`);
         await importFiles([file], add);
         done++;
-      } catch (e) { say(`✕ ${url}\n${e.message}`); toast?.('Import from URL failed: ' + e.message); await sleep(1500); }
+      } catch (e) {
+        if (cancelled) { say('Download cancelled.'); break; }
+        say(`✕ ${url}\n${e.message}`); toast?.('Import from URL failed: ' + e.message); await sleep(1500);
+      }
     }
-    $('#iuGo').disabled = false;
+    running = false;
+    $('#iuGo').disabled = false; $('#iuCancel').hidden = true;
     if (done) { say(`Imported ${done} of ${links.length}.`); toast?.(`Imported ${done} file(s) from URL`); }
   };
 }

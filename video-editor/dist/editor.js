@@ -736,7 +736,7 @@
       if (p.state === "error") {
         const why = explainDlError(p.error || "Download failed");
         if (/not a bot|sign in to confirm/i.test(p.error || "") && found.where !== "this PC")
-          throw new Error(`YouTube blocked the ${found.where}. Start START-SERVER.bat on your PC; YouTube works there.`);
+          throw new Error(`YouTube blocked the ${found.where}. Double-click START-SERVER.bat on your PC and try again; YouTube works there. To have it always running, double-click START-AT-LOGIN.bat once.`);
         throw new Error(`Failed via ${found.where}: ${why}`);
       }
       const msg = p.state === "setup" ? `First run: the server is installing its downloader (${p.setupPhase || ""} ${p.setupPct || 0}%)\u2026` : p.state === "retrying" ? "YouTube refused \u2014 retrying with another player client\u2026" : p.state === "updating" ? "Updating the downloader\u2026" : `${title || "Downloading"} \xB7 ${p.pct || 0}%${p.speed ? " \xB7 " + p.speed : ""}${p.eta ? " \xB7 ETA " + p.eta : ""}`;
@@ -761,21 +761,24 @@
       <label>YouTube login<br><span class="dim" style="font-size:11px">only if YouTube says "not a bot"</span></label><div><input type="file" id="iuCookies" accept=".txt,text/plain" style="font-size:11.5px"><div class="dim" style="font-size:11px;margin-top:4px">Export <b>cookies.txt</b> from your browser while signed in to YouTube (a "cookies.txt" export extension). Used for this download only, then deleted on the server.</div></div>
     </div><div id="iuStatus" style="margin-top:12px;color:var(--text-dim);min-height:36px;white-space:pre-line"></div>
     <div class="dim" style="font-size:11.5px">Uses the same downloader as the site's Converter tab (the local server, or the online one). Direct media links download straight into your browser.</div></div>
-    <div class="modal-foot"><button class="btn" data-x>Close</button><button class="btn primary" id="iuGo">Import</button></div></div>`;
+    <div class="modal-foot"><button class="btn" id="iuCancel" hidden>Cancel download</button><button class="btn" data-x>Close</button><button class="btn primary" id="iuGo">Import</button></div></div>`;
     document.getElementById("modalRoot").appendChild(back);
     const $2 = (s) => back.querySelector(s);
-    let cancelled = false;
-    back.querySelectorAll("[data-x]").forEach((b) => b.onclick = () => {
-      cancelled = true;
+    let cancelled = false, running = false;
+    const close = () => {
+      if (running) toast3?.("The download keeps going in the background; you will get a message when it is done");
       back.remove();
-    });
+    };
+    back.querySelectorAll("[data-x]").forEach((b) => b.onclick = close);
     back.addEventListener("keydown", (e) => {
       e.stopPropagation();
-      if (e.key === "Escape") {
-        cancelled = true;
-        back.remove();
-      }
+      if (e.key === "Escape") close();
     });
+    $2("#iuCancel").onclick = () => {
+      cancelled = true;
+      $2("#iuCancel").disabled = true;
+      say("Cancelling\u2026");
+    };
     setTimeout(() => $2("#iuLinks").focus(), 30);
     const say = (m) => {
       $2("#iuStatus").textContent = m;
@@ -788,21 +791,31 @@
       const cf = $2("#iuCookies").files[0] || null;
       const cookiesText = cf ? await cf.text() : null;
       let done = 0;
+      cancelled = false;
+      running = true;
+      $2("#iuCancel").hidden = false;
+      $2("#iuCancel").disabled = false;
       for (const url2 of links) {
-        if (cancelled) return;
+        if (cancelled) break;
         try {
           const file = await downloadUrl(url2, { kind, quality, cookiesFile: cookiesText, onProgress: (p) => say(p.msg || ""), isCancelled: () => cancelled });
           say(`Importing ${file.name}\u2026`);
           await importFiles2([file], add);
           done++;
         } catch (e) {
+          if (cancelled) {
+            say("Download cancelled.");
+            break;
+          }
           say(`\u2715 ${url2}
 ${e.message}`);
           toast3?.("Import from URL failed: " + e.message);
           await sleep(1500);
         }
       }
+      running = false;
       $2("#iuGo").disabled = false;
+      $2("#iuCancel").hidden = true;
       if (done) {
         say(`Imported ${done} of ${links.length}.`);
         toast3?.(`Imported ${done} file(s) from URL`);
