@@ -961,6 +961,8 @@ const PERMANENT_DL_ERROR = /private video|video unavailable|this video is not av
 
 function friendlyDlError(msg) {
   msg = String(msg || '');
+  if (/\[On this PC/.test(msg))
+    return 'YouTube\'s bot check blocked this PC, even with your browser\'s login. ' + LOCAL_COOKIE_HINT.replace(/^\[|\]$/g, '');
   if (/not a bot|sign in to confirm you/i.test(msg))
     return 'YouTube wants this server to sign in — it blocks a lot of cloud / data-center IPs. Run the site on your own PC (START-SERVER.bat), or put a cookies.txt exported from your browser next to server.js.';
   if (/confirm your age|age-restricted/i.test(msg))
@@ -988,12 +990,18 @@ const YT_CLIENT_FALLBACKS = [
   'youtube:player_client=mweb,web_embedded',
   'youtube:player_client=tv,ios',
 ];
+// On your own PC the server can use the YouTube login already in your browser,
+// which YouTube's "not a bot" check accepts. Not available on hosted servers
+// (Render etc.), which have no browser to read from.
+const LOCAL_COOKIE_HINT = '[On this PC: close Opera/Chrome/Edge completely and retry, or set YTDLP_BROWSER=firefox (Firefox reads its cookies while open).]';
+const LOCAL_BROWSERS = process.env.YTDLP_BROWSER ? [process.env.YTDLP_BROWSER] : ['opera', 'chrome', 'edge', 'firefox', 'brave'];
+const canUseBrowserCookies = () => !process.env.RENDER && !process.env.YTDLP_COOKIES_TEXT && !process.env.YTDLP_COOKIES_B64;
 const isYouTube = u => /(youtube\.com|youtu\.be|youtube-nocookie\.com)\//i.test(String(u));
 
-function ytdlpOnce(job, o, withCover, clientArgs) {
+function ytdlpOnce(job, o, withCover, extraArgs = []) {
   const args = [
     ...ytdlpCommonArgs(job.dir),
-    ...(clientArgs ? ['--extractor-args', clientArgs] : []),
+    ...extraArgs,
     '--newline', '--no-playlist', '--no-mtime',
     '-N', '8', // parallel fragment downloads — saturates the connection
     '-o', path.join(job.dir, '%(title).150B.%(ext)s'),
@@ -1051,7 +1059,8 @@ async function runDlJob(job, o) {
     let lastErr = null;
     // attempt 0: default · 1: after updating yt-dlp (no cover art) · 2+: other YouTube player clients
     const yt = isYouTube(o.url);
-    const plan = [null, null, ...(yt ? YT_CLIENT_FALLBACKS : [])];
+    const plan = [[], [], ...(yt ? YT_CLIENT_FALLBACKS.map(c => ['--extractor-args', c]) : [])];
+    const botErr = e => /not a bot|sign in to confirm/i.test(e.message);
     for (let attempt = 0; attempt < plan.length; attempt++) {
       job.state = 'starting'; job.pct = 0;
       if (attempt >= 2) job.state = 'retrying';
@@ -1068,7 +1077,29 @@ async function runDlJob(job, o) {
         if (PERMANENT_DL_ERROR.test(e.message) && !botOrFormat) break;
         if (attempt === 0) { job.state = 'updating'; await waitUpdate(updateYtdlp()); } // most YouTube failures are fixed by the newest yt-dlp
         else if (!yt || !botOrFormat) break;
-        console.log(`[downloader] attempt ${attempt + 1} failed (${e.message.slice(0, 120)}) — ${plan[attempt + 1] ? 'trying ' + plan[attempt + 1] : 'giving up'}`);
+        console.log(`[downloader] attempt ${attempt + 1} failed (${e.message.slice(0, 120)})`);
+      }
+    }
+
+    // Still blocked: on your PC, borrow the YouTube login from your browser
+    if (lastErr && botErr(lastErr) && yt && canUseBrowserCookies() && !job.cancelled) {
+      const notes = [];
+      for (const browser of LOCAL_BROWSERS) {
+        if (job.cancelled) break;
+        job.state = 'retrying'; job.pct = 0;
+        fs.rmSync(job.dir, { recursive: true, force: true }); fs.mkdirSync(job.dir, { recursive: true });
+        try {
+          await ytdlpOnce(job, o, false, ['--cookies-from-browser', browser]);
+          lastErr = null;
+          console.log(`[downloader] used ${browser} cookies`);
+          break;
+        } catch (e) {
+          notes.push(`${browser}: ${cleanYtdlpError(e.message) || e.message}`.slice(0, 160));
+        }
+      }
+      if (lastErr) {
+        console.log('[downloader] browser cookies not usable:', notes.join(' | '));
+        lastErr = new Error(lastErr.message + ' ' + LOCAL_COOKIE_HINT);
       }
     }
     if (lastErr) throw new Error(friendlyDlError(lastErr.message));
