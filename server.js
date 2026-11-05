@@ -1153,6 +1153,8 @@ app.get('/api/dl/ping', (req, res) => {
     version: fs.existsSync(YTDLP_PATH) ? getYtdlpInfo().version : null,
     cookies: fs.existsSync(COOKIES_PATH),
     local: !process.env.RENDER,
+    keepAwake: !!(process.env.RENDER && process.env.RENDER_EXTERNAL_URL && process.env.KEEP_AWAKE !== '0'),
+    keepAwakeLast,
   });
 });
 
@@ -1482,4 +1484,23 @@ server.listen(PORT, () => {
   console.log(`Claude Arena running on http://localhost:${PORT}`);
   // On your own PC, fetch the downloader tools now so the first download isn't slow
   if (!process.env.RENDER) ensureDlTools().catch(e => console.warn('[downloader] tools not ready yet:', e.message));
+  startKeepAwake();
 });
+
+// Free Render services sleep after ~15 minutes without inbound traffic, and waking takes up to a
+// minute. On Render, ping our own public URL (it goes through Render's front door, so it counts as
+// traffic) every 10 minutes. RENDER_EXTERNAL_URL is set by Render; KEEP_AWAKE=0 turns this off.
+let keepAwakeLast = null;
+function startKeepAwake() {
+  const base = (process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, '');
+  if (!process.env.RENDER || !base || process.env.KEEP_AWAKE === '0' || typeof fetch !== 'function') return;
+  const ping = async () => {
+    try {
+      const r = await fetch(base + '/api/dl/ping?keepawake=1', { signal: AbortSignal.timeout(30000) });
+      keepAwakeLast = { at: new Date().toISOString(), ok: r.ok };
+    } catch (e) { keepAwakeLast = { at: new Date().toISOString(), ok: false }; console.warn('[keep-awake] ping failed:', e.message); }
+  };
+  setTimeout(ping, 60 * 1000).unref?.();
+  setInterval(ping, 10 * 60 * 1000).unref?.();
+  console.log('[keep-awake] pinging ' + base + ' every 10 minutes');
+}
