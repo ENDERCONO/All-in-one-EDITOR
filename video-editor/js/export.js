@@ -574,6 +574,7 @@ export function openExportDialog({ store, mediaRuntime, sources, audio, createRe
       const kfEvery = Math.max(1, Math.round(rate * 2));
       const frameDur = Math.round(1e6 / rate);
       setStage(label || 'Encoding video');
+      sources?.setExportMode?.(true); // fast in-order WebCodecs decode where the file allows
       for (let i = 0; i < total; i++) {
         check();
         if (encErr) throw encErr;
@@ -606,6 +607,7 @@ export function openExportDialog({ store, mediaRuntime, sources, audio, createRe
       if (cancelled) throw new Cancelled();
       throw e;
     } finally {
+      try { sources?.setExportMode?.(false); } catch (e) { /* ignore */ }
       try { r?.dispose?.(); } catch (e) { /* ignore */ }
     }
   }

@@ -12,6 +12,25 @@ export function createSources({ store, mediaRuntime }) {
   let textVersion = 1;
   let curT = 0; // timeline time of the frame being drawn (set by sync / prepare)
 
+  // ---- export mode: frames come from js/framereader.js (WebCodecs) when the file allows ----
+  let exportMode = false;
+  const readers = new Map();      // clipId -> Promise<reader|null>
+  const exportFrames = new Map(); // clipId -> VideoFrame for the frame being exported
+  function readerFor(clip) {
+    let r = readers.get(clip.id);
+    if (!r) {
+      const file = mediaRuntime.get(clip.mediaId)?.file;
+      r = import('./framereader.js').then(m => m.createFrameReader(file)).catch(e => { console.warn('[export] fast decode unavailable for', clip.name, '-', e.message); return null; });
+      readers.set(clip.id, r);
+    }
+    return r;
+  }
+  function setExportMode(on) {
+    exportMode = !!on;
+    exportFrames.clear();
+    if (!on) { for (const r of readers.values()) r.then(x => x?.close()).catch(() => {}); readers.clear(); }
+  }
+
   function videoFor(clip) {
     let p = pool.get(clip.id);
     if (p && p.mediaId !== clip.mediaId) { dropVideo(clip.id); p = null; }
@@ -158,6 +177,8 @@ export function createSources({ store, mediaRuntime }) {
   function getFrame(clip) {
     if (!clip) return null;
     if (clip.type === 'video') {
+      const xf = exportMode && exportFrames.get(clip.id);
+      if (xf) return { el: xf, width: xf.displayWidth, height: xf.displayHeight };
       const p = videoFor(clip);
       if (!p || p.el.readyState < 2 || !p.el.videoWidth) return null;
       return { el: p.el, width: p.el.videoWidth, height: p.el.videoHeight };
@@ -188,7 +209,7 @@ export function createSources({ store, mediaRuntime }) {
   function version(clip) {
     if (clip.type === 'image') { const i = animIndex(clip); if (i >= 0) return i + 2; }
     if (clip.type === 'text') return textCanvas(clip).version;
-    if (clip.type === 'video') { const p = pool.get(clip.id); return p ? p.el.currentTime : 0; }
+    if (clip.type === 'video') { const xf = exportMode && exportFrames.get(clip.id); if (xf) return 'x' + xf.timestamp; const p = pool.get(clip.id); return p ? p.el.currentTime : 0; }
     return 1;
   }
 
@@ -242,10 +263,14 @@ export function createSources({ store, mediaRuntime }) {
     return new Promise(resolve => {
       let done = false;
       const finish = () => { if (done) return; done = true; clearTimeout(to); el.removeEventListener('seeked', onSeeked); resolve(); };
+      // 'seeked' fires once the frame at the new position is decoded, so it can be drawn right
+      // away. (Waiting for requestVideoFrameCallback cost ~120 ms a frame: it never fires for the
+      // hidden, paused export video, so every frame hit the fallback timer.)
       const onSeeked = () => {
-        if (el.requestVideoFrameCallback) el.requestVideoFrameCallback(() => finish());
-        // rVFC may not fire for a paused element in some browsers — don't wait forever
-        setTimeout(finish, 120);
+        if (el.readyState >= 2) { finish(); return; }
+        el.addEventListener('loadeddata', finish, { once: true });
+        el.addEventListener('canplay', finish, { once: true });
+        setTimeout(finish, 250);
       };
       const to = setTimeout(finish, 4000);
       const go = () => {
@@ -257,15 +282,28 @@ export function createSources({ store, mediaRuntime }) {
     });
   }
 
+  function slowSeek(clip, time) {
+    exportFrames.delete(clip.id);
+    const p = videoFor(clip); if (!p) return Promise.resolve();
+    p.el.pause();
+    const dur = isFinite(p.el.duration) ? p.el.duration : Infinity;
+    return seekExact(p.el, Math.max(0, Math.min(time, dur - 0.001)));
+  }
+
   async function prepare(t) {
     curT = t;
     const jobs = [];
     for (const { clip, time } of neededAt(t)) {
       if (clip.type === 'video') {
-        const p = videoFor(clip); if (!p) continue;
-        p.el.pause();
-        const dur = isFinite(p.el.duration) ? p.el.duration : Infinity;
-        jobs.push(seekExact(p.el, Math.max(0, Math.min(time, dur - 0.001))));
+        if (exportMode && !clip.reverse) {
+          jobs.push(readerFor(clip).then(async r => {
+            if (!r) return slowSeek(clip, time);
+            try { exportFrames.set(clip.id, await r.frameAt(Math.max(0, time))); }
+            catch (e) { console.warn('[export] fast decode failed on', clip.name, '- seeking instead', e); readers.set(clip.id, Promise.resolve(null)); exportFrames.delete(clip.id); return slowSeek(clip, time); }
+          }));
+          continue;
+        }
+        jobs.push(slowSeek(clip, time));
       } else if (clip.type === 'image') {
         const rt = mediaRuntime.get(clip.mediaId);
         imageFor(clip);
@@ -282,7 +320,7 @@ export function createSources({ store, mediaRuntime }) {
   });
 
   return {
-    getFrame, sourceTime, sync, prepare, version,
+    getFrame, sourceTime, sync, prepare, version, setExportMode,
     pauseAll() { for (const p of pool.values()) p.el.pause(); },
     dispose() { for (const id of [...pool.keys()]) dropVideo(id); holder.remove(); },
   };

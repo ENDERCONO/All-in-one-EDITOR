@@ -647,6 +647,215 @@
     }
   });
 
+  // js/framereader.js
+  var framereader_exports = {};
+  __export(framereader_exports, {
+    createFrameReader: () => createFrameReader
+  });
+  function loadMp4Box() {
+    if (window.MP4Box) return Promise.resolve(window.MP4Box);
+    if (!libPromise) libPromise = new Promise((res, rej) => {
+      const s = document.createElement("script");
+      s.src = MP4BOX_URL;
+      s.async = true;
+      s.onload = () => window.MP4Box ? res(window.MP4Box) : rej(new Error("mp4box did not load"));
+      s.onerror = () => {
+        libPromise = null;
+        rej(new Error("mp4box could not be downloaded"));
+      };
+      document.head.appendChild(s);
+    });
+    return libPromise;
+  }
+  async function isIsoBmff(file) {
+    const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+    return String.fromCharCode(...head.slice(4, 8)) === "ftyp";
+  }
+  async function createFrameReader(file) {
+    if (typeof VideoDecoder === "undefined" || typeof VideoFrame === "undefined" || !file) return null;
+    if (!await isIsoBmff(file)) return null;
+    const MP4Box = await loadMp4Box();
+    const buf = await file.arrayBuffer();
+    const mp4 = MP4Box.createFile();
+    const { track, samples, description } = await new Promise((resolve, reject) => {
+      let trk = null;
+      const got = [];
+      mp4.onError = (e) => reject(new Error("mp4 parse: " + e));
+      mp4.onReady = (info) => {
+        trk = info.videoTracks?.[0];
+        if (!trk) {
+          reject(new Error("no video track"));
+          return;
+        }
+        mp4.setExtractionOptions(trk.id, null, { nbSamples: trk.nb_samples });
+        mp4.start();
+      };
+      mp4.onSamples = (id, user, list) => {
+        got.push(...list);
+        if (got.length >= trk.nb_samples) {
+          let desc;
+          const tk = mp4.getTrackById(trk.id);
+          for (const e of tk.mdia.minf.stbl.stsd.entries) {
+            const box2 = e.avcC || e.hvcC || e.vpcC || e.av1C;
+            if (box2) {
+              const ds = new window.DataStream(void 0, 0, window.DataStream.BIG_ENDIAN);
+              box2.write(ds);
+              desc = new Uint8Array(ds.buffer, 8);
+              break;
+            }
+          }
+          resolve({ track: trk, samples: got, description: desc });
+        }
+      };
+      buf.fileStart = 0;
+      mp4.appendBuffer(buf);
+      mp4.flush();
+      setTimeout(() => reject(new Error("mp4 demux timed out")), 15e3);
+    });
+    const m = track.matrix;
+    if (m && !(m[0] === 65536 && m[1] === 0 && m[3] === 0 && m[4] === 65536)) return null;
+    const config = { codec: track.codec, codedWidth: track.video?.width || track.track_width, codedHeight: track.video?.height || track.track_height, ...description ? { description } : {} };
+    try {
+      const s = await VideoDecoder.isConfigSupported(config);
+      if (!s.supported) return null;
+    } catch (e) {
+      return null;
+    }
+    const ts = samples[0]?.timescale || track.timescale;
+    const minCts = Math.min(...samples.map((s) => s.cts));
+    const us = (s) => Math.round((s.cts - minCts) / ts * 1e6);
+    samples.forEach((s, i) => {
+      s.di = i;
+      s.us = us(s);
+    });
+    const byPts = [...samples].sort((a, b) => a.us - b.us);
+    const keyBefore = (di) => {
+      for (let i = di; i >= 0; i--) if (samples[i].is_sync) return i;
+      return 0;
+    };
+    const out = /* @__PURE__ */ new Map();
+    let waiters = [], decoder = null, feedPos = 0, lastOutUs = -1, current = null, fatal = null;
+    const wake = () => {
+      const w = waiters;
+      waiters = [];
+      w.forEach((f) => f());
+    };
+    function makeDecoder() {
+      decoder = new VideoDecoder({
+        output: (f) => {
+          lastOutUs = f.timestamp;
+          out.set(f.timestamp, f);
+          wake();
+        },
+        error: (e) => {
+          fatal = e;
+          wake();
+        }
+      });
+      decoder.configure(config);
+    }
+    const dropOut = (pred = () => true) => {
+      for (const [k, f] of out) if (pred(k)) {
+        f.close();
+        out.delete(k);
+      }
+    };
+    function restartAt(di) {
+      dropOut();
+      try {
+        decoder?.close();
+      } catch (e) {
+      }
+      makeDecoder();
+      feedPos = keyBefore(di);
+      lastOutUs = -1;
+    }
+    const feed = () => {
+      const s = samples[feedPos++];
+      decoder.decode(new EncodedVideoChunk({ type: s.is_sync ? "key" : "delta", timestamp: s.us, duration: Math.round(s.duration / ts * 1e6), data: s.data }));
+    };
+    const waitOutput = (ms) => new Promise((r) => {
+      const t = setTimeout(r, ms);
+      waiters.push(() => {
+        clearTimeout(t);
+        r();
+      });
+    });
+    let flushedAt = -1;
+    async function frameAt(sec) {
+      if (fatal) throw fatal;
+      const want = sec * 1e6;
+      let lo = 0, hi = byPts.length - 1;
+      while (lo < hi) {
+        const mid = lo + hi + 1 >> 1;
+        if (byPts[mid].us <= want + 500) lo = mid;
+        else hi = mid - 1;
+      }
+      const target = byPts[lo];
+      if (current && current.timestamp === target.us) return current;
+      if (!out.has(target.us)) {
+        const needRestart = !decoder || target.us < lastOutUs - 1 || keyBefore(target.di) > feedPos || flushedAt >= 0;
+        if (needRestart) {
+          restartAt(target.di);
+          flushedAt = -1;
+        }
+        let idle = 0;
+        while (!out.has(target.us)) {
+          if (fatal) throw fatal;
+          if (feedPos < samples.length && feedPos <= target.di + LOOKAHEAD) {
+            feed();
+            continue;
+          }
+          if (feedPos >= samples.length && flushedAt < 0) {
+            flushedAt = feedPos;
+            await decoder.flush();
+            continue;
+          }
+          const before = out.size;
+          await waitOutput(200);
+          dropOut((k) => k < target.us);
+          if (out.size === before) {
+            if (++idle > 10) break;
+            if (feedPos < samples.length) feed();
+          } else idle = 0;
+        }
+      }
+      const f = out.get(target.us);
+      if (!f) throw new Error("frame not decoded at " + sec.toFixed(3) + "s");
+      out.delete(target.us);
+      dropOut((k) => k < target.us);
+      if (current && current !== f) current.close();
+      current = f;
+      return f;
+    }
+    return {
+      width: config.codedWidth,
+      height: config.codedHeight,
+      frameAt,
+      close() {
+        dropOut();
+        try {
+          current?.close();
+        } catch (e) {
+        }
+        current = null;
+        try {
+          decoder?.close();
+        } catch (e) {
+        }
+        decoder = null;
+      }
+    };
+  }
+  var MP4BOX_URL, libPromise, LOOKAHEAD;
+  var init_framereader = __esm({
+    "js/framereader.js"() {
+      MP4BOX_URL = "https://cdn.jsdelivr.net/npm/mp4box@0.5.3/dist/mp4box.all.min.js";
+      libPromise = null;
+      LOOKAHEAD = 6;
+    }
+  });
+
   // js/audio.js
   var audio_exports = {};
   __export(audio_exports, {
@@ -12969,6 +13178,7 @@ ${notes}`;
         const kfEvery = Math.max(1, Math.round(rate * 2));
         const frameDur = Math.round(1e6 / rate);
         setStage(label || "Encoding video");
+        sources?.setExportMode?.(true);
         for (let i = 0; i < total; i++) {
           check();
           if (encErr) throw encErr;
@@ -13002,6 +13212,10 @@ ${notes}`;
         if (cancelled) throw new Cancelled();
         throw e;
       } finally {
+        try {
+          sources?.setExportMode?.(false);
+        } catch (e) {
+        }
         try {
           r?.dispose?.();
         } catch (e) {
@@ -15610,6 +15824,30 @@ ${c.text}
     document.body.appendChild(holder);
     let textVersion = 1;
     let curT = 0;
+    let exportMode = false;
+    const readers = /* @__PURE__ */ new Map();
+    const exportFrames = /* @__PURE__ */ new Map();
+    function readerFor(clip) {
+      let r = readers.get(clip.id);
+      if (!r) {
+        const file = mediaRuntime2.get(clip.mediaId)?.file;
+        r = Promise.resolve().then(() => (init_framereader(), framereader_exports)).then((m) => m.createFrameReader(file)).catch((e) => {
+          console.warn("[export] fast decode unavailable for", clip.name, "-", e.message);
+          return null;
+        });
+        readers.set(clip.id, r);
+      }
+      return r;
+    }
+    function setExportMode(on) {
+      exportMode = !!on;
+      exportFrames.clear();
+      if (!on) {
+        for (const r of readers.values()) r.then((x) => x?.close()).catch(() => {
+        });
+        readers.clear();
+      }
+    }
     function videoFor(clip) {
       let p = pool.get(clip.id);
       if (p && p.mediaId !== clip.mediaId) {
@@ -15804,6 +16042,8 @@ ${c.text}
     function getFrame(clip) {
       if (!clip) return null;
       if (clip.type === "video") {
+        const xf = exportMode && exportFrames.get(clip.id);
+        if (xf) return { el: xf, width: xf.displayWidth, height: xf.displayHeight };
         const p = videoFor(clip);
         if (!p || p.el.readyState < 2 || !p.el.videoWidth) return null;
         return { el: p.el, width: p.el.videoWidth, height: p.el.videoHeight };
@@ -15844,6 +16084,8 @@ ${c.text}
       }
       if (clip.type === "text") return textCanvas(clip).version;
       if (clip.type === "video") {
+        const xf = exportMode && exportFrames.get(clip.id);
+        if (xf) return "x" + xf.timestamp;
         const p = pool.get(clip.id);
         return p ? p.el.currentTime : 0;
       }
@@ -15907,8 +16149,13 @@ ${c.text}
           resolve();
         };
         const onSeeked = () => {
-          if (el2.requestVideoFrameCallback) el2.requestVideoFrameCallback(() => finish());
-          setTimeout(finish, 120);
+          if (el2.readyState >= 2) {
+            finish();
+            return;
+          }
+          el2.addEventListener("loadeddata", finish, { once: true });
+          el2.addEventListener("canplay", finish, { once: true });
+          setTimeout(finish, 250);
         };
         const to = setTimeout(finish, 4e3);
         const go = () => {
@@ -15923,16 +16170,34 @@ ${c.text}
         else el2.addEventListener("loadedmetadata", go, { once: true });
       });
     }
+    function slowSeek(clip, time) {
+      exportFrames.delete(clip.id);
+      const p = videoFor(clip);
+      if (!p) return Promise.resolve();
+      p.el.pause();
+      const dur = isFinite(p.el.duration) ? p.el.duration : Infinity;
+      return seekExact(p.el, Math.max(0, Math.min(time, dur - 1e-3)));
+    }
     async function prepare(t) {
       curT = t;
       const jobs2 = [];
       for (const { clip, time } of neededAt(t)) {
         if (clip.type === "video") {
-          const p = videoFor(clip);
-          if (!p) continue;
-          p.el.pause();
-          const dur = isFinite(p.el.duration) ? p.el.duration : Infinity;
-          jobs2.push(seekExact(p.el, Math.max(0, Math.min(time, dur - 1e-3))));
+          if (exportMode && !clip.reverse) {
+            jobs2.push(readerFor(clip).then(async (r) => {
+              if (!r) return slowSeek(clip, time);
+              try {
+                exportFrames.set(clip.id, await r.frameAt(Math.max(0, time)));
+              } catch (e) {
+                console.warn("[export] fast decode failed on", clip.name, "- seeking instead", e);
+                readers.set(clip.id, Promise.resolve(null));
+                exportFrames.delete(clip.id);
+                return slowSeek(clip, time);
+              }
+            }));
+            continue;
+          }
+          jobs2.push(slowSeek(clip, time));
         } else if (clip.type === "image") {
           const rt = mediaRuntime2.get(clip.mediaId);
           imageFor(clip);
@@ -15955,6 +16220,7 @@ ${c.text}
       sync,
       prepare,
       version,
+      setExportMode,
       pauseAll() {
         for (const p of pool.values()) p.el.pause();
       },
