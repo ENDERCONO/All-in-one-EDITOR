@@ -18379,6 +18379,26 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
           const x = p.clips.find((y) => y.id === c.id);
           x.transform.flipH = !x.transform.flipH;
         }) },
+        // Zoom in and centre on the clicked spot: crops the clip around the point (undoable)
+        ...[2, 4].map((z) => ({ label: `Zoom ${z}\xD7 on this spot`, disabled: !vis, run: () => {
+          const r = $("#previewStage").getBoundingClientRect();
+          const fx = clamp((e.clientX - r.left) / r.width, 0, 1), fy = clamp((e.clientY - r.top) / r.height, 0, 1);
+          const v = 1 / z;
+          const place = (f) => {
+            const l = clamp(f - v / 2, 0, 1 - v);
+            return { a: l, b: 1 - v - l };
+          };
+          const h2 = place(fx), vv = place(fy);
+          store.transact("Zoom on spot", (p) => {
+            const x = p.clips.find((y) => y.id === c.id);
+            x.crop = { l: h2.a, r: h2.b, t: vv.a, b: vv.b };
+          });
+          toast2(`Zoomed ${z}\xD7 on the clicked spot \u2014 right-click > Reset zoom to undo`);
+        } })),
+        { label: "Reset zoom (crop)", disabled: !vis || !c?.crop || !(c.crop.l || c.crop.r || c.crop.t || c.crop.b), run: () => store.transact("Reset zoom", (p) => {
+          const x = p.clips.find((y) => y.id === c.id);
+          x.crop = { l: 0, r: 0, t: 0, b: 0 };
+        }) },
         { sep: true },
         { label: "Guides (thirds \xB7 safe zones)", kbd: "G", checked: !$("#guides").hidden, run: toggleGuides },
         { label: "Reset preview zoom", disabled: pv.z === 1 && !pv.x && !pv.y, run: () => {

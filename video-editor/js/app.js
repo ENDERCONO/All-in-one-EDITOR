@@ -698,6 +698,17 @@ async function boot() {
       { label: 'Fill frame (crop to cover)', disabled: !vis, run: () => { const n = autoFill(); toast(n ? 'Filled the frame' : 'Select a video or image clip'); } },
       { label: 'Reset transform', disabled: !vis, run: () => store.transact('Reset transform', p => { const x = p.clips.find(y => y.id === c.id); x.transform = { ...x.transform, x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, rotation: 0, flipH: false, flipV: false }; }) },
       { label: 'Flip horizontal', disabled: !vis, run: () => store.transact('Flip', p => { const x = p.clips.find(y => y.id === c.id); x.transform.flipH = !x.transform.flipH; }) },
+      // Zoom in and centre on the clicked spot: crops the clip around the point (undoable)
+      ...[2, 4].map(z => ({ label: `Zoom ${z}× on this spot`, disabled: !vis, run: () => {
+        const r = $('#previewStage').getBoundingClientRect();
+        const fx = clamp((e.clientX - r.left) / r.width, 0, 1), fy = clamp((e.clientY - r.top) / r.height, 0, 1);
+        const v = 1 / z;
+        const place = f => { const l = clamp(f - v / 2, 0, 1 - v); return { a: l, b: 1 - v - l }; };
+        const h = place(fx), vv = place(fy);
+        store.transact('Zoom on spot', p => { const x = p.clips.find(y => y.id === c.id); x.crop = { l: h.a, r: h.b, t: vv.a, b: vv.b }; });
+        toast(`Zoomed ${z}× on the clicked spot — right-click > Reset zoom to undo`);
+      } })),
+      { label: 'Reset zoom (crop)', disabled: !vis || !c?.crop || !(c.crop.l || c.crop.r || c.crop.t || c.crop.b), run: () => store.transact('Reset zoom', p => { const x = p.clips.find(y => y.id === c.id); x.crop = { l: 0, r: 0, t: 0, b: 0 }; }) },
       { sep: true },
       { label: 'Guides (thirds · safe zones)', kbd: 'G', checked: !$('#guides').hidden, run: toggleGuides },
       { label: 'Reset preview zoom', disabled: pv.z === 1 && !pv.x && !pv.y, run: () => { pv = { z: 1, x: 0, y: 0 }; applyPv(); } },

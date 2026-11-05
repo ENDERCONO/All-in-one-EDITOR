@@ -59,7 +59,8 @@ await step('split, undo, redo', async () => {
 await step('play 1.5s', async () => {
   await page.evaluate(() => { window.__ve.store.select([]); window.__ve.playback.seek(1); });
   await page.keyboard.press('Space');
-  await page.waitForTimeout(1500);
+  // wait for the playhead to move (headless timing varies), up to 6 s
+  await page.waitForFunction(() => window.__ve.store.playhead > 1.05, null, { timeout: 6000 }).catch(() => {});
   await page.keyboard.press('Space');
   const t = await page.evaluate(() => window.__ve.store.playhead);
   if (!(t > 1.05)) throw new Error('playhead did not advance: ' + t);
