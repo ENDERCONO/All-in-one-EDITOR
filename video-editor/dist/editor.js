@@ -14818,6 +14818,7 @@ ${c.text}
       if (!sel.length) return false;
       const t0 = Math.min(...sel.map((c) => c.start));
       store.clipboard = sel.map((c) => ({ ...deep2(c), _off: c.start - t0 }));
+      store.clipboardKind = "clip";
       return true;
     },
     cut() {
@@ -14935,6 +14936,7 @@ ${c.text}
       const tr = c && c[ref.side === "out" ? "transitionOut" : "transitionIn"];
       if (!tr) return false;
       store.transitionClipboard = { ...tr };
+      store.clipboardKind = "transition";
       return true;
     },
     // Paste onto the selected clips' start (a cut, if a clip ends there), or onto the selected transition's slot
@@ -17533,7 +17535,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         ops.cut();
       },
       paste: () => {
-        if (store.transitionClipboard && (store.selection.transition || !store.clipboard?.length && store.selectedClips().length)) {
+        if (store.transitionClipboard && (store.clipboardKind === "transition" || store.selection.transition) && (store.selection.transition || store.selectedClips().length)) {
           if (ops.pasteTransition()) return;
         }
         ops.paste(store.playhead);

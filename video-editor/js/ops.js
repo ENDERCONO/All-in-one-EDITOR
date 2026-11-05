@@ -169,7 +169,7 @@ export const ops = {
   copy() {
     const sel = store.selectedClips(); if (!sel.length) return false;
     const t0 = Math.min(...sel.map(c => c.start));
-    store.clipboard = sel.map(c => ({ ...deep(c), _off: c.start - t0 }));
+    store.clipboard = sel.map(c => ({ ...deep(c), _off: c.start - t0 })); store.clipboardKind = 'clip';
     return true;
   },
   cut() { if (ops.copy()) ops.deleteSelected(); },
@@ -274,7 +274,7 @@ export const ops = {
   },
   copyTransition(ref = store.selection.transition) {
     const c = ref && store.getClip(ref.clipId); const tr = c && c[ref.side === 'out' ? 'transitionOut' : 'transitionIn'];
-    if (!tr) return false; store.transitionClipboard = { ...tr }; return true;
+    if (!tr) return false; store.transitionClipboard = { ...tr }; store.clipboardKind = 'transition'; return true;
   },
   // Paste onto the selected clips' start (a cut, if a clip ends there), or onto the selected transition's slot
   pasteTransition() {

@@ -995,9 +995,11 @@ const YT_CLIENT_FALLBACKS = [
 // On your own PC the server can use the YouTube login already in your browser,
 // which YouTube's "not a bot" check accepts. Not available on hosted servers
 // (Render etc.), which have no browser to read from.
-const LOCAL_COOKIE_HINT = '[On this PC: close Opera/Chrome/Edge completely and retry, or set YTDLP_BROWSER=firefox (Firefox reads its cookies while open).]';
-const LOCAL_BROWSERS = process.env.YTDLP_BROWSER ? [process.env.YTDLP_BROWSER] : ['opera', 'chrome', 'edge', 'firefox', 'brave'];
-const canUseBrowserCookies = () => !process.env.RENDER && !process.env.YTDLP_COOKIES_TEXT && !process.env.YTDLP_COOKIES_B64;
+const LOCAL_COOKIE_HINT = '[On this PC: sign in to YouTube in your browser, then upload cookies.txt in Import from URL — or set YTDLP_BROWSER=opera (or chrome/edge/firefox) to let this PC read the login. Close Chromium browsers first.]';
+// Opt-in only: the server reads your browser's YouTube login just when you set
+// YTDLP_BROWSER (opera, chrome, edge, firefox or brave). Off by default.
+const LOCAL_BROWSERS = process.env.YTDLP_BROWSER ? [process.env.YTDLP_BROWSER] : [];
+const canUseBrowserCookies = () => LOCAL_BROWSERS.length > 0 && !process.env.RENDER && !process.env.YTDLP_COOKIES_TEXT && !process.env.YTDLP_COOKIES_B64;
 const isYouTube = u => /(youtube\.com|youtu\.be|youtube-nocookie\.com)\//i.test(String(u));
 
 function ytdlpOnce(job, o, withCover, extraArgs = []) {

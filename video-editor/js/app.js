@@ -244,7 +244,7 @@ async function boot() {
     import: () => $('#importInput').click(), open: () => $('#openInput').click(), newProject: () => newProj(),
     copy: () => { if (store.selection.transition) { if (ops.copyTransition()) toast('Transition copied — select clips or a transition and paste'); return; } ops.copy(); },
     cut: () => { if (store.selection.transition) { ops.copyTransition(); ops.deleteSelectedTransition(); return; } ops.cut(); },
-    paste: () => { if (store.transitionClipboard && (store.selection.transition || (!store.clipboard?.length && store.selectedClips().length))) { if (ops.pasteTransition()) return; } ops.paste(store.playhead); },
+    paste: () => { if (store.transitionClipboard && (store.clipboardKind === 'transition' || store.selection.transition) && (store.selection.transition || store.selectedClips().length)) { if (ops.pasteTransition()) return; } ops.paste(store.playhead); },
     duplicate: () => ops.duplicate(),
     selectAll: () => ops.selectAll(), trimStart: () => ops.trimStartTo(store.playhead), trimEnd: () => ops.trimEndTo(store.playhead),
     group: () => ops.group(), ungroup: () => ops.ungroup(), snapshot, fullscreen: toggleFullscreen,
