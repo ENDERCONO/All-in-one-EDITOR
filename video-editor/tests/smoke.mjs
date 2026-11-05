@@ -100,6 +100,23 @@ await step('captions go on the top title track', async () => {
   });
   if (!r.ok || !r.back) throw new Error('caption track placement: ' + JSON.stringify(r));
 });
+await step('turned-down clip + bitcrusher stays audible', async () => {
+  // regression: volume used to be applied before the effects, so a quiet clip through a low-bit
+  // crusher rounded to total silence until the effects were reset
+  const r = await page.evaluate(async () => {
+    const { store, audio } = window.__ve; const a = store.project.clips.find(c => c.type === 'audio');
+    if (!a) return { skip: true };
+    const keep = JSON.parse(JSON.stringify(a.audio));
+    store.transact('crush test', p => { for (const c of p.clips) if (c.id !== a.id && c.audio) c.audio.mute = true; const x = p.clips.find(c => c.id === a.id); x.audio.volume = -20; x.audio.fx = { ...x.audio.fx, crush: 1, crushBits: 2.2, crushRate: 7000 }; });
+    const buf = await audio.renderMix({ start: a.start, end: a.start + Math.min(1, a.duration) });
+    const d = buf.getChannelData(0); let e = 0; for (let i = 0; i < d.length; i++) e += d[i] * d[i];
+    store.undo();
+    return { rms: Math.sqrt(e / d.length), restored: JSON.stringify(store.getClip(a.id).audio) === JSON.stringify(keep) && store.project.clips.every(c => !c.audio?.mute) };
+  });
+  if (r.skip) return;
+  if (!(r.rms > 1e-3)) throw new Error('silent after crush + low volume: rms ' + r.rms);
+  if (!r.restored) throw new Error('undo did not restore the audio settings');
+});
 await step('material on a clip', async () => {
   await page.evaluate(() => {
     const { store, materials } = window.__ve;

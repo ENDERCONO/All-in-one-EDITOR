@@ -1322,7 +1322,23 @@ self.onmessage = e => { const { id, channels, sr, semis } = e.data;
     irCache.set(key, b);
     return b;
   }
-  function buildClipFx(c, a, input, when, local, wlReady) {
+  function bufferPeak(buf) {
+    if (!buf) return 1;
+    let p = peakCache.get(buf);
+    if (p != null) return p;
+    p = 0;
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+      const d = buf.getChannelData(ch), step = Math.max(1, Math.floor(d.length / 2e5));
+      for (let i = 0; i < d.length; i += step) {
+        const v = Math.abs(d[i]);
+        if (v > p) p = v;
+      }
+    }
+    p = p > 1e-4 ? Math.min(1, p) : 1;
+    peakCache.set(buf, p);
+    return p;
+  }
+  function buildClipFx(c, a, input, when, local, wlReady, { peak = 1 } = {}) {
     const nodes = [], oscs = [];
     const add = (n) => {
       nodes.push(n);
@@ -1465,11 +1481,15 @@ self.onmessage = e => { const { id, channels, sr, semis } = e.data;
       }
       const rate = Math.max(500, Math.min(c.sampleRate, num(fx.crushRate, 11025)));
       filt("lowpass", convFreq(rate), { Q: 0.707 });
+      const pk = Math.max(0.05, Math.min(1, num(peak, 1)));
+      const up = gain(1 / pk), down = gain(pk);
       const cr = add(new AudioWorkletNode(c, "crusher", { outputChannelCount: [2] }));
       cr.parameters.get("bits").value = Math.max(1, Math.min(16, num(fx.crushBits, 8)));
       cr.parameters.get("sampleRate").value = rate;
-      node.connect(cr);
-      node = cr;
+      node.connect(up);
+      up.connect(cr);
+      cr.connect(down);
+      node = down;
       filt("lowpass", convFreq(rate), { Q: 0.707 });
       const wet = gain(crush);
       node.connect(wet);
@@ -1577,6 +1597,14 @@ self.onmessage = e => { const { id, channels, sr, semis } = e.data;
       if (playing && ctx.state !== "running" && ctx.state !== "closed") ctx.resume().catch(() => {
       });
     };
+    const wake = () => {
+      if (ctx.state !== "running" && ctx.state !== "closed") ctx.resume().then(() => {
+        if (playing) refresh();
+      }).catch(() => {
+      });
+    };
+    window.addEventListener("pointerdown", wake, true);
+    window.addEventListener("keydown", wake, true);
     function computePeaks(buf) {
       const bins = Math.max(1, Math.ceil(buf.duration * PEAK_RATE));
       const min = new Float32Array(bins), max = new Float32Array(bins);
@@ -1757,10 +1785,11 @@ self.onmessage = e => { const { id, channels, sr, semis } = e.data;
       const node = c.createBufferSource();
       node.buffer = buf;
       node.playbackRate.value = Math.max(0.0625, Math.min(16, clip.speed));
+      const pre = c.createGain();
+      pre.channelCount = 2;
+      pre.channelCountMode = "explicit";
+      pre.channelInterpretation = "speakers";
       const g = c.createGain();
-      g.channelCount = 2;
-      g.channelCountMode = "explicit";
-      g.channelInterpretation = "speakers";
       const a = clip.audio || {};
       const fin2 = (v, d = 0) => Number.isFinite(+v) ? +v : d;
       const volAnim = hasAnim(clip, "audio.volume"), panAnim = hasAnim(clip, "audio.pan");
@@ -1774,19 +1803,27 @@ self.onmessage = e => { const { id, channels, sr, semis } = e.data;
       for (const p of pts) g.gain.linearRampToValueAtTime(env(p), toCtx(p));
       const pan = c.createStereoPanner();
       pan.pan.value = Math.max(-1, Math.min(1, fin2(a.pan)));
-      node.connect(g);
+      node.connect(pre);
       const automate = (param, path, map) => {
         const ks = keysOf(clip, path), tA = clip.start + ks[0].t, tB = clip.start + ks[ks.length - 1].t, step = 1 / 30;
         const ev = (tt) => map(evalProp(clip, path, tt - clip.start));
         param.setValueAtTime(ev(s), when);
         for (let tt = Math.max(s, tA - step) + step; tt < ce && tt <= tB + step; tt += step) param.linearRampToValueAtTime(ev(tt), toCtx(tt));
       };
-      let into = g;
       const extra = [];
+      let fx;
+      try {
+        fx = buildClipFx(c, a, pre, when, s - cs, wlReady, { peak: bufferPeak(buf) });
+      } catch (e) {
+        console.warn("[audio] effects failed on", clip.name, "- playing it without effects", e);
+        fx = { out: pre, nodes: [], oscs: [], tail: 0.2 };
+      }
+      fx.out.connect(g);
+      let post = g;
       if (volAnim) {
         const vg = c.createGain();
         g.connect(vg);
-        into = vg;
+        post = vg;
         extra.push(vg);
         try {
           automate(vg.gain, "audio.volume", toGain);
@@ -1794,14 +1831,7 @@ self.onmessage = e => { const { id, channels, sr, semis } = e.data;
           console.warn("[audio] volume keys", e);
         }
       }
-      let fx;
-      try {
-        fx = buildClipFx(c, a, into, when, s - cs, wlReady);
-      } catch (e) {
-        console.warn("[audio] effects failed on", clip.name, "- playing it without effects", e);
-        fx = { out: into, nodes: [], oscs: [], tail: 0.2 };
-      }
-      fx.out.connect(pan);
+      post.connect(pan);
       pan.connect(dest);
       if (panAnim) {
         try {
@@ -1811,7 +1841,7 @@ self.onmessage = e => { const { id, channels, sr, semis } = e.data;
         }
       }
       node.start(when, offset, dur);
-      return { src: node, nodes: [g, pan, ...extra, ...fx.nodes], oscs: fx.oscs, tail: fx.tail, end: when + (ce - s) };
+      return { src: node, nodes: [pre, g, pan, ...extra, ...fx.nodes], oscs: fx.oscs, tail: fx.tail, end: when + (ce - s) };
     }
     function overlapping(from, to) {
       return store2.audibleClips().filter((c) => {
@@ -1963,7 +1993,7 @@ self.onmessage = e => { const { id, channels, sr, semis } = e.data;
       _pitchShift: (channels, sr, semis) => shiftChannels(channels, sr, semis)
     };
   }
-  var PEAK_RATE, LEAD, pitchWorker, pitchWorkerFailed, jobSeq, jobs, WORKLET_SRC, workletStates, workletUrl, workletWarned, VOICE_RECIPES, VOICE_FILTERS, reverbSizeFor, convFreq, irCache, P2, AUDIO_PRESETS;
+  var PEAK_RATE, LEAD, pitchWorker, pitchWorkerFailed, jobSeq, jobs, WORKLET_SRC, workletStates, workletUrl, workletWarned, VOICE_RECIPES, VOICE_FILTERS, reverbSizeFor, convFreq, irCache, P2, AUDIO_PRESETS, peakCache;
   var init_audio = __esm({
     "js/audio.js"() {
       init_state();
@@ -2217,6 +2247,7 @@ registerProcessor('voice-pitch', VoicePitch);
           apply: () => ({ voice: "none", fx: P2({ echo: 0.45, echoTime: 0.09, echoFeedback: 0.12, echoDamp: 8e3 }) })
         }
       ];
+      peakCache = /* @__PURE__ */ new WeakMap();
     }
   });
 

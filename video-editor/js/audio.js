@@ -442,7 +442,20 @@ export const AUDIO_PRESETS = [
 // -> highpass -> bass -> echo -> reverb -> 8D orbit -> returned `out`. Neutral stages are
 // skipped. `local` is the clip-local time at `when` (keeps LFO phases identical between
 // live playback from any point and the export). Same code for AudioContext + Offline.
-function buildClipFx(c, a, input, when, local, wlReady) {
+// Peak level of a buffer (sampled), cached: the bitcrusher quantizes relative to it
+const peakCache = new WeakMap();
+function bufferPeak(buf) {
+  if (!buf) return 1;
+  let p = peakCache.get(buf);
+  if (p != null) return p;
+  p = 0;
+  for (let ch = 0; ch < buf.numberOfChannels; ch++) { const d = buf.getChannelData(ch), step = Math.max(1, Math.floor(d.length / 200000)); for (let i = 0; i < d.length; i += step) { const v = Math.abs(d[i]); if (v > p) p = v; } }
+  p = p > 1e-4 ? Math.min(1, p) : 1;
+  peakCache.set(buf, p);
+  return p;
+}
+
+function buildClipFx(c, a, input, when, local, wlReady, { peak = 1 } = {}) {
   const nodes = [], oscs = [];
   const add = n => { nodes.push(n); return n; };
   const gain = v => { const g = add(c.createGain()); g.gain.value = v; return g; };
@@ -546,10 +559,13 @@ function buildClipFx(c, a, input, when, local, wlReady) {
     if (crush < 1) { const dry = gain(1 - crush); cin.connect(dry); dry.connect(cout); }
     const rate = Math.max(500, Math.min(c.sampleRate, num(fx.crushRate, 11025)));
     filt('lowpass', convFreq(rate), { Q: 0.707 });
+    // quantize relative to the clip's own peak: quiet recordings at low bit depths used to round to silence
+    const pk = Math.max(0.05, Math.min(1, num(peak, 1)));
+    const up = gain(1 / pk), down = gain(pk);
     const cr = add(new AudioWorkletNode(c, 'crusher', { outputChannelCount: [2] }));
     cr.parameters.get('bits').value = Math.max(1, Math.min(16, num(fx.crushBits, 8)));
     cr.parameters.get('sampleRate').value = rate;
-    node.connect(cr); node = cr;
+    node.connect(up); up.connect(cr); cr.connect(down); node = down;
     filt('lowpass', convFreq(rate), { Q: 0.707 });
     const wet = gain(crush);
     node.connect(wet); wet.connect(cout);
@@ -650,6 +666,11 @@ export function createAudioEngine({ store, mediaRuntime }) {
   store.on('project', applyMaster);
   // the browser can suspend the context (tab switch, device change); wake it while playing
   ctx.onstatechange = () => { if (playing && ctx.state !== 'running' && ctx.state !== 'closed') ctx.resume().catch(() => {}); };
+  // A suspended / interrupted context (output device change, Bluetooth, OS audio hiccup) can only be
+  // resumed from a user gesture in some browsers: any click or key wakes it again.
+  const wake = () => { if (ctx.state !== 'running' && ctx.state !== 'closed') ctx.resume().then(() => { if (playing) refresh(); }).catch(() => {}); };
+  window.addEventListener('pointerdown', wake, true);
+  window.addEventListener('keydown', wake, true);
 
   // ---- decoding + peaks ----
   function computePeaks(buf) {
@@ -807,8 +828,12 @@ export function createAudioEngine({ store, mediaRuntime }) {
     const node = c.createBufferSource();
     node.buffer = buf;
     node.playbackRate.value = Math.max(0.0625, Math.min(16, clip.speed));
+    // Chain: source -> pre (mono -> L=R) -> effects -> g (volume + fades, POST-fader) -> [keyed volume] -> pan.
+    // Effects must see the clip at full level: with the volume first, a turned-down clip went
+    // into the bitcrusher below its smallest step and came out as total silence.
+    const pre = c.createGain();
+    pre.channelCount = 2; pre.channelCountMode = 'explicit'; pre.channelInterpretation = 'speakers';
     const g = c.createGain();
-    g.channelCount = 2; g.channelCountMode = 'explicit'; g.channelInterpretation = 'speakers'; // mono -> L=R
     const a = clip.audio || {};
     const fin = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
     const volAnim = hasAnim(clip, 'audio.volume'), panAnim = hasAnim(clip, 'audio.pan');
@@ -822,7 +847,7 @@ export function createAudioEngine({ store, mediaRuntime }) {
     for (const p of pts) g.gain.linearRampToValueAtTime(env(p), toCtx(p));
     const pan = c.createStereoPanner();
     pan.pan.value = Math.max(-1, Math.min(1, fin(a.pan)));
-    node.connect(g);
+    node.connect(pre);
     // keyframed volume / balance → parameter automation, sampled every 1/30 s across the keys
     const automate = (param, path, map) => {
       const ks = keysOf(clip, path), tA = clip.start + ks[0].t, tB = clip.start + ks[ks.length - 1].t, step = 1 / 30;
@@ -830,19 +855,20 @@ export function createAudioEngine({ store, mediaRuntime }) {
       param.setValueAtTime(ev(s), when);
       for (let tt = Math.max(s, tA - step) + step; tt < ce && tt <= tB + step; tt += step) param.linearRampToValueAtTime(ev(tt), toCtx(tt));
     };
-    let into = g;
     const extra = [];
-    if (volAnim) { const vg = c.createGain(); g.connect(vg); into = vg; extra.push(vg); try { automate(vg.gain, 'audio.volume', toGain); } catch (e) { console.warn('[audio] volume keys', e); } }
     let fx;
-    try { fx = buildClipFx(c, a, into, when, s - cs, wlReady); }
+    try { fx = buildClipFx(c, a, pre, when, s - cs, wlReady, { peak: bufferPeak(buf) }); }
     catch (e) {
       console.warn('[audio] effects failed on', clip.name, '- playing it without effects', e);
-      fx = { out: into, nodes: [], oscs: [], tail: 0.2 };
+      fx = { out: pre, nodes: [], oscs: [], tail: 0.2 };
     }
-    fx.out.connect(pan); pan.connect(dest);
+    fx.out.connect(g);
+    let post = g;
+    if (volAnim) { const vg = c.createGain(); g.connect(vg); post = vg; extra.push(vg); try { automate(vg.gain, 'audio.volume', toGain); } catch (e) { console.warn('[audio] volume keys', e); } }
+    post.connect(pan); pan.connect(dest);
     if (panAnim) { try { automate(pan.pan, 'audio.pan', v => Math.max(-1, Math.min(1, fin(v)))); } catch (e) { console.warn('[audio] balance keys', e); } }
     node.start(when, offset, dur);
-    return { src: node, nodes: [g, pan, ...extra, ...fx.nodes], oscs: fx.oscs, tail: fx.tail, end: when + (ce - s) };
+    return { src: node, nodes: [pre, g, pan, ...extra, ...fx.nodes], oscs: fx.oscs, tail: fx.tail, end: when + (ce - s) };
   }
 
   function overlapping(from, to) {
