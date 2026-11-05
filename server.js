@@ -1147,6 +1147,29 @@ function runCapture(cmd, args, timeoutMs) {
   });
 }
 
+// GIPHY search proxy for the video editor's Stickers tab. The API key stays on the server
+// (env var GIPHY_API_KEY, e.g. in Render's Environment); browsers only get results + media URLs.
+const giphyCache = new Map(); // url -> { at, body }
+app.get('/api/giphy/:kind', async (req, res) => {
+  const key = process.env.GIPHY_API_KEY;
+  if (!key) return res.status(503).json({ error: 'GIPHY is not set up on this server (GIPHY_API_KEY)', code: 'nokey' });
+  const kind = req.params.kind === 'stickers' ? 'stickers' : 'gifs';
+  const q = String(req.query.q || '').trim().slice(0, 100);
+  const limit = Math.max(1, Math.min(50, parseInt(req.query.limit, 10) || 30));
+  const url = `https://api.giphy.com/v1/${kind}/${q ? 'search' : 'trending'}?api_key=${encodeURIComponent(key)}&limit=${limit}&rating=pg-13${q ? '&q=' + encodeURIComponent(q) : ''}`;
+  const hit = giphyCache.get(url);
+  if (hit && Date.now() - hit.at < 5 * 60 * 1000) return res.json(hit.body);
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!r.ok) return res.status(r.status === 401 || r.status === 403 ? 502 : r.status).json({ error: 'GIPHY error ' + r.status, code: r.status === 401 || r.status === 403 ? 'badkey' : 'giphy' });
+    const j = await r.json();
+    const body = { data: (j.data || []).map(g => ({ id: g.id, title: g.title, images: { fixed_width_small: g.images?.fixed_width_small, fixed_width: g.images?.fixed_width, original: g.images?.original, downsized: g.images?.downsized } })) };
+    giphyCache.set(url, { at: Date.now(), body });
+    if (giphyCache.size > 300) giphyCache.delete(giphyCache.keys().next().value);
+    res.json(body);
+  } catch (e) { res.status(502).json({ error: 'Could not reach GIPHY: ' + e.message, code: 'giphy' }); }
+});
+
 app.get('/api/dl/ping', (req, res) => {
   res.json({
     ok: true, setup: dlSetup.phase, ytdlp: fs.existsSync(YTDLP_PATH), ffmpeg: !!ffmpegPath(),
@@ -1155,6 +1178,7 @@ app.get('/api/dl/ping', (req, res) => {
     local: !process.env.RENDER,
     keepAwake: !!(process.env.RENDER && process.env.RENDER_EXTERNAL_URL && process.env.KEEP_AWAKE !== '0'),
     keepAwakeLast,
+    giphy: !!process.env.GIPHY_API_KEY,
   });
 });
 

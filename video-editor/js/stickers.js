@@ -69,14 +69,29 @@ export const giphyKey = () => { try { return localStorage.getItem(KEY) || ''; } 
 export const setGiphyKey = k => { try { k ? localStorage.setItem(KEY, k.trim()) : localStorage.removeItem(KEY); } catch (e) { /* private mode */ } };
 
 // kind: 'gifs' | 'stickers'. Empty query = trending. Returns [{ id, title, thumb, full, w, h }]
+// With a key saved in this browser GIPHY is called directly; otherwise through the site's server
+// (/api/giphy, which holds the key), so it works on any PC without setup.
 export async function giphySearch(kind, q, { limit = 30 } = {}) {
-  const key = giphyKey(); if (!key) throw Object.assign(new Error('No GIPHY key'), { code: 'nokey' });
-  const base = `https://api.giphy.com/v1/${kind === 'stickers' ? 'stickers' : 'gifs'}/${q ? 'search' : 'trending'}`;
-  const url = `${base}?api_key=${encodeURIComponent(key)}&limit=${limit}&rating=pg-13${q ? '&q=' + encodeURIComponent(q) : ''}`;
-  const r = await fetch(url);
-  if (r.status === 401 || r.status === 403) throw Object.assign(new Error('GIPHY rejected the API key'), { code: 'badkey' });
-  if (!r.ok) throw new Error('GIPHY error ' + r.status);
-  const j = await r.json();
+  kind = kind === 'stickers' ? 'stickers' : 'gifs';
+  const key = giphyKey();
+  let j;
+  if (key) {
+    const url = `https://api.giphy.com/v1/${kind}/${q ? 'search' : 'trending'}?api_key=${encodeURIComponent(key)}&limit=${limit}&rating=pg-13${q ? '&q=' + encodeURIComponent(q) : ''}`;
+    const r = await fetch(url);
+    if (r.status === 401 || r.status === 403) throw Object.assign(new Error('GIPHY rejected the API key'), { code: 'badkey' });
+    if (!r.ok) throw new Error('GIPHY error ' + r.status);
+    j = await r.json();
+  } else {
+    const { apiBase, DEFAULT_ONLINE_API } = await import('./integrations.js');
+    const found = await apiBase();
+    const ask = async base => { const r = await fetch(`${base}/api/giphy/${kind}?limit=${limit}${q ? '&q=' + encodeURIComponent(q) : ''}`); return { r, body: await r.json().catch(() => ({})) }; };
+    let res = found ? await ask(found.base).catch(() => null) : null;
+    // this PC's server usually has no GIPHY key (or is older): use the online server then
+    if ((!res || !res.r.ok) && found?.where !== 'the online server') res = await ask(DEFAULT_ONLINE_API).catch(() => res);
+    if (!res) throw Object.assign(new Error("Can't reach the site's server for GIPHY"), { code: 'noserver' });
+    if (!res.r.ok) throw Object.assign(new Error(res.body.error || 'GIPHY error ' + res.r.status), { code: res.body.code === 'nokey' ? 'nokey' : res.body.code || 'giphy' });
+    j = res.body;
+  }
   return (j.data || []).map(g => {
     const im = g.images || {};
     const thumb = im.fixed_width_small?.webp || im.fixed_width_small?.url || im.fixed_width?.webp || im.fixed_width?.url;

@@ -2254,6 +2254,7 @@ registerProcessor('voice-pitch', VoicePitch);
   // js/integrations.js
   var integrations_exports = {};
   __export(integrations_exports, {
+    DEFAULT_ONLINE_API: () => DEFAULT_ONLINE_API,
     apiBase: () => apiBase,
     convertForImport: () => convertForImport,
     copyFileNames: () => copyFileNames,
@@ -17958,14 +17959,28 @@ ${c.text}
     }
   };
   async function giphySearch(kind, q, { limit = 30 } = {}) {
+    kind = kind === "stickers" ? "stickers" : "gifs";
     const key = giphyKey();
-    if (!key) throw Object.assign(new Error("No GIPHY key"), { code: "nokey" });
-    const base = `https://api.giphy.com/v1/${kind === "stickers" ? "stickers" : "gifs"}/${q ? "search" : "trending"}`;
-    const url2 = `${base}?api_key=${encodeURIComponent(key)}&limit=${limit}&rating=pg-13${q ? "&q=" + encodeURIComponent(q) : ""}`;
-    const r = await fetch(url2);
-    if (r.status === 401 || r.status === 403) throw Object.assign(new Error("GIPHY rejected the API key"), { code: "badkey" });
-    if (!r.ok) throw new Error("GIPHY error " + r.status);
-    const j = await r.json();
+    let j;
+    if (key) {
+      const url2 = `https://api.giphy.com/v1/${kind}/${q ? "search" : "trending"}?api_key=${encodeURIComponent(key)}&limit=${limit}&rating=pg-13${q ? "&q=" + encodeURIComponent(q) : ""}`;
+      const r = await fetch(url2);
+      if (r.status === 401 || r.status === 403) throw Object.assign(new Error("GIPHY rejected the API key"), { code: "badkey" });
+      if (!r.ok) throw new Error("GIPHY error " + r.status);
+      j = await r.json();
+    } else {
+      const { apiBase: apiBase2, DEFAULT_ONLINE_API: DEFAULT_ONLINE_API2 } = await Promise.resolve().then(() => (init_integrations(), integrations_exports));
+      const found = await apiBase2();
+      const ask = async (base) => {
+        const r = await fetch(`${base}/api/giphy/${kind}?limit=${limit}${q ? "&q=" + encodeURIComponent(q) : ""}`);
+        return { r, body: await r.json().catch(() => ({})) };
+      };
+      let res = found ? await ask(found.base).catch(() => null) : null;
+      if ((!res || !res.r.ok) && found?.where !== "the online server") res = await ask(DEFAULT_ONLINE_API2).catch(() => res);
+      if (!res) throw Object.assign(new Error("Can't reach the site's server for GIPHY"), { code: "noserver" });
+      if (!res.r.ok) throw Object.assign(new Error(res.body.error || "GIPHY error " + res.r.status), { code: res.body.code === "nokey" ? "nokey" : res.body.code || "giphy" });
+      j = res.body;
+    }
     return (j.data || []).map((g) => {
       const im = g.images || {};
       const thumb = im.fixed_width_small?.webp || im.fixed_width_small?.url || im.fixed_width?.webp || im.fixed_width?.url;
@@ -18396,17 +18411,12 @@ ${c.text}
       }
     });
     function askGiphyKey() {
-      const k = prompt("Paste your free GIPHY API key.\n\nGet one at developers.giphy.com \u2192 Create an App \u2192 API. It is saved only in this browser.", giphyKey());
+      const k = prompt("Your own GIPHY API key (optional).\n\nNormally GIPHY goes through the site's server. Paste your own key to call GIPHY directly from this browser (developers.giphy.com \u2192 Create an App \u2192 API), or clear the box to go back to the server. Saved only in this browser.", giphyKey());
       if (k == null) return;
       setGiphyKey(k);
       renderGrid();
     }
     function renderGiphy(kind, q) {
-      if (!giphyKey()) {
-        grid.insertAdjacentHTML("beforeend", `<div class="lib-empty giphy-setup">Search millions of GIFs and stickers from <b>GIPHY</b>.<br><br>It needs a free GIPHY API key (one time):<br>1. Go to <b>developers.giphy.com</b> and sign in<br>2. <b>Create an App</b> \u2192 choose <b>API</b><br>3. Copy the key and paste it here<br><br><button class="btn primary" data-giphy-key>Add GIPHY key</button></div>`);
-        grid.querySelector("[data-giphy-key]").onclick = askGiphyKey;
-        return;
-      }
       const head = document.createElement("div");
       head.className = "lib-sub giphy-head";
       head.innerHTML = `<span>${q ? "GIPHY results for \u201C" + q.replace(/[<>&]/g, "") + "\u201D" : "Trending on GIPHY \xB7 type in Search to look for something"}</span><button class="btn" data-giphy-key title="Change or remove the GIPHY key">Key</button>`;
@@ -18446,7 +18456,10 @@ From GIPHY`,
           box2.insertAdjacentHTML("beforeend", '<div class="lib-sub giphy-credit">Powered by GIPHY</div>');
         } catch (e) {
           if (my !== giphyToken) return;
-          box2.innerHTML = `<div class="lib-empty">${e.code === "badkey" ? "GIPHY did not accept the key. Click <b>Key</b> to fix it." : "Could not reach GIPHY: " + String(e.message).replace(/[<>&]/g, "")}</div>`;
+          if (e.code === "nokey") {
+            box2.innerHTML = `<div class="lib-empty giphy-setup">GIPHY isn't set up on the site's server yet.<br><br>Either the site owner adds <b>GIPHY_API_KEY</b> to the server's settings, or you paste your own free key (developers.giphy.com \u2192 Create an App \u2192 API):<br><br><button class="btn primary" data-giphy-key2>Use my own GIPHY key</button></div>`;
+            box2.querySelector("[data-giphy-key2]").onclick = askGiphyKey;
+          } else box2.innerHTML = `<div class="lib-empty">${e.code === "badkey" ? "GIPHY did not accept the key. Click <b>Key</b> to fix it." : "Could not reach GIPHY: " + String(e.message).replace(/[<>&]/g, "")}</div>`;
         }
       }, q ? 350 : 0);
     }

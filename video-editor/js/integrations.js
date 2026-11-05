@@ -4,7 +4,7 @@
 // page's resolveApiBase() when embedded, else same origin / localhost:3000 /
 // the default online server.
 
-const DEFAULT_ONLINE_API = 'https://all-in-one-editor.onrender.com';
+export const DEFAULT_ONLINE_API = 'https://all-in-one-editor.onrender.com';
 async function ping(base, ms) {
   const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), ms);
   try { const r = await fetch(base + '/api/dl/ping', { signal: ctrl.signal, cache: 'no-store' }); const j = await r.json(); if (j?.ok) return base; }

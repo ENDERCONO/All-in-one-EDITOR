@@ -260,16 +260,11 @@ export function createLibrary({ store, ops, audio, materials }) {
     else if (kind === 'giphy') { const g = giphyCache.get(id); if (g) addStickerFile(() => giphyFile(g), { time, trackId, scale: g.sticker ? 0.4 : 0.6 }); }
   });
   function askGiphyKey() {
-    const k = prompt('Paste your free GIPHY API key.\n\nGet one at developers.giphy.com → Create an App → API. It is saved only in this browser.', giphyKey());
+    const k = prompt('Your own GIPHY API key (optional).\n\nNormally GIPHY goes through the site\'s server. Paste your own key to call GIPHY directly from this browser (developers.giphy.com → Create an App → API), or clear the box to go back to the server. Saved only in this browser.', giphyKey());
     if (k == null) return;
     setGiphyKey(k); renderGrid();
   }
   function renderGiphy(kind, q) {
-    if (!giphyKey()) {
-      grid.insertAdjacentHTML('beforeend', `<div class="lib-empty giphy-setup">Search millions of GIFs and stickers from <b>GIPHY</b>.<br><br>It needs a free GIPHY API key (one time):<br>1. Go to <b>developers.giphy.com</b> and sign in<br>2. <b>Create an App</b> → choose <b>API</b><br>3. Copy the key and paste it here<br><br><button class="btn primary" data-giphy-key>Add GIPHY key</button></div>`);
-      grid.querySelector('[data-giphy-key]').onclick = askGiphyKey;
-      return;
-    }
     const head = document.createElement('div'); head.className = 'lib-sub giphy-head';
     head.innerHTML = `<span>${q ? 'GIPHY results for “' + q.replace(/[<>&]/g, '') + '”' : 'Trending on GIPHY · type in Search to look for something'}</span><button class="btn" data-giphy-key title="Change or remove the GIPHY key">Key</button>`;
     head.querySelector('[data-giphy-key]').onclick = askGiphyKey;
@@ -296,7 +291,10 @@ export function createLibrary({ store, ops, audio, materials }) {
         box.insertAdjacentHTML('beforeend', '<div class="lib-sub giphy-credit">Powered by GIPHY</div>');
       } catch (e) {
         if (my !== giphyToken) return;
-        box.innerHTML = `<div class="lib-empty">${e.code === 'badkey' ? 'GIPHY did not accept the key. Click <b>Key</b> to fix it.' : 'Could not reach GIPHY: ' + String(e.message).replace(/[<>&]/g, '')}</div>`;
+        if (e.code === 'nokey') {
+          box.innerHTML = `<div class="lib-empty giphy-setup">GIPHY isn't set up on the site's server yet.<br><br>Either the site owner adds <b>GIPHY_API_KEY</b> to the server's settings, or you paste your own free key (developers.giphy.com → Create an App → API):<br><br><button class="btn primary" data-giphy-key2>Use my own GIPHY key</button></div>`;
+          box.querySelector('[data-giphy-key2]').onclick = askGiphyKey;
+        } else box.innerHTML = `<div class="lib-empty">${e.code === 'badkey' ? 'GIPHY did not accept the key. Click <b>Key</b> to fix it.' : 'Could not reach GIPHY: ' + String(e.message).replace(/[<>&]/g, '')}</div>`;
       }
     }, q ? 350 : 0);
   }
