@@ -322,6 +322,7 @@ export function createLibrary({ store, ops, audio, materials }) {
           onDbl: () => ops.insertMedia(m.id, { time: store.playhead }),
           onCtx: e => ctxMenu(e, [
             { label: 'Add to timeline at playhead', run: () => ops.insertMedia(m.id, { time: store.playhead }) },
+            ...(m.kind === 'image' ? [{ label: 'Remove background (AI)…', run: () => window.dispatchEvent(new CustomEvent('ve:removeBg', { detail: { mediaIds: [m.id] } })) }] : []),
             { label: 'Copy file name', run: () => import('./integrations.js').then(I => I.copyFileNames([m.name], toast)) },
             { label: 'Copy all file names', run: () => import('./integrations.js').then(I => I.copyFileNames(store.project.media.map(x => x.name), toast)) },
             { label: 'Rename', run: () => { const n = prompt('Name', m.name); if (n) store.transact('Rename media', p => { p.media.find(x => x.id === m.id).name = n; }); } },

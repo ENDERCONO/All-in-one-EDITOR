@@ -197,6 +197,7 @@ async function boot() {
   };
   const autoActions = {
     captions: () => openTool(lazyAI, 'openAutoCaptions'),
+    removeBg: (mediaIds) => { if (!mediaIds && !store.selectedClips().some(c => c.type === 'image')) return toast('Select an image clip (or right-click an image in the library)'); lazyAI().then(m => { playback.pause(); m.openRemoveBackground({ store, ops, audio, mediaRuntime, mediaIds }); }).catch(e => toast('Could not open: ' + e.message)); },
     silence: () => openTool(lazyAuto, 'openSilenceRemover'),
     scenes: () => { if (!store.selectedClips().some(c => c.type === 'video')) return toast('Select a video clip first'); openTool(lazyAuto, 'openSceneDetect'); },
     beats: () => openTool(lazyAuto, 'openBeatDetect'),
@@ -304,6 +305,7 @@ async function boot() {
   }));
   window.addEventListener('ve:importUrl', openImportUrl);
   window.addEventListener('ve:status', e => status(e.detail));
+  window.addEventListener('ve:removeBg', e => autoActions.removeBg(e.detail?.mediaIds));
 
   // Import without adding to the timeline; resolves with the new media ids (used by the material editor)
   window.addEventListener('ve:importMedia', async e => {
@@ -545,6 +547,7 @@ async function boot() {
     ],
     'AI & Auto': () => [
       { label: 'Auto Captions (local Whisper AI)…', kbd: 'Ctrl+Alt+T', run: autoActions.captions },
+      { label: 'Remove Background (AI, images)…', run: () => autoActions.removeBg() },
       { sep: true },
       { label: 'Silence Remover…', kbd: 'Ctrl+Alt+R', run: autoActions.silence },
       { label: 'Scene Detection (split at cuts)…', run: autoActions.scenes },
