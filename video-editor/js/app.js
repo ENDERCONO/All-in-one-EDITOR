@@ -188,6 +188,21 @@ async function boot() {
   store.on('zoom', z => { zoomSlider.value = zToS(z); });
   const zoomFit = () => { const w = ($('#timeline').clientWidth || 800) - 190; store.setZoom(clamp(w / Math.max(5, store.duration() * 1.08), 2, 2000)); };
 
+  // AI / auto-edit tools load on first use
+  const lazyAuto = () => import('./autoedit.js');
+  const lazyAI = () => import('./ai.js');
+  const openTool = async (load, fn, needSel) => {
+    try { const m = await load(); if (!m[fn]) throw new Error(fn + ' missing'); playback.pause(); return m[fn]({ store, ops, audio, mediaRuntime }); }
+    catch (e) { console.error(e); toast('Could not open that tool: ' + e.message); }
+  };
+  const autoActions = {
+    captions: () => openTool(lazyAI, 'openAutoCaptions'),
+    silence: () => openTool(lazyAuto, 'openSilenceRemover'),
+    scenes: () => { if (!store.selectedClips().some(c => c.type === 'video')) return toast('Select a video clip first'); openTool(lazyAuto, 'openSceneDetect'); },
+    beats: () => openTool(lazyAuto, 'openBeatDetect'),
+    reframe: async () => { const m = await lazyAuto(); const n = m.autoReframe({ store, ops }); toast(n ? `Reframed ${n} clip(s) to fill the frame` : 'Select video or image clips first'); },
+  };
+
   const actions = {
     undo: () => store.undo(), redo: () => store.redo(),
     delete: () => { if (!ops.deleteSelectedTransition()) ops.deleteSelected(); }, rippleDelete: () => { if (!ops.deleteSelectedTransition()) ops.deleteSelected({ ripple: true }); },
@@ -521,6 +536,15 @@ async function boot() {
       { sep: true }, { label: 'New Material (Node Editor)', kbd: 'Ctrl+Alt+M', run: actions.newMaterial },
       { sep: true }, { label: 'Snapshot (PNG)', kbd: 'Ctrl+Alt+S', run: actions.snapshot }, { label: 'Loop Playback', kbd: 'Ctrl+L', run: () => toggleLoop(), checked: !!store.loopRange }, { label: 'Blade Tool', kbd: 'C', run: actions.toolBlade, checked: store.tool === 'blade' }, { label: 'Selection Tool', kbd: 'V', run: actions.toolSelect, checked: store.tool === 'select' },
     ],
+    'AI & Auto': () => [
+      { label: 'Auto Captions (local Whisper AI)…', kbd: 'Ctrl+Alt+T', run: autoActions.captions },
+      { sep: true },
+      { label: 'Silence Remover…', kbd: 'Ctrl+Alt+R', run: autoActions.silence },
+      { label: 'Scene Detection (split at cuts)…', run: autoActions.scenes },
+      { label: 'Beat Detection / Cut to Beat…', kbd: 'Ctrl+Alt+B', run: autoActions.beats },
+      { label: 'Auto Reframe (fill frame)', run: autoActions.reframe },
+      { label: 'Close Gaps', kbd: 'Ctrl+Shift+Backspace', run: () => ops.closeGaps() },
+    ],
     View: () => [
       { label: 'Theme: Filmora', run: () => setTheme('filmora'), checked: document.documentElement.dataset.theme === 'filmora' },
       { label: 'Theme: Unreal Engine', run: () => setTheme('unreal'), checked: document.documentElement.dataset.theme === 'unreal' },
@@ -544,7 +568,7 @@ async function boot() {
       ['Ctrl+B', 'Split at playhead'], ['C / V', 'Blade / selection tool'], ['Del', 'Delete'], ['Shift+Del', 'Ripple delete'], ['Alt+[ / Alt+] · Q / W', 'Trim start / end to playhead'],
       ['Ctrl+C / X / V', 'Copy / cut / paste (an image on the clipboard goes onto the timeline)'], ['Ctrl+D', 'Duplicate'], ['Ctrl+A', 'Select all'], ['Ctrl+Z / Ctrl+Y', 'Undo / redo'],
       ['Ctrl+Alt+D', 'Detach audio'], ['Alt+F', 'Freeze frame'], ['M', 'Add marker'], ['N', 'Snapping'], ['Ctrl+= / Ctrl+-', 'Zoom timeline'], ['Shift+Z', 'Zoom to fit'], ['Ctrl+G / Ctrl+Alt+G', 'Group / ungroup'],
-      ['Ctrl+Alt+C / Ctrl+Alt+V', 'Copy / paste effects'], ['Alt+← / →', 'Nudge clip 1 frame (Shift = 10)'], ['Ctrl+↑ / ↓', 'Move clip to track above / below'], ['Alt+D', 'Duplicate to track above'], ['Shift+↑ / ↓', 'Previous / next marker'], ['Shift+Home / End', 'Start / end of selected clip'], ['Ctrl+Shift+K', 'Split all tracks'], ['Ctrl+Shift+Backspace', 'Close gaps'], ['Ctrl+Shift+M', 'Mute / unmute clip'], ['Shift+R', 'Reverse clip'], ['Ctrl+R', 'Speed'], ['Ctrl+L', 'Loop playback (in/out, selection or all)'], ['X / Alt+X', 'Mark selected clip as in/out / clear'], ['+ / -', 'Clip volume ±1 dB (Shift: opacity ±5%)'], ['F', 'Zoom timeline to selection'], ['`', 'Maximize panel under the mouse'], ['G', 'Guides: thirds + safe zones'], ['Ctrl+wheel / middle-drag on player', 'Zoom / pan the preview'], ['Ctrl+F', 'Search the library'], ['Ctrl+Alt+S', 'Snapshot PNG'], ['Ctrl+Alt+M', 'New material'], ['Ctrl+I', 'Import'], ['Ctrl+N / O / S', 'New / open / save'], ['Ctrl+E', 'Export'], ['Ctrl+T', 'Add title'], ['Alt+Enter', 'Full-screen preview']];
+      ['Ctrl+Alt+C / Ctrl+Alt+V', 'Copy / paste effects'], ['Alt+← / →', 'Nudge clip 1 frame (Shift = 10)'], ['Ctrl+↑ / ↓', 'Move clip to track above / below'], ['Alt+D', 'Duplicate to track above'], ['Shift+↑ / ↓', 'Previous / next marker'], ['Shift+Home / End', 'Start / end of selected clip'], ['Ctrl+Shift+K', 'Split all tracks'], ['Ctrl+Shift+Backspace', 'Close gaps'], ['Ctrl+Shift+M', 'Mute / unmute clip'], ['Shift+R', 'Reverse clip'], ['Ctrl+R', 'Speed'], ['Ctrl+L', 'Loop playback (in/out, selection or all)'], ['X / Alt+X', 'Mark selected clip as in/out / clear'], ['+ / -', 'Clip volume ±1 dB (Shift: opacity ±5%)'], ['F', 'Zoom timeline to selection'], ['`', 'Maximize panel under the mouse'], ['G', 'Guides: thirds + safe zones'], ['Ctrl+Alt+T', 'Auto captions (AI)'], ['Ctrl+Alt+R', 'Silence remover'], ['Ctrl+Alt+B', 'Beat detection'], ['Ctrl+wheel / middle-drag on player', 'Zoom / pan the preview'], ['Ctrl+F', 'Search the library'], ['Ctrl+Alt+S', 'Snapshot PNG'], ['Ctrl+Alt+M', 'New material'], ['Ctrl+I', 'Import'], ['Ctrl+N / O / S', 'New / open / save'], ['Ctrl+E', 'Export'], ['Ctrl+T', 'Add title'], ['Alt+Enter', 'Full-screen preview']];
     modal('Keyboard Shortcuts', `<div class="form-grid" style="grid-template-columns:190px 1fr">${rows.map(([k, v]) => `<span class="tc" style="color:var(--accent)">${k}</span><span>${v}</span>`).join('')}</div>`, [{ label: 'Close', primary: true }], { width: 560 });
   }
 
@@ -670,6 +694,9 @@ async function boot() {
     if (ctrl && alt && lk === 'v') return run(() => toast(ops.pasteEffects() ? 'Effects pasted' : 'Copy effects from a clip first (Ctrl+Alt+C)'));
     if (ctrl && alt && lk === 'm') return run(actions.newMaterial);
     if (ctrl && alt && lk === 'a') return run(() => ops.addAdjustmentClip({ time: store.playhead }));
+    if (ctrl && alt && lk === 't') return run(autoActions.captions);
+    if (ctrl && alt && lk === 'r') return run(autoActions.silence);
+    if (ctrl && alt && lk === 'b') return run(autoActions.beats);
     if (ctrl && alt && lk === 's') return run(actions.snapshot);
     if (ctrl && sh && lk === 'm') return run(() => ops.toggleMute());
     if (ctrl && sh && (lk === 'k' || lk === 'b')) return run(() => { if (!ops.splitAll()) toast('Nothing under the playhead to split'); });

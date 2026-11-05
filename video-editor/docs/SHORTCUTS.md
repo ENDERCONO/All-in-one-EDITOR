@@ -61,6 +61,14 @@ Owned by `js/app.js`. Shortcuts are ignored while typing in an input.
 | Drag a property label in the inspector | Scrub its value (Shift = fine) |
 | Right-click the player | Fit / Fill frame / Reset transform / Flip / Guides / Snapshot |
 
+## AI & Auto
+
+| Keys | Action |
+|---|---|
+| Ctrl + Alt + T | Auto captions (local Whisper) |
+| Ctrl + Alt + R | Silence remover |
+| Ctrl + Alt + B | Beat detection / cut to beat |
+
 ## Material editor (hold key + click, Unreal layout)
 
 1 Constant · 2 Constant2Vector · 3 Constant3Vector · 4 Constant4Vector · A Add · D Divide · E Power · I If · L Lerp · M Multiply · N Normalize · O OneMinus · P Panner · S Scalar Parameter · T Texture Sample · U TexCoord · V Vector Parameter · C Component Mask · R Rotator · F Frac · B Blend · X Noise · K Clamp · W Time · G Desaturation · H Append

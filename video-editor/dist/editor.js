@@ -1608,19 +1608,19 @@
           const p = pointer(e);
           let dt = (p.x - p0.x) / zoom();
           if (side === "r") {
-            let end2 = o.start + o.duration + dt;
-            const s = findSnap([end2], targets);
+            let end3 = o.start + o.duration + dt;
+            const s = findSnap([end3], targets);
             if (s) {
-              end2 = s.at;
+              end3 = s.at;
               showSnap(s.at);
             } else {
-              end2 = store2.snapTime(end2);
+              end3 = store2.snapTime(end3);
               showSnap(null);
             }
             let maxEnd = nextStart;
             if (limited) maxEnd = Math.min(maxEnd, o.start + (clip.reverse ? o.in + o.duration * clip.speed : media.duration - o.in) / clip.speed);
-            end2 = clamp(end2, o.start + minDur, maxEnd);
-            clip.duration = end2 - o.start;
+            end3 = clamp(end3, o.start + minDur, maxEnd);
+            clip.duration = end3 - o.start;
           } else {
             let st = o.start + dt;
             const s = findSnap([st], targets);
@@ -4695,7 +4695,7 @@ vec3 aio_softlight(vec3 a, vec3 b) { a = clamp(a, 0.0, 1.0); return mix(2.0 * a 
           build: () => graph((g) => {
             const out = g.n("output", 420, 0);
             const ts = g.n("textureSample", 40, -200);
-            const tc3 = g.n("texCoord", -760, 40);
+            const tc4 = g.n("texCoord", -760, 40);
             const time = g.n("time", -760, 140);
             const spd = g.n("scalarParameter", -760, 220, { name: "Scroll Speed", value: 0.15, min: -1, max: 1 });
             const mulT = g.n("multiply", -540, 160);
@@ -4711,7 +4711,7 @@ vec3 aio_softlight(vec3 a, vec3 b) { a = clamp(a, 0.0, 1.0); return mix(2.0 * a 
             const lerp = g.n("lerp", 270, -80);
             g.l(time, "time", mulT, "a");
             g.l(spd, "out", mulT, "b");
-            g.l(tc3, "uv", pan, "coord");
+            g.l(tc4, "uv", pan, "coord");
             g.l(mulT, "out", pan, "time");
             g.l(pan, "out", mask, "x");
             g.l(mask, "out", mul, "a");
@@ -4735,7 +4735,7 @@ vec3 aio_softlight(vec3 a, vec3 b) { a = clamp(a, 0.0, 1.0); return mix(2.0 * a 
             const des = g.n("desaturation", -180, -220);
             const tint = g.n("vectorParameter", -180, -80, { name: "Holo Tint", color: "#3ad8ff" });
             const col = g.n("multiply", 40, -180);
-            const tc3 = g.n("texCoord", -760, 60);
+            const tc4 = g.n("texCoord", -760, 60);
             const pan = g.n("panner", -580, 60, { speedX: 0, speedY: 0.08 });
             const mask = g.n("componentMask", -400, 60, { r: false, g: true });
             const dens = g.n("scalarParameter", -400, 170, { name: "Line Density", value: 90, min: 10, max: 300 });
@@ -4755,7 +4755,7 @@ vec3 aio_softlight(vec3 a, vec3 b) { a = clamp(a, 0.0, 1.0); return mix(2.0 * a 
             g.l(ts, "rgb", des, "color");
             g.l(des, "out", col, "a");
             g.l(tint, "rgb", col, "b");
-            g.l(tc3, "uv", pan, "coord");
+            g.l(tc4, "uv", pan, "coord");
             g.l(pan, "out", mask, "x");
             g.l(mask, "out", mul, "a");
             g.l(dens, "out", mul, "b");
@@ -4782,7 +4782,7 @@ vec3 aio_softlight(vec3 a, vec3 b) { a = clamp(a, 0.0, 1.0); return mix(2.0 * a 
           name: "Heat wave distortion",
           build: () => graph((g) => {
             const out = g.n("output", 360, 0);
-            const tc3 = g.n("texCoord", -760, -40);
+            const tc4 = g.n("texCoord", -760, -40);
             const pan = g.n("panner", -560, 60, { speedX: 0, speedY: 0.25 });
             const nz = g.n("noise", -380, 60, { kind: "gradient", scale: 7, levels: 2 });
             const sub = g.n("subtract", -200, 60, { b: 0.5 });
@@ -4790,12 +4790,12 @@ vec3 aio_softlight(vec3 a, vec3 b) { a = clamp(a, 0.0, 1.0); return mix(2.0 * a 
             const mul = g.n("multiply", -40, 80);
             const add = g.n("add", 80, -20);
             const ts = g.n("textureSample", 180, -20);
-            g.l(tc3, "uv", pan, "coord");
+            g.l(tc4, "uv", pan, "coord");
             g.l(pan, "out", nz, "position");
             g.l(nz, "out", sub, "a");
             g.l(sub, "out", mul, "a");
             g.l(str, "out", mul, "b");
-            g.l(tc3, "uv", add, "a");
+            g.l(tc4, "uv", add, "a");
             g.l(mul, "out", add, "b");
             g.l(add, "out", ts, "uv");
             g.l(ts, "rgb", out, "baseColor");
@@ -4813,7 +4813,7 @@ vec3 aio_softlight(vec3 a, vec3 b) { a = clamp(a, 0.0, 1.0); return mix(2.0 * a 
             const amt = g.n("scalarParameter", -380, 100, { name: "Split Amount", value: 0.012, min: 0, max: 0.05 });
             const mul = g.n("multiply", -220, 20);
             const app = g.n("append", -80, 20, { b: 0 });
-            const tc3 = g.n("texCoord", -80, -160);
+            const tc4 = g.n("texCoord", -80, -160);
             const plus = g.n("add", 80, -160);
             const minus = g.n("subtract", 80, 120);
             const tr = g.n("textureSample", 220, -240);
@@ -4827,12 +4827,12 @@ vec3 aio_softlight(vec3 a, vec3 b) { a = clamp(a, 0.0, 1.0); return mix(2.0 * a 
             g.l(ab, "out", mul, "a");
             g.l(amt, "out", mul, "b");
             g.l(mul, "out", app, "a");
-            g.l(tc3, "uv", plus, "a");
+            g.l(tc4, "uv", plus, "a");
             g.l(app, "out", plus, "b");
-            g.l(tc3, "uv", minus, "a");
+            g.l(tc4, "uv", minus, "a");
             g.l(app, "out", minus, "b");
             g.l(plus, "out", tr, "uv");
-            g.l(tc3, "uv", tg, "uv");
+            g.l(tc4, "uv", tg, "uv");
             g.l(minus, "out", tb, "uv");
             g.l(tr, "r", rg, "a");
             g.l(tg, "g", rg, "b");
@@ -7693,20 +7693,20 @@ self.onmessage = e => { const { id, channels, sr, semis } = e.data;
     function refresh() {
       if (playing) play(now());
     }
-    async function renderMix({ start = 0, end: end2, sampleRate, channels } = {}) {
+    async function renderMix({ start = 0, end: end3, sampleRate, channels } = {}) {
       const st = store2.project.settings;
       sampleRate = sampleRate || st.sampleRate || 48e3;
       channels = channels || st.channels || 2;
-      if (end2 == null) end2 = store2.duration();
-      const length = Math.max(1, Math.ceil((end2 - start) * sampleRate));
-      const clips = overlapping(start, end2);
+      if (end3 == null) end3 = store2.duration();
+      const length = Math.max(1, Math.ceil((end3 - start) * sampleRate));
+      const clips = overlapping(start, end3);
       const bufs = await Promise.all(clips.map(bufferFinal));
       const oc = new OfflineAudioContext({ numberOfChannels: channels, length, sampleRate });
       const wlReady = clips.some((c) => needsWorklet(c.audio)) ? await workletState(oc).promise : false;
       const m = oc.createGain();
       m.gain.value = dbToGain(st.masterVolume || 0);
       m.connect(oc.destination);
-      clips.forEach((clip, i) => scheduleClip(oc, clip, bufs[i], m, start, end2, 0, wlReady));
+      clips.forEach((clip, i) => scheduleClip(oc, clip, bufs[i], m, start, end3, 0, wlReady));
       return oc.startRendering();
     }
     function peakOf(an) {
@@ -9940,9 +9940,9 @@ If you want to offset all timestamps of a track such that the first one is zero,
           throw new Error("EBML VINT size not supported " + value);
         }
       };
-      readBits = (bytes2, start, end2) => {
+      readBits = (bytes2, start, end3) => {
         let result = 0;
-        for (let i = start; i < end2; i++) {
+        for (let i = start; i < end3; i++) {
           let byteIndex = Math.floor(i / 8);
           let byte = bytes2[byteIndex];
           let bitIndex = 7 - (i & 7);
@@ -9952,13 +9952,13 @@ If you want to offset all timestamps of a track such that the first one is zero,
         }
         return result;
       };
-      writeBits = (bytes2, start, end2, value) => {
-        for (let i = start; i < end2; i++) {
+      writeBits = (bytes2, start, end3, value) => {
+        for (let i = start; i < end3; i++) {
           let byteIndex = Math.floor(i / 8);
           let byte = bytes2[byteIndex];
           let bitIndex = 7 - (i & 7);
           byte &= ~(1 << bitIndex);
-          byte |= (value & 1 << end2 - i - 1) >> end2 - i - 1 << bitIndex;
+          byte |= (value & 1 << end3 - i - 1) >> end3 - i - 1 << bitIndex;
           bytes2[byteIndex] = byte;
         }
       };
@@ -11653,7 +11653,7 @@ ${notes}`;
       input("range").value = st.range;
       $$('[data-seg="quality"] button').forEach((b) => b.classList.toggle("active", b.dataset.val === st.quality));
       $$('[data-seg="channels"] button').forEach((b) => b.classList.toggle("active", +b.dataset.val === +st.channels));
-      const { start, end: end2 } = range(), dur = Math.max(0, end2 - start);
+      const { start, end: end3 } = range(), dur = Math.max(0, end3 - start);
       let bytes2, details;
       const aBits = st.abr * 1e3;
       if (f.id === "wav") {
@@ -11835,10 +11835,10 @@ ${notes}`;
     }
     async function run() {
       const f = fmtOf(st.format);
-      const { start, end: end2 } = range();
+      const { start, end: end3 } = range();
       showError("");
       $2(".ve-x-done").hidden = true;
-      if (!(end2 - start > 0.01)) {
+      if (!(end3 - start > 0.01)) {
         showError("Nothing to export \u2014 the timeline (or the In\u2013Out range) is empty.");
         return;
       }
@@ -11871,9 +11871,9 @@ ${notes}`;
       setProgress(0);
       try {
         let blob;
-        if (f.kind === "audio") blob = await exportAudio(f, start, end2);
-        else if (!f.ffmpeg) blob = await exportVideo({ container: f.id === "mp4" ? "mp4" : f.id === "mkv" ? "mkv" : "webm", start, end: end2, withAudio: true, label: "Encoding video" });
-        else blob = await exportViaFFmpeg(f, start, end2);
+        if (f.kind === "audio") blob = await exportAudio(f, start, end3);
+        else if (!f.ffmpeg) blob = await exportVideo({ container: f.id === "mp4" ? "mp4" : f.id === "mkv" ? "mkv" : "webm", start, end: end3, withAudio: true, label: "Encoding video" });
+        else blob = await exportViaFFmpeg(f, start, end3);
         check();
         const name = st.name + "." + f.ext;
         download(blob, name);
@@ -11896,10 +11896,10 @@ ${notes}`;
         store2.emit("playhead", store2.playhead);
       }
     }
-    async function exportAudio(f, start, end2) {
+    async function exportAudio(f, start, end3) {
       setStage("Mixing audio\u2026");
       setProgress(0.05, "Rendering mix");
-      const buf = await audio.renderMix({ start, end: end2, sampleRate: st.sampleRate, channels: st.channels });
+      const buf = await audio.renderMix({ start, end: end3, sampleRate: st.sampleRate, channels: st.channels });
       check();
       if (f.id === "wav") {
         setStage("Writing WAV\u2026");
@@ -11909,10 +11909,10 @@ ${notes}`;
       setStage("Encoding MP3\u2026");
       return encodeMp3(buf, st.abr, (p) => setProgress(0.2 + 0.8 * p, "Encoding MP3"), check);
     }
-    async function exportVideo({ container, start, end: end2, withAudio, label, bitrate, quiet }) {
+    async function exportVideo({ container, start, end: end3, withAudio, label, bitrate, quiet }) {
       const { w, h: h2 } = size();
       const rate = fps();
-      const total = Math.max(1, Math.ceil((end2 - start) * rate - 1e-6));
+      const total = Math.max(1, Math.ceil((end3 - start) * rate - 1e-6));
       const vb = bitrate || videoBitrate();
       setStage("Checking encoder support\u2026");
       const vpick = await pickVideoConfig(container, w, h2, rate, vb, st.hw);
@@ -11925,7 +11925,7 @@ ${notes}`;
         apick = await pickAudioConfig(container, st.sampleRate, st.channels, st.abr);
         if (apick) {
           setStage("Mixing audio\u2026");
-          mix = await audio.renderMix({ start, end: end2, sampleRate: apick.config.sampleRate, channels: st.channels });
+          mix = await audio.renderMix({ start, end: end3, sampleRate: apick.config.sampleRate, channels: st.channels });
           check();
         } else if (!quiet) console.warn("[export] no audio encoder available \u2014 exporting video only");
       }
@@ -12051,7 +12051,7 @@ ${notes}`;
         }
       }
     }
-    async function exportViaFFmpeg(f, start, end2) {
+    async function exportViaFFmpeg(f, start, end3) {
       const host = hostFFmpeg();
       if (!host) throw new Error(`${f.label} export needs ffmpeg.wasm, which is only available when the editor runs inside the main site.`);
       const isGif = f.kind === "gif";
@@ -12062,7 +12062,7 @@ ${notes}`;
       const mid = await exportVideo({
         container,
         start,
-        end: end2,
+        end: end3,
         withAudio: !isGif,
         quiet: true,
         label: "Rendering (step 1 of 2)",
@@ -12187,6 +12187,1473 @@ ${notes}`;
         ["3d", 139264, 8355840],
         ["3e", 139264, 16711680]
       ];
+    }
+  });
+
+  // js/autoedit.js
+  var autoedit_exports = {};
+  __export(autoedit_exports, {
+    autoReframe: () => autoReframe,
+    openBeatDetect: () => openBeatDetect,
+    openSceneDetect: () => openSceneDetect,
+    openSilenceRemover: () => openSilenceRemover
+  });
+  function css(name, fallback) {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  }
+  function openModal(title, bodyHtml, { applyLabel = "Apply", wide = false } = {}) {
+    const back = document.createElement("div");
+    back.className = "modal-back ve-ae-back";
+    back.innerHTML = `
+  <div class="modal ve-ae${wide ? " wide" : ""}" role="dialog" aria-label="${esc4(title)}">
+    <div class="modal-head"><span>${esc4(title)}</span><button class="ve-ae-x" title="Close">${CLOSE_SVG}</button></div>
+    <div class="modal-body">${bodyHtml}</div>
+    <div class="modal-foot"><span class="ve-ae-status"></span><button class="btn ve-ae-cancel">Cancel</button><button class="btn primary ve-ae-apply" disabled>${esc4(applyLabel)}</button></div>
+  </div>`;
+    document.body.appendChild(back);
+    const m = {
+      back,
+      closed: false,
+      onClose: null,
+      $: (s) => back.querySelector(s),
+      $$: (s) => [...back.querySelectorAll(s)],
+      apply: back.querySelector(".ve-ae-apply"),
+      status: (t) => {
+        back.querySelector(".ve-ae-status").textContent = t || "";
+      },
+      close() {
+        if (m.closed) return;
+        m.closed = true;
+        back.remove();
+        m.onClose?.();
+      }
+    };
+    back.addEventListener("click", (e) => {
+      if (e.target.closest(".ve-ae-x") || e.target.closest(".ve-ae-cancel") || e.target === back) m.close();
+    });
+    back.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        m.close();
+      }
+      if (e.key === "Enter" && e.target.tagName !== "BUTTON" && !m.apply.disabled) {
+        e.preventDefault();
+        m.apply.click();
+      }
+    });
+    back.addEventListener("keyup", (e) => e.stopPropagation());
+    setTimeout(() => m.apply.focus(), 0);
+    return m;
+  }
+  function sizeCanvas(cv, h2) {
+    const w = Math.max(200, cv.clientWidth || 600);
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h2 * dpr);
+    cv.style.height = h2 + "px";
+    const g = cv.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { g, w, h: h2 };
+  }
+  function monoOf(buf) {
+    if (monoCache.has(buf)) return monoCache.get(buf);
+    const n = buf.length, ch = buf.numberOfChannels;
+    let m;
+    if (ch === 1) m = buf.getChannelData(0);
+    else {
+      m = new Float32Array(n);
+      for (let c = 0; c < ch; c++) {
+        const d = buf.getChannelData(c);
+        for (let i = 0; i < n; i++) m[i] += d[i];
+      }
+      const k = 1 / ch;
+      for (let i = 0; i < n; i++) m[i] *= k;
+    }
+    monoCache.set(buf, m);
+    return m;
+  }
+  function srcToTimeline(c, s) {
+    const local = c.reverse ? (c.in + c.duration * c.speed - s) / c.speed : (s - c.in) / c.speed;
+    return c.start + local;
+  }
+  function envelope(store2, buf, clip, hop, gainDb = clip.audio?.volume || 0) {
+    const m = monoOf(buf), sr = buf.sampleRate;
+    const n = Math.max(1, Math.ceil(clip.duration / hop - 1e-6));
+    const out = new Float32Array(n);
+    const g = dbToGain(Math.max(-59.9, gainDb)) || 1e-6;
+    for (let i = 0; i < n; i++) {
+      const t0 = clip.start + i * hop, t1 = Math.min(end2(clip), t0 + hop);
+      let a = store2.sourceTime(clip, t0), b = store2.sourceTime(clip, t1);
+      if (a > b) [a, b] = [b, a];
+      let s0 = Math.max(0, Math.floor(a * sr)), s1 = Math.min(m.length, Math.max(s0 + 1, Math.ceil(b * sr)));
+      let sum = 0;
+      for (let j = s0; j < s1; j++) sum += m[j] * m[j];
+      const rms = s1 > s0 ? Math.sqrt(sum / (s1 - s0)) * g : 0;
+      out[i] = rms > 1e-6 ? 20 * Math.log10(rms) : -120;
+    }
+    return out;
+  }
+  function percentile(arr, p) {
+    const a = Float32Array.from(arr).sort();
+    return a.length ? a[Math.min(a.length - 1, Math.max(0, Math.floor(p * (a.length - 1))))] : -120;
+  }
+  function audioBearing(store2, c) {
+    if (c.type === "audio") return !!c.mediaId;
+    if (c.type === "video") return !!store2.getMedia(c.mediaId)?.hasAudio;
+    return false;
+  }
+  function partnersOf(store2, c) {
+    const fr = store2.frame();
+    return store2.project.clips.filter((p) => p.id !== c.id && p.mediaId && p.mediaId === c.mediaId && p.type !== c.type && (p.type === "audio" || p.type === "video") && Math.abs(p.start - c.start) < fr / 2 && Math.abs(p.in - c.in) < 1e-3 && Math.abs(p.duration - c.duration) < fr / 2 && Math.abs(p.speed - c.speed) < 1e-6 && !!p.reverse === !!c.reverse);
+  }
+  function segmentOf(c, a, b, at, first, last2) {
+    const s = deep3(c);
+    s.id = first ? c.id : uid("clip");
+    s.start = at;
+    s.duration = b - a;
+    s.in = c.reverse ? c.in + (c.duration - b) * c.speed : c.in + a * c.speed;
+    if (!first) {
+      s.transitionIn = null;
+      if (s.audio) s.audio.fadeIn = 0;
+    }
+    if (!last2) {
+      s.transitionOut = null;
+      if (s.audio) s.audio.fadeOut = 0;
+    }
+    return s;
+  }
+  function splitClipAt(p, c, times) {
+    const ts = [...new Set(times)].filter((t) => t > c.start + FRAME_EPS * 10 && t < end2(c) - FRAME_EPS * 10).sort((x, y) => x - y);
+    if (!ts.length) return [];
+    const bounds = [0, ...ts.map((t) => t - c.start), c.duration];
+    const segs = [];
+    for (let i = 0; i < bounds.length - 1; i++) segs.push(segmentOf(c, bounds[i], bounds[i + 1], c.start + bounds[i], i === 0, i === bounds.length - 2));
+    p.clips.splice(p.clips.indexOf(c), 1, ...segs);
+    return segs.slice(1);
+  }
+  function drawEnvRow(g, env, x0, x1, y, h2, color) {
+    const n = env.length;
+    if (!n) return;
+    const mid = y + h2 / 2;
+    g.fillStyle = color;
+    const w = x1 - x0;
+    const cols = Math.max(1, Math.floor(w));
+    for (let px = 0; px < cols; px++) {
+      const i0 = Math.floor(px / cols * n), i1 = Math.max(i0 + 1, Math.floor((px + 1) / cols * n));
+      let mx = -120;
+      for (let i = i0; i < i1 && i < n; i++) if (env[i] > mx) mx = env[i];
+      const a = clamp((mx + 60) / 60, 0, 1) * (h2 / 2 - 1);
+      g.fillRect(x0 + px, mid - a, 1, Math.max(1, a * 2));
+    }
+  }
+  function openSilenceRemover({ store: store2, ops: ops2, audio, mediaRuntime: mediaRuntime2 }) {
+    let cands = store2.selectedClips().filter((c) => audioBearing(store2, c));
+    if (!cands.length) cands = store2.project.clips.filter((c) => audioBearing(store2, c));
+    cands = cands.filter((c) => !store2.getTrack(c.trackId)?.locked);
+    if (!cands.length) {
+      toast("No clips with audio to analyse");
+      return null;
+    }
+    const groups = [], used = /* @__PURE__ */ new Set();
+    for (const c of [...cands].sort((a, b) => a.start - b.start)) {
+      if (used.has(c.id)) continue;
+      const members = [c, ...partnersOf(store2, c).filter((p) => !used.has(p.id) && !store2.getTrack(p.trackId)?.locked)];
+      members.forEach((x) => used.add(x.id));
+      const src = members.find((x) => x.type === "audio") || members.find((x) => !x.audio?.detached) || c;
+      groups.push({ ids: members.map((x) => x.id), src, env: null, removed: [] });
+    }
+    const HOP = 0.01;
+    const st = { threshold: -38, minSilence: 0.5, padding: 0.12, mode: "ripple" };
+    const m = openModal("Silence Remover", `
+    <div class="ve-ae-intro">Finds quiet parts in ${groups.length} clip${groups.length > 1 ? "s" : ""} with audio and removes, splits or marks them.</div>
+    <div class="form-grid ve-ae-grid">
+      <label>Threshold</label>
+      <div class="ve-ae-slider"><input type="range" data-k="threshold" min="-60" max="-10" step="1" value="${st.threshold}">
+        <output data-o="threshold">${st.threshold} dB</output><button class="btn ve-ae-auto" title="Estimate from the noise floor">Auto</button></div>
+      ${slider("minSilence", "Minimum silence", 0.1, 3, 0.05, st.minSilence, " s")}
+      ${slider("padding", "Keep padding", 0, 0.5, 0.01, st.padding, " s")}
+      <label>Mode</label>
+      ${radios("mode", [["ripple", "Remove silences (ripple)"], ["split", "Just split"], ["mark", "Mark only"]], st.mode)}
+    </div>
+    <div class="ve-ae-wave"><canvas class="ve-ae-canvas"></canvas></div>
+    <div class="ve-ae-summary">Analysing audio\u2026</div>`, { applyLabel: "Apply" });
+    const cv = m.$(".ve-ae-canvas");
+    const ROW = 46;
+    function detect() {
+      const fr = store2.frame();
+      let gaps = 0, saved = 0;
+      for (const gr of groups) {
+        gr.removed = [];
+        if (!gr.env) continue;
+        const c = gr.src, env = gr.env, n = env.length, dur = c.duration;
+        let i = 0;
+        while (i < n) {
+          if (env[i] >= st.threshold) {
+            i++;
+            continue;
+          }
+          let j = i;
+          while (j < n && env[j] < st.threshold) j++;
+          const a = i * HOP, b = Math.min(dur, j * HOP);
+          if (b - a >= st.minSilence - 1e-6) {
+            let ra = a > 0 ? a + st.padding : 0, rb = b < dur - 1e-6 ? b - st.padding : dur;
+            ra = ra <= 0 ? 0 : clamp(store2.snapTime(c.start + ra) - c.start, 0, dur);
+            rb = rb >= dur ? dur : clamp(store2.snapTime(c.start + rb) - c.start, 0, dur);
+            if (rb - ra >= fr - 1e-6) gr.removed.push([ra, rb]);
+          }
+          i = j;
+        }
+        const tot = gr.removed.reduce((s, [a, b]) => s + b - a, 0);
+        if (tot >= dur - fr) gr.removed = [];
+        gaps += gr.removed.length;
+        saved += gr.removed.reduce((s, [a, b]) => s + b - a, 0);
+      }
+      st.gaps = gaps;
+      st.saved = saved;
+      const ready = groups.every((g) => g.env);
+      const verb = st.mode === "ripple" ? `Removes ${gaps} gap${gaps === 1 ? "" : "s"} \xB7 saves ${fmt(saved)} s` : st.mode === "split" ? `Splits around ${gaps} silent part${gaps === 1 ? "" : "s"} (${fmt(saved)} s) \xB7 nothing moves` : `Adds ${gaps} marker${gaps === 1 ? "" : "s"} at silences (${fmt(saved)} s total)`;
+      m.$(".ve-ae-summary").textContent = ready ? gaps ? verb : "No silences found with these settings" : "Analysing audio\u2026";
+      m.apply.disabled = !ready || !gaps;
+      draw();
+    }
+    function draw() {
+      const rows = Math.max(1, groups.length);
+      const { g, w } = sizeCanvas(cv, rows * ROW + 16);
+      g.clearRect(0, 0, w, rows * ROW + 16);
+      const t0 = Math.min(...groups.map((x) => x.src.start)), t1 = Math.max(...groups.map((x) => end2(x.src)));
+      const span = Math.max(1e-3, t1 - t0);
+      const X = (t) => 4 + (t - t0) / span * (w - 8);
+      const accent = css("--accent", "#2ee6c5"), danger = css("--danger", "#ff4d5e"), dim = css("--text-faint", "#646b75");
+      groups.forEach((gr, r) => {
+        const y = r * ROW + 2, c = gr.src;
+        g.fillStyle = css("--panel-2", "#22262d");
+        g.fillRect(X(c.start), y, X(end2(c)) - X(c.start), ROW - 6);
+        if (gr.env) drawEnvRow(g, gr.env, X(c.start), X(end2(c)), y, ROW - 6, accent);
+        g.fillStyle = danger + "55";
+        for (const [a, b] of gr.removed) g.fillRect(X(c.start + a), y, Math.max(1, X(c.start + b) - X(c.start + a)), ROW - 6);
+        const mid = y + (ROW - 6) / 2, amp = clamp((st.threshold + 60) / 60, 0, 1) * ((ROW - 6) / 2 - 1);
+        g.strokeStyle = danger;
+        g.globalAlpha = 0.6;
+        g.setLineDash([3, 3]);
+        g.beginPath();
+        g.moveTo(X(c.start), mid - amp);
+        g.lineTo(X(end2(c)), mid - amp);
+        g.moveTo(X(c.start), mid + amp);
+        g.lineTo(X(end2(c)), mid + amp);
+        g.stroke();
+        g.setLineDash([]);
+        g.globalAlpha = 1;
+      });
+      g.fillStyle = dim;
+      g.font = "10px Inter, sans-serif";
+      g.fillText(tc2(t0), 4, rows * ROW + 12);
+      const lbl = tc2(t1);
+      g.fillText(lbl, w - 4 - g.measureText(lbl).width, rows * ROW + 12);
+    }
+    m.back.addEventListener("input", (e) => {
+      const k = e.target.dataset.k;
+      if (!k) return;
+      st[k] = k === "mode" ? e.target.value : +e.target.value;
+      const o = m.$(`[data-o="${k}"]`);
+      if (o) o.textContent = st[k] + (k === "threshold" ? " dB" : " s");
+      detect();
+    });
+    m.back.addEventListener("change", (e) => {
+      if (e.target.dataset.k === "mode") {
+        st.mode = e.target.value;
+        detect();
+      }
+    });
+    m.$(".ve-ae-auto").addEventListener("click", () => {
+      const all = [];
+      for (const gr of groups) if (gr.env) for (const v of gr.env) all.push(Math.max(-100, v));
+      if (!all.length) return;
+      const floor = percentile(all, 0.1), loud = percentile(all, 0.95);
+      st.threshold = Math.round(clamp(floor + Math.max(6, (loud - floor) * 0.35), -60, -10));
+      m.$('[data-k="threshold"]').value = st.threshold;
+      m.$('[data-o="threshold"]').textContent = st.threshold + " dB";
+      detect();
+    });
+    const ro = new ResizeObserver(() => draw());
+    ro.observe(cv);
+    m.onClose = () => ro.disconnect();
+    (async () => {
+      for (const gr of groups) {
+        const buf = await audio.ensureDecoded(gr.src.mediaId);
+        if (m.closed) return;
+        gr.env = buf ? envelope(store2, buf, gr.src, HOP) : new Float32Array(0);
+        detect();
+      }
+      if (!groups.some((g) => g.env?.length)) m.$(".ve-ae-summary").textContent = "Could not decode the audio of these clips";
+    })();
+    m.apply.addEventListener("click", () => {
+      const work = groups.filter((g) => g.removed.length);
+      if (!work.length) return;
+      const mode = st.mode;
+      store2.transact(mode === "ripple" ? "Remove silences" : mode === "split" ? "Split at silences" : "Mark silences", (p) => {
+        if (mode === "mark") {
+          for (const gr of work) for (const [a, b] of gr.removed)
+            p.markers.push({ id: uid("mk"), time: gr.src.start + a, color: "#ff4d5e", label: "Silence " + fmt(b - a) + " s" });
+          p.markers.sort((x, y) => x.time - y.time);
+          return;
+        }
+        for (const gr of [...work].sort((a, b) => b.src.start - a.src.start)) {
+          const removed = gr.removed;
+          const totalRemoved = removed.reduce((s, [a, b]) => s + b - a, 0);
+          for (const id of gr.ids) {
+            const c = p.clips.find((x) => x.id === id);
+            if (!c) continue;
+            const dur = c.duration;
+            const keep = [];
+            let pos = 0;
+            for (const [a, b] of removed) {
+              if (a > pos + 1e-6) keep.push([pos, a]);
+              pos = Math.max(pos, b);
+            }
+            if (dur > pos + 1e-6) keep.push([pos, dur]);
+            if (mode === "split") {
+              const times = [];
+              for (const [a, b] of removed) {
+                times.push(c.start + a, c.start + b);
+              }
+              splitClipAt(p, c, times);
+              continue;
+            }
+            const oldEnd = end2(c);
+            const segs = [];
+            let at = c.start;
+            keep.forEach(([a, b], i) => {
+              segs.push(segmentOf(c, a, b, at, i === 0, i === keep.length - 1));
+              at += b - a;
+            });
+            p.clips.splice(p.clips.indexOf(c), 1, ...segs);
+            const mine = new Set(segs.map((s) => s.id));
+            for (const o of p.clips) if (o.trackId === c.trackId && !mine.has(o.id) && o.start >= oldEnd - FRAME_EPS * 10) o.start = Math.max(0, o.start - totalRemoved);
+          }
+        }
+      });
+      toast(mode === "ripple" ? `Removed ${st.gaps} silences \xB7 saved ${fmt(st.saved)} s` : mode === "split" ? `Split at ${st.gaps} silences` : `Marked ${st.gaps} silences`);
+      m.close();
+    });
+    detect();
+    return m;
+  }
+  function features(data) {
+    const n = FW * FH, hist = new Float32Array(48), luma = new Float32Array(n);
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      const r = data[p], g = data[p + 1], b = data[p + 2];
+      hist[r >> 4]++;
+      hist[16 + (g >> 4)]++;
+      hist[32 + (b >> 4)]++;
+      luma[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+    }
+    for (let i = 0; i < 48; i++) hist[i] /= n;
+    return { hist, luma };
+  }
+  function frameDiff(a, b) {
+    let hd = 0;
+    for (let i = 0; i < 48; i++) hd += Math.abs(a.hist[i] - b.hist[i]);
+    hd /= 6;
+    let ld = 0;
+    for (let i = 0; i < a.luma.length; i++) ld += Math.abs(a.luma[i] - b.luma[i]);
+    ld /= a.luma.length * 255;
+    return 0.6 * hd + 0.4 * Math.min(1, ld * 2);
+  }
+  function makeGrabber(url2) {
+    const v = document.createElement("video");
+    v.muted = true;
+    v.playsInline = true;
+    v.preload = "auto";
+    v.src = url2;
+    const cv = document.createElement("canvas");
+    cv.width = FW;
+    cv.height = FH;
+    const g = cv.getContext("2d", { willReadFrequently: true });
+    const ready = new Promise((res, rej) => {
+      if (v.readyState >= 2) return res();
+      v.addEventListener("loadeddata", () => res(), { once: true });
+      v.addEventListener("error", () => rej(new Error("video failed to load")), { once: true });
+    });
+    return {
+      v,
+      ready,
+      async grab(t) {
+        await ready;
+        t = clamp(t, 0, Math.max(0, (v.duration || t) - 1e-3));
+        if (Math.abs(v.currentTime - t) > 1e-4 || v.seeking) {
+          await new Promise((res) => {
+            const to = setTimeout(res, 3e3);
+            v.addEventListener("seeked", () => {
+              clearTimeout(to);
+              res();
+            }, { once: true });
+            v.currentTime = t;
+          });
+        }
+        g.drawImage(v, 0, 0, FW, FH);
+        const img = g.getImageData(0, 0, FW, FH);
+        return { t, img, f: features(img.data) };
+      },
+      dispose() {
+        v.removeAttribute("src");
+        v.load();
+      }
+    };
+  }
+  function openSceneDetect({ store: store2, ops: ops2, mediaRuntime: mediaRuntime2 }) {
+    let clip = store2.selectedClips().find((c) => c.type === "video" && c.mediaId);
+    if (!clip) clip = store2.project.clips.filter((c) => c.type === "video" && c.mediaId).sort((a, b) => a.start - b.start)[0];
+    if (!clip) {
+      toast("Select a video clip to detect scenes");
+      return null;
+    }
+    const rt = mediaRuntime2.get(clip.mediaId);
+    if (!rt?.url) {
+      toast("The media for this clip is not loaded");
+      return null;
+    }
+    clip = deep3(clip);
+    const st = { sensitivity: 50, action: "split", samples: [], scores: [], cuts: [], done: false };
+    const m = openModal("Scene Detection", `
+    <div class="ve-ae-intro">Looks for hard cuts in <b>${esc4(clip.name)}</b> (${fmt(clip.duration)} s).</div>
+    <div class="form-grid ve-ae-grid">
+      ${slider("sensitivity", "Sensitivity", 1, 100, 1, st.sensitivity)}
+      <label>Apply as</label>
+      ${radios("action", [["split", "Split the clip at each cut"], ["markers", "Add markers"]], st.action)}
+    </div>
+    <div class="ve-ae-progress"><div></div></div>
+    <div class="ve-ae-scores"><canvas class="ve-ae-canvas"></canvas></div>
+    <div class="ve-ae-strip"></div>
+    <div class="ve-ae-summary">Analysing frames\u2026</div>`, { applyLabel: "Apply", wide: true });
+    const grabber = makeGrabber(rt.url);
+    m.onClose = () => {
+      grabber.dispose();
+      ro.disconnect();
+    };
+    const span = clip.duration * clip.speed;
+    const s0 = clip.in, s1 = clip.in + span;
+    const fps = clamp(Math.round(Math.min(10, 2400 / Math.max(1, span))), 2, 10);
+    const step = 1 / fps;
+    const cv = m.$(".ve-ae-canvas");
+    function threshold() {
+      return 0.55 - 0.45 * st.sensitivity / 100;
+    }
+    function detect() {
+      const thr = threshold(), sc = st.scores, cuts = [];
+      for (let i = 1; i < sc.length; i++) {
+        if (sc[i] < thr) continue;
+        const win = [];
+        for (let j = Math.max(1, i - 8); j < Math.min(sc.length, i + 9); j++) if (j !== i) win.push(sc[j]);
+        win.sort((a, b) => a - b);
+        const med = win.length ? win[win.length >> 1] : 0;
+        if (sc[i] < med * 3) continue;
+        const prev = cuts.at(-1);
+        if (prev != null && (i - prev) * step < 0.4) {
+          if (sc[i] > sc[prev]) cuts[cuts.length - 1] = i;
+          continue;
+        }
+        cuts.push(i);
+      }
+      st.cuts = cuts;
+      render();
+    }
+    const tlOf = (s) => srcToTimeline(clip, s);
+    function render() {
+      const { g, w, h: h2 } = sizeCanvas(cv, 46);
+      g.clearRect(0, 0, w, h2);
+      const sc = st.scores, n = Math.max(2, Math.ceil(span * fps) + 1);
+      g.fillStyle = css("--panel-2", "#22262d");
+      g.fillRect(0, 0, w, h2);
+      g.fillStyle = css("--accent", "#2ee6c5");
+      for (let i = 1; i < sc.length; i++) {
+        const x = i / (n - 1) * w, a = Math.min(1, sc[i]) * (h2 - 4);
+        g.fillRect(x - 1, h2 - 2 - a, 2, a);
+      }
+      const ty = h2 - 2 - threshold() * (h2 - 4);
+      g.strokeStyle = css("--danger", "#ff4d5e");
+      g.setLineDash([3, 3]);
+      g.beginPath();
+      g.moveTo(0, ty);
+      g.lineTo(w, ty);
+      g.stroke();
+      g.setLineDash([]);
+      g.fillStyle = "#ffcc00";
+      for (const i of st.cuts) g.fillRect(i / (n - 1) * w - 1, 0, 2, h2);
+      const strip = m.$(".ve-ae-strip");
+      strip.textContent = "";
+      if (st.samples.length) {
+        for (const i of [0, ...st.cuts]) {
+          const s = st.samples[i];
+          if (!s) continue;
+          const el2 = document.createElement("div");
+          el2.className = "ve-ae-thumb";
+          const tv = document.createElement("canvas");
+          tv.width = FW;
+          tv.height = FH;
+          tv.getContext("2d").putImageData(s.img, 0, 0);
+          const t = i === 0 ? clip.start : tlOf(s.t);
+          const lab = document.createElement("span");
+          lab.textContent = tc2(t);
+          el2.append(tv, lab);
+          el2.title = "Jump to " + tc2(t);
+          el2.onclick = () => store2.setPlayhead(t);
+          strip.appendChild(el2);
+        }
+      }
+      const k = st.cuts.length;
+      m.$(".ve-ae-summary").textContent = !st.done ? `Analysing frames\u2026 ${k} cut${k === 1 ? "" : "s"} so far` : k ? `${k} cut${k === 1 ? "" : "s"} found \u2192 ${st.action === "split" ? k + 1 + " clips" : k + " markers"}` : "No scene cuts found \u2014 try a higher sensitivity";
+      m.apply.disabled = !st.done || !k;
+    }
+    m.back.addEventListener("input", (e) => {
+      const k = e.target.dataset.k;
+      if (!k) return;
+      if (k === "sensitivity") {
+        st.sensitivity = +e.target.value;
+        m.$('[data-o="sensitivity"]').textContent = st.sensitivity;
+        detect();
+      }
+      if (k === "action") {
+        st.action = e.target.value;
+        render();
+      }
+    });
+    m.back.addEventListener("change", (e) => {
+      if (e.target.dataset.k === "action") {
+        st.action = e.target.value;
+        render();
+      }
+    });
+    const ro = new ResizeObserver(() => render());
+    ro.observe(cv);
+    (async () => {
+      try {
+        const n = Math.max(2, Math.ceil(span * fps) + 1);
+        let last2 = 0;
+        for (let i = 0; i < n; i++) {
+          if (m.closed) return;
+          const t = Math.min(s1 - 1e-3, s0 + i * step);
+          const s = await grabber.grab(t);
+          st.samples.push(s);
+          st.scores.push(i ? frameDiff(st.samples[i - 1].f, s.f) : 0);
+          m.$(".ve-ae-progress > div").style.width = ((i + 1) / n * 100).toFixed(1) + "%";
+          if (performance.now() - last2 > 250) {
+            last2 = performance.now();
+            detect();
+          }
+        }
+        st.done = true;
+        m.$(".ve-ae-progress").classList.add("done");
+        detect();
+      } catch (e) {
+        if (!m.closed) m.$(".ve-ae-summary").textContent = "Analysis failed: " + e.message;
+      }
+    })();
+    m.apply.addEventListener("click", async () => {
+      m.apply.disabled = true;
+      const frameDur = Math.min(store2.frame(), 1 / 30) * 0.6;
+      const times = [];
+      for (let k = 0; k < st.cuts.length; k++) {
+        if (m.closed) return;
+        m.status(`Refining cut ${k + 1} / ${st.cuts.length}\u2026`);
+        const i = st.cuts[k];
+        let a = st.samples[i - 1], b = st.samples[i];
+        while (b.t - a.t > frameDur) {
+          const mid = await grabber.grab((a.t + b.t) / 2);
+          if (m.closed) return;
+          if (frameDiff(mid.f, a.f) < frameDiff(mid.f, b.f)) a = mid;
+          else b = mid;
+        }
+        times.push(store2.snapTime(tlOf(clip.reverse ? a.t : b.t)));
+      }
+      const cur = store2.getClip(clip.id);
+      if (st.action === "split") {
+        if (!cur) {
+          toast("The clip no longer exists");
+          m.close();
+          return;
+        }
+        let made = 0;
+        store2.transact("Split at scene cuts", (p) => {
+          const c = p.clips.find((x) => x.id === cur.id);
+          made = splitClipAt(p, c, times).length;
+        });
+        toast(`Split into ${made + 1} scenes`);
+      } else {
+        store2.transact("Mark scene cuts", (p) => {
+          times.forEach((t, k) => p.markers.push({ id: uid("mk"), time: t, color: "#ffcc00", label: "Scene " + (k + 2) }));
+          p.markers.sort((x, y) => x.time - y.time);
+        });
+        toast(`Added ${times.length} scene markers`);
+      }
+      m.close();
+    });
+    return m;
+  }
+  function fftMag(re, im) {
+    const n = re.length;
+    for (let i = 1, j = 0; i < n; i++) {
+      let bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j) {
+        let t = re[i];
+        re[i] = re[j];
+        re[j] = t;
+        t = im[i];
+        im[i] = im[j];
+        im[j] = t;
+      }
+    }
+    for (let len = 2; len <= n; len <<= 1) {
+      const ang = -2 * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang);
+      for (let i = 0; i < n; i += len) {
+        let cr = 1, ci = 0;
+        for (let k = 0; k < len / 2; k++) {
+          const a = i + k, b = a + len / 2;
+          const xr = re[b] * cr - im[b] * ci, xi = re[b] * ci + im[b] * cr;
+          re[b] = re[a] - xr;
+          im[b] = im[a] - xi;
+          re[a] += xr;
+          im[a] += xi;
+          const ncr = cr * wr - ci * wi;
+          ci = cr * wi + ci * wr;
+          cr = ncr;
+        }
+      }
+    }
+  }
+  function onsetEnvelope(buf, s0, s1) {
+    const mono = monoOf(buf), sr = buf.sampleRate;
+    const hop = Math.round(sr / 100), N = 1024, half = N / 2;
+    const a = Math.floor(s0 * sr), F2 = Math.max(1, Math.floor((s1 - s0) * sr / hop));
+    const win = new Float32Array(N);
+    for (let i = 0; i < N; i++) win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1));
+    const re = new Float32Array(N), im = new Float32Array(N);
+    const bins = half;
+    let prev = new Float32Array(bins), cur = new Float32Array(bins);
+    const onset = new Float32Array(F2);
+    for (let f = -1; f < F2; f++) {
+      const c = a + f * hop - half;
+      for (let i = 0; i < N; i++) {
+        const k = c + i;
+        re[i] = k >= 0 && k < mono.length ? mono[k] * win[i] : 0;
+        im[i] = 0;
+      }
+      fftMag(re, im);
+      let flux = 0;
+      for (let k = 1; k < bins; k++) {
+        const v = Math.log1p(100 * Math.hypot(re[k], im[k]));
+        cur[k] = v;
+        const d = v - prev[k];
+        if (d > 0) flux += d;
+      }
+      if (f >= 0) onset[f] = flux;
+      const t = prev;
+      prev = cur;
+      cur = t;
+    }
+    const L = 25, out = new Float32Array(F2);
+    let sum = 0;
+    const pre = new Float64Array(F2 + 1);
+    for (let i = 0; i < F2; i++) pre[i + 1] = pre[i] + onset[i];
+    let mx = 0;
+    for (let i = 0; i < F2; i++) {
+      const lo = Math.max(0, i - L), hi = Math.min(F2, i + L + 1);
+      const v = Math.max(0, onset[i] - (pre[hi] - pre[lo]) / (hi - lo));
+      out[i] = v;
+      if (v > mx) mx = v;
+      sum += v;
+    }
+    if (mx > 0) for (let i = 0; i < F2; i++) out[i] /= mx;
+    return { onset: out, rate: sr / hop };
+  }
+  function estimateBeats(onset, rate) {
+    const F2 = onset.length;
+    const minLag = Math.floor(rate * 60 / 200), maxLag = Math.ceil(rate * 60 / 50);
+    const ac = new Float32Array(maxLag + 2);
+    for (let L = minLag - 1; L <= maxLag + 1 && L < F2; L++) {
+      let s = 0;
+      for (let i = 0; i + L < F2; i++) s += onset[i] * onset[i + L];
+      ac[L] = s / Math.max(1, F2 - L);
+    }
+    let best = 0, bestL = Math.round(rate * 0.5);
+    for (let L = minLag; L <= maxLag && L < F2; L++) {
+      const bpm = 60 * rate / L, w = Math.exp(-0.5 * Math.pow(Math.log2(bpm / 120) / 1, 2));
+      const v = ac[L] * w;
+      if (v > best) {
+        best = v;
+        bestL = L;
+      }
+    }
+    let P3 = bestL;
+    const y0 = ac[bestL - 1] || 0, y1 = ac[bestL], y2 = ac[bestL + 1] || 0, den = y0 - 2 * y1 + y2;
+    if (den < 0) P3 = bestL + clamp(0.5 * (y0 - y2) / den, -0.5, 0.5);
+    const peakAt = (x) => {
+      const i = Math.round(x);
+      let v = 0;
+      for (let j = i - 2; j <= i + 2; j++) if (j >= 0 && j < F2 && onset[j] > v) v = onset[j];
+      return v;
+    };
+    let bestPh = 0, bestS = -1;
+    for (let ph = 0; ph < P3; ph += 1) {
+      let s = 0;
+      for (let x = ph; x < F2; x += P3) s += peakAt(x);
+      if (s > bestS) {
+        bestS = s;
+        bestPh = ph;
+      }
+    }
+    const beats = [], r = Math.max(1, Math.round(P3 * 0.1));
+    for (let x = bestPh; x < F2; x += P3) {
+      const i = Math.round(x);
+      let bi = i, bv = -1;
+      for (let j = i - r; j <= i + r; j++) if (j >= 0 && j < F2 && onset[j] > bv) {
+        bv = onset[j];
+        bi = j;
+      }
+      beats.push({ f: bv > 0.05 ? bi : i, strength: Math.max(0, bv) });
+    }
+    return { bpm: 60 * rate / P3, period: P3 / rate, beats };
+  }
+  function openBeatDetect({ store: store2, ops: ops2, audio, mediaRuntime: mediaRuntime2 }) {
+    const sel = store2.selectedClips();
+    let clip = sel.find((c) => audioBearing(store2, c) && c.type === "audio") || sel.find((c) => audioBearing(store2, c));
+    if (!clip) clip = store2.project.clips.filter((c) => c.type === "audio" && c.mediaId).sort((a, b) => a.start - b.start)[0] || store2.project.clips.filter((c) => audioBearing(store2, c)).sort((a, b) => a.start - b.start)[0];
+    if (!clip) {
+      toast("Select an audio clip (or a video with sound) to detect beats");
+      return null;
+    }
+    clip = deep3(clip);
+    const st = { sensitivity: 70, every: 1, action: "markers", all: [], beats: [], bpm: 0, period: 0.5, env: null };
+    const m = openModal("Beat Detection", `
+    <div class="ve-ae-intro">Finds the beat of <b>${esc4(clip.name)}</b>.</div>
+    <div class="ve-ae-bpm"><span class="v">\u2014</span><span class="u">BPM</span></div>
+    <div class="form-grid ve-ae-grid">
+      ${slider("sensitivity", "Sensitivity", 0, 100, 1, st.sensitivity)}
+      <label>Use every</label>
+      ${radios("every", [["1", "beat"], ["2", "2nd"], ["4", "4th (bar)"], ["8", "8th"]], "1")}
+      <label>Apply</label>
+      ${radios("action", [["markers", "Add markers on beats"], ["split", "Split selected clip(s) on beats"], ["images", "Cut images to the beat"]], st.action)}
+    </div>
+    <div class="ve-ae-wave"><canvas class="ve-ae-canvas"></canvas></div>
+    <div class="ve-ae-summary">Analysing audio\u2026</div>`, { applyLabel: "Apply", wide: true });
+    const cv = m.$(".ve-ae-canvas");
+    const imageTargets = () => {
+      const s = store2.selectedClips().filter((c) => c.type === "image");
+      const list = s.length ? s : store2.project.clips.filter((c) => c.type === "image" && c.start >= store2.playhead - FRAME_EPS);
+      return list.filter((c) => !store2.getTrack(c.trackId)?.locked).sort((a, b) => a.start - b.start);
+    };
+    const splitTargets = () => {
+      const s = store2.selectedClips().filter((c2) => !store2.getTrack(c2.trackId)?.locked);
+      if (s.length) return s;
+      const c = store2.getClip(clip.id);
+      return c ? [c] : [];
+    };
+    function pick() {
+      const minS = (1 - st.sensitivity / 100) * 0.5;
+      const strong = st.all.filter((b) => b.strength >= minS);
+      st.beats = strong.filter((_, i) => i % st.every === 0).map((b) => b.t);
+      render();
+    }
+    function beatsFrom(t0, count) {
+      const per = st.period * st.every, minLen = Math.max(0.05, per * 0.4);
+      const out = st.beats.filter((t) => t > t0 + minLen);
+      let last2 = out.length ? out.at(-1) : st.beats.at(-1) ?? t0;
+      while (out.length < count) {
+        last2 = Math.max(last2 + per, t0 + (out.length ? minLen : per));
+        out.push(last2);
+      }
+      return out.slice(0, count);
+    }
+    function render() {
+      const { g, w, h: h2 } = sizeCanvas(cv, 70);
+      g.clearRect(0, 0, w, h2);
+      g.fillStyle = css("--panel-2", "#22262d");
+      g.fillRect(0, 0, w, h2);
+      const X = (t) => (t - clip.start) / clip.duration * w;
+      if (st.env) drawEnvRow(g, st.env, 0, w, 2, h2 - 4, css("--clip-audio", "#3aa0ff"));
+      g.fillStyle = "#ff5a8a";
+      for (const t of st.beats) g.fillRect(X(t) - 0.5, 0, 1.5, h2);
+      m.$(".ve-ae-bpm .v").textContent = st.bpm ? Math.round(st.bpm * 10) / 10 : "\u2014";
+      const n = st.beats.length;
+      let txt = "Analysing audio\u2026";
+      if (st.env) {
+        if (st.action === "markers") txt = `Adds ${n} marker${n === 1 ? "" : "s"} \xB7 one every ${fmt(st.period * st.every)} s`;
+        else if (st.action === "split") {
+          const ts = splitTargets();
+          let k = 0;
+          for (const c of ts) k += st.beats.filter((t) => t > c.start + 0.01 && t < end2(c) - 0.01).length;
+          txt = `Splits ${ts.length} clip${ts.length === 1 ? "" : "s"} at ${k} beat${k === 1 ? "" : "s"}`;
+        } else {
+          const im = imageTargets();
+          txt = im.length ? `Re-times ${im.length} image clip${im.length === 1 ? "" : "s"} so each switches on a beat` : "No image clips selected or after the playhead";
+        }
+      }
+      m.$(".ve-ae-summary").textContent = txt;
+      m.apply.disabled = !st.env || !n || st.action === "images" && !imageTargets().length;
+    }
+    m.back.addEventListener("input", (e) => {
+      const k = e.target.dataset.k;
+      if (!k) return;
+      if (k === "sensitivity") {
+        st.sensitivity = +e.target.value;
+        m.$('[data-o="sensitivity"]').textContent = st.sensitivity;
+      } else if (k === "every") st.every = +e.target.value;
+      else if (k === "action") st.action = e.target.value;
+      pick();
+    });
+    m.back.addEventListener("change", (e) => {
+      const k = e.target.dataset.k;
+      if (k === "every") {
+        st.every = +e.target.value;
+        pick();
+      }
+      if (k === "action") {
+        st.action = e.target.value;
+        pick();
+      }
+    });
+    const ro = new ResizeObserver(() => render());
+    ro.observe(cv);
+    m.onClose = () => ro.disconnect();
+    (async () => {
+      const buf = await audio.ensureDecoded(clip.mediaId);
+      if (m.closed) return;
+      if (!buf) {
+        m.$(".ve-ae-summary").textContent = "Could not decode the audio of this clip";
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 0));
+      const span = clip.duration * clip.speed;
+      const { onset, rate } = onsetEnvelope(buf, clip.in, clip.in + span);
+      const est = estimateBeats(onset, rate);
+      st.bpm = est.bpm * clip.speed;
+      st.period = est.period / clip.speed;
+      st.all = est.beats.map((b) => ({ t: store2.snapTime(srcToTimeline(clip, clip.in + b.f / rate)), strength: b.strength })).filter((b) => b.t >= clip.start - FRAME_EPS && b.t < end2(clip) - FRAME_EPS).sort((a, b) => a.t - b.t);
+      if (st.all.length < 4) st.bpm = 0;
+      st.env = envelope(store2, buf, clip, Math.max(5e-3, clip.duration / 1500));
+      pick();
+    })();
+    m.apply.addEventListener("click", () => {
+      const beats = st.beats;
+      if (st.action === "markers") {
+        store2.transact("Beat markers", (p) => {
+          for (const t of beats) p.markers.push({ id: uid("mk"), time: t, color: "#ff5a8a", label: "" });
+          p.markers.sort((x, y) => x.time - y.time);
+        });
+        toast(`Added ${beats.length} beat markers (${Math.round(st.bpm)} BPM)`);
+      } else if (st.action === "split") {
+        const ids = splitTargets().map((c) => c.id);
+        let made = 0;
+        store2.transact("Split on beats", (p) => {
+          for (const id of ids) {
+            const c = p.clips.find((x) => x.id === id);
+            if (c) made += splitClipAt(p, c, beats).length;
+          }
+        });
+        toast(`Split into ${made + ids.length} pieces on the beat`);
+      } else {
+        const ims = imageTargets();
+        if (!ims.length) return;
+        const t0 = ims[0].start;
+        const marks = beatsFrom(t0, ims.length);
+        store2.transact("Cut images to the beat", (p) => {
+          const byTrack = /* @__PURE__ */ new Map();
+          let at = t0;
+          ims.forEach((c0, k) => {
+            const c = p.clips.find((x) => x.id === c0.id);
+            if (!c) return;
+            const oldEnd = end2(c);
+            const e = Math.max(at + store2.frame(), marks[k]);
+            c.start = at;
+            c.duration = e - at;
+            at = e;
+            const r = byTrack.get(c.trackId) || { oldEnd: 0, newEnd: 0 };
+            r.oldEnd = Math.max(r.oldEnd, oldEnd);
+            r.newEnd = Math.max(r.newEnd, end2(c));
+            byTrack.set(c.trackId, r);
+          });
+          const ids = new Set(ims.map((c) => c.id));
+          for (const [tid, r] of byTrack) {
+            const others = p.clips.filter((o) => o.trackId === tid && !ids.has(o.id) && end2(o) > t0 + FRAME_EPS).sort((a, b) => a.start - b.start);
+            const imgs = p.clips.filter((o) => ids.has(o.id) && o.trackId === tid);
+            let shift = 0;
+            for (const o of others) {
+              o.start += shift;
+              const hit = imgs.find((im) => im.start < end2(o) - FRAME_EPS && end2(im) > o.start + FRAME_EPS);
+              if (hit) {
+                const d = end2(hit) - o.start;
+                o.start += d;
+                shift += d;
+              }
+            }
+          }
+        });
+        toast(`Cut ${ims.length} images to the beat`);
+      }
+      m.close();
+    });
+    return m;
+  }
+  function autoReframe({ store: store2, ops: ops2 }) {
+    const visual = (c) => (c.type === "video" || c.type === "image") && c.mediaId && !store2.getTrack(c.trackId)?.locked;
+    let targets = store2.selectedClips().filter(visual);
+    if (!targets.length) targets = store2.project.clips.filter((c) => c.type === "video" && visual(c));
+    const { width: W, height: H } = store2.project.settings;
+    const ids = targets.filter((c) => {
+      const md = store2.getMedia(c.mediaId);
+      return md?.width && md?.height;
+    }).map((c) => c.id);
+    if (!ids.length) {
+      toast("Select video clips to reframe");
+      return 0;
+    }
+    store2.transact("Auto reframe", (p) => {
+      for (const id of ids) {
+        const c = p.clips.find((x) => x.id === id), md = p.media.find((x) => x.id === c.mediaId);
+        const cr = c.crop || { l: 0, t: 0, r: 0, b: 0 };
+        const sw = md.width * Math.max(0.01, 1 - cr.l - cr.r), sh = md.height * Math.max(0.01, 1 - cr.t - cr.b);
+        const contain = Math.min(W / sw, H / sh), cover = Math.max(W / sw, H / sh);
+        c.transform = { ...c.transform, scale: cover / contain, scaleX: 1, scaleY: 1, x: 0, y: 0 };
+      }
+    });
+    toast(`Reframed ${ids.length} clip${ids.length === 1 ? "" : "s"} to fill the frame`);
+    return ids.length;
+  }
+  var deep3, end2, fmt, tc2, toast, esc4, CLOSE_SVG, slider, radios, monoCache, FW, FH;
+  var init_autoedit = __esm({
+    "js/autoedit.js"() {
+      init_state();
+      deep3 = (o) => JSON.parse(JSON.stringify(o));
+      end2 = (c) => c.start + c.duration;
+      fmt = (s) => (Math.round(s * 10) / 10).toFixed(1);
+      tc2 = (s) => {
+        const m = Math.floor(s / 60), r = s - m * 60;
+        return m + ":" + (r < 10 ? "0" : "") + r.toFixed(2);
+      };
+      toast = (msg) => window.dispatchEvent(new CustomEvent("ve:toast", { detail: msg }));
+      esc4 = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+      CLOSE_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+      slider = (k, label, min, max, step, val, unit = "") => `
+  <label>${label}</label>
+  <div class="ve-ae-slider"><input type="range" data-k="${k}" min="${min}" max="${max}" step="${step}" value="${val}">
+  <output data-o="${k}">${val}${unit}</output></div>`;
+      radios = (k, opts, val) => `<div class="ve-ae-radios">${opts.map(([v, l]) => `<label><input type="radio" name="ae-${k}" data-k="${k}" value="${v}"${v === val ? " checked" : ""}> ${l}</label>`).join("")}</div>`;
+      monoCache = /* @__PURE__ */ new WeakMap();
+      FW = 64;
+      FH = 36;
+    }
+  });
+
+  // js/ai.js
+  var ai_exports = {};
+  __export(ai_exports, {
+    AI_MODELS: () => AI_MODELS,
+    CAPTION_STYLES: () => CAPTION_STYLES,
+    addCaptionTrack: () => addCaptionTrack,
+    aiUnavailableReason: () => aiUnavailableReason,
+    buildCaptions: () => buildCaptions,
+    captionsToSrt: () => captionsToSrt,
+    chunksToWords: () => chunksToWords,
+    fixTimings: () => fixTimings,
+    groupWords: () => groupWords,
+    isAIAvailable: () => isAIAvailable,
+    openAutoCaptions: () => openAutoCaptions
+  });
+  function aiUnavailableReason() {
+    if (typeof location !== "undefined" && location.protocol === "file:") return "Auto captions need the site served over http(s) \u2014 open it from a web server (e.g. node server.js) instead of a file.";
+    if (typeof Worker === "undefined") return "This browser does not support Web Workers.";
+    if (typeof WebAssembly !== "object") return "This browser does not support WebAssembly.";
+    return null;
+  }
+  function chunksToWords(chunks = []) {
+    const words = [];
+    for (const c of chunks) {
+      const raw = String(c.text || "");
+      if (!raw.trim() || /^\s*\[[^\]]*\]\s*$/.test(raw)) continue;
+      let [s, e] = c.timestamp || [0, 0];
+      s = +s || 0;
+      e = e == null || !isFinite(e) ? s + Math.max(0.3, raw.trim().length * 0.07) : +e;
+      if (e < s) e = s;
+      const g = c.g || (raw.trim().includes(" ") ? "segment" : "word");
+      if (g === "word") {
+        words.push({ text: raw, start: s, end: e });
+        continue;
+      }
+      let toks = raw.match(/\s*\S+/g) || [];
+      toks = toks.flatMap((t) => CJK.test(t) && t.trim().length > 4 ? [...t.trim()].map((ch, i) => (i === 0 && /^\s/.test(t) ? " " : "") + ch) : [t]);
+      const lens = toks.map((t) => t.trim().length || 1), sum = lens.reduce((a, b) => a + b, 0);
+      let acc = 0;
+      toks.forEach((t, i) => {
+        const a = s + (e - s) * acc / sum;
+        acc += lens[i];
+        words.push({ text: t, start: a, end: s + (e - s) * acc / sum });
+      });
+    }
+    return words.sort((a, b) => a.start - b.start);
+  }
+  function groupWords(words, { maxWords = 6, maxChars = MAX_CHARS, pause = PAUSE } = {}) {
+    const caps = [];
+    let cur = null;
+    const flush = () => {
+      if (cur && cur.text.trim()) caps.push(cur);
+      cur = null;
+    };
+    for (const w of words) {
+      const t = w.text;
+      if (!t.trim()) continue;
+      if (cur) {
+        const next = joinWord(cur.text, t).trim();
+        if (cur.n >= maxWords || next.length > maxChars && cur.n > 0 || w.start - cur.end > pause) flush();
+      }
+      if (!cur) cur = { text: joinWord("", t), start: w.start, end: w.end, n: 0, words: [] };
+      else cur.text = joinWord(cur.text, t);
+      cur.end = Math.max(cur.end, w.end);
+      cur.n++;
+      cur.words.push(w);
+      const tt = t.trim();
+      if (/[.!?…。！？]["'”’)\]]?$/.test(tt)) flush();
+      else if (/[,;:，、；：]$/.test(tt) && cur.n >= Math.ceil(maxWords / 2)) flush();
+    }
+    flush();
+    return caps.map((c) => ({ text: c.text.trim(), start: c.start, end: c.end, words: c.words }));
+  }
+  function fixTimings(caps, { offset = 0, fps = 30, minDur = MIN_DUR, closeGap = 0.25 } = {}) {
+    const snap = (t) => Math.round(t * fps) / fps, fr = 1 / fps;
+    const out = caps.map((c) => ({ ...c, start: snap(Math.max(0, c.start + offset)), end: snap(Math.max(0, c.end + offset)) }));
+    for (let i = 0; i < out.length; i++) {
+      const c = out[i], n = out[i + 1];
+      if (c.end - c.start < minDur) c.end = snap(c.start + minDur);
+      if (c.end - c.start < fr) c.end = c.start + fr;
+      if (!n) continue;
+      if (n.start < c.start + fr) n.start = c.start + fr;
+      if (c.end > n.start) {
+        if (n.start - c.start >= minDur) c.end = n.start;
+        else n.start = c.end;
+      } else if (n.start - c.end < closeGap) c.end = n.start;
+    }
+    return out.filter((c) => c.end > c.start);
+  }
+  function buildCaptions(store2, words, { style = "subtitle", maxWords, offset = 0 } = {}) {
+    const st = styleOf(style);
+    const { width = 1920, height = 1080, fps = 30 } = store2.project.settings;
+    const k = Math.min(width, height) / 1080;
+    const size = Math.round(st.text.size * k);
+    const maxChars = clamp(Math.floor(width * 0.9 / (size * 0.56)), 8, MAX_CHARS);
+    const mw = st.perWord ? 1 : clamp(maxWords || st.maxWords, 1, 12);
+    return fixTimings(groupWords(words, { maxWords: mw, maxChars }), { offset, fps });
+  }
+  function addCaptionTrack(store2, caps, { style = "subtitle", y, color } = {}) {
+    const st = styleOf(style);
+    const { width = 1920, height = 1080 } = store2.project.settings;
+    const k = Math.min(width, height) / 1080;
+    const ypx = Math.round(((y ?? st.y) / 100 - 0.5) * height);
+    let track, clips = [];
+    store2.transact("Auto captions", (p) => {
+      const names = new Set(p.tracks.map((t) => t.name));
+      let name = "Captions", i = 2;
+      while (names.has(name)) name = "Captions " + i++;
+      track = makeTrack("video", name);
+      p.tracks.splice(0, 0, track);
+      for (const c of caps) {
+        const content = st.upper ? c.text.toLocaleUpperCase() : c.text;
+        const clip = makeClip({
+          trackId: track.id,
+          type: "text",
+          name: content.length > 40 ? content.slice(0, 39) + "\u2026" : content,
+          start: c.start,
+          duration: c.end - c.start,
+          text: { ...BASE_TEXT, ...st.text, ...color ? { color } : {}, size: Math.round(st.text.size * k), content },
+          transform: { x: 0, y: ypx }
+        });
+        p.clips.push(clip);
+        clips.push(clip);
+      }
+    });
+    return { track, clips };
+  }
+  function captionsToSrt(clips = []) {
+    return clips.map((c) => ({ start: c.start, end: c.end ?? c.start + c.duration, text: String(c.text?.content ?? c.text ?? "").trim() })).filter((c) => c.text && c.end > c.start).sort((a, b) => a.start - b.start).map((c, i) => `${i + 1}
+${srtTime(c.start)} --> ${srtTime(c.end)}
+${c.text}
+`).join("\n");
+  }
+  function getWorker2() {
+    if (worker) return worker;
+    worker = new Worker(new URL("js/ai-worker.js", document.baseURI), { type: "module" });
+    return worker;
+  }
+  function killWorker() {
+    try {
+      worker?.terminate();
+    } catch {
+    }
+    worker = null;
+  }
+  function workerTranscribe(audioData, opts, on) {
+    return new Promise((resolve, reject) => {
+      const w = getWorker2(), id = ++runSeq;
+      const done = () => {
+        w.removeEventListener("message", onMsg);
+        w.removeEventListener("error", onErr);
+        opts.signal?.removeEventListener("abort", onAbort);
+      };
+      const onMsg = (e) => {
+        const m = e.data || {};
+        if (m.id !== id) return;
+        if (m.type === "result") {
+          done();
+          resolve(m);
+        } else if (m.type === "error") {
+          done();
+          const err = new Error(m.message);
+          err.code = m.code;
+          reject(err);
+        } else on(m);
+      };
+      const onErr = (e) => {
+        done();
+        killWorker();
+        const err = new Error("The speech worker crashed" + (e.message ? ": " + e.message : "") + ".");
+        err.code = "worker";
+        reject(err);
+      };
+      const onAbort = () => {
+        done();
+        killWorker();
+        const err = new Error("Cancelled");
+        err.code = "cancel";
+        reject(err);
+      };
+      w.addEventListener("message", onMsg);
+      w.addEventListener("error", onErr);
+      opts.signal?.addEventListener("abort", onAbort);
+      w.postMessage({ type: "run", id, audio: audioData, model: opts.model, language: opts.language || null, task: opts.task, device: opts.device, libUrl: opts.libUrl }, [audioData.buffer]);
+    });
+  }
+  async function pickDevice() {
+    try {
+      if (navigator.gpu && await navigator.gpu.requestAdapter()) return "webgpu";
+    } catch {
+    }
+    return "wasm";
+  }
+  function openAutoCaptions({ store: store2, ops: ops2, audio, mediaRuntime: mediaRuntime2, transcribe, libUrl } = {}) {
+    document.querySelector(".ai-back")?.remove();
+    const S = store2.project.settings;
+    const sel = store2.selectedClips().filter((c) => c.type === "video" || c.type === "audio");
+    const ranges = [];
+    if (sel.length) ranges.push({ id: "sel", label: `Selected clips (${fmtT(Math.min(...sel.map((c) => c.start)))}\u2013${fmtT(Math.max(...sel.map((c) => c.start + c.duration)))})`, start: Math.min(...sel.map((c) => c.start)), end: Math.max(...sel.map((c) => c.start + c.duration)) });
+    if (S.markIn != null && S.markOut != null && S.markOut > S.markIn) ranges.push({ id: "inout", label: `In/Out range (${fmtT(S.markIn)}\u2013${fmtT(S.markOut)})`, start: S.markIn, end: S.markOut });
+    ranges.push({ id: "all", label: `Whole timeline (${fmtT(store2.duration())})`, start: 0, end: store2.duration() });
+    const prefs = { model: AI_MODELS[1].id, language: "", task: "transcribe", style: "subtitle", ...loadPrefs2() };
+    const st0 = styleOf(prefs.style);
+    const unavailable = aiUnavailableReason();
+    const back = document.createElement("div");
+    back.className = "modal-back ai-back";
+    back.innerHTML = `<div class="modal ai-modal" role="dialog" aria-label="Auto Captions">
+    <div class="modal-head"><span>Auto Captions <small class="ai-badge">local AI</small></span><button class="icon-btn ai-x" title="Close">\u2715</button></div>
+    <div class="modal-body">
+      ${unavailable ? `<div class="ai-msg ai-err ai-unavail">${esc5(unavailable)}</div>` : ""}
+      <div class="form-grid ai-form">
+        <label>Source</label><select data-k="range">${ranges.map((r) => `<option value="${r.id}">${esc5(r.label)}</option>`).join("")}</select>
+        <label>Model</label><select data-k="model">${AI_MODELS.map((m) => `<option value="${m.id}"${m.id === prefs.model ? " selected" : ""}>${esc5(m.label)} (${m.size})</option>`).join("")}</select>
+        <label>Language</label><select data-k="language">${LANGUAGES.map(([v, l]) => `<option value="${v}"${v === prefs.language ? " selected" : ""}>${l}</option>`).join("")}</select>
+        <label>Task</label><select data-k="task"><option value="transcribe">Transcribe</option><option value="translate"${prefs.task === "translate" ? " selected" : ""}>Translate to English</option></select>
+        <label>Style</label><div class="ai-styles">${CAPTION_STYLES.map((s) => `<button type="button" class="ai-style${s.id === st0.id ? " active" : ""}" data-style="${s.id}"><span class="ai-sw ai-sw-${s.id}">Aa</span>${s.label}</button>`).join("")}</div>
+        <label>Max words / caption</label><div class="ai-row"><input type="range" data-k="maxWords" min="1" max="12" step="1" value="${st0.maxWords}"><span class="ai-val" data-v="maxWords">${st0.maxWords}</span></div>
+        <label>Position Y</label><div class="ai-row"><input type="range" data-k="y" min="5" max="95" step="1" value="${st0.y}"><span class="ai-val" data-v="y">${st0.y}%</span></div>
+        <label>Text color</label><div class="ai-row"><input type="color" data-k="color" value="${st0.text.color}"><span class="dim ai-engine"></span></div>
+      </div>
+      <div class="ai-progress" hidden>
+        <div class="ai-step" data-step="download"><div class="ai-step-l"><span>Model download</span><span class="ai-pct"></span></div><div class="ai-bar"><i></i></div></div>
+        <div class="ai-step" data-step="transcribe"><div class="ai-step-l"><span>Transcription</span><span class="ai-pct"></span></div><div class="ai-bar"><i></i></div></div>
+        <div class="ai-status dim"></div>
+      </div>
+      <div class="ai-msg ai-notice" hidden></div>
+      <div class="ai-msg ai-err ai-error" hidden></div>
+      <div class="ai-msg ai-ok ai-result" hidden></div>
+      <div class="ai-note dim">Runs entirely in your browser. The speech library and model are downloaded once, then cached.</div>
+    </div>
+    <div class="modal-foot"><button class="btn ai-srt" hidden>Download .srt</button><span class="ai-spacer"></span><button class="btn ai-cancel">Cancel</button><button class="btn primary ai-go">Generate captions</button></div>
+  </div>`;
+    (document.getElementById("modalRoot") || document.body).appendChild(back);
+    const q = (s) => back.querySelector(s);
+    const val = (k) => q(`[data-k="${k}"]`);
+    let style = st0.id, busy = false, ctrl = null, lastClips = null;
+    pickDevice().then((d) => {
+      const e = q(".ai-engine");
+      if (e) e.textContent = d === "webgpu" ? "Engine: GPU (WebGPU)" : "Engine: CPU (WebAssembly)";
+    });
+    const setStyle = (id) => {
+      const s = styleOf(id);
+      style = s.id;
+      back.querySelectorAll(".ai-style").forEach((b) => b.classList.toggle("active", b.dataset.style === s.id));
+      val("maxWords").value = s.maxWords;
+      val("maxWords").disabled = !!s.perWord;
+      val("y").value = s.y;
+      val("color").value = s.text.color;
+      refreshVals();
+    };
+    const refreshVals = () => {
+      q('[data-v="maxWords"]').textContent = val("maxWords").value;
+      q('[data-v="y"]').textContent = val("y").value + "%";
+    };
+    back.querySelectorAll(".ai-style").forEach((b) => b.onclick = () => !busy && setStyle(b.dataset.style));
+    val("maxWords").oninput = val("y").oninput = refreshVals;
+    val("maxWords").disabled = !!st0.perWord;
+    const show = (sel2, html) => {
+      const el2 = q(sel2);
+      el2.hidden = !html;
+      el2.innerHTML = html || "";
+    };
+    const setBar = (step, frac, text) => {
+      const el2 = q(`[data-step="${step}"]`);
+      el2.classList.add("on");
+      el2.querySelector(".ai-bar i").style.width = (frac == null ? 0 : clamp(frac, 0, 1) * 100).toFixed(1) + "%";
+      el2.querySelector(".ai-bar").classList.toggle("indet", frac == null);
+      el2.querySelector(".ai-pct").textContent = text || "";
+    };
+    const setBusy = (b) => {
+      busy = b;
+      back.querySelectorAll(".ai-form select, .ai-form input").forEach((i) => {
+        i.disabled = b || i.dataset.k === "maxWords" && styleOf(style).perWord;
+      });
+      q(".ai-go").disabled = b || !!unavailable;
+      q(".ai-cancel").textContent = b ? "Cancel" : lastClips ? "Close" : "Cancel";
+      back.classList.toggle("ai-busy", b);
+    };
+    const close = () => {
+      if (busy) ctrl?.abort();
+      back.remove();
+    };
+    q(".ai-x").onclick = close;
+    q(".ai-cancel").onclick = () => {
+      if (busy) {
+        ctrl?.abort();
+      } else close();
+    };
+    back.addEventListener("pointerdown", (e) => {
+      if (e.target === back && !busy) close();
+    });
+    back.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") close();
+      e.stopPropagation();
+    });
+    q(".ai-srt").onclick = () => {
+      const clips = (lastClips || []).map((c) => store2.getClip(c.id) || c);
+      const blob = new Blob([captionsToSrt(clips)], { type: "application/x-subrip" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = (store2.project.name || "captions").replace(/[\\/:*?"<>|]+/g, "_") + ".srt";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4e3);
+    };
+    setBusy(false);
+    q(".ai-go").onclick = async () => {
+      if (busy || unavailable) return;
+      const r = ranges.find((x) => x.id === val("range").value) || ranges.at(-1);
+      const opts = {
+        model: val("model").value,
+        language: val("language").value,
+        task: val("task").value,
+        style,
+        maxWords: +val("maxWords").value,
+        y: +val("y").value,
+        color: val("color").value
+      };
+      savePrefs2({ model: opts.model, language: opts.language, task: opts.task, style });
+      show(".ai-error");
+      show(".ai-notice");
+      show(".ai-result");
+      q(".ai-srt").hidden = true;
+      q(".ai-progress").hidden = false;
+      back.querySelectorAll(".ai-step").forEach((s) => s.classList.remove("on", "done"));
+      const status2 = (t) => {
+        q(".ai-status").textContent = t;
+      };
+      ctrl = new AbortController();
+      const signal = ctrl.signal;
+      setBusy(true);
+      try {
+        if (!(r.end - r.start > 0.2)) throw Object.assign(new Error("There is nothing on the timeline to transcribe."), { code: "empty" });
+        const heard = store2.audibleClips().filter((c) => c.start < r.end && c.start + c.duration > r.start);
+        if (!heard.length) throw Object.assign(new Error("No audible clips in this range (check that the tracks/clips are not muted)."), { code: "empty" });
+        status2("Preparing audio\u2026");
+        await Promise.all([...new Set(heard.map((c) => c.mediaId).filter(Boolean))].map((id) => audio.ensureDecoded?.(id)));
+        if (signal.aborted) throw Object.assign(new Error("Cancelled"), { code: "cancel" });
+        const buf = await audio.renderMix({ start: r.start, end: r.end, sampleRate: 16e3, channels: 1 });
+        if (signal.aborted) throw Object.assign(new Error("Cancelled"), { code: "cancel" });
+        const pcm = new Float32Array(buf.getChannelData(0));
+        const device = await pickDevice();
+        setBar("download", null, "checking cache\u2026");
+        const on = (m) => {
+          if (m.type === "status") status2(m.message);
+          else if (m.type === "notice") show(".ai-notice", esc5(m.message));
+          else if (m.type === "download") setBar("download", m.total ? m.loaded / m.total : null, m.total ? `${Math.round(m.loaded / m.total * 100)}% \xB7 ${mb(m.loaded)} / ${mb(m.total)}` : mb(m.loaded));
+          else if (m.type === "progress") {
+            const dl = q('[data-step="download"]');
+            if (!dl.classList.contains("done")) {
+              dl.classList.add("done");
+              setBar("download", 1, dl.querySelector(".ai-pct").textContent.replace(/^\d+%|checking cache…/, "ready") || "ready");
+            }
+            setBar("transcribe", m.total ? m.done / m.total : 0, `${Math.round((m.total ? m.done / m.total : 0) * 100)}% \xB7 ${fmtT(m.done)} / ${fmtT(m.total)}`);
+          }
+        };
+        const run = transcribe || workerTranscribe;
+        const res = await run(pcm, { model: opts.model, language: opts.language, task: opts.task, device, signal, libUrl }, on);
+        if (signal.aborted) throw Object.assign(new Error("Cancelled"), { code: "cancel" });
+        setBar("transcribe", 1, "100%");
+        const words = chunksToWords((res.chunks || []).map((c) => ({ ...c, g: c.g || (res.granularity === "word" ? "word" : res.granularity === "segment" ? "segment" : void 0) })));
+        if (!words.length) throw Object.assign(new Error("No speech was recognised in this range."), { code: "nospeech" });
+        const caps = buildCaptions(store2, words, { style, maxWords: opts.maxWords, offset: r.start });
+        const { clips, track } = addCaptionTrack(store2, caps, { style, y: opts.y, color: opts.color });
+        lastClips = clips;
+        store2.select(clips.map((c) => c.id));
+        status2("");
+        show(".ai-result", `<b>${words.length} word${words.length === 1 ? "" : "s"} \u2192 ${clips.length} caption${clips.length === 1 ? "" : "s"}</b> on the new \u201C${esc5(track.name)}\u201D track.` + (res.granularity !== "word" ? '<br><span class="dim">Word timings were estimated from sentence timestamps.</span>' : "") + '<br><span class="dim">Edit any caption in the Inspector \xB7 Ctrl+Z removes them all.</span>');
+        q(".ai-srt").hidden = false;
+      } catch (e) {
+        if (e.code === "cancel" || signal.aborted) {
+          status2("");
+          show(".ai-notice", "Cancelled.");
+          q(".ai-progress").hidden = true;
+        } else {
+          console.warn("[auto captions]", e);
+          const msg = e.code === "download" ? e.message : /webgpu/i.test(e.message) ? "The GPU engine failed (" + e.message + "). Try again \u2014 the CPU engine will be used." : e.message || String(e);
+          show(".ai-error", esc5(msg));
+          status2("");
+        }
+      } finally {
+        ctrl = null;
+        if (back.isConnected) setBusy(false);
+      }
+    };
+    return { el: back, close };
+  }
+  var AI_MODELS, LANGUAGES, CAPTION_STYLES, BASE_TEXT, MIN_DUR, PAUSE, MAX_CHARS, CJK, isAIAvailable, joinWord, styleOf, srtTime, worker, runSeq, esc5, fmtT, mb, PREF_KEY2, loadPrefs2, savePrefs2;
+  var init_ai = __esm({
+    "js/ai.js"() {
+      init_state();
+      AI_MODELS = [
+        { id: "onnx-community/whisper-tiny", label: "Tiny \u2014 fastest", size: "~40 MB" },
+        { id: "onnx-community/whisper-base", label: "Base \u2014 balanced", size: "~80 MB" },
+        { id: "onnx-community/whisper-small", label: "Small \u2014 most accurate", size: "~250 MB" }
+      ];
+      LANGUAGES = [
+        ["", "Auto-detect"],
+        ["en", "English"],
+        ["es", "Spanish"],
+        ["ca", "Catalan"],
+        ["fr", "French"],
+        ["de", "German"],
+        ["pt", "Portuguese"],
+        ["it", "Italian"],
+        ["nl", "Dutch"],
+        ["pl", "Polish"],
+        ["ru", "Russian"],
+        ["uk", "Ukrainian"],
+        ["tr", "Turkish"],
+        ["ar", "Arabic"],
+        ["hi", "Hindi"],
+        ["ja", "Japanese"],
+        ["ko", "Korean"],
+        ["zh", "Chinese"],
+        ["sv", "Swedish"],
+        ["el", "Greek"],
+        ["eu", "Basque"],
+        ["gl", "Galician"]
+      ];
+      CAPTION_STYLES = [
+        {
+          id: "subtitle",
+          label: "Subtitle",
+          y: 86,
+          maxWords: 6,
+          text: { font: "Inter", size: 56, color: "#ffffff", bold: false, stroke: 0, background: "rgba(0,0,0,0.6)", shadow: false }
+        },
+        {
+          id: "tiktok",
+          label: "TikTok",
+          y: 68,
+          maxWords: 3,
+          upper: true,
+          text: { font: "Montserrat", size: 104, color: "#ffe600", bold: true, stroke: 9, strokeColor: "#000000", background: "", shadow: true }
+        },
+        {
+          id: "clean",
+          label: "Clean",
+          y: 86,
+          maxWords: 6,
+          text: { font: "Inter", size: 62, color: "#ffffff", bold: true, stroke: 0, background: "", shadow: true }
+        },
+        {
+          id: "karaoke",
+          label: "Word by word",
+          y: 62,
+          maxWords: 1,
+          upper: true,
+          perWord: true,
+          text: { font: "Montserrat", size: 120, color: "#ffffff", bold: true, stroke: 8, strokeColor: "#000000", background: "", shadow: true }
+        }
+      ];
+      BASE_TEXT = {
+        content: "",
+        font: "Inter",
+        size: 56,
+        color: "#ffffff",
+        bold: true,
+        italic: false,
+        align: "center",
+        stroke: 0,
+        strokeColor: "#000000",
+        background: "",
+        shadow: true,
+        lineHeight: 1.15
+      };
+      MIN_DUR = 0.3;
+      PAUSE = 0.5;
+      MAX_CHARS = 42;
+      CJK = /[぀-ヿ㐀-鿿가-힯豈-﫿]/;
+      isAIAvailable = () => !aiUnavailableReason();
+      joinWord = (cur, w) => {
+        if (!cur) return w.replace(/^\s+/, "");
+        if (/^\s/.test(w) || /\s$/.test(cur) || /^[.,!?;:%)\]}'’…。！？、，；：]/.test(w) || CJK.test(cur.slice(-1)) && CJK.test(w[0])) return cur + w;
+        return cur + " " + w;
+      };
+      styleOf = (id) => CAPTION_STYLES.find((s) => s.id === id) || CAPTION_STYLES[0];
+      srtTime = (t) => {
+        const ms = Math.max(0, Math.round(t * 1e3));
+        const p = (n, l = 2) => String(n).padStart(l, "0");
+        return `${p(Math.floor(ms / 36e5))}:${p(Math.floor(ms / 6e4) % 60)}:${p(Math.floor(ms / 1e3) % 60)},${p(ms % 1e3, 3)}`;
+      };
+      worker = null;
+      runSeq = 0;
+      esc5 = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+      fmtT = (s) => {
+        s = Math.max(0, s);
+        const m = Math.floor(s / 60);
+        return m + ":" + (s % 60).toFixed(1).padStart(4, "0");
+      };
+      mb = (b) => (b / 1048576).toFixed(b > 104857600 ? 0 : 1) + " MB";
+      PREF_KEY2 = "ve.autoCaptions";
+      loadPrefs2 = () => {
+        try {
+          return JSON.parse(localStorage.getItem(PREF_KEY2) || "{}") || {};
+        } catch {
+          return {};
+        }
+      };
+      savePrefs2 = (p) => {
+        try {
+          localStorage.setItem(PREF_KEY2, JSON.stringify(p));
+        } catch {
+        }
+      };
     }
   });
 
@@ -12981,17 +14448,17 @@ ${notes}`;
     function loop() {
       if (!store2.playing) return;
       let t = clockNow();
-      const end2 = store2.duration();
+      const end3 = store2.duration();
       const loopRange = store2.loopRange;
       if (loopRange && t >= loopRange[1]) {
         seek(loopRange[0]);
         play();
         return;
       }
-      if (t >= end2) {
-        t = end2;
+      if (t >= end3) {
+        t = end3;
         pause();
-        store2.setPlayhead(end2);
+        store2.setPlayhead(end3);
         return;
       }
       store2.setPlayhead(t);
@@ -13346,7 +14813,7 @@ ${notes}`;
     return s(`<rect x="20" y="10" width="120" height="70" rx="3"/>${dots}`);
   }
   function filterSwatch(id) {
-    const css = {
+    const css2 = {
       grayscale: "grayscale(1)",
       sepia: "sepia(1)",
       invert: "invert(1)",
@@ -13373,7 +14840,7 @@ ${notes}`;
       bloom: "brightness(1.3) blur(.8px)",
       letterbox: ""
     }[id] || "";
-    return `<div style="position:absolute;inset:0;background:linear-gradient(135deg,#f6b26b,#e06666 40%,#6fa8dc 70%,#93c47d);filter:${css}"></div>${id === "letterbox" ? '<div style="position:absolute;left:0;right:0;top:0;height:18%;background:#000"></div><div style="position:absolute;left:0;right:0;bottom:0;height:18%;background:#000"></div>' : ""}`;
+    return `<div style="position:absolute;inset:0;background:linear-gradient(135deg,#f6b26b,#e06666 40%,#6fa8dc 70%,#93c47d);filter:${css2}"></div>${id === "letterbox" ? '<div style="position:absolute;left:0;right:0;top:0;height:18%;background:#000"></div><div style="position:absolute;left:0;right:0;bottom:0;height:18%;background:#000"></div>' : ""}`;
   }
   function createLibrary({ store: store2, ops: ops2, audio, materials }) {
     const tabs = document.getElementById("libTabs");
@@ -13397,28 +14864,28 @@ ${notes}`;
       e.dataTransfer.effectAllowed = "copy";
     }
     const selClip = () => store2.selectedClips()[0] || null;
-    function toast2(m) {
+    function toast3(m) {
       window.dispatchEvent(new CustomEvent("ve:toast", { detail: m }));
     }
     function applyFilter(id) {
       const c = selClip();
       if (!c || c.type === "audio") {
-        toast2("Select a clip on the timeline first (or drag the filter onto it)");
+        toast3("Select a clip on the timeline first (or drag the filter onto it)");
         return;
       }
       store2.transact("Add filter", (p) => {
         p.clips.find((x) => x.id === c.id).filters.push({ id: uid("flt"), type: id, amount: 1 });
       });
-      toast2(`${FILTERS.find((f) => f.id === id)?.label} added to ${c.name}`);
+      toast3(`${FILTERS.find((f) => f.id === id)?.label} added to ${c.name}`);
     }
     function applyTransition(id) {
       const c = selClip();
       if (!c || c.type === "audio") {
-        toast2("Select a clip first (or drag the transition onto a clip edge)");
+        toast3("Select a clip first (or drag the transition onto a clip edge)");
         return;
       }
       ops2.setTransition(c.id, "in", { type: id, duration: 1 });
-      toast2(`${TRANSITIONS.find((f) => f.id === id)?.label} added to the start of ${c.name}`);
+      toast3(`${TRANSITIONS.find((f) => f.id === id)?.label} added to the start of ${c.name}`);
     }
     const sides = {
       media: [["all", "Project Media"], ["video", "Videos"], ["image", "Images"], ["audio", "Audio"]],
@@ -13626,7 +15093,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
                 store2.transact("Apply material", (p) => {
                   p.clips.find((x) => x.id === c.id).materialId = m.id;
                 });
-                toast2(`${m.name} applied to ${c.name}`);
+                toast3(`${m.name} applied to ${c.name}`);
               }
             },
             onDbl: () => materials?.openMaterialEditor?.({ store: store2, mediaRuntime, materialId: m.id }),
@@ -13723,7 +15190,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       bindings.push({ id, ...fn });
       return id;
     };
-    function slider(label, path, { min, max, step = 1, fmt, toUI = (v) => v, fromUI = (v) => v, def = 0 } = {}) {
+    function slider2(label, path, { min, max, step = 1, fmt: fmt2, toUI = (v) => v, fromUI = (v) => v, def = 0 } = {}) {
       const id = ctl({ kind: "slider", path, toUI, fromUI, def });
       return `<div class="prop" title="Double-click the label to reset"><label data-reset="${id}">${label}</label><input type="range" id="${id}" min="${min}" max="${max}" step="${step}"><input type="number" id="${id}n" min="${min}" max="${max}" step="${step}"></div>`;
     }
@@ -13746,12 +15213,12 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     function transformSec(c) {
       const fixed = c.type === "color" || c.type === "material";
       return section("transform", "Transform", `
-      ${slider("Scale", "transform.scale", { min: 0, max: 500, step: 1, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 1 })}
-      ${slider("Width", "transform.scaleX", { min: 0, max: 500, step: 1, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 1 })}
-      ${slider("Height", "transform.scaleY", { min: 0, max: 500, step: 1, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 1 })}
-      ${slider("Position X", "transform.x", { min: -store2.project.settings.width, max: store2.project.settings.width, step: 1 })}
-      ${slider("Position Y", "transform.y", { min: -store2.project.settings.height, max: store2.project.settings.height, step: 1 })}
-      ${slider("Rotate", "transform.rotation", { min: -180, max: 180, step: 0.5 })}
+      ${slider2("Scale", "transform.scale", { min: 0, max: 500, step: 1, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 1 })}
+      ${slider2("Width", "transform.scaleX", { min: 0, max: 500, step: 1, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 1 })}
+      ${slider2("Height", "transform.scaleY", { min: 0, max: 500, step: 1, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 1 })}
+      ${slider2("Position X", "transform.x", { min: -store2.project.settings.width, max: store2.project.settings.width, step: 1 })}
+      ${slider2("Position Y", "transform.y", { min: -store2.project.settings.height, max: store2.project.settings.height, step: 1 })}
+      ${slider2("Rotate", "transform.rotation", { min: -180, max: 180, step: 0.5 })}
       <div class="prop wide"><label>Flip</label><div class="btn-row">${toggleBtn("Horizontal", "transform.flipH")}${toggleBtn("Vertical", "transform.flipV")}</div></div>
       ${fixed ? "" : `<div class="btn-row"><button class="btn" data-do="fit">Fit</button><button class="btn" data-do="fill">Fill frame</button><button class="btn" data-do="resetT">Reset</button></div>`}
     `);
@@ -13768,23 +15235,23 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       if (c.type === "adjustment") h2 += '<div class="ins-empty" style="padding:8px 14px">Adjustment layer \u2014 its color, filters, hue match and material apply to every track below it. Opacity sets the strength.</div>';
       else h2 += transformSec(c);
       if (c.type === "video" || c.type === "image") h2 += section("crop", "Crop", `
-      ${slider("Left", "crop.l", { min: 0, max: 95, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}
-      ${slider("Right", "crop.r", { min: 0, max: 95, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}
-      ${slider("Top", "crop.t", { min: 0, max: 95, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}
-      ${slider("Bottom", "crop.b", { min: 0, max: 95, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}`);
-      h2 += section("comp", "Compositing", `${select("Blend Mode", "blend", BLEND_MODES)}${slider("Opacity", "transform.opacity", { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 1 })}`);
+      ${slider2("Left", "crop.l", { min: 0, max: 95, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}
+      ${slider2("Right", "crop.r", { min: 0, max: 95, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}
+      ${slider2("Top", "crop.t", { min: 0, max: 95, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}
+      ${slider2("Bottom", "crop.b", { min: 0, max: 95, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}`);
+      h2 += section("comp", "Compositing", `${select("Blend Mode", "blend", BLEND_MODES)}${slider2("Opacity", "transform.opacity", { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 1 })}`);
       if (c.type !== "material" && c.type !== "adjustment") h2 += section("chroma", "Chroma Key (Green Screen)", `
       ${color("Key color", "chroma.color", { pick: true })}
-      ${slider("Tolerance", "chroma.similarity", { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 0.35 })}
-      ${slider("Edge soft", "chroma.smoothness", { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 0.08 })}
-      ${slider("Spill", "chroma.spill", { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 0.5 })}
-      ${slider("Feather", "chroma.edgeFeather", { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}`, { toggleOf: "chroma.enabled" });
+      ${slider2("Tolerance", "chroma.similarity", { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 0.35 })}
+      ${slider2("Edge soft", "chroma.smoothness", { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 0.08 })}
+      ${slider2("Spill", "chroma.spill", { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 0.5 })}
+      ${slider2("Feather", "chroma.edgeFeather", { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}`, { toggleOf: "chroma.enabled" });
       h2 += section("material", "Material", `
       <div class="prop wide"><label>Material</label><div style="display:flex;gap:6px"><select id="insMat" style="flex:1">${mats.map((o) => `<option value="${o.id}" ${o.id === (c.materialId || "") ? "selected" : ""}>${esc(o.label)}</option>`).join("")}</select><button class="btn" data-do="editMat" title="Open node editor">Edit</button><button class="btn" data-do="newMat" title="New material">+</button></div></div>
       <div id="insMatParams"></div>`);
       h2 += section("trans", "Transitions", `
-      ${select("In", "transitionIn.type", trans)}${slider("In length", "transitionIn.duration", { min: 0.1, max: 5, step: 0.05, def: 1 })}
-      ${select("Out", "transitionOut.type", trans)}${slider("Out length", "transitionOut.duration", { min: 0.1, max: 5, step: 0.05, def: 1 })}`);
+      ${select("In", "transitionIn.type", trans)}${slider2("In length", "transitionIn.duration", { min: 0.1, max: 5, step: 0.05, def: 1 })}
+      ${select("Out", "transitionOut.type", trans)}${slider2("Out length", "transitionOut.duration", { min: 0.1, max: 5, step: 0.05, def: 1 })}`);
       return h2;
     }
     function titleTab(c) {
@@ -13793,23 +15260,23 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       return section("text", "Text", `
       <textarea id="${tid}" rows="3" style="width:100%;resize:vertical"></textarea>
       ${select("Font", "text.font", fonts)}
-      ${slider("Size", "text.size", { min: 8, max: 400, def: 96 })}
+      ${slider2("Size", "text.size", { min: 8, max: 400, def: 96 })}
       ${color("Color", "text.color")}
       <div class="prop wide"><label>Style</label><div class="btn-row">${toggleBtn("Bold", "text.bold")}${toggleBtn("Italic", "text.italic")}${toggleBtn("Shadow", "text.shadow")}</div></div>
       ${select("Align", "text.align", [{ id: "left", label: "Left" }, { id: "center", label: "Center" }, { id: "right", label: "Right" }])}
-      ${slider("Line height", "text.lineHeight", { min: 0.6, max: 3, step: 0.05, def: 1.15 })}
-      ${slider("Outline", "text.stroke", { min: 0, max: 40 })}
+      ${slider2("Line height", "text.lineHeight", { min: 0.6, max: 3, step: 0.05, def: 1.15 })}
+      ${slider2("Outline", "text.stroke", { min: 0, max: 40 })}
       ${color("Outline color", "text.strokeColor")}
       <div class="prop wide"><label>Background</label><div style="display:flex;gap:6px;align-items:center"><input type="color" id="insTextBg"><button class="btn" data-do="noBg">None</button></div></div>
     `);
     }
     function audioTab(c) {
       return section("audio", "Audio", `
-      ${slider("Volume (dB)", "audio.volume", { min: -60, max: 12, step: 0.1 })}
-      ${slider("Balance", "audio.pan", { min: -100, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}
-      ${slider("Pitch (st)", "audio.pitch", { min: -12, max: 12, step: 0.1 })}
-      ${slider("Fade in (s)", "audio.fadeIn", { min: 0, max: Math.min(10, c.duration / 2), step: 0.05 })}
-      ${slider("Fade out (s)", "audio.fadeOut", { min: 0, max: Math.min(10, c.duration / 2), step: 0.05 })}
+      ${slider2("Volume (dB)", "audio.volume", { min: -60, max: 12, step: 0.1 })}
+      ${slider2("Balance", "audio.pan", { min: -100, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100 })}
+      ${slider2("Pitch (st)", "audio.pitch", { min: -12, max: 12, step: 0.1 })}
+      ${slider2("Fade in (s)", "audio.fadeIn", { min: 0, max: Math.min(10, c.duration / 2), step: 0.05 })}
+      ${slider2("Fade out (s)", "audio.fadeOut", { min: 0, max: Math.min(10, c.duration / 2), step: 0.05 })}
       ${toggle("Mute", "audio.mute")}
       ${toggle("Keep pitch", "audio.keepPitch", { onLabel: "when changing speed" })}
       ${c.type === "video" ? `<div class="btn-row"><button class="btn" data-do="detach">Detach audio</button></div>` : ""}
@@ -13817,18 +15284,18 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     }
     function voiceSecs() {
       const VF = audioApi?.VOICE_FILTERS || [], PR = audioApi?.AUDIO_PRESETS || [];
-      const pct = (l, k, d = 0) => slider(l, "audio.fx." + k, { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: d });
+      const pct = (l, k, d = 0) => slider2(l, "audio.fx." + k, { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: d });
       return (PR.length ? section("apresets", "Audio Presets", `<div class="chip-grid">${PR.map((p) => `<button class="btn" data-apreset="${p.id}" title="${esc(p.title || "")}">${esc(p.label)}</button>`).join("")}</div>`) : "") + (VF.length ? section("voice", "Voice Filters", `<div class="chip-grid">${VF.map((v) => `<button class="btn" data-voice="${v.id}" title="${esc(v.title || "")}">${esc(v.label)}</button>`).join("")}</div>
-        ${slider("Filter mix", "audio.voiceMix", { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 1 })}`) : "") + section("afx", "Audio Effects", `
+        ${slider2("Filter mix", "audio.voiceMix", { min: 0, max: 100, toUI: (v) => v * 100, fromUI: (v) => v / 100, def: 1 })}`) : "") + section("afx", "Audio Effects", `
         ${pct("Reverb", "reverb")}${pct("Reverb size", "reverbSize", 0.5)}
-        ${pct("Echo", "echo")}${slider("Echo time (s)", "audio.fx.echoTime", { min: 0.02, max: 1.5, step: 0.01, def: 0.3 })}${pct("Echo repeats", "echoFeedback", 0.4)}
-        ${pct("Bit crush", "crush")}${slider("Bit depth", "audio.fx.crushBits", { min: 1, max: 16, def: 8 })}${slider("Sample rate", "audio.fx.crushRate", { min: 1e3, max: 44100, step: 100, def: 11025 })}
-        ${pct("Muffle", "lowpass")}${slider("High-pass (Hz)", "audio.fx.highpass", { min: 0, max: 2e3, step: 10 })}${slider("Bass boost (dB)", "audio.fx.bass", { min: 0, max: 18, step: 0.5 })}
-        ${pct("8D orbit", "orbit")}${slider("Orbit speed (Hz)", "audio.fx.orbitSpeed", { min: 0.05, max: 2, step: 0.01, def: 0.25 })}
+        ${pct("Echo", "echo")}${slider2("Echo time (s)", "audio.fx.echoTime", { min: 0.02, max: 1.5, step: 0.01, def: 0.3 })}${pct("Echo repeats", "echoFeedback", 0.4)}
+        ${pct("Bit crush", "crush")}${slider2("Bit depth", "audio.fx.crushBits", { min: 1, max: 16, def: 8 })}${slider2("Sample rate", "audio.fx.crushRate", { min: 1e3, max: 44100, step: 100, def: 11025 })}
+        ${pct("Muffle", "lowpass")}${slider2("High-pass (Hz)", "audio.fx.highpass", { min: 0, max: 2e3, step: 10 })}${slider2("Bass boost (dB)", "audio.fx.bass", { min: 0, max: 18, step: 0.5 })}
+        ${pct("8D orbit", "orbit")}${slider2("Orbit speed (Hz)", "audio.fx.orbitSpeed", { min: 0.05, max: 2, step: 0.01, def: 0.25 })}
         <div class="btn-row"><button class="btn" data-do="resetAfx">Reset audio effects</button></div>`);
     }
     function colorTab() {
-      const s = (l, k, min = -100, max = 100) => slider(l, "color." + k, { min, max });
+      const s = (l, k, min = -100, max = 100) => slider2(l, "color." + k, { min, max });
       return section("basic", "Color", `
       ${s("Exposure", "exposure")}${s("Brightness", "brightness")}${s("Contrast", "contrast")}${s("Saturation", "saturation")}
       ${s("Hue", "hue", -180, 180)}${s("Temperature", "temperature")}${s("Tint", "tint")}${s("Highlights", "highlights")}${s("Shadows", "shadows")}
@@ -13841,14 +15308,14 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     `) + section("huematch", "Auto Hue Match", `
       ${color("From", "hueMatch.from", { pick: true })}
       ${color("To", "hueMatch.to", { pick: true })}
-      ${slider("Range (\xB0)", "hueMatch.range", { min: 1, max: 180, def: 30 })}
+      ${slider2("Range (\xB0)", "hueMatch.range", { min: 1, max: 180, def: 30 })}
       ${toggle("Colorize", "hueMatch.colorize", { onLabel: "force every pixel to the To color" })}
     `, { toggleOf: "hueMatch.enabled" }) + section("detail", "Detail", `${s("Sharpen", "sharpen", 0, 100)}${s("Clarity", "clarity")}${s("Noise / grain", "noise", 0, 100)}${s("Blur", "blur", 0, 100)}${s("Vignette", "vignette", 0, 100)}
       <div class="btn-row"><button class="btn" data-do="resetColor">Reset color</button></div>`);
     }
     function speedTab(c) {
       return section("speed", "Uniform Speed", `
-      ${slider("Speed", "speed", { min: 0.1, max: 10, step: 0.05, def: 1 })}
+      ${slider2("Speed", "speed", { min: 0.1, max: 10, step: 0.05, def: 1 })}
       <div class="btn-row">${[0.25, 0.5, 1, 1.5, 2, 4].map((s) => `<button class="btn" data-speed="${s}">${s}x</button>`).join("")}</div>
       <div class="prop wide"><label>Duration</label><span class="tc">${tc(c.duration, store2.project.settings.fps)}</span></div>
       ${toggle("Reverse", "reverse")}
@@ -14236,7 +15703,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
   // js/app.js
   var $ = (s) => document.querySelector(s);
   var fpsInt = () => Math.round(store.project.settings.fps || 30);
-  var tc2 = (s) => {
+  var tc3 = (s) => {
     s = Math.max(0, s);
     const f = fpsInt();
     const tot = Math.floor(s * f + 1e-6);
@@ -14248,11 +15715,11 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       return await load();
     } catch (e) {
       console.error("Failed to load", path, e);
-      toast(`Module ${path} failed to load \u2014 see console`);
+      toast2(`Module ${path} failed to load \u2014 see console`);
       return {};
     }
   }
-  function toast(msg, ms = 2600) {
+  function toast2(msg, ms = 2600) {
     const t = document.createElement("div");
     t.className = "toast-msg";
     t.textContent = msg;
@@ -14262,7 +15729,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
   function status(msg) {
     $("#statusMsg").textContent = msg;
   }
-  window.addEventListener("ve:toast", (e) => toast(e.detail));
+  window.addEventListener("ve:toast", (e) => toast2(e.detail));
   function setTheme(t) {
     document.documentElement.dataset.theme = t;
     try {
@@ -14354,7 +15821,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       renderer = createRenderer2?.({ canvas, store, sources, mediaRuntime });
     } catch (e) {
       console.error(e);
-      toast("WebGL renderer failed: " + e.message);
+      toast2("WebGL renderer failed: " + e.message);
     }
     try {
       audio = createAudioEngine2?.({ store, mediaRuntime });
@@ -14371,7 +15838,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       timeline = createTimeline2?.({ root: $("#timeline"), store, mediaRuntime, ops });
     } catch (e) {
       console.error(e);
-      toast("Timeline failed: " + e.message);
+      toast2("Timeline failed: " + e.message);
     }
     const library = createLibrary({ store, ops, audio, materials });
     window.__ve = { store, ops, sources, renderer, audio, playback, timeline, mediaRuntime, materials };
@@ -14423,8 +15890,8 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     });
     function updateTime() {
       const d = store.duration();
-      $("#tcCur").textContent = tc2(store.playhead);
-      $("#tcDur").textContent = tc2(d);
+      $("#tcCur").textContent = tc3(store.playhead);
+      $("#tcDur").textContent = tc3(d);
       if (!scrubbing) scrub.value = d > 0 ? Math.round(store.playhead / d * 1e3) : 0;
       scrub.style.background = "";
     }
@@ -14435,13 +15902,13 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       store.transact("Mark in", (p) => {
         p.settings.markIn = store.playhead;
       });
-      toast("In point set " + tc2(store.playhead));
+      toast2("In point set " + tc3(store.playhead));
     };
     $("#btnMarkOut").onclick = () => {
       store.transact("Mark out", (p) => {
         p.settings.markOut = store.playhead;
       });
-      toast("Out point set " + tc2(store.playhead));
+      toast2("Out point set " + tc3(store.playhead));
     };
     const aspectSel = $("#aspectSelect");
     aspectSel.innerHTML = ASPECTS.map((a) => `<option value="${a.id}">${a.id === "custom" ? "Custom\u2026" : a.id}</option>`).join("");
@@ -14481,13 +15948,13 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       try {
         r2 = createRenderer2({ canvas: c, store, sources, mediaRuntime });
       } catch (e) {
-        toast("Snapshot failed");
+        toast2("Snapshot failed");
         return;
       }
       sources.prepare(store.playhead).then(() => {
         r2.render(store.playhead);
         c.toBlob((b) => {
-          download2(b, `${store.project.name} ${tc2(store.playhead).replace(/:/g, "-")}.png`);
+          download2(b, `${store.project.name} ${tc3(store.playhead).replace(/:/g, "-")}.png`);
           r2.dispose?.();
         }, "image/png");
       });
@@ -14522,6 +15989,33 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       const w = ($("#timeline").clientWidth || 800) - 190;
       store.setZoom(clamp(w / Math.max(5, store.duration() * 1.08), 2, 2e3));
     };
+    const lazyAuto = () => Promise.resolve().then(() => (init_autoedit(), autoedit_exports));
+    const lazyAI = () => Promise.resolve().then(() => (init_ai(), ai_exports));
+    const openTool = async (load, fn, needSel) => {
+      try {
+        const m = await load();
+        if (!m[fn]) throw new Error(fn + " missing");
+        playback.pause();
+        return m[fn]({ store, ops, audio, mediaRuntime });
+      } catch (e) {
+        console.error(e);
+        toast2("Could not open that tool: " + e.message);
+      }
+    };
+    const autoActions = {
+      captions: () => openTool(lazyAI, "openAutoCaptions"),
+      silence: () => openTool(lazyAuto, "openSilenceRemover"),
+      scenes: () => {
+        if (!store.selectedClips().some((c) => c.type === "video")) return toast2("Select a video clip first");
+        openTool(lazyAuto, "openSceneDetect");
+      },
+      beats: () => openTool(lazyAuto, "openBeatDetect"),
+      reframe: async () => {
+        const m = await lazyAuto();
+        const n = m.autoReframe({ store, ops });
+        toast2(n ? `Reframed ${n} clip(s) to fill the frame` : "Select video or image clips first");
+      }
+    };
     const actions = {
       undo: () => store.undo(),
       redo: () => store.redo(),
@@ -14532,29 +16026,29 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         if (!ops.deleteSelectedTransition()) ops.deleteSelected({ ripple: true });
       },
       split: () => {
-        if (!ops.splitAt(store.playhead)) toast("Put the playhead over a clip to split it");
+        if (!ops.splitAt(store.playhead)) toast2("Put the playhead over a clip to split it");
       },
       addTitle: () => ops.addTextClip({ time: store.playhead }),
       crop: () => {
-        if (!store.selectedClips().length) return toast("Select a clip first");
+        if (!store.selectedClips().length) return toast2("Select a clip first");
         inspector.showTab("video");
         document.querySelector('[data-sec="crop"]')?.classList.remove("collapsed");
         document.querySelector('[data-sec="crop"]')?.scrollIntoView({ block: "center" });
       },
       speed: (e) => {
-        if (!store.selectedClips().length) return toast("Select a clip first");
+        if (!store.selectedClips().length) return toast2("Select a clip first");
         const r = (e?.currentTarget || $('[data-act="speed"]')).getBoundingClientRect();
         showMenu(r.left, r.bottom + 4, [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 8].map((s) => ({ label: s + "x", run: () => ops.setSpeed(s) })).concat([{ sep: true }, { label: "Custom\u2026", run: () => inspector.showTab("speed") }]));
       },
       freeze: () => {
-        if (!ops.freezeFrame()) toast("Put the playhead over a video clip");
+        if (!ops.freezeFrame()) toast2("Put the playhead over a video clip");
       },
       detach: () => {
-        if (!ops.detachAudio()) toast("Select a video clip that has audio");
+        if (!ops.detachAudio()) toast2("Select a video clip that has audio");
       },
       chroma: () => {
         const c = store.selectedClips()[0];
-        if (!c || c.type === "audio") return toast("Select a video or image clip first");
+        if (!c || c.type === "audio") return toast2("Select a video or image clip first");
         store.transact("Green screen", (p) => {
           p.clips.find((x) => x.id === c.id).chroma.enabled = true;
         });
@@ -14578,7 +16072,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       newProject: () => newProj(),
       copy: () => {
         if (store.selection.transition) {
-          if (ops.copyTransition()) toast("Transition copied \u2014 select clips or a transition and paste");
+          if (ops.copyTransition()) toast2("Transition copied \u2014 select clips or a transition and paste");
           return;
         }
         ops.copy();
@@ -14683,7 +16177,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       });
     }
     function newMaterial(applyTo) {
-      if (!materials.makeDefaultMaterial) return toast("Material editor failed to load");
+      if (!materials.makeDefaultMaterial) return toast2("Material editor failed to load");
       const n = store.project.materials.length + 1;
       const m = materials.makeDefaultMaterial("Material " + n);
       store.transact("New material", (p) => {
@@ -14731,7 +16225,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       e.preventDefault();
       const onPlayer = !!e.target.closest("#player");
       await importFiles([...e.dataTransfer.files], { audio, ops, addToTimeline: onPlayer, time: store.playhead });
-      if (!onPlayer) toast("Imported \u2014 drag from the library to the timeline, or drop on the player to add at the playhead");
+      if (!onPlayer) toast2("Imported \u2014 drag from the library to the timeline, or drop on the player to add at the playhead");
     });
     wrap.addEventListener("dragover", (e) => {
       if ([...e.dataTransfer.types].includes("application/x-ve")) e.preventDefault();
@@ -14761,7 +16255,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         e.preventDefault();
         const named = files.map((f, i) => f.name && f.name !== "image.png" ? f : new File([f], `Pasted image ${Date.now().toString(36)}${i ? "-" + i : ""}.${(f.type.split("/")[1] || "png").replace("jpeg", "jpg")}`, { type: f.type }));
         await importFiles(named, { audio, ops, addToTimeline: true, time: store.playhead });
-        toast(`Pasted ${named.length > 1 ? named.length + " files" : "image"} at ${tc2(store.playhead)}`);
+        toast2(`Pasted ${named.length > 1 ? named.length + " files" : "image"} at ${tc3(store.playhead)}`);
         return;
       }
       if (store.clipboard?.length || store.transitionClipboard) {
@@ -14791,10 +16285,10 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         };
         rec.start();
         document.querySelector('[data-act="record"]').classList.add("active");
-        toast("Recording\u2026 click the mic again to stop");
+        toast2("Recording\u2026 click the mic again to stop");
         playback.play();
       } catch (e) {
-        toast("Microphone not available: " + e.message);
+        toast2("Microphone not available: " + e.message);
         rec = null;
       }
     }
@@ -14870,8 +16364,8 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       });
     }
     function openExport() {
-      if (!exportMod.openExportDialog) return toast("Export module failed to load");
-      if (!store.project.clips.length) return toast("Add something to the timeline first");
+      if (!exportMod.openExportDialog) return toast2("Export module failed to load");
+      if (!store.project.clips.length) return toast2("Add something to the timeline first");
       playback.pause();
       exportMod.openExportDialog({ store, mediaRuntime, sources, audio, createRenderer: createRenderer2 });
     }
@@ -14979,10 +16473,10 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       if (!f) return;
       try {
         await loadPacked(await unpackProject(f));
-        toast("Opened " + f.name);
+        toast2("Opened " + f.name);
       } catch (err) {
         console.error(err);
-        toast("Could not open that file");
+        toast2("Could not open that file");
       }
     });
     function newProj() {
@@ -15059,7 +16553,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
             bar2.querySelector(".primary").onclick = async () => {
               bar2.remove();
               await loadPacked(packed);
-              toast("Session restored");
+              toast2("Session restored");
             };
             bar2.lastElementChild.onclick = () => bar2.remove();
             setTimeout(() => bar2.remove(), 2e4);
@@ -15135,6 +16629,15 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         { label: "Blade Tool", kbd: "C", run: actions.toolBlade, checked: store.tool === "blade" },
         { label: "Selection Tool", kbd: "V", run: actions.toolSelect, checked: store.tool === "select" }
       ],
+      "AI & Auto": () => [
+        { label: "Auto Captions (local Whisper AI)\u2026", kbd: "Ctrl+Alt+T", run: autoActions.captions },
+        { sep: true },
+        { label: "Silence Remover\u2026", kbd: "Ctrl+Alt+R", run: autoActions.silence },
+        { label: "Scene Detection (split at cuts)\u2026", run: autoActions.scenes },
+        { label: "Beat Detection / Cut to Beat\u2026", kbd: "Ctrl+Alt+B", run: autoActions.beats },
+        { label: "Auto Reframe (fill frame)", run: autoActions.reframe },
+        { label: "Close Gaps", kbd: "Ctrl+Shift+Backspace", run: () => ops.closeGaps() }
+      ],
       View: () => [
         { label: "Theme: Filmora", run: () => setTheme("filmora"), checked: document.documentElement.dataset.theme === "filmora" },
         { label: "Theme: Unreal Engine", run: () => setTheme("unreal"), checked: document.documentElement.dataset.theme === "unreal" },
@@ -15209,6 +16712,9 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         ["F", "Zoom timeline to selection"],
         ["`", "Maximize panel under the mouse"],
         ["G", "Guides: thirds + safe zones"],
+        ["Ctrl+Alt+T", "Auto captions (AI)"],
+        ["Ctrl+Alt+R", "Silence remover"],
+        ["Ctrl+Alt+B", "Beat detection"],
         ["Ctrl+wheel / middle-drag on player", "Zoom / pan the preview"],
         ["Ctrl+F", "Search the library"],
         ["Ctrl+Alt+S", "Snapshot PNG"],
@@ -15224,24 +16730,24 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     function toggleLoop() {
       if (store.loopRange) {
         store.loopRange = null;
-        toast("Loop off");
+        toast2("Loop off");
         document.querySelector("#btnPlay").classList.remove("looping");
         return;
       }
       const s = store.project.settings;
       const sel = store.selectedClips();
       let r = s.markOut > s.markIn ? [s.markIn, s.markOut] : sel.length ? [Math.min(...sel.map((c) => c.start)), Math.max(...sel.map((c) => c.start + c.duration))] : [0, store.duration()];
-      if (!(r[1] - r[0] > store.frame())) return toast("Nothing to loop");
+      if (!(r[1] - r[0] > store.frame())) return toast2("Nothing to loop");
       store.loopRange = r;
       document.querySelector("#btnPlay").classList.add("looping");
-      toast(`Looping ${tc2(r[0])} \u2192 ${tc2(r[1])} (Ctrl+L to stop)`);
+      toast2(`Looping ${tc3(r[0])} \u2192 ${tc3(r[1])} (Ctrl+L to stop)`);
       if (store.playhead < r[0] || store.playhead > r[1]) playback.seek(r[0]);
       playback.play();
     }
     function jumpMarker(dir) {
       const ms = store.project.markers.map((m) => m.time).sort((a, b) => a - b);
       const t = dir < 0 ? ms.filter((x) => x < store.playhead - 1e-3).at(-1) : ms.find((x) => x > store.playhead + 1e-3);
-      if (t == null) return toast("No more markers");
+      if (t == null) return toast2("No more markers");
       playback.seek(t);
     }
     function zoomToSelection() {
@@ -15350,7 +16856,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         }) },
         { label: "Fill frame (crop to cover)", disabled: !vis, run: () => {
           const n = autoFill();
-          toast(n ? "Filled the frame" : "Select a video or image clip");
+          toast2(n ? "Filled the frame" : "Select a video or image clip");
         } },
         { label: "Reset transform", disabled: !vis, run: () => store.transact("Reset transform", (p) => {
           const x = p.clips.find((y) => y.id === c.id);
@@ -15402,10 +16908,10 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         if (t) txt = `Transition \xB7 ${t.type.replace(/_/g, " ")} \xB7 ${t.duration.toFixed(2)} s \xB7 Del to remove \xB7 Ctrl+C to copy`;
       } else if (sel.length === 1) {
         const c = sel[0];
-        txt = `${c.name} \xB7 ${tc2(c.start)} \u2192 ${tc2(c.start + c.duration)} \xB7 ${c.duration.toFixed(2)} s${c.speed !== 1 ? ` \xB7 ${c.speed}x` : ""}`;
+        txt = `${c.name} \xB7 ${tc3(c.start)} \u2192 ${tc3(c.start + c.duration)} \xB7 ${c.duration.toFixed(2)} s${c.speed !== 1 ? ` \xB7 ${c.speed}x` : ""}`;
       } else if (sel.length > 1) {
         const a = Math.min(...sel.map((c) => c.start)), b = Math.max(...sel.map((c) => c.start + c.duration));
-        txt = `${sel.length} clips \xB7 ${tc2(a)} \u2192 ${tc2(b)}`;
+        txt = `${sel.length} clips \xB7 ${tc3(a)} \u2192 ${tc3(b)}`;
       }
       const s = store.project.settings;
       $("#statusInfo").textContent = (txt ? txt + "   \xB7   " : "") + `${s.width}\xD7${s.height} \xB7 ${s.fps} fps`;
@@ -15424,21 +16930,24 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         f();
       };
       const lk = k.length === 1 ? k.toLowerCase() : k;
-      if (ctrl && alt && lk === "c") return run(() => toast(ops.copyEffects() ? "Effects copied" : "Select a clip first"));
-      if (ctrl && alt && lk === "v") return run(() => toast(ops.pasteEffects() ? "Effects pasted" : "Copy effects from a clip first (Ctrl+Alt+C)"));
+      if (ctrl && alt && lk === "c") return run(() => toast2(ops.copyEffects() ? "Effects copied" : "Select a clip first"));
+      if (ctrl && alt && lk === "v") return run(() => toast2(ops.pasteEffects() ? "Effects pasted" : "Copy effects from a clip first (Ctrl+Alt+C)"));
       if (ctrl && alt && lk === "m") return run(actions.newMaterial);
       if (ctrl && alt && lk === "a") return run(() => ops.addAdjustmentClip({ time: store.playhead }));
+      if (ctrl && alt && lk === "t") return run(autoActions.captions);
+      if (ctrl && alt && lk === "r") return run(autoActions.silence);
+      if (ctrl && alt && lk === "b") return run(autoActions.beats);
       if (ctrl && alt && lk === "s") return run(actions.snapshot);
       if (ctrl && sh && lk === "m") return run(() => ops.toggleMute());
       if (ctrl && sh && (lk === "k" || lk === "b")) return run(() => {
-        if (!ops.splitAll()) toast("Nothing under the playhead to split");
+        if (!ops.splitAll()) toast2("Nothing under the playhead to split");
       });
       if (ctrl && sh && k === "Backspace") return run(() => ops.closeGaps());
       if (ctrl && sh && lk === "a") return run(() => store.select([]));
       if (ctrl && k === "ArrowUp") return run(() => ops.moveToTrack(-1));
       if (ctrl && k === "ArrowDown") return run(() => ops.moveToTrack(1));
       if (ctrl && !sh && !alt && lk === "r") return run(() => {
-        if (!store.selectedClips().length) return toast("Select a clip first");
+        if (!store.selectedClips().length) return toast2("Select a clip first");
         inspector.showTab("speed");
       });
       if (ctrl && !sh && !alt && lk === "l") return run(toggleLoop);
@@ -15469,7 +16978,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
           delete p.settings.markIn;
           delete p.settings.markOut;
         });
-        toast("In/out cleared");
+        toast2("In/out cleared");
       });
       if (alt) return;
       const fr = store.frame();
@@ -15508,13 +17017,13 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         case "x":
           return run(() => {
             const sel = store.selectedClips();
-            if (!sel.length) return toast("Select a clip to mark its range");
+            if (!sel.length) return toast2("Select a clip to mark its range");
             const a = Math.min(...sel.map((c) => c.start)), b = Math.max(...sel.map((c) => c.start + c.duration));
             store.transact("Mark clip", (p) => {
               p.settings.markIn = a;
               p.settings.markOut = b;
             });
-            toast("In/out set to the selected clip");
+            toast2("In/out set to the selected clip");
           });
         case "f":
           return run(zoomToSelection);

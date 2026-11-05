@@ -1,0 +1,33 @@
+/* Auto Edit tools (js/autoedit.js): silence remover, scene / beat detection */
+.ve-ae { width: 560px; }
+.ve-ae.wide { width: 680px; }
+.ve-ae .modal-body { display: flex; flex-direction: column; gap: 12px; }
+.ve-ae .modal-foot { align-items: center; }
+.ve-ae-x { background: none; border: 0; color: var(--text-dim); padding: 3px; border-radius: 4px; display: inline-flex; }
+.ve-ae-x:hover { color: var(--text); background: var(--panel-3); }
+.ve-ae-intro { color: var(--text-dim); font-size: 12.5px; }
+.ve-ae-intro b { color: var(--text); font-weight: 600; }
+.ve-ae-grid { grid-template-columns: 120px 1fr; }
+.ve-ae-slider { display: flex; align-items: center; gap: 10px; }
+.ve-ae-slider input[type=range] { flex: 1; accent-color: var(--accent); min-width: 0; }
+.ve-ae-slider output { min-width: 54px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text); }
+.ve-ae-slider .btn { padding: 3px 10px; font-size: 12px; }
+.ve-ae-radios { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.ve-ae-radios label { display: inline-flex; align-items: center; gap: 5px; color: var(--text); cursor: pointer; white-space: nowrap; }
+.ve-ae-radios input { accent-color: var(--accent); margin: 0; }
+.ve-ae-wave, .ve-ae-scores { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 4px; max-height: 260px; overflow-y: auto; }
+.ve-ae-canvas { display: block; width: 100%; }
+.ve-ae-summary { font-weight: 600; color: var(--accent); min-height: 18px; }
+.ve-ae-status { margin-right: auto; color: var(--text-dim); font-size: 12px; }
+.ve-ae-apply:disabled { opacity: .45; pointer-events: none; }
+.ve-ae-progress { height: 4px; border-radius: 2px; background: var(--panel-3); overflow: hidden; transition: opacity .4s; }
+.ve-ae-progress > div { height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+.ve-ae-progress.done { opacity: 0; }
+.ve-ae-strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; min-height: 66px; }
+.ve-ae-thumb { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; }
+.ve-ae-thumb canvas { width: 96px; height: 54px; border-radius: 4px; border: 1px solid var(--border); image-rendering: auto; }
+.ve-ae-thumb:hover canvas { border-color: var(--accent); }
+.ve-ae-thumb span { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--text-dim); }
+.ve-ae-bpm { display: flex; align-items: baseline; gap: 6px; }
+.ve-ae-bpm .v { font-size: 30px; font-weight: 700; color: var(--text); font-family: 'JetBrains Mono', monospace; }
+.ve-ae-bpm .u { color: var(--text-dim); font-weight: 600; }

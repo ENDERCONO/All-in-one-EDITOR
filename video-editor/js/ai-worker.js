@@ -1,4 +1,4 @@
-// Whisper speech-to-text in a module Web Worker (transformers.js, vendored in vendor/transformers/).
+// Whisper speech-to-text in a module Web Worker (transformers.js from jsDelivr, or a local vendor/transformers/ copy).
 // Not bundled: always loaded as a separate module worker by js/ai.js.
 //
 // in : { type: 'run', id, audio: Float32Array (16 kHz mono), model, language|null, task, device: 'webgpu'|'wasm',
@@ -10,25 +10,38 @@
 //      { type: 'result', id, granularity: 'word'|'segment', chunks: [{ text, timestamp: [s, e] }], text, device, model }
 //      { type: 'error', id, code: 'download'|'model'|'transcribe', message }
 
+// The library (≈0.6 MB JS + ≈27 MB onnxruntime wasm) is loaded from jsDelivr at runtime. A local copy in
+// vendor/transformers/ (git-ignored, for dev/offline) is tried first on localhost, last elsewhere.
+const TF_VERSION = '4.3.2';
+const CDN_URL = `https://cdn.jsdelivr.net/npm/@huggingface/transformers@${TF_VERSION}/dist/transformers.min.js`;
 const VENDOR = new URL('../vendor/transformers/', import.meta.url).href;
+const LOCAL_URL = VENDOR + 'transformers.min.js';
 const SR = 16000;
 
 let lib = null, libFrom = null;
 const pipes = new Map(); // key -> { pipe, word: bool }
 
 async function loadLib(libUrl) {
-  const url = libUrl || VENDOR + 'transformers.min.js';
-  if (lib && libFrom === url) return lib;
-  lib = await import(url);
-  libFrom = url;
+  if (lib && (!libUrl || libFrom === libUrl)) return lib;
+  const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(self.location.hostname);
+  const urls = libUrl ? [libUrl] : local ? [LOCAL_URL, CDN_URL] : [CDN_URL, LOCAL_URL];
+  let err = null;
+  for (const url of urls) {
+    try { lib = await import(url); libFrom = url; err = null; break; }
+    catch (e) { err = e; console.warn('[ai-worker] could not import', url, e?.message || e); }
+  }
+  if (err) { const e = new Error('could not download the speech library (' + (err.message || err) + ')'); e.net = true; throw e; }
   const env = lib.env;
   if (env) {
     env.allowLocalModels = false;           // no /models/ probing on our own server
     env.allowRemoteModels = true;
-    env.useBrowserCache = true;
+    const cache = typeof caches !== 'undefined' && self.isSecureContext !== false; // Cache API: https / localhost only
+    env.useBrowserCache = cache;
+    if ('useWasmCache' in env) env.useWasmCache = cache;
     const onnx = env.backends?.onnx;
     if (onnx?.wasm) {
-      onnx.wasm.wasmPaths = { mjs: VENDOR + 'ort-wasm-simd-threaded.asyncify.mjs', wasm: VENDOR + 'ort-wasm-simd-threaded.asyncify.wasm' };
+      // local copy → its own wasm next to it; CDN build → keep its default (jsDelivr) wasm paths
+      if (libFrom === LOCAL_URL) onnx.wasm.wasmPaths = { mjs: VENDOR + 'ort-wasm-simd-threaded.asyncify.mjs', wasm: VENDOR + 'ort-wasm-simd-threaded.asyncify.wasm' };
       onnx.wasm.proxy = false;
       if (!self.crossOriginIsolated) onnx.wasm.numThreads = 1;
     }
@@ -36,6 +49,7 @@ async function loadLib(libUrl) {
   return lib;
 }
 
+const NET_MSG = 'Download failed. Auto captions need an internet connection the first time: the speech library (cdn.jsdelivr.net) and the Whisper model (huggingface.co) are downloaded once, then cached by the browser.';
 const isNetErr = e => /fetch|network|load failed|locate file|status|40\d|50\d|unauthori[sz]ed|forbidden|not found|ERR_|offline|CORS|Unexpected token '<'/i.test(String(e?.message || e));
 
 async function getPipe(id, { model, device, dtype, word }, post) {
@@ -80,7 +94,9 @@ async function run(msg) {
   const post = m => self.postMessage(m);
   post({ type: 'status', id, stage: 'load', message: 'Loading speech engine…' });
   try { await loadLib(msg.libUrl); } catch (e) {
-    return post({ type: 'error', id, code: 'model', message: 'Could not load the speech engine (vendor/transformers): ' + (e?.message || e) });
+    return post(e?.net
+      ? { type: 'error', id, code: 'download', message: NET_MSG + ' (' + e.message + ')' }
+      : { type: 'error', id, code: 'model', message: 'Could not load the speech engine: ' + (e?.message || e) });
   }
 
   // Model choices: word-level timestamps need the "_timestamped" export (cross-attention outputs).
@@ -108,7 +124,7 @@ async function run(msg) {
   }
   if (!ok) {
     return post(isNetErr(lastErr)
-      ? { type: 'error', id, code: 'download', message: 'Model download failed. Auto captions need an internet connection the first time (the model is downloaded from huggingface.co and then cached). ' + (lastErr?.message ? '(' + lastErr.message + ')' : '') }
+      ? { type: 'error', id, code: 'download', message: NET_MSG + (lastErr?.message ? ' (' + lastErr.message + ')' : '') }
       : { type: 'error', id, code: 'model', message: 'Could not load the speech model: ' + (lastErr?.message || lastErr) });
   }
 

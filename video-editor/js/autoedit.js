@@ -552,13 +552,13 @@ function onsetEnvelope(buf, s0, s1) {
   const re = new Float32Array(N), im = new Float32Array(N);
   const bins = half; let prev = new Float32Array(bins), cur = new Float32Array(bins);
   const onset = new Float32Array(F);
-  for (let f = 0; f < F; f++) {
+  for (let f = -1; f < F; f++) { // frame -1 primes `prev` with the audio just before the range
     const c = a + f * hop - half;
     for (let i = 0; i < N; i++) { const k = c + i; re[i] = k >= 0 && k < mono.length ? mono[k] * win[i] : 0; im[i] = 0; }
     fftMag(re, im);
     let flux = 0;
-    for (let k = 1; k < bins; k++) { const v = Math.log1p(100 * Math.hypot(re[k], im[k])); cur[k] = v; const d = v - prev[k]; if (d > 0 && f) flux += d; }
-    onset[f] = flux;
+    for (let k = 1; k < bins; k++) { const v = Math.log1p(100 * Math.hypot(re[k], im[k])); cur[k] = v; const d = v - prev[k]; if (d > 0) flux += d; }
+    if (f >= 0) onset[f] = flux;
     const t = prev; prev = cur; cur = t;
   }
   // subtract local mean, rectify, normalise
@@ -646,10 +646,10 @@ export function openBeatDetect({ store, ops, audio, mediaRuntime }) {
   }
   // Beat times (timeline) at or after t0, extrapolating the tempo grid beyond the clip.
   function beatsFrom(t0, count) {
-    const out = st.beats.filter(t => t > t0 + 0.05);
-    const per = st.period * st.every;
+    const per = st.period * st.every, minLen = Math.max(0.05, per * 0.4);
+    const out = st.beats.filter(t => t > t0 + minLen);
     let last = out.length ? out.at(-1) : (st.beats.at(-1) ?? t0);
-    while (out.length < count) { last = Math.max(last + per, t0 + 0.05 + (out.length ? 0 : per - 0.05)); out.push(last); }
+    while (out.length < count) { last = Math.max(last + per, t0 + (out.length ? minLen : per)); out.push(last); }
     return out.slice(0, count);
   }
 
@@ -695,6 +695,7 @@ export function openBeatDetect({ store, ops, audio, mediaRuntime }) {
     st.period = est.period / clip.speed;
     st.all = est.beats.map(b => ({ t: store.snapTime(srcToTimeline(clip, clip.in + b.f / rate)), strength: b.strength }))
       .filter(b => b.t >= clip.start - FRAME_EPS && b.t < end(clip) - FRAME_EPS).sort((a, b) => a.t - b.t);
+    if (st.all.length < 4) st.bpm = 0; // no clear rhythm (e.g. a steady tone) — show '—' instead of a made-up tempo
     st.env = envelope(store, buf, clip, Math.max(0.005, clip.duration / 1500));
     pick();
   })();

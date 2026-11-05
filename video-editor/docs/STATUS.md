@@ -27,6 +27,9 @@ Last updated by the build session that created the editor.
 | Shared transitions | ✅ | a transition on a cut is one block centred on it (half over each clip, video + audio crossfade); resize symmetric, drag to another cut / edge, right-click, Ctrl+C / Ctrl+V, Delete |
 | Adjustment layers | ✅ | clip type `adjustment`: color / filters / hue match / material apply to every track below; drop a filter on empty timeline space, Effects → Adjustment Layer, Ctrl+Alt+A |
 | Timeline extras | ✅ | scissor ball drags in both directions, middle-mouse pan |
+| Auto captions (local AI) | ✅* | `js/ai.js` + `js/ai-worker.js`: Whisper (tiny/base/small) via transformers.js 4.3.2 from jsDelivr, model from the Hugging Face hub, runs in the browser (WebGPU or WASM). Styles: Subtitle / TikTok / Clean / Word-by-word, .srt download. *Real model not testable in the build sandbox (hub blocked); needs http(s), not file:// |
+| Auto edit | ✅ | `js/autoedit.js`: silence remover (ripple / split / mark), scene detection, beat detection + cut to beat, auto reframe |
+| Polish | ✅ | t=0 on the left wall, live preview while dragging, guides (G), preview zoom/pan, player right-click menu, label scrubbing, status-bar selection info |
 | Material editor drops | ✅ | drag images (files or library) onto the graph → Texture Sample nodes |
 
 ## Known limitations / next ideas
