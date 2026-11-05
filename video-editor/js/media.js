@@ -199,6 +199,7 @@ function filterSwatch(id) {
   return `<div style="position:absolute;inset:0;background:linear-gradient(135deg,#f6b26b,#e06666 40%,#6fa8dc 70%,#93c47d);filter:${css}"></div>${id === 'letterbox' ? '<div style="position:absolute;left:0;right:0;top:0;height:18%;background:#000"></div><div style="position:absolute;left:0;right:0;bottom:0;height:18%;background:#000"></div>' : ''}`;
 }
 
+const dlCards = new Map(); // in-flight link downloads shown in the Media tab
 export function createLibrary({ store, ops, audio, materials }) {
   const tabs = document.getElementById('libTabs');
   const side = document.getElementById('libSide');
@@ -305,6 +306,17 @@ export function createLibrary({ store, ops, audio, materials }) {
 
     if (tab === 'media' || tab === 'audio') {
       if (tab === 'media' && !q) {
+        const bar = document.createElement('form'); bar.className = 'lib-linkbar';
+        bar.innerHTML = `<span class="ico-l">${icon('link', 14)}</span><input type="url" placeholder="Paste a YouTube, TikTok or Instagram link — it goes on the timeline" spellcheck="false"><select title="What to get"><option value="video">Video</option><option value="audio">Audio</option></select><button class="btn primary" type="submit">Add</button>`;
+        bar.addEventListener('submit', ev => { ev.preventDefault(); const inp = bar.querySelector('input'); const u = inp.value.trim(); if (!/^https?:\/\//i.test(u)) { toast('Paste a link that starts with http(s)://'); return; } window.dispatchEvent(new CustomEvent('ve:linkToTimeline', { detail: { url: u, kind: bar.querySelector('select').value } })); inp.value = ''; });
+        bar.querySelector('input').addEventListener('keydown', ev => ev.stopPropagation());
+        add(bar);
+        for (const c of dlCards.values()) {
+          const d = document.createElement('div'); d.className = 'lib-item lib-dl-card';
+          d.innerHTML = `<div class="lib-thumb"><div class="dl-pct">${Math.round(c.pct || 0)}%</div><div class="dl-bar"><i style="width:${Math.max(3, c.pct || 0)}%"></i></div></div><div class="lib-name"></div>`;
+          d.querySelector('.lib-name').textContent = c.title || c.host || 'Downloading…';
+          d.title = c.msg || c.url; add(d);
+        }
         const imp = document.createElement('div'); imp.className = 'lib-item lib-import-card';
         imp.innerHTML = `<div class="lib-thumb">+</div><div class="lib-name" title="Click, drop files, or paste with Ctrl+V">Import Media</div>`;
         imp.onclick = () => document.getElementById('importInput').click();
@@ -411,6 +423,11 @@ export function createLibrary({ store, ops, audio, materials }) {
     }
   }
 
+  window.addEventListener('ve:dlCard', e => {
+    const d = e.detail;
+    if (d.done) dlCards.delete(d.id); else dlCards.set(d.id, { ...(dlCards.get(d.id) || {}), ...d });
+    if (tab === 'media') later();
+  });
   let pending = 0;
   const later = () => { if (pending) return; pending = requestAnimationFrame(() => { pending = 0; renderGrid(); }); };
   store.on('media', later);

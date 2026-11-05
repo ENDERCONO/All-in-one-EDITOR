@@ -272,3 +272,15 @@ input[type="number"] { background: var(--field-bg); border: 1px solid var(--fiel
 input[type="number"]:hover { background: var(--field-hover); border-color: var(--field-border-hover); }
 input[type="number"]:focus { border-color: var(--accent); }
 input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* Media tab: paste-a-link bar + download progress cards */
+.lib-linkbar { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 4px 4px 4px 8px; }
+.lib-linkbar:focus-within { border-color: var(--accent); }
+.lib-linkbar .ico-l { color: var(--text-dim); display: flex; }
+.lib-linkbar input { flex: 1; background: none; border: 0; padding: 4px 2px; min-width: 0; }
+.lib-linkbar select { font-size: 11.5px; padding: 3px 16px 3px 6px; }
+.lib-linkbar .btn { padding: 4px 12px; }
+.lib-dl-card .lib-thumb { flex-direction: column; gap: 8px; border: 1px dashed var(--accent); }
+.lib-dl-card .dl-pct { font: 600 15px var(--mono); color: var(--accent); }
+.lib-dl-card .dl-bar { width: 70%; height: 4px; border-radius: 2px; background: var(--panel-3); overflow: hidden; }
+.lib-dl-card .dl-bar i { display: block; height: 100%; background: var(--accent); transition: width .3s; }

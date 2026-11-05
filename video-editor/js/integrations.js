@@ -69,6 +69,41 @@ export async function convertForImport(file, kind, onStatus) {
   return new File([data], outName, { type: kind === 'audio' ? 'audio/mpeg' : kind === 'image' ? 'image/png' : 'video/mp4' });
 }
 
+// ---------------- Download a link to a File ----------------
+// Direct media links are fetched by the browser; YouTube / TikTok / Instagram / X / 1000+ sites
+// go through the site's downloader (yt-dlp on the server). onProgress({ state, pct, title, speed, eta, msg }).
+export const isMediaLink = s => /^https?:\/\/\S+$/i.test(String(s).trim());
+const DIRECT_RE = /\.(mp4|webm|mov|m4v|mp3|wav|ogg|m4a|flac|png|jpe?g|gif|webp)(\?|#|$)/i;
+export async function downloadUrl(url, { kind = 'video', quality = '720', onProgress, isCancelled } = {}) {
+  url = url.trim();
+  if (DIRECT_RE.test(url)) {
+    onProgress?.({ state: 'downloading', pct: 0, msg: 'Downloading ' + url });
+    try { const r = await fetch(url); if (r.ok) { const b = await r.blob(); return new File([b], decodeURIComponent(url.split('/').pop().split(/[?#]/)[0]) || 'download', { type: b.type }); } }
+    catch (e) { /* CORS — let the server fetch it */ }
+  }
+  const base = await apiBase(msg => onProgress?.({ state: 'connecting', pct: 0, msg }));
+  if (base === null || base === undefined) throw new Error("Can't reach the downloader server. Run the site on your PC (START-SERVER.bat) or try again in a minute (the online server may be waking up).");
+  const st = await (await fetch(`${base}/api/dl/start?url=${encodeURIComponent(url)}&kind=${kind}&format=mp3&quality=${quality}`)).json();
+  if (!st.id) throw new Error(st.error || 'Download failed to start');
+  let title = '';
+  for (;;) {
+    if (isCancelled?.()) { fetch(`${base}/api/dl/cancel/${st.id}`, { method: 'POST' }).catch(() => {}); throw new Error('Cancelled'); }
+    await sleep(800);
+    const p = await (await fetch(`${base}/api/dl/progress/${st.id}`, { cache: 'no-store' })).json();
+    title = p.title || title;
+    if (p.state === 'error') throw new Error(p.error || 'Download failed');
+    const msg = p.state === 'setup' ? `First run: the server is installing its downloader (${p.setupPhase || ''} ${p.setupPct || 0}%)…`
+      : p.state === 'retrying' ? 'YouTube refused — retrying with another player client…'
+      : p.state === 'updating' ? 'Updating the downloader…' : `${title || 'Downloading'} · ${p.pct || 0}%${p.speed ? ' · ' + p.speed : ''}${p.eta ? ' · ETA ' + p.eta : ''}`;
+    onProgress?.({ state: p.state, pct: p.pct || 0, title, speed: p.speed, eta: p.eta, msg });
+    if (p.state === 'done' && p.filename) {
+      onProgress?.({ state: 'fetching', pct: 100, title, msg: 'Receiving file…' });
+      const b = await (await fetch(`${base}/api/dl/file/${st.id}`)).blob();
+      return new File([b], p.filename, { type: b.type || (kind === 'audio' ? 'audio/mpeg' : 'video/mp4') });
+    }
+  }
+}
+
 // ---------------- Import from URL (the site's downloader) ----------------
 export function openImportFromUrl({ importFiles, toast }) {
   const back = document.createElement('div'); back.className = 'modal-back';
@@ -98,32 +133,7 @@ export function openImportFromUrl({ importFiles, toast }) {
     for (const url of links) {
       if (cancelled) return;
       try {
-        let file = null;
-        if (/\.(mp4|webm|mov|m4v|mp3|wav|ogg|m4a|flac|png|jpe?g|gif|webp)(\?|#|$)/i.test(url)) {
-          say(`Downloading ${url}…`);
-          try { const r = await fetch(url); if (r.ok) { const b = await r.blob(); file = new File([b], decodeURIComponent(url.split('/').pop().split(/[?#]/)[0]) || 'download', { type: b.type }); } } catch (e) { /* CORS → use the server */ }
-        }
-        if (!file) {
-          const base = await apiBase(say);
-          if (base === null || base === undefined) throw new Error('No downloader server reachable (run the site\'s server, or check your connection)');
-          const st = await (await fetch(`${base}/api/dl/start?url=${encodeURIComponent(url)}&kind=${kind}&format=mp3&quality=${quality}`)).json();
-          if (!st.id) throw new Error(st.error || 'Download failed to start');
-          let title = '';
-          for (;;) {
-            if (cancelled) return;
-            await sleep(800);
-            const p = await (await fetch(`${base}/api/dl/progress/${st.id}`, { cache: 'no-store' })).json();
-            title = p.title || title;
-            if (p.state === 'error') throw new Error(p.error || 'Download failed');
-            if (p.state === 'setup') say(`First run: the server is fetching its downloader (${p.setupPhase || ''} ${p.setupPct || 0}%)…`);
-            else say(`${title || url}\n${p.state} ${p.pct || 0}% ${p.speed || ''} ${p.eta ? '· ETA ' + p.eta : ''}`);
-            if (p.state === 'done' && p.filename) {
-              const b = await (await fetch(`${base}/api/dl/file/${st.id}`)).blob();
-              file = new File([b], p.filename, { type: b.type || (kind === 'audio' ? 'audio/mpeg' : 'video/mp4') });
-              break;
-            }
-          }
-        }
+        const file = await downloadUrl(url, { kind, quality, onProgress: p => say(p.msg || ''), isCancelled: () => cancelled });
         say(`Importing ${file.name}…`);
         await importFiles([file], add);
         done++;

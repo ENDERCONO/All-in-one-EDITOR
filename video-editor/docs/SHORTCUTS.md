@@ -53,6 +53,7 @@ Owned by `js/app.js`. Shortcuts are ignored while typing in an input.
 | F | Zoom the timeline to the selection |
 | ` | Maximize the panel under the mouse (Unreal style) |
 | Ctrl + F | Search the library |
+| Ctrl + V with a link copied | Download it (YouTube, TikTok, Instagram, X, direct files…) and put it on the timeline at the playhead |
 | Ctrl + Alt + S | Snapshot (PNG) |
 | Ctrl + Shift + A | Deselect all |
 | G | Guides: rule of thirds, title-safe, TikTok/Shorts UI zones (9:16) |

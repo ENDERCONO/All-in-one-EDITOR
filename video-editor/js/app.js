@@ -320,6 +320,27 @@ async function boot() {
     importFiles: (files, add) => importFiles(files, { audio, ops, addToTimeline: add, time: store.playhead }), toast,
   }));
   window.addEventListener('ve:importUrl', openImportUrl);
+  // Paste / type a YouTube, TikTok, Instagram… link → download → onto the timeline at the playhead
+  let dlSeq = 0;
+  async function linkToTimeline(url, { kind = 'video', add = true } = {}) {
+    const { downloadUrl } = await import('./integrations.js');
+    const id = 'dl' + (++dlSeq), at = store.playhead;
+    const host = (url.match(/^https?:\/\/(?:www\.|m\.)?([^/]+)/i) || [])[1] || url;
+    const card = d => window.dispatchEvent(new CustomEvent('ve:dlCard', { detail: { id, url, host, ...d } }));
+    card({ state: 'connecting', pct: 0, msg: 'Starting…' });
+    toast(`Downloading from ${host}…`);
+    try {
+      const file = await downloadUrl(url, { kind, onProgress: p => { card(p); status(p.msg || ''); } });
+      card({ state: 'importing', pct: 100, msg: 'Importing…' });
+      await importFiles([file], { audio, ops, addToTimeline: add, time: at });
+      card({ done: true });
+      toast(`Added ${file.name} at ${tc(at)}`);
+    } catch (e) {
+      card({ done: true });
+      console.warn(e); toast('Download failed: ' + e.message, 7000); status('Download failed: ' + e.message);
+    }
+  }
+  window.addEventListener('ve:linkToTimeline', e => linkToTimeline(e.detail.url, e.detail));
   window.addEventListener('ve:status', e => status(e.detail));
   window.addEventListener('ve:removeBg', e => autoActions.removeBg(e.detail?.mediaIds));
 
@@ -371,6 +392,8 @@ async function boot() {
       toast(`Pasted ${named.length > 1 ? named.length + ' files' : 'image'} at ${tc(store.playhead)}`);
       return;
     }
+    const text = (e.clipboardData?.getData('text') || '').trim();
+    if (/^https?:\/\/\S+$/i.test(text)) { e.preventDefault(); linkToTimeline(text); return; }
     if (store.clipboard?.length || store.transitionClipboard) { e.preventDefault(); actions.paste(); }
   });
 

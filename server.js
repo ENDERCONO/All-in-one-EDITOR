@@ -980,9 +980,20 @@ const dlJobs = new Map();
 let dlSeq = 0;
 const AUDIO_FORMATS = ['mp3', 'm4a', 'opus', 'wav', 'flac'];
 
-function ytdlpOnce(job, o, withCover) {
+// YouTube blocks many cloud IPs ("confirm you're not a bot") or hides formats for
+// the default web client. Other player clients often still work, so failures are
+// retried with these, in order.
+const YT_CLIENT_FALLBACKS = [
+  'youtube:player_client=tv_simply,web_safari',
+  'youtube:player_client=mweb,web_embedded',
+  'youtube:player_client=tv,ios',
+];
+const isYouTube = u => /(youtube\.com|youtu\.be|youtube-nocookie\.com)\//i.test(String(u));
+
+function ytdlpOnce(job, o, withCover, clientArgs) {
   const args = [
     ...ytdlpCommonArgs(job.dir),
+    ...(clientArgs ? ['--extractor-args', clientArgs] : []),
     '--newline', '--no-playlist', '--no-mtime',
     '-N', '8', // parallel fragment downloads — saturates the connection
     '-o', path.join(job.dir, '%(title).150B.%(ext)s'),
@@ -1028,27 +1039,36 @@ function ytdlpOnce(job, o, withCover) {
   });
 }
 
+// Don't let a slow / unreachable GitHub stall downloads: wait at most `ms` for an
+// in-flight yt-dlp update, then carry on with the binary we have.
+const waitUpdate = (p, ms = 20000) => Promise.race([p, new Promise(r => setTimeout(() => { console.log('[downloader] update still running — continuing with the current yt-dlp'); r(); }, ms))]).catch(() => {});
+
 async function runDlJob(job, o) {
   await ensureDlTools();
-  if (ytdlpUpdate) { job.state = 'updating'; await ytdlpUpdate; }
+  if (ytdlpUpdate) { job.state = 'updating'; await waitUpdate(ytdlpUpdate); }
   await dlLimit(async () => {
     if (job.cancelled) throw new Error('Cancelled');
     let lastErr = null;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    // attempt 0: default · 1: after updating yt-dlp (no cover art) · 2+: other YouTube player clients
+    const yt = isYouTube(o.url);
+    const plan = [null, null, ...(yt ? YT_CLIENT_FALLBACKS : [])];
+    for (let attempt = 0; attempt < plan.length; attempt++) {
       job.state = 'starting'; job.pct = 0;
+      if (attempt >= 2) job.state = 'retrying';
       fs.rmSync(job.dir, { recursive: true, force: true });
       fs.mkdirSync(job.dir, { recursive: true });
       try {
-        // the retry skips the cover art in case embedding it was the problem
-        await ytdlpOnce(job, o, attempt === 0);
+        await ytdlpOnce(job, o, attempt === 0, plan[attempt]);
         lastErr = null;
         break;
       } catch (e) {
         lastErr = e;
-        if (job.cancelled || attempt > 0 || PERMANENT_DL_ERROR.test(e.message)) break;
-        // most YouTube failures are fixed by the newest yt-dlp
-        job.state = 'updating';
-        await updateYtdlp();
+        if (job.cancelled) break;
+        const botOrFormat = /not a bot|sign in to confirm|requested format is not available|HTTP Error 403|nsig|player response|Precondition/i.test(e.message);
+        if (PERMANENT_DL_ERROR.test(e.message) && !botOrFormat) break;
+        if (attempt === 0) { job.state = 'updating'; await waitUpdate(updateYtdlp()); } // most YouTube failures are fixed by the newest yt-dlp
+        else if (!yt || !botOrFormat) break;
+        console.log(`[downloader] attempt ${attempt + 1} failed (${e.message.slice(0, 120)}) — ${plan[attempt + 1] ? 'trying ' + plan[attempt + 1] : 'giving up'}`);
       }
     }
     if (lastErr) throw new Error(friendlyDlError(lastErr.message));

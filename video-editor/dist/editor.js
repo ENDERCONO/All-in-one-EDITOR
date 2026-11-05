@@ -598,6 +598,8 @@
     apiBase: () => apiBase,
     convertForImport: () => convertForImport,
     copyFileNames: () => copyFileNames,
+    downloadUrl: () => downloadUrl,
+    isMediaLink: () => isMediaLink,
     openImportFromUrl: () => openImportFromUrl
   });
   async function ping(base, ms) {
@@ -691,6 +693,43 @@
     }
     return new File([data], outName, { type: kind === "audio" ? "audio/mpeg" : kind === "image" ? "image/png" : "video/mp4" });
   }
+  async function downloadUrl(url2, { kind = "video", quality = "720", onProgress, isCancelled } = {}) {
+    url2 = url2.trim();
+    if (DIRECT_RE.test(url2)) {
+      onProgress?.({ state: "downloading", pct: 0, msg: "Downloading " + url2 });
+      try {
+        const r = await fetch(url2);
+        if (r.ok) {
+          const b = await r.blob();
+          return new File([b], decodeURIComponent(url2.split("/").pop().split(/[?#]/)[0]) || "download", { type: b.type });
+        }
+      } catch (e) {
+      }
+    }
+    const base = await apiBase((msg) => onProgress?.({ state: "connecting", pct: 0, msg }));
+    if (base === null || base === void 0) throw new Error("Can't reach the downloader server. Run the site on your PC (START-SERVER.bat) or try again in a minute (the online server may be waking up).");
+    const st = await (await fetch(`${base}/api/dl/start?url=${encodeURIComponent(url2)}&kind=${kind}&format=mp3&quality=${quality}`)).json();
+    if (!st.id) throw new Error(st.error || "Download failed to start");
+    let title = "";
+    for (; ; ) {
+      if (isCancelled?.()) {
+        fetch(`${base}/api/dl/cancel/${st.id}`, { method: "POST" }).catch(() => {
+        });
+        throw new Error("Cancelled");
+      }
+      await sleep(800);
+      const p = await (await fetch(`${base}/api/dl/progress/${st.id}`, { cache: "no-store" })).json();
+      title = p.title || title;
+      if (p.state === "error") throw new Error(p.error || "Download failed");
+      const msg = p.state === "setup" ? `First run: the server is installing its downloader (${p.setupPhase || ""} ${p.setupPct || 0}%)\u2026` : p.state === "retrying" ? "YouTube refused \u2014 retrying with another player client\u2026" : p.state === "updating" ? "Updating the downloader\u2026" : `${title || "Downloading"} \xB7 ${p.pct || 0}%${p.speed ? " \xB7 " + p.speed : ""}${p.eta ? " \xB7 ETA " + p.eta : ""}`;
+      onProgress?.({ state: p.state, pct: p.pct || 0, title, speed: p.speed, eta: p.eta, msg });
+      if (p.state === "done" && p.filename) {
+        onProgress?.({ state: "fetching", pct: 100, title, msg: "Receiving file\u2026" });
+        const b = await (await fetch(`${base}/api/dl/file/${st.id}`)).blob();
+        return new File([b], p.filename, { type: b.type || (kind === "audio" ? "audio/mpeg" : "video/mp4") });
+      }
+    }
+  }
   function openImportFromUrl({ importFiles: importFiles2, toast: toast3 }) {
     const back = document.createElement("div");
     back.className = "modal-back";
@@ -731,40 +770,7 @@
       for (const url2 of links) {
         if (cancelled) return;
         try {
-          let file = null;
-          if (/\.(mp4|webm|mov|m4v|mp3|wav|ogg|m4a|flac|png|jpe?g|gif|webp)(\?|#|$)/i.test(url2)) {
-            say(`Downloading ${url2}\u2026`);
-            try {
-              const r = await fetch(url2);
-              if (r.ok) {
-                const b = await r.blob();
-                file = new File([b], decodeURIComponent(url2.split("/").pop().split(/[?#]/)[0]) || "download", { type: b.type });
-              }
-            } catch (e) {
-            }
-          }
-          if (!file) {
-            const base = await apiBase(say);
-            if (base === null || base === void 0) throw new Error("No downloader server reachable (run the site's server, or check your connection)");
-            const st = await (await fetch(`${base}/api/dl/start?url=${encodeURIComponent(url2)}&kind=${kind}&format=mp3&quality=${quality}`)).json();
-            if (!st.id) throw new Error(st.error || "Download failed to start");
-            let title = "";
-            for (; ; ) {
-              if (cancelled) return;
-              await sleep(800);
-              const p = await (await fetch(`${base}/api/dl/progress/${st.id}`, { cache: "no-store" })).json();
-              title = p.title || title;
-              if (p.state === "error") throw new Error(p.error || "Download failed");
-              if (p.state === "setup") say(`First run: the server is fetching its downloader (${p.setupPhase || ""} ${p.setupPct || 0}%)\u2026`);
-              else say(`${title || url2}
-${p.state} ${p.pct || 0}% ${p.speed || ""} ${p.eta ? "\xB7 ETA " + p.eta : ""}`);
-              if (p.state === "done" && p.filename) {
-                const b = await (await fetch(`${base}/api/dl/file/${st.id}`)).blob();
-                file = new File([b], p.filename, { type: b.type || (kind === "audio" ? "audio/mpeg" : "video/mp4") });
-                break;
-              }
-            }
-          }
+          const file = await downloadUrl(url2, { kind, quality, onProgress: (p) => say(p.msg || ""), isCancelled: () => cancelled });
           say(`Importing ${file.name}\u2026`);
           await importFiles2([file], add);
           done++;
@@ -791,11 +797,13 @@ ${e.message}`);
       prompt("Copy the file names:", text);
     }
   }
-  var DEFAULT_ONLINE_API, cachedBase, sleep;
+  var DEFAULT_ONLINE_API, cachedBase, sleep, isMediaLink, DIRECT_RE;
   var init_integrations = __esm({
     "js/integrations.js"() {
       DEFAULT_ONLINE_API = "https://all-in-one-editor.onrender.com";
       sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      isMediaLink = (s) => /^https?:\/\/\S+$/i.test(String(s).trim());
+      DIRECT_RE = /\.(mp4|webm|mov|m4v|mp3|wav|ogg|m4a|flac|png|jpe?g|gif|webp)(\?|#|$)/i;
     }
   });
 
@@ -15848,6 +15856,7 @@ ${c.text}
     }[id] || "";
     return `<div style="position:absolute;inset:0;background:linear-gradient(135deg,#f6b26b,#e06666 40%,#6fa8dc 70%,#93c47d);filter:${css2}"></div>${id === "letterbox" ? '<div style="position:absolute;left:0;right:0;top:0;height:18%;background:#000"></div><div style="position:absolute;left:0;right:0;bottom:0;height:18%;background:#000"></div>' : ""}`;
   }
+  var dlCards = /* @__PURE__ */ new Map();
   function createLibrary({ store: store2, ops: ops2, audio, materials }) {
     const tabs = document.getElementById("libTabs");
     const side = document.getElementById("libSide");
@@ -15989,6 +15998,30 @@ ${c.text}
       const add = (el2) => grid.appendChild(el2);
       if (tab === "media" || tab === "audio") {
         if (tab === "media" && !q) {
+          const bar = document.createElement("form");
+          bar.className = "lib-linkbar";
+          bar.innerHTML = `<span class="ico-l">${icon("link", 14)}</span><input type="url" placeholder="Paste a YouTube, TikTok or Instagram link \u2014 it goes on the timeline" spellcheck="false"><select title="What to get"><option value="video">Video</option><option value="audio">Audio</option></select><button class="btn primary" type="submit">Add</button>`;
+          bar.addEventListener("submit", (ev) => {
+            ev.preventDefault();
+            const inp = bar.querySelector("input");
+            const u = inp.value.trim();
+            if (!/^https?:\/\//i.test(u)) {
+              toast3("Paste a link that starts with http(s)://");
+              return;
+            }
+            window.dispatchEvent(new CustomEvent("ve:linkToTimeline", { detail: { url: u, kind: bar.querySelector("select").value } }));
+            inp.value = "";
+          });
+          bar.querySelector("input").addEventListener("keydown", (ev) => ev.stopPropagation());
+          add(bar);
+          for (const c of dlCards.values()) {
+            const d = document.createElement("div");
+            d.className = "lib-item lib-dl-card";
+            d.innerHTML = `<div class="lib-thumb"><div class="dl-pct">${Math.round(c.pct || 0)}%</div><div class="dl-bar"><i style="width:${Math.max(3, c.pct || 0)}%"></i></div></div><div class="lib-name"></div>`;
+            d.querySelector(".lib-name").textContent = c.title || c.host || "Downloading\u2026";
+            d.title = c.msg || c.url;
+            add(d);
+          }
           const imp = document.createElement("div");
           imp.className = "lib-item lib-import-card";
           imp.innerHTML = `<div class="lib-thumb">+</div><div class="lib-name" title="Click, drop files, or paste with Ctrl+V">Import Media</div>`;
@@ -16141,6 +16174,12 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         if (!list.length) grid.insertAdjacentHTML("beforeend", `<div class="lib-empty">No materials yet. Click <b>New material</b> to open the node editor (Unreal-style). Apply a material to any clip, or drop it on the timeline as its own clip.</div>`);
       }
     }
+    window.addEventListener("ve:dlCard", (e) => {
+      const d = e.detail;
+      if (d.done) dlCards.delete(d.id);
+      else dlCards.set(d.id, { ...dlCards.get(d.id) || {}, ...d });
+      if (tab === "media") later();
+    });
     let pending = 0;
     const later = () => {
       if (pending) return;
@@ -17598,6 +17637,31 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       toast: toast2
     }));
     window.addEventListener("ve:importUrl", openImportUrl);
+    let dlSeq = 0;
+    async function linkToTimeline(url2, { kind = "video", add = true } = {}) {
+      const { downloadUrl: downloadUrl2 } = await Promise.resolve().then(() => (init_integrations(), integrations_exports));
+      const id = "dl" + ++dlSeq, at = store.playhead;
+      const host = (url2.match(/^https?:\/\/(?:www\.|m\.)?([^/]+)/i) || [])[1] || url2;
+      const card = (d) => window.dispatchEvent(new CustomEvent("ve:dlCard", { detail: { id, url: url2, host, ...d } }));
+      card({ state: "connecting", pct: 0, msg: "Starting\u2026" });
+      toast2(`Downloading from ${host}\u2026`);
+      try {
+        const file = await downloadUrl2(url2, { kind, onProgress: (p) => {
+          card(p);
+          status(p.msg || "");
+        } });
+        card({ state: "importing", pct: 100, msg: "Importing\u2026" });
+        await importFiles([file], { audio, ops, addToTimeline: add, time: at });
+        card({ done: true });
+        toast2(`Added ${file.name} at ${tc3(at)}`);
+      } catch (e) {
+        card({ done: true });
+        console.warn(e);
+        toast2("Download failed: " + e.message, 7e3);
+        status("Download failed: " + e.message);
+      }
+    }
+    window.addEventListener("ve:linkToTimeline", (e) => linkToTimeline(e.detail.url, e.detail));
     window.addEventListener("ve:status", (e) => status(e.detail));
     window.addEventListener("ve:removeBg", (e) => autoActions.removeBg(e.detail?.mediaIds));
     window.addEventListener("ve:importMedia", async (e) => {
@@ -17657,6 +17721,12 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         const named = files.map((f, i) => f.name && f.name !== "image.png" ? f : new File([f], `Pasted image ${Date.now().toString(36)}${i ? "-" + i : ""}.${(f.type.split("/")[1] || "png").replace("jpeg", "jpg")}`, { type: f.type }));
         await importFiles(named, { audio, ops, addToTimeline: true, time: store.playhead });
         toast2(`Pasted ${named.length > 1 ? named.length + " files" : "image"} at ${tc3(store.playhead)}`);
+        return;
+      }
+      const text = (e.clipboardData?.getData("text") || "").trim();
+      if (/^https?:\/\/\S+$/i.test(text)) {
+        e.preventDefault();
+        linkToTimeline(text);
         return;
       }
       if (store.clipboard?.length || store.transitionClipboard) {
