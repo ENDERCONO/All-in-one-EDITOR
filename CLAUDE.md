@@ -3,6 +3,7 @@
 * `index.html` is the whole main site (≈25k lines, one file): a sidebar of tabs, each tab is a `<main data-mode="…">` panel, scripts at the bottom. Add a tab = sidebar `<button class="sb-tab" data-tab="x">` + `<main data-mode="x" hidden>`.
 * `server.js` (Express) serves the repo statically plus APIs (downloader, converter with native ffmpeg, chat). GitHub Pages also deploys the repo as static files (`.github/workflows/static.yml`), so every tool must work without the server.
 * A shared ffmpeg.wasm loader lives in `index.html`: `window.loadSharedFFmpeg()`.
+* The site's audio **Timeline** tab is retired (button hidden in the sidebar, code kept; `lastTab = 'timeline'` opens the Video Editor). Multitrack audio lives in the Video Editor.
 * Don't touch `claude-game/`, `ReelReact/`, `process-monitor-app/`, `Autoclicker/` binaries unless asked.
 
 ## Video editor (`video-editor/`)

@@ -435,7 +435,6 @@ async function boot() {
   const openCurves = id => {
     const c = store.getClip(id || store.selectedClips()[0]?.id);
     if (!c) return toast('Select a clip to open its keyframe graph');
-    if (c.type === 'audio') return toast('Keyframes animate visual clips (position, scale, rotation, opacity)');
     playback.pause();
     import('./curves.js').then(m => m.openCurveEditor({ store, clipId: c.id })).catch(e => toast('Could not open the keyframe graph: ' + e.message));
   };

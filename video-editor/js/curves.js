@@ -6,7 +6,8 @@
 //    wheel = zoom time, Ctrl / Shift + wheel = zoom values, middle / right drag = pan;
 //    click the ruler to move the playhead.
 // Every drag is one undo step (store.update coalesced), toolbar actions are one step each.
-import { ANIM_PROPS, INTERPS, keysOf, hasAnim, evalProp, evalKeys, upsertKey, toggleKey, keyIndexAt } from './keyframes.js';
+import { ANIM_PROPS, AUDIO_PROPS, INTERPS, keysOf, hasAnim, evalProp, evalKeys, upsertKey, toggleKey, keyIndexAt, propInfo, animatedPaths } from './keyframes.js';
+import { FILTERS } from './catalog.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -17,7 +18,19 @@ export function openCurveEditor({ store, clipId }) {
   const clip = () => store.getClip(clipId);
   if (!clip()) return null;
   const fps = store.project.settings.fps || 30, fr = 1 / fps;
-  const shown = new Set(ANIM_PROPS.filter(p => hasAnim(clip(), p.path)).map(p => p.path));
+  // properties listed for this clip: transform (visual clips), volume / balance (clips with sound),
+  // and any color / filter property that already has keys (add those with ◆ in the inspector)
+  const filterName = t => FILTERS.find(f => f.id === t)?.label || t;
+  function propsFor() {
+    const c = clip(); if (!c) return [];
+    const list = c.type === 'audio' ? [] : [...ANIM_PROPS];
+    const hasA = c.type === 'audio' || (c.type === 'video' && store.getMedia(c.mediaId)?.hasAudio && !c.audio?.detached);
+    if (hasA) list.push(...AUDIO_PROPS);
+    for (const p of animatedPaths(c)) if (!list.some(x => x.path === p)) { const info = propInfo(p, c, filterName); if (info) list.push(info); }
+    return list;
+  }
+  const info = path => propInfo(path, clip(), filterName) || {};
+  const shown = new Set(animatedPaths(clip()));
   let normalize = shown.size > 1;
   let sel = [];            // [{ path, i }]
   let view = null;         // { t0, t1, y0, y1 }
@@ -48,7 +61,7 @@ export function openCurveEditor({ store, clipId }) {
   $('.cv-normbox').checked = normalize;
 
   // ---------- data helpers ----------
-  const visibleProps = () => ANIM_PROPS.filter(p => shown.has(p.path));
+  const visibleProps = () => propsFor().filter(p => shown.has(p.path));
   const lt = () => store.playhead - (clip()?.start || 0);
   function range(path) { // value range of a curve (for normalized view)
     const ks = keysOf(clip(), path);
@@ -162,16 +175,18 @@ export function openCurveEditor({ store, clipId }) {
   }
   function readout() {
     const c = clip(); $('.cv-name').textContent = '· ' + (c?.name || '');
-    if (sel.length === 1) { const k = keysOf(c, sel[0].path)[sel[0].i]; const p = ANIM_PROPS.find(x => x.path === sel[0].path); if (k) { $('.cv-readout').textContent = `${p.label}: ${k.v.toFixed(3)} at ${k.t.toFixed(3)} s · ${k.interp}`; return; } }
+    if (sel.length === 1) { const k = keysOf(c, sel[0].path)[sel[0].i]; const p = info(sel[0].path); if (k) { $('.cv-readout').textContent = `${p.label}: ${k.v.toFixed(3)} at ${k.t.toFixed(3)} s · ${k.interp}`; return; } }
     $('.cv-readout').textContent = sel.length ? sel.length + ' keys selected' : 'Playhead ' + lt().toFixed(2) + ' s';
   }
 
   // ---------- list ----------
   function renderList() {
     const c = clip(); if (!c) return;
-    $('.cv-list').innerHTML = ANIM_PROPS.map(p => {
+    let lastGroup = '';
+    $('.cv-list').innerHTML = propsFor().map(p => {
+      const head = p.group && p.group !== lastGroup ? `<div class="cv-group">${esc(p.group)}</div>` : ''; lastGroup = p.group || lastGroup;
       const n = keysOf(c, p.path).length, on = keyIndexAt(c, p.path, lt()) >= 0;
-      return `<div class="cv-prop${shown.has(p.path) ? ' shown' : ''}" data-p="${p.path}">
+      return head + `<div class="cv-prop${shown.has(p.path) ? ' shown' : ''}" data-p="${p.path}">
         <input type="checkbox" ${shown.has(p.path) ? 'checked' : ''} title="Show this curve"><i style="background:${p.color}"></i>
         <span>${esc(p.label)}</span><small>${n ? n + ' key' + (n > 1 ? 's' : '') : ''}</small>
         <button class="kf-btn${n ? ' anim' : ''}${on ? ' on' : ''}" title="Keyframe at the playhead (add / remove)">◆</button></div>`;
@@ -251,7 +266,7 @@ export function openCurveEditor({ store, clipId }) {
           k.t = clamp(nt, o.lo + 1e-3, o.hi - 1e-3);
           const r = normalize ? range(o.path) : null;
           k.v = o.v + (normalize ? dY * (r.hi - r.lo) : dY);
-          const pi = ANIM_PROPS.find(x => x.path === o.path);
+          const pi = info(o.path);
           if (pi?.min != null) k.v = Math.max(pi.min, k.v); if (pi?.max != null) k.v = Math.min(pi.max, k.v);
         }
       }, { coalesce: 'curves-keys-' + drag.id });
@@ -299,7 +314,7 @@ export function openCurveEditor({ store, clipId }) {
       for (const s of list) {
         const a = c.keyframes[s.path]; if (!a || !a[s.i]) continue;
         const v = a[s.i].v; a.splice(s.i, 1);
-        if (!a.length) { c.transform[s.path.split('.')[1]] = v; delete c.keyframes[s.path]; }
+        if (!a.length) { const [g0, k0] = s.path.split('.'); if (g0 === 'filters') { const f = c.filters?.find(x => x.id === k0); if (f) f.amount = v; } else { c[g0] = c[g0] || {}; c[g0][k0] = v; } delete c.keyframes[s.path]; }
       }
     });
     sel = [];

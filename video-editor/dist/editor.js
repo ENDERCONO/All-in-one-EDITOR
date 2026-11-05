@@ -648,6 +648,32 @@
   });
 
   // js/keyframes.js
+  function propInfo(path, clip, filterLabel) {
+    if (PROP.has(path)) return PROP.get(path);
+    const m = FILTER_RE.exec(path);
+    if (!m) return null;
+    const f = clip?.filters?.find((x) => x.id === m[1]);
+    let h2 = 0;
+    for (const ch of m[1]) h2 = h2 * 31 + ch.charCodeAt(0) >>> 0;
+    return { path, label: (filterLabel?.(f?.type) || f?.type || "Filter") + " amount", unit: "", color: `hsl(${h2 % 360} 75% 60%)`, def: 1, min: 0, max: 4, group: "Effects" };
+  }
+  function getPath(clip, path) {
+    const m = FILTER_RE.exec(path);
+    if (m) return clip.filters?.find((f) => f.id === m[1])?.amount;
+    const [a, b] = path.split(".");
+    return clip[a]?.[b];
+  }
+  function setPath(clip, path, v) {
+    const m = FILTER_RE.exec(path);
+    if (m) {
+      const f = clip.filters?.find((x) => x.id === m[1]);
+      if (f) f.amount = v;
+      return;
+    }
+    const [a, b] = path.split(".");
+    clip[a] = clip[a] || {};
+    clip[a][b] = v;
+  }
   function slope(keys, i) {
     const k = keys[i];
     if (k.interp === "user" && Number.isFinite(+k.tan)) return +k.tan;
@@ -684,19 +710,20 @@
     const keys = keysOf(clip, path);
     if (!keys.length) return baseOf(clip, path);
     let v = evalKeys(keys, lt);
-    const p = PROP.get(path);
+    const p = propInfo(path, clip);
     if (p?.min != null) v = Math.max(p.min, v);
     if (p?.max != null) v = Math.min(p.max, v);
     return v;
   }
   function evalClip(clip, t) {
     if (!clip || !anyAnim(clip)) return clip;
-    const lt = localTime(clip, t), tr = { ...clip.transform || {} };
+    const lt = localTime(clip, t);
+    const out = { ...clip, transform: { ...clip.transform || {} }, color: clip.color && { ...clip.color }, audio: clip.audio && { ...clip.audio }, filters: (clip.filters || []).map((f) => ({ ...f })) };
     for (const path of Object.keys(clip.keyframes)) {
-      if (!hasAnim(clip, path) || !PROP.has(path)) continue;
-      tr[path.split(".")[1]] = evalProp(clip, path, lt);
+      if (!hasAnim(clip, path) || !isAnimPath(path)) continue;
+      setPath(out, path, evalProp(clip, path, lt));
     }
-    return { ...clip, transform: tr };
+    return out;
   }
   function keyIndexAt(clip, path, lt, tol = 1 / 120) {
     return keysOf(clip, path).findIndex((k) => Math.abs(k.t - lt) <= tol);
@@ -718,8 +745,7 @@
     const v = a[i].v;
     a.splice(i, 1);
     if (!a.length) {
-      clip.transform = clip.transform || {};
-      clip.transform[path.split(".")[1]] = v;
+      setPath(clip, path, v);
       delete clip.keyframes[path];
     }
     return true;
@@ -737,9 +763,14 @@
       upsertKey(clip, path, lt, v);
       return;
     }
-    const k = path.split(".")[1];
-    clip.transform = clip.transform || {};
-    clip.transform[k] = v;
+    setPath(clip, path, v);
+  }
+  function pruneKeys(clip) {
+    if (!clip?.keyframes) return;
+    for (const path of Object.keys(clip.keyframes)) {
+      const m = FILTER_RE.exec(path);
+      if (m && !clip.filters?.some((f) => f.id === m[1])) delete clip.keyframes[path];
+    }
   }
   function shiftKeys(clip, d) {
     if (!clip?.keyframes || !d) return;
@@ -765,7 +796,7 @@
       if (interp !== "user") delete k.tan;
     }
   }
-  var ANIM_PROPS, INTERPS, PROP, isAnimPath, EPS, baseOf, keysOf, hasAnim, anyAnim, localTime, sortKeys;
+  var ANIM_PROPS, INTERPS, COLOR_PROPS, AUDIO_PROPS, PROP, FILTER_RE, isAnimPath, EPS, baseOf, keysOf, hasAnim, anyAnim, localTime, sortKeys, animatedPaths;
   var init_keyframes = __esm({
     "js/keyframes.js"() {
       ANIM_PROPS = [
@@ -784,19 +815,51 @@
         { id: "constant", label: "Constant (hold)" },
         { id: "ease", label: "Ease in / out" }
       ];
-      PROP = new Map(ANIM_PROPS.map((p) => [p.path, p]));
-      isAnimPath = (path) => PROP.has(path);
+      COLOR_PROPS = [
+        ["brightness", "Brightness"],
+        ["contrast", "Contrast"],
+        ["saturation", "Saturation"],
+        ["hue", "Hue"],
+        ["exposure", "Exposure"],
+        ["temperature", "Temperature"],
+        ["tint", "Tint"],
+        ["highlights", "Highlights"],
+        ["shadows", "Shadows"],
+        ["vignette", "Vignette"],
+        ["blur", "Blur"],
+        ["sharpen", "Sharpen"],
+        ["gamma", "Gamma"],
+        ["vibrance", "Vibrance"],
+        ["noise", "Noise"],
+        ["fade", "Fade"],
+        ["clarity", "Clarity"],
+        ["blacks", "Blacks"],
+        ["whites", "Whites"],
+        ["red", "Red"],
+        ["green", "Green"],
+        ["blue", "Blue"]
+      ].map(([k, label], i) => ({ path: "color." + k, label, unit: "", color: `hsl(${i * 47 % 360} 70% 62%)`, def: 0, group: "Color" }));
+      AUDIO_PROPS = [
+        { path: "audio.volume", label: "Volume", unit: "dB", color: "#18d5b7", def: 0, min: -60, max: 12, group: "Audio" },
+        { path: "audio.pan", label: "Balance", unit: "", color: "#ff8fd1", def: 0, min: -1, max: 1, group: "Audio" }
+      ];
+      ANIM_PROPS.forEach((p) => {
+        p.group = "Transform";
+      });
+      PROP = new Map([...ANIM_PROPS, ...COLOR_PROPS, ...AUDIO_PROPS].map((p) => [p.path, p]));
+      FILTER_RE = /^filters\.([^.]+)\.amount$/;
+      isAnimPath = (path) => PROP.has(path) || FILTER_RE.test(path);
       EPS = 1e-4;
       baseOf = (clip, path) => {
-        const k = path.split(".")[1];
-        const v = clip.transform?.[k];
-        return Number.isFinite(+v) ? +v : PROP.get(path)?.def ?? 0;
+        const v = getPath(clip, path);
+        return Number.isFinite(+v) ? +v : propInfo(path, clip)?.def ?? 0;
       };
       keysOf = (clip, path) => clip?.keyframes?.[path] || [];
       hasAnim = (clip, path) => keysOf(clip, path).length > 0;
       anyAnim = (clip) => !!clip?.keyframes && Object.values(clip.keyframes).some((a) => a && a.length);
       localTime = (clip, t) => t - clip.start;
       sortKeys = (a) => a.sort((x, y) => x.t - y.t);
+      animatedPaths = (clip) => Object.keys(clip?.keyframes || {}).filter((p) => hasAnim(clip, p));
     }
   });
 
@@ -1700,7 +1763,9 @@ self.onmessage = e => { const { id, channels, sr, semis } = e.data;
       g.channelInterpretation = "speakers";
       const a = clip.audio || {};
       const fin2 = (v, d = 0) => Number.isFinite(+v) ? +v : d;
-      const base = Math.max(0, Math.min(16, dbToGain(Math.max(-120, Math.min(24, fin2(a.volume))))));
+      const volAnim = hasAnim(clip, "audio.volume"), panAnim = hasAnim(clip, "audio.pan");
+      const toGain = (db) => Math.max(0, Math.min(16, dbToGain(Math.max(-120, Math.min(24, fin2(db))))));
+      const base = volAnim ? 1 : toGain(a.volume);
       const fi = Math.max(0, fin2(a.fadeIn), fin2(span.xin)), fo = Math.max(0, fin2(a.fadeOut), fin2(span.xout));
       const cEnd = span.end;
       const env = (t) => base * Math.max(0, Math.min(1, fi > 0 ? (t - cs) / fi : 1, fo > 0 ? (cEnd - t) / fo : 1));
@@ -1710,17 +1775,43 @@ self.onmessage = e => { const { id, channels, sr, semis } = e.data;
       const pan = c.createStereoPanner();
       pan.pan.value = Math.max(-1, Math.min(1, fin2(a.pan)));
       node.connect(g);
+      const automate = (param, path, map) => {
+        const ks = keysOf(clip, path), tA = clip.start + ks[0].t, tB = clip.start + ks[ks.length - 1].t, step = 1 / 30;
+        const ev = (tt) => map(evalProp(clip, path, tt - clip.start));
+        param.setValueAtTime(ev(s), when);
+        for (let tt = Math.max(s, tA - step) + step; tt < ce && tt <= tB + step; tt += step) param.linearRampToValueAtTime(ev(tt), toCtx(tt));
+      };
+      let into = g;
+      const extra = [];
+      if (volAnim) {
+        const vg = c.createGain();
+        g.connect(vg);
+        into = vg;
+        extra.push(vg);
+        try {
+          automate(vg.gain, "audio.volume", toGain);
+        } catch (e) {
+          console.warn("[audio] volume keys", e);
+        }
+      }
       let fx;
       try {
-        fx = buildClipFx(c, a, g, when, s - cs, wlReady);
+        fx = buildClipFx(c, a, into, when, s - cs, wlReady);
       } catch (e) {
         console.warn("[audio] effects failed on", clip.name, "- playing it without effects", e);
-        fx = { out: g, nodes: [], oscs: [], tail: 0.2 };
+        fx = { out: into, nodes: [], oscs: [], tail: 0.2 };
       }
       fx.out.connect(pan);
       pan.connect(dest);
+      if (panAnim) {
+        try {
+          automate(pan.pan, "audio.pan", (v) => Math.max(-1, Math.min(1, fin2(v))));
+        } catch (e) {
+          console.warn("[audio] balance keys", e);
+        }
+      }
       node.start(when, offset, dur);
-      return { src: node, nodes: [g, pan, ...fx.nodes], oscs: fx.oscs, tail: fx.tail, end: when + (ce - s) };
+      return { src: node, nodes: [g, pan, ...extra, ...fx.nodes], oscs: fx.oscs, tail: fx.tail, end: when + (ce - s) };
     }
     function overlapping(from, to) {
       return store2.audibleClips().filter((c) => {
@@ -1876,6 +1967,7 @@ self.onmessage = e => { const { id, channels, sr, semis } = e.data;
   var init_audio = __esm({
     "js/audio.js"() {
       init_state();
+      init_keyframes();
       PEAK_RATE = 200;
       LEAD = 0.06;
       pitchWorker = null;
@@ -15933,7 +16025,21 @@ ${c.text}
     const clip = () => store2.getClip(clipId);
     if (!clip()) return null;
     const fps = store2.project.settings.fps || 30, fr = 1 / fps;
-    const shown = new Set(ANIM_PROPS.filter((p) => hasAnim(clip(), p.path)).map((p) => p.path));
+    const filterName = (t) => FILTERS.find((f) => f.id === t)?.label || t;
+    function propsFor() {
+      const c = clip();
+      if (!c) return [];
+      const list = c.type === "audio" ? [] : [...ANIM_PROPS];
+      const hasA = c.type === "audio" || c.type === "video" && store2.getMedia(c.mediaId)?.hasAudio && !c.audio?.detached;
+      if (hasA) list.push(...AUDIO_PROPS);
+      for (const p of animatedPaths(c)) if (!list.some((x) => x.path === p)) {
+        const info2 = propInfo(p, c, filterName);
+        if (info2) list.push(info2);
+      }
+      return list;
+    }
+    const info = (path) => propInfo(path, clip(), filterName) || {};
+    const shown = new Set(animatedPaths(clip()));
     let normalize = shown.size > 1;
     let sel = [];
     let view2 = null;
@@ -15961,7 +16067,7 @@ ${c.text}
     const $2 = (s) => back.querySelector(s);
     const cv = $2(".cv-canvas"), g = cv.getContext("2d"), wrap = $2(".cv-canvas-wrap");
     $2(".cv-normbox").checked = normalize;
-    const visibleProps = () => ANIM_PROPS.filter((p) => shown.has(p.path));
+    const visibleProps = () => propsFor().filter((p) => shown.has(p.path));
     const lt = () => store2.playhead - (clip()?.start || 0);
     function range(path) {
       const ks = keysOf(clip(), path);
@@ -16167,7 +16273,7 @@ ${c.text}
       $2(".cv-name").textContent = "\xB7 " + (c?.name || "");
       if (sel.length === 1) {
         const k = keysOf(c, sel[0].path)[sel[0].i];
-        const p = ANIM_PROPS.find((x) => x.path === sel[0].path);
+        const p = info(sel[0].path);
         if (k) {
           $2(".cv-readout").textContent = `${p.label}: ${k.v.toFixed(3)} at ${k.t.toFixed(3)} s \xB7 ${k.interp}`;
           return;
@@ -16178,9 +16284,12 @@ ${c.text}
     function renderList() {
       const c = clip();
       if (!c) return;
-      $2(".cv-list").innerHTML = ANIM_PROPS.map((p) => {
+      let lastGroup = "";
+      $2(".cv-list").innerHTML = propsFor().map((p) => {
+        const head = p.group && p.group !== lastGroup ? `<div class="cv-group">${esc7(p.group)}</div>` : "";
+        lastGroup = p.group || lastGroup;
         const n = keysOf(c, p.path).length, on = keyIndexAt(c, p.path, lt()) >= 0;
-        return `<div class="cv-prop${shown.has(p.path) ? " shown" : ""}" data-p="${p.path}">
+        return head + `<div class="cv-prop${shown.has(p.path) ? " shown" : ""}" data-p="${p.path}">
         <input type="checkbox" ${shown.has(p.path) ? "checked" : ""} title="Show this curve"><i style="background:${p.color}"></i>
         <span>${esc7(p.label)}</span><small>${n ? n + " key" + (n > 1 ? "s" : "") : ""}</small>
         <button class="kf-btn${n ? " anim" : ""}${on ? " on" : ""}" title="Keyframe at the playhead (add / remove)">\u25C6</button></div>`;
@@ -16329,7 +16438,7 @@ ${c.text}
             k.t = clamp3(nt, o.lo + 1e-3, o.hi - 1e-3);
             const r = normalize ? range(o.path) : null;
             k.v = o.v + (normalize ? dY * (r.hi - r.lo) : dY);
-            const pi = ANIM_PROPS.find((x) => x.path === o.path);
+            const pi = info(o.path);
             if (pi?.min != null) k.v = Math.max(pi.min, k.v);
             if (pi?.max != null) k.v = Math.min(pi.max, k.v);
           }
@@ -16411,7 +16520,14 @@ ${c.text}
           const v = a[s.i].v;
           a.splice(s.i, 1);
           if (!a.length) {
-            c.transform[s.path.split(".")[1]] = v;
+            const [g0, k0] = s.path.split(".");
+            if (g0 === "filters") {
+              const f = c.filters?.find((x) => x.id === k0);
+              if (f) f.amount = v;
+            } else {
+              c[g0] = c[g0] || {};
+              c[g0][k0] = v;
+            }
             delete c.keyframes[s.path];
           }
         }
@@ -16508,6 +16624,7 @@ ${c.text}
   var init_curves = __esm({
     "js/curves.js"() {
       init_keyframes();
+      init_catalog();
       clamp3 = (v, a, b) => Math.max(a, Math.min(b, v));
       esc7 = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
       RULER = 24;
@@ -18974,7 +19091,9 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
           if (path.startsWith("audio.fx.")) x.audio.fx = { ...defaultAudioFx(), ...x.audio.fx || {} };
           if (path.startsWith("mask.") && !x.mask) x.mask = defaultMask();
           if (path.startsWith("gradBlur.") && !x.gradBlur) x.gradBlur = defaultGradBlur();
-          if (isAnimPath(path) && hasAnim(x, path)) setValue(x, path, v, store2.playhead - x.start);
+          const fm = /^filters\.(\d+)\.amount$/.exec(path);
+          const kp = fm && x.filters?.[+fm[1]] ? `filters.${x.filters[+fm[1]].id}.amount` : path;
+          if (isAnimPath(kp) && hasAnim(x, kp)) setValue(x, kp, v, store2.playhead - x.start);
           else set(x, path, v);
         }
       }, { coalesce: discrete ? void 0 : ids.join(",") + ":" + path });
@@ -19180,7 +19299,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     function effectsTab(c) {
       const rows = c.filters.map((f, i) => {
         const def = FILTERS.find((x) => x.id === f.type);
-        return `<div class="prop has-btn" title="${esc(def?.label || f.type)}"><label data-freset="${i}">${esc(def?.label || f.type)}</label><div class="nf-slot" data-famt="${i}"></div><button class="btn icon" data-fdel="${i}" title="Remove">\u2715</button></div>`;
+        return `<div class="prop has-btn" title="${esc(def?.label || f.type)}"><label data-freset="${i}">${esc(def?.label || f.type)}</label><div class="kf-row"><div class="nf-slot" data-famt="${i}"></div><button class="kf-btn" data-kf="filters.${f.id}.amount" title="Keyframe the amount at the playhead">\u25C6</button></div><button class="btn icon" data-fdel="${i}" title="Remove">\u2715</button></div>`;
       }).join("");
       return section("effects", "Filters & Effects", `${rows || '<div class="dim">No filters. Drag one from the Filters or Effects tab, or add one here.</div>'}
       <div class="prop wide"><label>Add</label><select id="insAddFilter"><option value="">Choose\u2026</option>${FILTERS.map((f) => `<option value="${f.id}">${f.category} \xB7 ${f.label}</option>`).join("")}</select></div>`);
@@ -19390,7 +19509,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       root.querySelectorAll("[data-speed]").forEach((b) => b.addEventListener("click", () => ops2.setSpeed(+b.dataset.speed)));
       root.querySelectorAll(".nf-slot[data-famt]").forEach((slot) => {
         const i = +slot.dataset.famt;
-        const nf = numField({ value: (c.filters[i]?.amount ?? 1) * 100, min: 0, max: 100, step: 1, unit: "%", onInput: (v, m) => edit(`filters.${i}.amount`, v / 100, "Filter amount", { discrete: m?.typed }) });
+        const nf = numField({ value: (c.filters[i] ? vget(c, `filters.${c.filters[i].id}.amount`) ?? 1 : 1) * 100, min: 0, max: 100, step: 1, unit: "%", onInput: (v, m) => edit(`filters.${i}.amount`, v / 100, "Filter amount", { discrete: m?.typed }) });
         nf.dataset.famt = i;
         slot.replaceWith(nf);
         const lab = root.querySelector(`[data-freset="${i}"]`);
@@ -19406,6 +19525,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       root.querySelectorAll("[data-fdel]").forEach((b) => b.addEventListener("click", () => store2.transact("Remove filter", (p) => {
         const x = p.clips.find((y) => y.id === clip().id);
         x.filters.splice(+b.dataset.fdel, 1);
+        pruneKeys(x);
       })));
       root.querySelector("#insAddFilter")?.addEventListener("change", (e) => {
         const v = e.target.value;
@@ -19590,7 +19710,10 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       const c = clip();
       if (!c) return;
       root.querySelectorAll("[data-voice]").forEach((b) => b.classList.toggle("primary", (c.audio.voice || "none") === b.dataset.voice));
-      root.querySelectorAll("[data-famt]").forEach((nf) => nf.setValue?.((c.filters[+nf.dataset.famt]?.amount ?? 1) * 100));
+      root.querySelectorAll("[data-famt]").forEach((nf) => {
+        const f = c.filters[+nf.dataset.famt];
+        nf.setValue?.((f ? vget(c, `filters.${f.id}.amount`) ?? 1 : 1) * 100);
+      });
       if (root.querySelector("[data-crop]")) {
         const a = cropAspectOf(c);
         root.querySelectorAll("[data-crop]").forEach((b) => b.classList.toggle("primary", b.dataset.crop === a));
@@ -20376,7 +20499,6 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     const openCurves = (id) => {
       const c = store.getClip(id || store.selectedClips()[0]?.id);
       if (!c) return toast2("Select a clip to open its keyframe graph");
-      if (c.type === "audio") return toast2("Keyframes animate visual clips (position, scale, rotation, opacity)");
       playback.pause();
       Promise.resolve().then(() => (init_curves(), curves_exports)).then((m) => m.openCurveEditor({ store, clipId: c.id })).catch((e) => toast2("Could not open the keyframe graph: " + e.message));
     };

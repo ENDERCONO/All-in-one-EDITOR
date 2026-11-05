@@ -6003,7 +6003,8 @@
             <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h2l2-7 4 14 3-9 2 5h5"/></svg></span>
             <span class="sb-label">Audio Tools</span>
           </button>
-          <button class="sb-tab" data-tab="timeline" title="Timeline">
+          <!-- Retired: the Video Editor's timeline replaces the audio Timeline (kept hidden, old code still binds to it) -->
+          <button class="sb-tab-retired" data-tab="timeline" title="Timeline" hidden style="display:none">
             <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="14" height="4" rx="1"/><rect x="6" y="14" width="14" height="4" rx="1"/></svg></span>
             <span class="sb-label">Timeline</span>
           </button>
@@ -6203,18 +6204,6 @@
           <div class="row"><span>Loop</span><kbd>L</kbd></div>
           <div class="row"><span>Mute</span><kbd>M</kbd></div>
           <div class="row"><span>Reverse</span><kbd>R</kbd></div>
-        </div>
-        <div>
-          <h3>Timeline</h3>
-          <div class="row"><span>Play / pause</span><kbd>Space</kbd></div>
-          <div class="row"><span>Split clip</span><kbd>S</kbd></div>
-          <div class="row"><span>Delete clip</span><kbd>Del</kbd></div>
-          <div class="row"><span>Undo / redo</span><kbd>Ctrl Z / Y</kbd></div>
-          <div class="row"><span>Duplicate</span><kbd>Ctrl D</kbd></div>
-          <div class="row"><span>Copy / paste</span><kbd>Ctrl C / V</kbd></div>
-          <div class="row"><span>Select all</span><kbd>Ctrl A</kbd></div>
-          <div class="row"><span>Zoom / fit</span><kbd>+ − 0</kbd></div>
-          <div class="row"><span>Back to start</span><kbd>Home</kbd></div>
         </div>
         <div>
           <h3>Factory calculator</h3>
@@ -9170,6 +9159,7 @@ document.querySelectorAll('.sb-tab').forEach(tab => {
 document.addEventListener('DOMContentLoaded', () => {
   let last = null;
   try { last = localStorage.getItem('lastTab'); } catch (e) {}
+  if (last === 'timeline') last = 'videoeditor'; // audio Timeline retired → Video Editor
   if (!last || last === currentMode || last === 'brainrot' || last === 'codes') return;
   const btn = document.querySelector(`.sb-tab[data-tab="${last}"]`);
   if (btn) btn.click();
@@ -9338,7 +9328,7 @@ document.getElementById('sidebarToggle').addEventListener('click', () => {
     seamless:   ['seamless tile', 'tileable', 'tiling', 'texture', 'pixel art', 'repeat', 'pattern', 'seams', 'wrap', 'offset'],
     gradblur:   ['gradient blur', 'blur', 'tilt shift', 'tilt-shift', 'fade blur', 'gaussian', 'box blur', 'motion blur', 'radial blur', 'zoom blur', 'spin blur', 'vignette', 'depth of field', 'soften'],
     audio:      ['audio tools', 'sound', 'music', 'wav', 'mp3', 'trim audio', 'volume', 'pitch', 'voice'],
-    timeline:   ['timeline', 'video editor', 'clips', 'tracks', 'sequence', 'cut video', 'arrange'],
+    videoeditor: ['video editor', 'timeline', 'audio timeline', 'audio editor', 'multitrack', 'multi track', 'mix audio', 'clips', 'tracks', 'sequence', 'cut video', 'arrange', 'filmora', 'keyframes', 'subtitles'],
     normalmix:  ['normal mix', 'normal map', 'normals', 'bump map', 'blend normals', 'material'],
     model3d:    ['3d model', 'displacement', 'height map', 'heightmap', 'plane', 'mesh', 'depth', 'relief'],
     vertical:   ['vertical video', 'vertical', '9:16', '9x16', 'portrait', 'tiktok', 'shorts', 'youtube shorts', 'reels', 'horizontal to vertical', 'rotate video', 'sideways', 'aspect ratio', '1080x1920'],

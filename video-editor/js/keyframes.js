@@ -5,7 +5,8 @@
 //   interp = how the curve LEAVES this key: 'auto' (smooth, no overshoot — UE "Smart Auto"),
 //            'user' (smooth with this key's tangent `tan`, value per second), 'linear',
 //            'constant' (hold), 'ease' (ease in / out)
-// The base value (clip.transform.*) is used when a property has no keys.
+// The base value (the clip's own value) is used when a property has no keys.
+// Paths: transform.<k>, color.<k>, audio.volume, audio.pan, filters.<filterId>.amount
 
 export const ANIM_PROPS = [
   { path: 'transform.x', label: 'Position X', unit: 'px', color: '#ff5a5a', def: 0 },
@@ -20,12 +21,43 @@ export const INTERPS = [
   { id: 'auto', label: 'Auto (smooth)' }, { id: 'user', label: 'User tangent' }, { id: 'linear', label: 'Linear' },
   { id: 'constant', label: 'Constant (hold)' }, { id: 'ease', label: 'Ease in / out' },
 ];
-const PROP = new Map(ANIM_PROPS.map(p => [p.path, p]));
-export const isAnimPath = path => PROP.has(path);
-export const propInfo = path => PROP.get(path);
+// Color adjustments (inspector Color tab) and audio
+export const COLOR_PROPS = [
+  ['brightness', 'Brightness'], ['contrast', 'Contrast'], ['saturation', 'Saturation'], ['hue', 'Hue'], ['exposure', 'Exposure'],
+  ['temperature', 'Temperature'], ['tint', 'Tint'], ['highlights', 'Highlights'], ['shadows', 'Shadows'], ['vignette', 'Vignette'],
+  ['blur', 'Blur'], ['sharpen', 'Sharpen'], ['gamma', 'Gamma'], ['vibrance', 'Vibrance'], ['noise', 'Noise'], ['fade', 'Fade'],
+  ['clarity', 'Clarity'], ['blacks', 'Blacks'], ['whites', 'Whites'], ['red', 'Red'], ['green', 'Green'], ['blue', 'Blue'],
+].map(([k, label], i) => ({ path: 'color.' + k, label, unit: '', color: `hsl(${(i * 47) % 360} 70% 62%)`, def: 0, group: 'Color' }));
+export const AUDIO_PROPS = [
+  { path: 'audio.volume', label: 'Volume', unit: 'dB', color: '#18d5b7', def: 0, min: -60, max: 12, group: 'Audio' },
+  { path: 'audio.pan', label: 'Balance', unit: '', color: '#ff8fd1', def: 0, min: -1, max: 1, group: 'Audio' },
+];
+ANIM_PROPS.forEach(p => { p.group = 'Transform'; });
+const PROP = new Map([...ANIM_PROPS, ...COLOR_PROPS, ...AUDIO_PROPS].map(p => [p.path, p]));
+const FILTER_RE = /^filters\.([^.]+)\.amount$/;
+export const isAnimPath = path => PROP.has(path) || FILTER_RE.test(path);
+// Info for any animatable path (filters get a name from the caller's FILTERS list when given)
+export function propInfo(path, clip, filterLabel) {
+  if (PROP.has(path)) return PROP.get(path);
+  const m = FILTER_RE.exec(path); if (!m) return null;
+  const f = clip?.filters?.find(x => x.id === m[1]);
+  let h = 0; for (const ch of m[1]) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return { path, label: (filterLabel?.(f?.type) || f?.type || 'Filter') + ' amount', unit: '', color: `hsl(${h % 360} 75% 60%)`, def: 1, min: 0, max: 4, group: 'Effects' };
+}
 const EPS = 1e-4;
 
-const baseOf = (clip, path) => { const k = path.split('.')[1]; const v = clip.transform?.[k]; return Number.isFinite(+v) ? +v : (PROP.get(path)?.def ?? 0); };
+// read / write a path on a clip (filters are addressed by filter id, not index)
+function getPath(clip, path) {
+  const m = FILTER_RE.exec(path);
+  if (m) return clip.filters?.find(f => f.id === m[1])?.amount;
+  const [a, b] = path.split('.'); return clip[a]?.[b];
+}
+function setPath(clip, path, v) {
+  const m = FILTER_RE.exec(path);
+  if (m) { const f = clip.filters?.find(x => x.id === m[1]); if (f) f.amount = v; return; }
+  const [a, b] = path.split('.'); clip[a] = clip[a] || {}; clip[a][b] = v;
+}
+const baseOf = (clip, path) => { const v = getPath(clip, path); return Number.isFinite(+v) ? +v : (propInfo(path, clip)?.def ?? 0); };
 export const keysOf = (clip, path) => clip?.keyframes?.[path] || [];
 export const hasAnim = (clip, path) => keysOf(clip, path).length > 0;
 export const anyAnim = clip => !!clip?.keyframes && Object.values(clip.keyframes).some(a => a && a.length);
@@ -65,7 +97,7 @@ export function evalProp(clip, path, lt) {
   const keys = keysOf(clip, path);
   if (!keys.length) return baseOf(clip, path);
   let v = evalKeys(keys, lt);
-  const p = PROP.get(path);
+  const p = propInfo(path, clip);
   if (p?.min != null) v = Math.max(p.min, v);
   if (p?.max != null) v = Math.min(p.max, v);
   return v;
@@ -74,12 +106,13 @@ export function evalProp(clip, path, lt) {
 // A copy of the clip with animated properties resolved at timeline time t (same object when not animated)
 export function evalClip(clip, t) {
   if (!clip || !anyAnim(clip)) return clip;
-  const lt = localTime(clip, t), tr = { ...(clip.transform || {}) };
+  const lt = localTime(clip, t);
+  const out = { ...clip, transform: { ...(clip.transform || {}) }, color: clip.color && { ...clip.color }, audio: clip.audio && { ...clip.audio }, filters: (clip.filters || []).map(f => ({ ...f })) };
   for (const path of Object.keys(clip.keyframes)) {
-    if (!hasAnim(clip, path) || !PROP.has(path)) continue;
-    tr[path.split('.')[1]] = evalProp(clip, path, lt);
+    if (!hasAnim(clip, path) || !isAnimPath(path)) continue;
+    setPath(out, path, evalProp(clip, path, lt));
   }
-  return { ...clip, transform: tr };
+  return out;
 }
 
 // ---- editing (call inside store.transact / store.update on the project's clip object) ----
@@ -100,7 +133,7 @@ export function removeKeyAt(clip, path, lt) {
   const v = a[i].v;
   a.splice(i, 1);
   // last key gone: the property keeps the value it had there, as a plain (unanimated) value
-  if (!a.length) { clip.transform = clip.transform || {}; clip.transform[path.split('.')[1]] = v; delete clip.keyframes[path]; }
+  if (!a.length) { setPath(clip, path, v); delete clip.keyframes[path]; }
   return true;
 }
 // Toggle a key at lt (the diamond button): adds one with the current value, or removes it.
@@ -112,8 +145,16 @@ export function toggleKey(clip, path, lt) {
 // Set a property: animated → key at lt (auto-key), otherwise the plain value.
 export function setValue(clip, path, v, lt) {
   if (hasAnim(clip, path)) { upsertKey(clip, path, lt, v); return; }
-  const k = path.split('.')[1]; clip.transform = clip.transform || {}; clip.transform[k] = v;
+  setPath(clip, path, v);
 }
+// Remove keys of filters that no longer exist on the clip
+export function pruneKeys(clip) {
+  if (!clip?.keyframes) return;
+  for (const path of Object.keys(clip.keyframes)) { const m = FILTER_RE.exec(path); if (m && !clip.filters?.some(f => f.id === m[1])) delete clip.keyframes[path]; }
+}
+// Every animatable path that currently has keys
+export const animatedPaths = clip => Object.keys(clip?.keyframes || {}).filter(p => hasAnim(clip, p));
+
 // Clip start moved by d seconds with the content staying put (trim left / split): keep keys on the same frames.
 export function shiftKeys(clip, d) {
   if (!clip?.keyframes || !d) return;

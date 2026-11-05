@@ -5,7 +5,7 @@ import { mediaRuntime, uid, defaultColor, defaultHueMatch, defaultAudioFx, defau
 import { BLEND_MODES, FILTERS, TRANSITIONS, FONTS, MASK_TYPES, CROP_ASPECTS, TITLE_PRESETS } from './catalog.js';
 import { icon } from './icons.js';
 import { numField } from './numfield.js';
-import { isAnimPath, hasAnim, anyAnim, evalProp, setValue, toggleKey, keyIndexAt } from './keyframes.js';
+import { isAnimPath, hasAnim, anyAnim, evalProp, setValue, toggleKey, keyIndexAt, pruneKeys } from './keyframes.js';
 
 const get = (o, path) => path.split('.').reduce((a, k) => (a == null ? a : a[k]), o);
 let playheadRef = () => 0;
@@ -36,7 +36,9 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
         if (path.startsWith('audio.fx.')) x.audio.fx = { ...defaultAudioFx(), ...(x.audio.fx || {}) };
         if (path.startsWith('mask.') && !x.mask) x.mask = defaultMask();
         if (path.startsWith('gradBlur.') && !x.gradBlur) x.gradBlur = defaultGradBlur();
-        if (isAnimPath(path) && hasAnim(x, path)) setValue(x, path, v, store.playhead - x.start); // auto-key
+        const fm = /^filters\.(\d+)\.amount$/.exec(path);
+        const kp = fm && x.filters?.[+fm[1]] ? `filters.${x.filters[+fm[1]].id}.amount` : path;
+        if (isAnimPath(kp) && hasAnim(x, kp)) setValue(x, kp, v, store.playhead - x.start); // auto-key
         else set(x, path, v);
       }
     }, { coalesce: discrete ? undefined : ids.join(',') + ':' + path });
@@ -259,7 +261,7 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
   function effectsTab(c) {
     const rows = c.filters.map((f, i) => {
       const def = FILTERS.find(x => x.id === f.type);
-      return `<div class="prop has-btn" title="${esc(def?.label || f.type)}"><label data-freset="${i}">${esc(def?.label || f.type)}</label><div class="nf-slot" data-famt="${i}"></div><button class="btn icon" data-fdel="${i}" title="Remove">✕</button></div>`;
+      return `<div class="prop has-btn" title="${esc(def?.label || f.type)}"><label data-freset="${i}">${esc(def?.label || f.type)}</label><div class="kf-row"><div class="nf-slot" data-famt="${i}"></div><button class="kf-btn" data-kf="filters.${f.id}.amount" title="Keyframe the amount at the playhead">◆</button></div><button class="btn icon" data-fdel="${i}" title="Remove">✕</button></div>`;
     }).join('');
     return section('effects', 'Filters & Effects', `${rows || '<div class="dim">No filters. Drag one from the Filters or Effects tab, or add one here.</div>'}
       <div class="prop wide"><label>Add</label><select id="insAddFilter"><option value="">Choose…</option>${FILTERS.map(f => `<option value="${f.id}">${f.category} · ${f.label}</option>`).join('')}</select></div>`);
@@ -403,12 +405,12 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
     root.querySelectorAll('[data-speed]').forEach(b => b.addEventListener('click', () => ops.setSpeed(+b.dataset.speed)));
     root.querySelectorAll('.nf-slot[data-famt]').forEach(slot => {
       const i = +slot.dataset.famt;
-      const nf = numField({ value: (c.filters[i]?.amount ?? 1) * 100, min: 0, max: 100, step: 1, unit: '%', onInput: (v, m) => edit(`filters.${i}.amount`, v / 100, 'Filter amount', { discrete: m?.typed }) });
+      const nf = numField({ value: (c.filters[i] ? vget(c, `filters.${c.filters[i].id}.amount`) ?? 1 : 1) * 100, min: 0, max: 100, step: 1, unit: '%', onInput: (v, m) => edit(`filters.${i}.amount`, v / 100, 'Filter amount', { discrete: m?.typed }) });
       nf.dataset.famt = i; slot.replaceWith(nf);
       const lab = root.querySelector(`[data-freset="${i}"]`);
       if (lab) { lab.classList.add('scrub'); nf.scrubFrom(lab); lab.addEventListener('dblclick', () => { edit(`filters.${i}.amount`, 1, 'Reset filter amount', { discrete: true }); sync(); }); }
     });
-    root.querySelectorAll('[data-fdel]').forEach(b => b.addEventListener('click', () => store.transact('Remove filter', p => { const x = p.clips.find(y => y.id === clip().id); x.filters.splice(+b.dataset.fdel, 1); })));
+    root.querySelectorAll('[data-fdel]').forEach(b => b.addEventListener('click', () => store.transact('Remove filter', p => { const x = p.clips.find(y => y.id === clip().id); x.filters.splice(+b.dataset.fdel, 1); pruneKeys(x); })));
     root.querySelector('#insAddFilter')?.addEventListener('change', e => { const v = e.target.value; if (!v) return; store.transact('Add filter', p => p.clips.find(y => y.id === clip().id).filters.push({ id: uid('flt'), type: v, amount: 1 })); });
     root.querySelectorAll('[data-kf]').forEach(b => b.addEventListener('click', e => {
       e.stopPropagation();
@@ -506,7 +508,7 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
   function sync() {
     const c = clip(); if (!c) return;
     root.querySelectorAll('[data-voice]').forEach(b => b.classList.toggle('primary', (c.audio.voice || 'none') === b.dataset.voice));
-    root.querySelectorAll('[data-famt]').forEach(nf => nf.setValue?.((c.filters[+nf.dataset.famt]?.amount ?? 1) * 100));
+    root.querySelectorAll('[data-famt]').forEach(nf => { const f = c.filters[+nf.dataset.famt]; nf.setValue?.((f ? vget(c, `filters.${f.id}.amount`) ?? 1 : 1) * 100); });
     if (root.querySelector('[data-crop]')) { const a = cropAspectOf(c); root.querySelectorAll('[data-crop]').forEach(b => b.classList.toggle('primary', b.dataset.crop === a)); }
     root.querySelectorAll('[data-kf]').forEach(b => {
       const path = b.dataset.kf, an = hasAnim(c, path);

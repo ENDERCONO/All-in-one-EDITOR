@@ -3,6 +3,7 @@
 // Contract: docs/ARCHITECTURE.md → audio.js
 
 import { dbToGain, defaultAudioFx } from './state.js';
+import { hasAnim, keysOf, evalProp } from './keyframes.js';
 
 const PEAK_RATE = 200;      // peak bins per second
 const LEAD = 0.06;          // seconds of scheduling headroom on play()
@@ -810,7 +811,9 @@ export function createAudioEngine({ store, mediaRuntime }) {
     g.channelCount = 2; g.channelCountMode = 'explicit'; g.channelInterpretation = 'speakers'; // mono -> L=R
     const a = clip.audio || {};
     const fin = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
-    const base = Math.max(0, Math.min(16, dbToGain(Math.max(-120, Math.min(24, fin(a.volume))))));
+    const volAnim = hasAnim(clip, 'audio.volume'), panAnim = hasAnim(clip, 'audio.pan');
+    const toGain = db => Math.max(0, Math.min(16, dbToGain(Math.max(-120, Math.min(24, fin(db))))));
+    const base = volAnim ? 1 : toGain(a.volume); // animated volume is applied by its own automation node below
     const fi = Math.max(0, fin(a.fadeIn), fin(span.xin)), fo = Math.max(0, fin(a.fadeOut), fin(span.xout));
     const cEnd = span.end;
     const env = t => base * Math.max(0, Math.min(1, fi > 0 ? (t - cs) / fi : 1, fo > 0 ? (cEnd - t) / fo : 1));
@@ -820,15 +823,26 @@ export function createAudioEngine({ store, mediaRuntime }) {
     const pan = c.createStereoPanner();
     pan.pan.value = Math.max(-1, Math.min(1, fin(a.pan)));
     node.connect(g);
+    // keyframed volume / balance → parameter automation, sampled every 1/30 s across the keys
+    const automate = (param, path, map) => {
+      const ks = keysOf(clip, path), tA = clip.start + ks[0].t, tB = clip.start + ks[ks.length - 1].t, step = 1 / 30;
+      const ev = tt => map(evalProp(clip, path, tt - clip.start));
+      param.setValueAtTime(ev(s), when);
+      for (let tt = Math.max(s, tA - step) + step; tt < ce && tt <= tB + step; tt += step) param.linearRampToValueAtTime(ev(tt), toCtx(tt));
+    };
+    let into = g;
+    const extra = [];
+    if (volAnim) { const vg = c.createGain(); g.connect(vg); into = vg; extra.push(vg); try { automate(vg.gain, 'audio.volume', toGain); } catch (e) { console.warn('[audio] volume keys', e); } }
     let fx;
-    try { fx = buildClipFx(c, a, g, when, s - cs, wlReady); }
+    try { fx = buildClipFx(c, a, into, when, s - cs, wlReady); }
     catch (e) {
       console.warn('[audio] effects failed on', clip.name, '- playing it without effects', e);
-      fx = { out: g, nodes: [], oscs: [], tail: 0.2 };
+      fx = { out: into, nodes: [], oscs: [], tail: 0.2 };
     }
     fx.out.connect(pan); pan.connect(dest);
+    if (panAnim) { try { automate(pan.pan, 'audio.pan', v => Math.max(-1, Math.min(1, fin(v)))); } catch (e) { console.warn('[audio] balance keys', e); } }
     node.start(when, offset, dur);
-    return { src: node, nodes: [g, pan, ...fx.nodes], oscs: fx.oscs, tail: fx.tail, end: when + (ce - s) };
+    return { src: node, nodes: [g, pan, ...extra, ...fx.nodes], oscs: fx.oscs, tail: fx.tail, end: when + (ce - s) };
   }
 
   function overlapping(from, to) {
