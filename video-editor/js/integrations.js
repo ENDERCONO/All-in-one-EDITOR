@@ -5,8 +5,6 @@
 // the default online server.
 
 const DEFAULT_ONLINE_API = 'https://all-in-one-editor.onrender.com';
-let cachedBase;
-
 async function ping(base, ms) {
   const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), ms);
   try { const r = await fetch(base + '/api/dl/ping', { signal: ctrl.signal, cache: 'no-store' }); const j = await r.json(); if (j?.ok) return base; }
@@ -14,19 +12,20 @@ async function ping(base, ms) {
   throw new Error('no server');
 }
 
+// Finds the downloader server to use. Order: this PC (the page's own server, or
+// localhost:3000 from START-SERVER.bat), then the online server. Checked on every
+// call and never remembered, so starting START-SERVER.bat later "just works".
 export async function apiBase(onStatus) {
-  if (cachedBase !== undefined && cachedBase !== null) return cachedBase;
-  try { if (window.parent !== window && typeof window.parent.resolveApiBase === 'function') { cachedBase = await window.parent.resolveApiBase(onStatus); return cachedBase; } } catch (e) { /* cross-origin */ }
   const local = [];
   if (/^https?:$/.test(location.protocol)) local.push(location.origin);
   for (const c of ['http://localhost:3000', 'http://127.0.0.1:3000']) if (location.origin !== c) local.push(c);
-  try { cachedBase = await Promise.any(local.map(b => ping(b, 1500))); return cachedBase; } catch (e) { /* none local */ }
+  try { return { base: await Promise.any(local.map(b => ping(b, 3000))), where: 'this PC' }; } catch (e) { /* none running here */ }
   let saved = ''; try { saved = (localStorage.getItem('apiBase') || '').replace(/\/+$/, ''); } catch (e) { /* ignore */ }
   for (const b of [...new Set([saved, DEFAULT_ONLINE_API].filter(Boolean))]) {
     const slow = setTimeout(() => onStatus?.('Waking up the online server (free hosting sleeps) — up to a minute…'), 2500);
-    try { cachedBase = await ping(b, 90000); return cachedBase; } catch (e) { /* try next */ } finally { clearTimeout(slow); }
+    try { return { base: await ping(b, 90000), where: 'the online server' }; } catch (e) { /* try next */ } finally { clearTimeout(slow); }
   }
-  cachedBase = null; return null;
+  return null;
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -36,8 +35,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 export async function convertForImport(file, kind, onStatus) {
   const target = kind === 'audio' ? 'mp3' : kind === 'image' ? 'png' : 'mp4';
   const outName = (file.name || 'media').replace(/\.[^.]+$/, '') + '.' + target;
-  const base = await apiBase(onStatus).catch(() => null);
-  if (base !== null && base !== undefined) {
+  const found = await apiBase(onStatus).catch(() => null);
+  const base = found?.base;
+  if (base) {
     try {
       onStatus?.(`Converting ${file.name} → ${target.toUpperCase()} on the server…`);
       const r = await fetch(`${base}/api/convert/start?name=${encodeURIComponent(file.name || 'input')}&target=${target}`, { method: 'POST', body: file });
@@ -93,8 +93,10 @@ export async function downloadUrl(url, { kind = 'video', quality = '720', onProg
     try { const r = await fetch(url); if (r.ok) { const b = await r.blob(); return new File([b], decodeURIComponent(url.split('/').pop().split(/[?#]/)[0]) || 'download', { type: b.type }); } }
     catch (e) { /* CORS — let the server fetch it */ }
   }
-  const base = await apiBase(msg => onProgress?.({ state: 'connecting', pct: 0, msg }));
-  if (base === null || base === undefined) throw new Error("Can't reach the downloader server. Run the site on your PC (START-SERVER.bat) or try again in a minute (the online server may be waking up).");
+  const found = await apiBase(msg => onProgress?.({ state: 'connecting', pct: 0, msg }));
+  if (!found) throw new Error("Can't reach a downloader server. Run START-SERVER.bat on your PC (the editor then uses it automatically), or try again in a minute (the online server may be waking up).");
+  const base = found.base;
+  onProgress?.({ state: 'connecting', pct: 0, msg: `Downloading via ${found.where}…` });
   const st = await (await fetch(`${base}/api/dl/start?url=${encodeURIComponent(url)}&kind=${kind}&format=mp3&quality=${quality}`)).json();
   if (!st.id) throw new Error(st.error || 'Download failed to start');
   let title = '';

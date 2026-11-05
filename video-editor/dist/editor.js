@@ -617,20 +617,11 @@
     throw new Error("no server");
   }
   async function apiBase(onStatus) {
-    if (cachedBase !== void 0 && cachedBase !== null) return cachedBase;
-    try {
-      if (window.parent !== window && typeof window.parent.resolveApiBase === "function") {
-        cachedBase = await window.parent.resolveApiBase(onStatus);
-        return cachedBase;
-      }
-    } catch (e) {
-    }
     const local = [];
     if (/^https?:$/.test(location.protocol)) local.push(location.origin);
     for (const c of ["http://localhost:3000", "http://127.0.0.1:3000"]) if (location.origin !== c) local.push(c);
     try {
-      cachedBase = await Promise.any(local.map((b) => ping(b, 1500)));
-      return cachedBase;
+      return { base: await Promise.any(local.map((b) => ping(b, 3e3))), where: "this PC" };
     } catch (e) {
     }
     let saved = "";
@@ -641,21 +632,20 @@
     for (const b of [...new Set([saved, DEFAULT_ONLINE_API].filter(Boolean))]) {
       const slow = setTimeout(() => onStatus?.("Waking up the online server (free hosting sleeps) \u2014 up to a minute\u2026"), 2500);
       try {
-        cachedBase = await ping(b, 9e4);
-        return cachedBase;
+        return { base: await ping(b, 9e4), where: "the online server" };
       } catch (e) {
       } finally {
         clearTimeout(slow);
       }
     }
-    cachedBase = null;
     return null;
   }
   async function convertForImport(file, kind, onStatus) {
     const target = kind === "audio" ? "mp3" : kind === "image" ? "png" : "mp4";
     const outName = (file.name || "media").replace(/\.[^.]+$/, "") + "." + target;
-    const base = await apiBase(onStatus).catch(() => null);
-    if (base !== null && base !== void 0) {
+    const found = await apiBase(onStatus).catch(() => null);
+    const base = found?.base;
+    if (base) {
       try {
         onStatus?.(`Converting ${file.name} \u2192 ${target.toUpperCase()} on the server\u2026`);
         const r = await fetch(`${base}/api/convert/start?name=${encodeURIComponent(file.name || "input")}&target=${target}`, { method: "POST", body: file });
@@ -717,8 +707,10 @@
       } catch (e) {
       }
     }
-    const base = await apiBase((msg) => onProgress?.({ state: "connecting", pct: 0, msg }));
-    if (base === null || base === void 0) throw new Error("Can't reach the downloader server. Run the site on your PC (START-SERVER.bat) or try again in a minute (the online server may be waking up).");
+    const found = await apiBase((msg) => onProgress?.({ state: "connecting", pct: 0, msg }));
+    if (!found) throw new Error("Can't reach a downloader server. Run START-SERVER.bat on your PC (the editor then uses it automatically), or try again in a minute (the online server may be waking up).");
+    const base = found.base;
+    onProgress?.({ state: "connecting", pct: 0, msg: `Downloading via ${found.where}\u2026` });
     const st = await (await fetch(`${base}/api/dl/start?url=${encodeURIComponent(url2)}&kind=${kind}&format=mp3&quality=${quality}`)).json();
     if (!st.id) throw new Error(st.error || "Download failed to start");
     let title = "";
@@ -808,7 +800,7 @@ ${e.message}`);
       prompt("Copy the file names:", text);
     }
   }
-  var DEFAULT_ONLINE_API, cachedBase, sleep, isMediaLink, DIRECT_RE;
+  var DEFAULT_ONLINE_API, sleep, isMediaLink, DIRECT_RE;
   var init_integrations = __esm({
     "js/integrations.js"() {
       DEFAULT_ONLINE_API = "https://all-in-one-editor.onrender.com";
