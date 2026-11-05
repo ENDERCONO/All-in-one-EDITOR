@@ -67,6 +67,8 @@
 .tl-clip.moving { opacity: .85; z-index: 5; box-shadow: inset 0 0 0 2px var(--sel), 0 6px 16px #0009; }
 .tl-clip.locked { cursor: not-allowed; filter: saturate(.5) brightness(.8); }
 .tl-clip.hidden-trk { opacity: .45; }
+.tl-clip.disabled-clip { opacity: .4; filter: grayscale(1); background-image: repeating-linear-gradient(135deg, #0000 0 8px, #0006 8px 12px); }
+.tl-panning, .tl.panning, .panning { cursor: grabbing !important; }
 .tl-cv { position: absolute; top: 0; left: 0; pointer-events: none; }
 .tl-clip-head { position: absolute; left: 0; right: 0; top: 0; height: 16px; display: flex; align-items: center; gap: 4px; padding: 0 5px; font-size: 11px; line-height: 16px; color: #fff; text-shadow: 0 1px 2px #000a; background: linear-gradient(rgba(0, 0, 0, .35), rgba(0, 0, 0, .1)); pointer-events: none; white-space: nowrap; overflow: hidden; }
 .tl-clip-head .ico { flex: none; opacity: .85; }

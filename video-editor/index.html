@@ -19,7 +19,7 @@
 
   <!-- ===== Top bar: logo, menus, project name, export ===== -->
   <header id="topbar">
-    <div class="logo"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 3l16 9-16 9z" fill="var(--accent)"/><path d="M4 3l8 9-8 9z" fill="var(--accent-2)"/></svg><span>AIO Video Editor</span></div>
+    <div class="logo"><button id="btnAppFs" class="fs-btn" title="Full screen (click again or Esc to exit)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button><span>AIO Video Editor</span></div>
     <nav id="menubar"></nav>
     <div class="proj-name"><span id="projName">Untitled project</span> <span id="saveState" class="save-state" title="Saved">✓</span></div>
     <div class="top-actions">
@@ -42,6 +42,7 @@
           <button class="lib-tab" data-lib="effects" data-icon="effects" data-icon-size="20"><span>Effects</span></button>
           <button class="lib-tab" data-lib="filters" data-icon="filters" data-icon-size="20"><span>Filters</span></button>
           <button class="lib-tab" data-lib="elements" data-icon="elements" data-icon-size="20"><span>Elements</span></button>
+          <button class="lib-tab" data-lib="stickers" data-icon="elements" data-icon-size="20"><span>Stickers</span></button>
           <button class="lib-tab" data-lib="materials" data-icon="materials" data-icon-size="20"><span>Materials</span></button>
         </div>
         <div class="lib-body">

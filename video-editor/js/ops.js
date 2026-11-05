@@ -1,5 +1,5 @@
 // Data-level edit operations. Every op is one undo step.
-import { store, makeClip, makeTrack, uid, FRAME_EPS } from './state.js';
+import { store, makeClip, makeTrack, uid, FRAME_EPS, defaultAudioFx } from './state.js';
 import { TITLE_PRESETS } from './catalog.js';
 
 const deep = o => JSON.parse(JSON.stringify(o));
@@ -85,7 +85,7 @@ export const ops = {
   overwriteRange,
   trackFor: (kind, start, dur, preferId) => trackFor(store.project, kind, start, dur, preferId),
 
-  insertMedia(mediaId, { time = store.playhead, trackId = null, select = true } = {}) {
+  insertMedia(mediaId, { time = store.playhead, trackId = null, select = true, transform = null } = {}) {
     const m = store.getMedia(mediaId); if (!m) return null;
     const type = m.kind === 'audio' ? 'audio' : m.kind === 'image' ? 'image' : 'video';
     const loopLen = m.duration >= 1 ? m.duration : Math.ceil(3 / Math.max(0.05, m.duration)) * m.duration; // short GIFs loop to ~3 s
@@ -95,7 +95,7 @@ export const ops = {
       const pref = trackId && p.tracks.find(t => t.id === trackId && t.kind === kindForType(type) && !t.locked);
       if (pref) overwriteRange(p, pref.id, time, time + dur); // dropped on a track: overwrite what's there (Filmora)
       const tid = pref ? pref.id : trackFor(p, kindForType(type), time, dur, trackId);
-      clip = makeClip({ trackId: tid, type, mediaId, name: m.name, start: time, duration: dur });
+      clip = makeClip({ trackId: tid, type, mediaId, name: m.name, start: time, duration: dur, ...(transform ? { transform } : {}) });
       p.clips.push(clip);
     });
     if (select) store.select([clip.id]);
@@ -451,4 +451,44 @@ export const ops = {
     return [...s].sort((a, b) => a - b);
   },
   isVisual: c => VISUAL.has(c.type),
+  // ---- clip menu helpers (each one undo step) ----
+  toggleDisabled(ids = store.selection.clipIds) {
+    const sel = ids.map(id => store.getClip(id)).filter(Boolean); if (!sel.length) return;
+    const to = !sel.every(c => c.disabled);
+    store.transact(to ? 'Disable clip' : 'Enable clip', p => sel.forEach(c0 => { p.clips.find(x => x.id === c0.id).disabled = to; }));
+    return to;
+  },
+  rotateBy(deg, ids = store.selection.clipIds) {
+    const sel = ids.map(id => store.getClip(id)).filter(c => c && VISUAL.has(c.type)); if (!sel.length) return false;
+    store.transact('Rotate ' + deg + '°', p => sel.forEach(c0 => { const t = p.clips.find(x => x.id === c0.id).transform; t.rotation = (((t.rotation || 0) + deg) % 360 + 540) % 360 - 180; }));
+    return true;
+  },
+  flip(axis = 'h', ids = store.selection.clipIds) {
+    const sel = ids.map(id => store.getClip(id)).filter(c => c && VISUAL.has(c.type)); if (!sel.length) return false;
+    const k = axis === 'h' ? 'flipH' : 'flipV';
+    store.transact(axis === 'h' ? 'Flip horizontal' : 'Flip vertical', p => sel.forEach(c0 => { const t = p.clips.find(x => x.id === c0.id).transform; t[k] = !t[k]; }));
+    return true;
+  },
+  setVoice(voice, ids = store.selection.clipIds) {
+    const sel = ids.map(id => store.getClip(id)).filter(c => c && (c.type === 'audio' || c.type === 'video')); if (!sel.length) return false;
+    store.transact('Voice filter', p => sel.forEach(c0 => { p.clips.find(x => x.id === c0.id).audio.voice = voice; }));
+    return true;
+  },
+  // preset = an AUDIO_PRESETS entry from audio.js (apply() may also return clipSpeed)
+  applyAudioPreset(preset, ids = store.selection.clipIds) {
+    const sel = ids.map(id => store.getClip(id)).filter(c => c && (c.type === 'audio' || c.type === 'video')); if (!sel.length || !preset) return false;
+    store.transact('Preset ' + preset.label, p => sel.forEach(c0 => {
+      const x = p.clips.find(y => y.id === c0.id);
+      const { clipSpeed, fx, ...rest } = preset.apply(x.audio) || {};
+      Object.assign(x.audio, rest);
+      if (fx) x.audio.fx = { ...defaultAudioFx(), ...(x.audio.fx || {}), ...fx };
+      if (clipSpeed) { x.duration = x.duration * x.speed / clipSpeed; x.speed = clipSpeed; }
+    }));
+    return true;
+  },
+  removeEffects(ids = store.selection.clipIds) {
+    const sel = ids.map(id => store.getClip(id)).filter(Boolean); if (!sel.length) return false;
+    store.transact('Remove effects', p => sel.forEach(c0 => { const x = p.clips.find(y => y.id === c0.id); x.filters = []; x.materialId = null; if (x.chroma) x.chroma.enabled = false; }));
+    return true;
+  },
 };

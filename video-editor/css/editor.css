@@ -46,6 +46,8 @@ input[type="color"] { width: 28px; height: 22px; padding: 0; border: 1px solid v
 /* ================= Top bar ================= */
 #topbar { height: 40px; display: flex; align-items: center; gap: 14px; padding: 0 10px; background: var(--bg); flex: none; }
 .logo { display: flex; align-items: center; gap: 8px; font-weight: 600; white-space: nowrap; }
+.fs-btn { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
+.fs-btn:hover { background: var(--panel-3); }
 #menubar { display: flex; gap: 2px; }
 .menu-btn { background: none; border: 0; padding: 5px 10px; border-radius: 5px; color: var(--text); }
 .menu-btn:hover, .menu-btn.open { background: var(--panel-3); }
@@ -127,6 +129,8 @@ input[type="color"] { width: 28px; height: 22px; padding: 0; border: 1px solid v
 .lib-item:hover .add { display: flex; }
 .lib-thumb canvas, .lib-thumb svg.preview { width: 100%; height: 100%; display: block; }
 .lib-import-card .lib-thumb { border: 1px dashed var(--border); font-size: 28px; color: var(--accent); }
+.lib-sub { grid-column: 1/-1; font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-dim); padding: 8px 2px 0; }
+.lib-item.flash .lib-thumb { outline: 2px solid var(--accent); outline-offset: 2px; transition: outline-color .3s; }
 .lib-empty { grid-column: 1/-1; color: var(--text-faint); text-align: center; padding: 30px 10px; }
 
 /* ================= Player ================= */
@@ -284,3 +288,16 @@ input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-o
 .lib-dl-card .dl-pct { font: 600 15px var(--mono); color: var(--accent); }
 .lib-dl-card .dl-bar { width: 70%; height: 4px; border-radius: 2px; background: var(--panel-3); overflow: hidden; }
 .lib-dl-card .dl-bar i { display: block; height: 100%; background: var(--accent); transition: width .3s; }
+
+/* on-player title editing: see-through box, the real render shows underneath */
+.text-edit-ov { position: fixed; z-index: 900; box-sizing: border-box; margin: 0; padding: 0 6px; resize: none; overflow: hidden; white-space: pre; background: rgba(10, 10, 20, .18); color: transparent; caret-color: var(--accent); border: 2px dashed var(--accent); border-radius: 4px; outline: none; }
+.text-edit-ov::selection { background: color-mix(in srgb, var(--accent) 45%, transparent); color: transparent; }
+.tpreset-grid .tpreset { display: flex; align-items: center; gap: 6px; text-align: left; }
+.tpreset-grid .tpreset span { font-size: 15px; min-width: 22px; }
+
+/* stickers tab */
+.sticker-thumb { position: absolute; inset: 6px; background: center / contain no-repeat; display: flex; align-items: center; justify-content: center; }
+.sticker-thumb.emoji { font-size: 40px; }
+.lib-sub.giphy-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; text-transform: none; letter-spacing: 0; font-weight: 500; }
+.lib-sub.giphy-credit { text-align: right; opacity: .7; }
+.giphy-setup { text-align: left; line-height: 1.5; }

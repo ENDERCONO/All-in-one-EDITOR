@@ -188,6 +188,17 @@ async function boot() {
   };
   $('#btnFullscreen').onclick = () => toggleFullscreen();
   const toggleFullscreen = () => document.fullscreenElement ? document.exitFullscreen() : $('#player').requestFullscreen?.();
+  // Top-left button: the whole editor full screen (works inside the site's iframe too)
+  const FS_IN = '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>', FS_OUT = '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>';
+  const fsBtn = $('#btnAppFs');
+  fsBtn?.addEventListener('click', () => {
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else document.documentElement.requestFullscreen?.().catch(e => toast('Full screen was blocked: ' + e.message));
+  });
+  document.addEventListener('fullscreenchange', () => {
+    const on = document.fullscreenElement === document.documentElement;
+    if (fsBtn) { fsBtn.querySelector('svg').innerHTML = on ? FS_OUT : FS_IN; fsBtn.title = on ? 'Exit full screen (Esc)' : 'Full screen (click again or Esc to exit)'; }
+  });
 
   // Level meter
   const bars = $('#meter').querySelectorAll('i');
@@ -266,7 +277,58 @@ async function boot() {
 
   // ---------- Inspector ----------
   const inspector = createInspector({ root: $('#inspector'), store, ops, materialsApi: materials, audioApi: audioMod, pickColor, openProjectSettings });
-  window.addEventListener('ve:editText', e => { store.select([e.detail.id]); inspector.showTab('titles'); setTimeout(() => { const ta = $('#inspector textarea'); ta?.focus(); ta?.select(); }, 30); });
+  window.addEventListener('ve:editText', e => editTextOnCanvas(e.detail.id));
+
+  // Edit a title right on the player: a see-through textarea over the text; the real
+  // render updates live underneath. One undo step; Esc cancels, Ctrl+Enter / click away ends.
+  function editTextOnCanvas(id) {
+    const c0 = store.getClip(id); if (!c0 || c0.type !== 'text') return;
+    playback.pause(); store.select([id]); inspector.showTab('titles');
+    document.querySelector('.text-edit-ov')?.remove();
+    const original = c0.text?.content ?? '';
+    const ta = document.createElement('textarea');
+    ta.className = 'text-edit-ov'; ta.value = original; ta.spellcheck = false;
+    const place = () => {
+      const c = store.getClip(id); if (!c) return;
+      const S = store.project.settings, cr = canvas.getBoundingClientRect();
+      const sx = cr.width / S.width, sy = cr.height / S.height;
+      const q = renderer?.getClipQuad?.(c) || [];
+      const pts = q.map(p => ({ x: cr.left + cr.width / 2 + p.x * sx, y: cr.top + cr.height / 2 + p.y * sy }));
+      const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+      const left = pts.length ? Math.min(...xs) : cr.left + cr.width / 4, top = pts.length ? Math.min(...ys) : cr.top + cr.height / 3;
+      const w = pts.length ? Math.max(...xs) - left : cr.width / 2, h = pts.length ? Math.max(...ys) - top : 60;
+      const tx = c.text || {}, sc = (c.transform?.scale ?? 1) * (c.transform?.scaleX ?? 1);
+      const fs = Math.max(8, (tx.size || 96) * sy * sc);
+      Object.assign(ta.style, {
+        left: left + 'px', top: top + 'px', width: Math.max(140, w) + 'px', height: Math.max(fs * 1.4, h) + 'px',
+        font: `${tx.italic ? 'italic ' : ''}${tx.bold ? 700 : 400} ${fs}px "${tx.font || 'Inter'}", sans-serif`,
+        lineHeight: String(tx.lineHeight || 1.15), textAlign: tx.align || 'center', letterSpacing: ((tx.letterSpacing || 0) * sy * sc) + 'px',
+        paddingTop: Math.max(0, (Math.max(fs * 1.4, h) - fs * (tx.lineHeight || 1.15) * (ta.value.split('\n').length)) / 2) + 'px',
+      });
+    };
+    document.body.appendChild(ta);
+    place(); ta.focus(); ta.select();
+    let raf = 0;
+    const live = () => {
+      store.update('Edit text', p => { const x = p.clips.find(y => y.id === id); if (x?.text) { x.text.content = ta.value; if (!x.name || x.name === original.slice(0, 40)) x.name = ta.value.slice(0, 40) || 'Title'; } }, { coalesce: 'ontext:' + id });
+      cancelAnimationFrame(raf); raf = requestAnimationFrame(place);
+    };
+    let done = false;
+    const finish = cancel => {
+      if (done) return; done = true;
+      if (cancel && ta.value !== original) { ta.value = original; live(); }
+      ta.remove(); cancelAnimationFrame(raf);
+      window.removeEventListener('resize', place);
+    };
+    ta.addEventListener('input', live);
+    ta.addEventListener('keydown', e => {
+      e.stopPropagation(); // keep editor shortcuts (Space, Delete, Ctrl+Z…) out of the text box
+      if (e.key === 'Escape') { e.preventDefault(); finish(true); }
+      else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); finish(false); }
+    });
+    ta.addEventListener('blur', () => finish(false));
+    window.addEventListener('resize', place);
+  }
 
   // Eyedropper: click the player to sample a color (keying of the selected clip is switched off while sampling)
   function pickColor() {
@@ -346,6 +408,25 @@ async function boot() {
   window.addEventListener('ve:removeBg', e => autoActions.removeBg(e.detail?.mediaIds));
   // timeline right-click → auto subtitles / auto edit tools
   window.addEventListener('ve:autoTool', e => { const f = autoActions[e.detail?.tool]; if (f) f(); });
+  // timeline clip menu actions that need the app (panels, dialogs)
+  const renameClip = () => {
+    const c = store.selectedClips()[0]; if (!c) return toast('Select a clip first');
+    const n = prompt('Clip name', c.name); if (n == null || !n.trim() || n === c.name) return;
+    store.transact('Rename clip', p => { p.clips.find(x => x.id === c.id).name = n.trim(); });
+  };
+  const clipActions = {
+    crop: () => actions.crop(),
+    fill: () => { const n = autoFill(); toast(n ? 'Filled the frame' : 'Select a video or image clip'); },
+    audioTab: () => inspector.showTab('audio'),
+    speedTab: () => inspector.showTab('speed'),
+    effectsTab: () => { inspector.showTab('effects'); library.show('filters'); },
+    rename: renameClip,
+    selectRange: () => { const sel = store.selectedClips(); if (!sel.length) return; const a = Math.min(...sel.map(c => c.start)), b = Math.max(...sel.map(c => c.start + c.duration)); store.transact('Mark clip', p => { p.settings.markIn = a; p.settings.markOut = b; }); toast('In/out set to the selected clip'); },
+    exportSel: () => { clipActions.selectRange(); openExport(); },
+    locate: () => { const c = store.selectedClips()[0]; if (c?.mediaId) library.locate?.(c.mediaId); },
+  };
+  window.addEventListener('ve:clipAction', e => { const f = clipActions[e.detail?.act]; if (f) f(e.detail.arg); });
+  window.addEventListener('ve:openClip', e => { const c = store.getClip(e.detail?.id); if (c?.type === 'text') inspector.showTab('titles'); });
 
   // Import without adding to the timeline; resolves with the new media ids (used by the material editor)
   window.addEventListener('ve:importMedia', async e => {
@@ -838,7 +919,11 @@ async function boot() {
       if (map[lk]) return run(map[lk]);
       return;
     }
+    if (ctrl && alt && (k === 'ArrowRight' || k === 'ArrowLeft')) return run(() => { if (!ops.rotateBy(k === 'ArrowRight' ? 90 : -90)) toast('Select a visual clip to rotate'); });
     if (alt && k === 'Enter') return run(actions.fullscreen);
+    if (alt && lk === 'c') return run(actions.crop);
+    if (alt && lk === 'e') return run(() => { const c = store.selectedClips()[0]; if (c) window.dispatchEvent(new CustomEvent('ve:openClip', { detail: { id: c.id } })); });
+    if (!ctrl && !alt && k === 'F2') return run(renameClip);
     if (alt && (k === '[' || e.code === 'BracketLeft')) return run(actions.trimStart);
     if (alt && (k === ']' || e.code === 'BracketRight')) return run(actions.trimEnd);
     if (alt && lk === 'f') return run(actions.freeze);
@@ -858,6 +943,7 @@ async function boot() {
       case 'r': if (sh) return run(() => ops.toggleReverse()); return;
       case 'x': return run(() => { const sel = store.selectedClips(); if (!sel.length) return toast('Select a clip to mark its range'); const a = Math.min(...sel.map(c => c.start)), b = Math.max(...sel.map(c => c.start + c.duration)); store.transact('Mark clip', p => { p.settings.markIn = a; p.settings.markOut = b; }); toast('In/out set to the selected clip'); });
       case 'f': return run(zoomToSelection);
+      case 'e': return run(() => { const to = ops.toggleDisabled(); if (to != null) toast(to ? 'Clip disabled (skipped in playback and export) · E to enable' : 'Clip enabled'); });
       case 'g': return run(toggleGuides);
       case '+': case '=': return run(() => { const v = sh ? ops.opacityStep(0.05) : ops.volumeStep(1); if (v != null) status(sh ? `Opacity ${Math.round(v * 100)}%` : `Volume ${v.toFixed(1)} dB`); });
       case '-': case '_': return run(() => { const v = sh ? ops.opacityStep(-0.05) : ops.volumeStep(-1); if (v != null) status(sh ? `Opacity ${Math.round(v * 100)}%` : `Volume ${v.toFixed(1)} dB`); });

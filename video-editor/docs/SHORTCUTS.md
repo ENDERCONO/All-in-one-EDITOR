@@ -59,6 +59,16 @@ Owned by `js/app.js`. Shortcuts are ignored while typing in an input.
 | G | Guides: rule of thirds, title-safe, TikTok/Shorts UI zones (9:16) |
 | Ctrl + wheel / middle-drag on the player | Zoom / pan the preview · double-click the backdrop to reset |
 | Middle-drag on the timeline | Pan the timeline |
+| Right-drag (hold right button) on the timeline | Pan the timeline · a right-click without moving opens the menu |
+| Double-click a clip | Playhead to the clip's first frame + open its properties |
+| Double-click a title on the player | Edit the text right there (Esc cancels, Ctrl+Enter or click away finishes) |
+| Click / drag the ruler while playing | Jump there and keep playing |
+| E | Disable / enable the selected clips (skipped in playback and export) |
+| F2 | Rename the selected clip |
+| Alt + C | Crop and zoom (opens the Crop section) |
+| Alt + E | Edit properties of the selected clip |
+| Ctrl + Alt + → / ← | Rotate 90° clockwise / counter-clockwise |
+| Top-left ⛶ button | Whole editor full screen |
 | Drop a clip over another (timeline) | Overwrite — the clip underneath is trimmed / split / removed (Filmora) · hold Alt while dropping to slide into a free spot instead |
 | Drag a property label in the inspector | Scrub its value (Shift = fine) |
 | Right-click the player | Fit / Fill frame / Reset transform / Flip / Guides / Snapshot |

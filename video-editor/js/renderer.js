@@ -28,6 +28,7 @@ const TRANSITION_INDEX = new Map(TRANSITIONS.map((f, i) => [f.id, i]));
 const BLEND_INDEX = new Map(BLEND_MODES.map((f, i) => [f.id, i]));
 // Effects from the "v2 additions" onwards run in a second program (FS_FILTER2 / FS_TRANSITION2).
 const FILTER_V2 = FILTER_INDEX.get('deep_fry') ?? FILTERS.length;
+const FILTER_V3 = FILTER_INDEX.get('sunny_days') ?? FILTERS.length; // v4 color looks → FS_FILTER3
 const TRANSITION_V2 = TRANSITION_INDEX.get('cube_left') ?? TRANSITIONS.length;
 const COLOR_KEYS = ['brightness', 'contrast', 'saturation', 'hue', 'exposure', 'temperature', 'tint', 'highlights', 'shadows', 'vignette', 'sharpen',
   'gamma', 'vibrance', 'noise', 'fade', 'clarity', 'blacks', 'whites', 'red', 'green', 'blue'];
@@ -506,6 +507,90 @@ void main() {
   }
   r.rgb = clamp(r.rgb, 0.0, 1.0);
   outColor = direct ? r : mix(o, r, a);
+}`;
+
+// v4 color looks (Lifestyle, Cinematic, Portrait, Seasons, Holidays, Retro, Food, Scenery).
+// Pure per-pixel grades: contrast / lift / split toning / selective hue moves; u_amt blends.
+const FS_FILTER3 = HEAD + `
+uniform sampler2D u_tex; uniform vec2 u_res; uniform int u_type; uniform float u_amt, u_time;
+vec3 sat(vec3 c, float s) { return mix(vec3(luma(c)), c, s); }
+vec3 con(vec3 c, float k) { return (c - 0.5) * k + 0.5; }
+vec3 lift(vec3 c, float b) { return b + c * (1.0 - b); }
+vec3 split(vec3 c, vec3 sh, vec3 hi) { float l = luma(c); return c + sh * (1.0 - smoothstep(0.0, 0.55, l)) + hi * smoothstep(0.45, 1.0, l); }
+vec3 scurve(vec3 c, float k) { vec3 s = c * c * (3.0 - 2.0 * c); return mix(c, s, k); }
+float vig(vec2 uv, float k) { return 1.0 - k * smoothstep(0.3, 1.1, length(uv - 0.5) * 1.4142); }
+vec3 rgb2hsv(vec3 c) {
+  vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+  vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+  vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+  float d = q.x - min(q.w, q.y); float e = 1.0e-10;
+  return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+vec3 hsv2rgb(vec3 c) { vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0); return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y); }
+// weight of pixels near hue h (0..1) with width w, ignoring greys
+float hueW(vec3 hsv, float h, float w) { float d = abs(hsv.x - h); d = min(d, 1.0 - d); return (1.0 - smoothstep(w * 0.5, w, d)) * smoothstep(0.05, 0.2, hsv.y); }
+// move hues near "from" towards "to", scale saturation there
+vec3 hueMove(vec3 c, float from, float to, float w, float s) {
+  vec3 h = rgb2hsv(c); float k = hueW(h, from, w); float dh = to - from; dh -= floor(dh + 0.5);
+  return hsv2rgb(vec3(fract(h.x + dh * k), clamp(h.y * mix(1.0, s, k), 0.0, 1.0), h.z));
+}
+void main() {
+  vec2 uv = v_uv; vec4 o = texture(u_tex, uv); vec3 c = o.rgb; float a = u_amt; float l = luma(c);
+  vec3 r = c; int t = u_type;
+  if (t == F_sunny_days) r = sat(con(c * vec3(1.08, 1.03, 0.9) + 0.03, 1.08), 1.2);
+  else if (t == F_golden_hour) r = sat(split(c * vec3(1.06, 1.0, 0.88), vec3(0.05, 0.02, -0.02), vec3(0.1, 0.05, -0.06)), 1.12);
+  else if (t == F_fresh) r = hueMove(sat(con(c, 1.05) + 0.02, 1.15), 0.22, 0.3, 0.2, 1.25);
+  else if (t == F_cozy) r = lift(sat(c * vec3(1.07, 0.99, 0.86), 0.9), 0.05) * vig(uv, 0.35);
+  else if (t == F_bw_contrast) r = vec3(scurve(vec3(l), 1.0).r);
+  else if (t == F_bw_soft) r = vec3(lift(vec3(l), 0.08).r * 0.95);
+  else if (t == F_bright_up) r = c * 1.25 + 0.03;
+  else if (t == F_contrast_up) r = con(c, 1.35);
+  else if (t == F_saturation_up) r = sat(c, 1.6);
+  else if (t == F_white_balance) {
+    // grey-world-ish: pull the frame's tint towards neutral using a coarse average
+    vec3 avg = vec3(0.0);
+    for (int i = 0; i < 4; i++) for (int j = 0; j < 4; j++) avg += texture(u_tex, (vec2(float(i), float(j)) + 0.5) / 4.0).rgb;
+    avg /= 16.0; float g = luma(avg);
+    r = c * clamp(vec3(g) / max(avg, vec3(0.02)), vec3(0.6), vec3(1.6));
+  }
+  else if (t == F_moody) r = split(lift(sat(con(c, 1.12), 0.7), 0.03) * 0.92, vec3(-0.02, 0.03, 0.06), vec3(0.04, 0.02, -0.02)) * vig(uv, 0.45);
+  else if (t == F_bleach_bypass) r = con(mix(c, vec3(l), 0.55), 1.4);
+  else if (t == F_blockbuster) {
+    vec3 tint = mix(vec3(0.68, 1.0, 1.2), vec3(1.22, 0.98, 0.72), smoothstep(0.1, 0.8, l));
+    r = scurve(sat(c * tint, 1.2), 0.6);
+  }
+  else if (t == F_technicolor) {
+    vec3 cy = vec3(1.0) - vec3(c.r); vec3 rd = vec3(1.0) - vec3(c.g * 0.5 + c.b * 0.5);
+    r = sat(clamp(vec3(c.r, c.g * 0.9 + c.b * 0.1, c.b), 0.0, 1.0) * (1.0 - cy * vec3(0.0, 0.1, 0.1)) * (1.0 - rd * vec3(0.1, 0.0, 0.0)), 1.35);
+  }
+  else if (t == F_matrix) r = con(vec3(l * 0.55, l * 1.05 + 0.03, l * 0.5) * 0.6 + c * vec3(0.2, 0.5, 0.2), 1.15);
+  else if (t == F_pastel) r = lift(sat(c, 0.7), 0.1) + vec3(0.03, 0.0, 0.03);
+  else if (t == F_soft_skin) r = hueMove(lift(c * vec3(1.03, 1.0, 0.98), 0.04), 0.05, 0.06, 0.12, 0.85) * 1.03;
+  else if (t == F_rosy) r = split(c, vec3(0.03, -0.01, 0.02), vec3(0.06, 0.0, 0.03));
+  else if (t == F_winter) r = lift(sat(c * vec3(0.9, 0.98, 1.12), 0.75), 0.04) * 1.04;
+  else if (t == F_autumn) r = hueMove(hueMove(c, 0.25, 0.09, 0.22, 1.25), 0.1, 0.07, 0.15, 1.3) * vec3(1.05, 0.98, 0.88);
+  else if (t == F_spring) r = hueMove(sat(c, 1.15), 0.28, 0.3, 0.18, 1.2) + vec3(0.03, 0.01, 0.03) * smoothstep(0.5, 1.0, l);
+  else if (t == F_summer) r = hueMove(sat(con(c, 1.08) * vec3(1.05, 1.02, 0.96), 1.3), 0.55, 0.53, 0.15, 1.3);
+  else if (t == F_halloween) r = split(sat(con(c, 1.2), 0.85), vec3(0.06, -0.02, 0.1), vec3(0.14, 0.04, -0.08)) * vig(uv, 0.6);
+  else if (t == F_valentine) r = lift(split(c, vec3(0.06, 0.0, 0.04), vec3(0.06, 0.0, 0.03)), 0.04);
+  else if (t == F_christmas) r = hueMove(hueMove(sat(c, 1.2), 0.0, 0.99, 0.1, 1.35), 0.33, 0.36, 0.2, 1.35) * vec3(1.03, 1.0, 0.95);
+  else if (t == F_matte) r = lift(con(c, 0.85), 0.1) * vec3(1.0, 0.99, 0.97);
+  else if (t == F_polaroid) r = split(lift(con(c, 0.92), 0.06), vec3(0.0, 0.03, 0.02), vec3(0.06, 0.03, -0.04)) * vig(uv, 0.25);
+  else if (t == F_lomo) r = scurve(sat(c, 1.4), 0.7) * vig(uv, 0.9) + vec3(0.0, 0.0, 0.04);
+  else if (t == F_cross_process) r = vec3(scurve(vec3(c.r), 0.8).r, pow(c.g, 0.9), c.b * 0.75 + 0.12);
+  else if (t == F_kodachrome) r = scurve(sat(c * vec3(1.06, 1.0, 0.94), 1.25), 0.5) + vec3(0.0, 0.01, -0.01);
+  else if (t == F_food_fresh) r = hueMove(sat(con(c, 1.1), 1.3), 0.03, 0.02, 0.15, 1.2) * 1.04;
+  else if (t == F_food_warm) r = sat(c * vec3(1.1, 1.0, 0.82), 1.15) * vig(uv, 0.3);
+  else if (t == F_vibrant_land) r = hueMove(hueMove(sat(con(c, 1.1), 1.4), 0.6, 0.6, 0.2, 1.3), 0.3, 0.3, 0.2, 1.3);
+  else if (t == F_sunset) r = split(sat(c, 1.2) * vec3(1.1, 0.95, 0.85), vec3(0.04, -0.02, 0.06), vec3(0.12, 0.04, -0.06));
+  else if (t == F_clear_sky) r = hueMove(c, 0.58, 0.6, 0.18, 1.45);
+  else if (t == F_fake_hdr) {
+    vec2 px = 1.0 / u_res; vec3 bl = vec3(0.0);
+    for (int i = -2; i <= 2; i++) for (int j = -2; j <= 2; j++) bl += texture(u_tex, uv + vec2(float(i), float(j)) * px * 6.0).rgb;
+    bl /= 25.0; r = sat(c + (c - bl) * 1.2, 1.2);
+  }
+  r = clamp(r, 0.0, 1.0);
+  outColor = mix(o, vec4(r, o.a), clamp(a, 0.0, 4.0) > 1.0 ? 1.0 : a);
 }`;
 
 // Layer mask (clip-local, moves with the clip). Shape coords in layer px, y down.
@@ -1018,7 +1103,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     copy: makeProgram(FS_COPY), fill: makeProgram(FS_FILL), chroma: makeProgram(FS_CHROMA),
     color: makeProgram(FS_COLOR), blur: makeProgram(FS_BLUR), filter: makeProgram(FS_FILTER),
     composite: makeProgram(FS_COMPOSITE), transition: makeProgram(FS_TRANSITION),
-    hue: makeProgram(FS_HUE), mask: makeProgram(FS_MASK), gradblur: makeProgram(FS_GRADBLUR), filter2: makeProgram(FS_FILTER2), transition2: makeProgram(FS_TRANSITION2),
+    hue: makeProgram(FS_HUE), mask: makeProgram(FS_MASK), gradblur: makeProgram(FS_GRADBLUR), filter2: makeProgram(FS_FILTER2), filter3: makeProgram(FS_FILTER3), transition2: makeProgram(FS_TRANSITION2),
   };
 
   // ---------- geometry ----------
@@ -1463,7 +1548,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
 
     for (const f of filters) {
       const fi = FILTER_INDEX.get(f.type);
-      step(fi >= FILTER_V2 ? P.filter2 : P.filter, pr => {
+      step(fi >= FILTER_V3 ? P.filter3 : fi >= FILTER_V2 ? P.filter2 : P.filter, pr => {
         u2f(pr, 'u_res', lw, lh);
         u1i(pr, 'u_type', fi);
         u1f(pr, 'u_amt', Math.max(0, Math.min(4, num(f.amount, 1))));

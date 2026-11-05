@@ -3,7 +3,8 @@
 // See docs/ARCHITECTURE.md (timeline.js contract).
 import { uid, clamp, dbToGain, FRAME_EPS } from './state.js';
 import { icon } from './icons.js';
-import { TRANSITIONS } from './catalog.js';
+import { TRANSITIONS, FILTERS } from './catalog.js';
+import { VOICE_FILTERS, AUDIO_PRESETS } from './audio.js';
 
 const HEAD_W = 150;      // track header column
 const RULER_H = 28;
@@ -173,7 +174,7 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
   function clipSig(c, row) {
     return JSON.stringify([c.name, c.type, c.speed, c.reverse, c.filters?.length, c.materialId, c.chroma?.enabled,
       c.audio?.mute, c.audio?.detached, c.audio?.volume, c.audio?.fadeIn, c.audio?.fadeOut, c.transitionIn, c.transitionOut,
-      zoom(), row.h, row.track.locked, clipHasAudio(c), c.text?.content, c.fill, c.groupId]);
+      zoom(), row.h, row.track.locked, clipHasAudio(c), c.text?.content, c.fill, c.groupId, c.disabled, c.audio?.voice]);
   }
 
   function buildClipInner(c, row) {
@@ -234,7 +235,7 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
       }
       const x = X(c.start), w = Math.max(3, c.duration * zoom());
       el.style.cssText = `left:${x}px;top:${row.y + 2}px;width:${w}px;height:${row.h - 4}px;--cc:var(${clipColorVar(c)})`;
-      el.className = `tl-clip t-${c.type}${sel.has(c.id) ? ' sel' : ''}${row.track.locked ? ' locked' : ''}${row.track.hidden ? ' hidden-trk' : ''}${w < 34 ? ' tiny' : ''}${drag?.movingIds?.has(c.id) ? ' moving' : ''}`;
+      el.className = `tl-clip t-${c.type}${sel.has(c.id) ? ' sel' : ''}${row.track.locked ? ' locked' : ''}${row.track.hidden ? ' hidden-trk' : ''}${c.disabled ? ' disabled-clip' : ''}${w < 34 ? ' tiny' : ''}${drag?.movingIds?.has(c.id) ? ' moving' : ''}`;
       const sig = clipSig(c, row);
       if (el._sig !== sig) { el.innerHTML = buildClipInner(c, row); el._sig = sig; el._paintKey = null; el._cv = el.querySelector('.tl-cv'); }
     }
@@ -724,6 +725,9 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
     if (!clipEl || store.tool === 'blade') return;
     const id = clipEl.dataset.clip;
     store.select(id);
+    // Filmora: double-click a clip → the playhead jumps to its first frame
+    const c = store.getClip(id);
+    if (c) { store.setPlayhead(c.start); if (X(c.start) < scroll.scrollLeft || X(c.start) > scroll.scrollLeft + scroll.clientWidth) scroll.scrollLeft = Math.max(0, X(c.start) - 40); }
     window.dispatchEvent(new CustomEvent('ve:openClip', { detail: { id } }));
   });
 
@@ -1101,14 +1105,23 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
     phBall.style.transform = `translate(-50%, ${scroll.scrollTop + y}px)`;
   }
 
-  // Middle-button drag anywhere = pan (no selection / edits); suppress the browser autoscroll
+  // Middle-button drag anywhere = pan (no selection / edits); suppress the browser autoscroll.
+  // Right-button hold + drag pans too (Filmora); a right-click without moving still opens the menu.
+  let rightPanned = false;
   elTl.addEventListener('pointerdown', ev => {
-    if (ev.button !== 1) return;
-    ev.preventDefault(); ev.stopPropagation(); closeMenu();
+    if (ev.button !== 1 && ev.button !== 2) return;
+    const right = ev.button === 2;
+    if (!right) { ev.preventDefault(); ev.stopPropagation(); closeMenu(); }
+    rightPanned = false;
     const x0 = ev.clientX, y0 = ev.clientY, sl0 = scroll.scrollLeft, st0 = scroll.scrollTop;
-    elTl.classList.add('panning');
+    let active = !right;
+    if (active) elTl.classList.add('panning');
     try { elTl.setPointerCapture(ev.pointerId); } catch { /* ignore */ }
     const move = e => {
+      if (!active) {
+        if (Math.hypot(e.clientX - x0, e.clientY - y0) < 5) return;
+        active = true; rightPanned = true; closeMenu(); elTl.classList.add('panning');
+      }
       const need = sl0 - (e.clientX - x0) + scroll.clientWidth;
       if (need > contentW) { contentW = need + 10; content.style.width = contentW + 'px'; }
       scroll.scrollLeft = Math.max(0, sl0 - (e.clientX - x0));
@@ -1125,6 +1138,8 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
     window.addEventListener('pointercancel', up, true);
   }, true);
   elTl.addEventListener('mousedown', ev => { if (ev.button === 1) ev.preventDefault(); }, true);
+  // after a right-drag pan, swallow the context menu that the release would open
+  elTl.addEventListener('contextmenu', ev => { if (rightPanned) { rightPanned = false; ev.preventDefault(); ev.stopPropagation(); } }, true);
   elTl.addEventListener('auxclick', ev => { if (ev.button === 1) { ev.preventDefault(); ev.stopPropagation(); } }, true);
   scroll.addEventListener('scroll', placeBall); placeBall();
   phBall.addEventListener('pointerdown', ev => {
@@ -1340,6 +1355,13 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
     const canDetach = sel.some(c => c.type === 'video' && store.getMedia(c.mediaId)?.hasAudio && !c.audio?.detached);
     const speedable = clip.type === 'video' || clip.type === 'audio';
     const ids = sel.map(c => c.id);
+    const visual = VISUAL.has(clip.type);
+    const vid = clip.type === 'video';
+    const canTrim = store.playhead > clip.start + FRAME_EPS && store.playhead < endOf(clip) - FRAME_EPS;
+    const act = (name, arg) => window.dispatchEvent(new CustomEvent('ve:clipAction', { detail: { act: name, arg, ids } }));
+    const curVoice = clip.audio?.voice || 'none';
+    const filterCats = [...new Set(FILTERS.map(f => f.category))];
+    const addFilter = f => store.transact('Add filter', pj => ids.forEach(id => { const c = pj.clips.find(x => x.id === id); if (c && VISUAL.has(c.type)) c.filters = [...(c.filters || []), { id: uid('flt'), type: f.id, amount: 1 }]; }));
     openMenu(ev.clientX, ev.clientY, [
       { label: 'Cut', kbd: 'Ctrl+X', disabled: locked, action: () => call('cut') },
       { label: 'Copy', kbd: 'Ctrl+C', action: () => call('copy') },
@@ -1349,33 +1371,73 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
       { label: 'Ripple Delete', kbd: 'Shift+Del', disabled: locked, action: () => call('deleteSelected', { ripple: true }) },
       '-',
       { label: 'Split', kbd: 'Ctrl+B', disabled: locked || !(splitT > clip.start + FRAME_EPS && splitT < endOf(clip) - FRAME_EPS), action: () => call('splitAt', splitT, [clip.id]) },
+      { label: 'Trim Start to Playhead', kbd: 'Alt+[', disabled: locked || !canTrim, action: () => call('trimStartTo', store.playhead) },
+      { label: 'Trim End to Playhead', kbd: 'Alt+]', disabled: locked || !canTrim, action: () => call('trimEndTo', store.playhead) },
+      { label: 'Crop and Zoom', kbd: 'Alt+C', disabled: locked || !(vid || clip.type === 'image'), action: () => act('crop') },
+      { label: 'Crop to Fit (fill frame)', disabled: locked || !(vid || clip.type === 'image'), action: () => act('fill') },
+      { label: 'Rotate & Flip', disabled: locked || !visual, sub: [
+        { label: 'Rotate 90° CW', kbd: 'Ctrl+Alt+Right', action: () => call('rotateBy', 90, ids) },
+        { label: 'Rotate 90° CCW', kbd: 'Ctrl+Alt+Left', action: () => call('rotateBy', -90, ids) },
+        { label: 'Rotate 180°', action: () => call('rotateBy', 180, ids) },
+        '-',
+        { label: 'Flip Horizontal', checked: !!clip.transform?.flipH, action: () => call('flip', 'h', ids) },
+        { label: 'Flip Vertical', checked: !!clip.transform?.flipV, action: () => call('flip', 'v', ids) },
+      ] },
+      '-',
+      { label: 'Adjust Audio', disabled: !hasA, action: () => act('audioTab') },
       { label: 'Detach Audio', kbd: 'Ctrl+Alt+D', disabled: locked || !canDetach, action: () => call('detachAudio') },
-      { label: clip.audio?.mute ? 'Unmute clip' : 'Mute clip', disabled: locked || !hasA, action: () => {
+      { label: 'Speech to Text (auto subtitles)…', disabled: !hasA, action: () => autoTool('captions') },
+      { label: clip.audio?.mute ? 'Unmute' : 'Mute', kbd: 'Ctrl+Shift+M', disabled: locked || !hasA, action: () => {
         const m = !clip.audio?.mute;
         store.transact(m ? 'Mute clip' : 'Unmute clip', pj => ids.forEach(id => { const c = pj.clips.find(x => x.id === id); if (c?.audio) c.audio.mute = m; }));
       } },
+      { label: 'Voice Changer', disabled: locked || !hasA, sub: VOICE_FILTERS.map(v => ({ label: v.label, checked: curVoice === v.id, action: () => call('setVoice', v.id, ids) })) },
+      { label: 'Audio Effects', disabled: locked || !hasA, sub: AUDIO_PRESETS.map(pr => ({ label: pr.label, action: () => call('applyAudioPreset', pr, ids) })) },
       '-',
-      ...[0.5, 1, 2].map(s => ({ label: `Speed ${s}x`, checked: clip.speed === s, disabled: locked || !speedable, action: () => setSpeed(s, ids) })),
-      { label: clip.reverse ? 'Un-reverse' : 'Reverse', disabled: locked || !speedable, action: () => {
+      { label: 'Speed', disabled: locked || !speedable, sub: [
+        ...[0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4].map(sp => ({ label: sp + 'x' + (sp === 1 ? ' (normal)' : ''), checked: clip.speed === sp, action: () => setSpeed(sp, ids) })),
+        '-',
+        { label: 'Custom speed…', kbd: 'Ctrl+R', action: () => act('speedTab') },
+        { label: 'Freeze frame here', kbd: 'Alt+F', disabled: !vid, action: () => call('freezeFrame', store.playhead) },
+      ] },
+      { label: clip.reverse ? 'Un-reverse' : 'Reverse', kbd: 'Shift+R', disabled: locked || !speedable, action: () => {
         const r = !clip.reverse;
         store.transact('Reverse', pj => ids.forEach(id => { const c = pj.clips.find(x => x.id === id); if (c && (c.type === 'video' || c.type === 'audio')) c.reverse = r; }));
       } },
       '-',
-      { label: 'Add transition (Dissolve)', disabled: locked || !VISUAL.has(clip.type), action: () => { call('setTransition', clip.id, 'in', { type: 'dissolve', duration: 1 }); call('selectTransition', clip.id, 'in'); } },
-      { label: 'Remove transitions', disabled: locked || !(clip.transitionIn || clip.transitionOut), action: () => {
-        store.transact('Remove transitions', pj => { const c = pj.clips.find(x => x.id === clip.id); c.transitionIn = null; c.transitionOut = null; });
-      } },
+      { label: 'Effect & Filter', disabled: locked || !visual, sub: [
+        ...filterCats.map(cat => ({ label: cat, sub: FILTERS.filter(f => f.category === cat).map(f => ({ label: f.label, action: () => addFilter(f) })) })),
+        '-',
+        { label: 'Copy effects', action: () => call('copyEffects') },
+        { label: 'Paste effects', action: () => call('pasteEffects') },
+        { label: 'Remove all effects', disabled: !(clip.filters?.length || clip.materialId || clip.chroma?.enabled), action: () => call('removeEffects', ids) },
+        { label: 'Open in Effects panel', action: () => act('effectsTab') },
+      ] },
+      { label: 'Transitions', disabled: locked || !visual, sub: [
+        { label: 'Add Dissolve at start', action: () => { call('setTransition', clip.id, 'in', { type: 'dissolve', duration: 1 }); call('selectTransition', clip.id, 'in'); } },
+        { label: 'Add Dissolve at end', action: () => { call('setTransition', clip.id, 'out', { type: 'dissolve', duration: 1 }); call('selectTransition', clip.id, 'out'); } },
+        { label: 'Remove transitions', disabled: !(clip.transitionIn || clip.transitionOut), action: () => store.transact('Remove transitions', pj => { const c = pj.clips.find(x => x.id === clip.id); c.transitionIn = null; c.transitionOut = null; }) },
+      ] },
+      { label: 'Smart Edit Tool', sub: [
+        { label: 'Auto subtitles…', disabled: !hasA, action: () => autoTool('captions') },
+        { label: 'Remove silences…', disabled: locked || !hasA, action: () => autoTool('silence') },
+        { label: 'Detect scenes…', disabled: locked || !vid, action: () => autoTool('scenes') },
+        { label: 'Cut to beat…', disabled: locked || !hasA, action: () => autoTool('beats') },
+        { label: 'Auto reframe', disabled: locked || !(vid || clip.type === 'image'), action: () => autoTool('reframe') },
+        { label: 'Remove background (AI)…', disabled: clip.type !== 'image', action: () => autoTool('removeBg') },
+      ] },
       '-',
-      // auto subtitles / auto edit: app.js opens the tool for the selection
-      { label: 'Auto subtitles…', disabled: !(clip.type === 'video' || clip.type === 'audio'), action: () => autoTool('captions') },
-      { label: 'Remove silences…', disabled: locked || !hasA, action: () => autoTool('silence') },
-      { label: 'Detect scenes…', disabled: locked || clip.type !== 'video', action: () => autoTool('scenes') },
-      { label: 'Cut to beat…', disabled: locked || !hasA, action: () => autoTool('beats') },
+      { label: 'Create Compound Clip (group)', kbd: 'Ctrl+G', disabled: sel.length < 2, action: () => (ops?.group ? ops.group() : fallbackGroup(ids)) },
+      { label: 'Ungroup', kbd: 'Ctrl+Alt+G', disabled: !sel.some(c => c.groupId), action: () => (ops?.ungroup ? ops.ungroup() : store.transact('Ungroup', pj => ids.forEach(id => { pj.clips.find(x => x.id === id).groupId = null; }))) },
       '-',
-      { label: 'Group', disabled: sel.length < 2, action: () => (ops?.group ? ops.group() : fallbackGroup(ids)) },
-      { label: 'Ungroup', disabled: !sel.some(c => c.groupId), action: () => (ops?.ungroup ? ops.ungroup() : store.transact('Ungroup', pj => ids.forEach(id => { pj.clips.find(x => x.id === id).groupId = null; }))) },
+      { label: 'Rename', kbd: 'F2', action: () => act('rename') },
+      { label: clip.disabled ? 'Enable Clip' : 'Disable Clip', kbd: 'E', disabled: locked, action: () => call('toggleDisabled', ids) },
+      { label: 'Edit Properties', kbd: 'Alt+E', action: () => window.dispatchEvent(new CustomEvent('ve:openClip', { detail: { id: clip.id } })) },
+      { label: 'Export Selected Clips…', action: () => act('exportSel') },
+      { label: 'Select Clip Range', kbd: 'X', action: () => act('selectRange') },
+      { label: 'Locate in the Resource Panel', disabled: !clip.mediaId, action: () => act('locate') },
       '-',
-      { label: 'Properties…', action: () => window.dispatchEvent(new CustomEvent('ve:openClip', { detail: { id: clip.id } })) },
+      { label: 'Enable Timeline Snapping', kbd: 'N', checked: !!store.snap, action: () => store.setSnap(!store.snap) },
     ]);
   });
 
@@ -1394,23 +1456,47 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
   }
 
   // ---------------------------------------------------------------- menu helper
-  function openMenu(x, y, items) {
-    closeMenu();
+  // items: { label, kbd, action, disabled, checked, sub: [items] } or '-' for a separator
+  let subEls = [];
+  function buildMenu(items, level) {
     const m = document.createElement('div');
     m.className = 'menu-pop tl-menu';
     for (const it of items) {
       if (it === '-') { if (m.lastChild && !m.lastChild.classList.contains('menu-sep')) m.appendChild(Object.assign(document.createElement('div'), { className: 'menu-sep' })); continue; }
       const d = document.createElement('div');
-      d.className = 'menu-item' + (it.disabled ? ' disabled' : '') + (it.checked ? ' checked' : '');
-      d.innerHTML = `<span>${esc(it.label)}</span>${it.kbd ? `<span class="kbd">${esc(it.kbd)}</span>` : ''}`;
-      d.addEventListener('click', () => { closeMenu(); it.action?.(); });
+      const hasSub = Array.isArray(it.sub) && it.sub.length;
+      d.className = 'menu-item' + (it.disabled ? ' disabled' : '') + (it.checked ? ' checked' : '') + (hasSub ? ' has-sub' : '');
+      d.innerHTML = `<span>${esc(it.label)}</span>${it.kbd ? `<span class="kbd">${esc(it.kbd)}</span>` : hasSub ? '<span class="kbd">▸</span>' : ''}`;
+      if (hasSub) {
+        const open = () => {
+          subEls.splice(level).forEach(s => s.remove());
+          const sm = buildMenu(it.sub, level + 1);
+          document.body.appendChild(sm);
+          const r = d.getBoundingClientRect(), sr = sm.getBoundingClientRect();
+          const left = r.right + sr.width + 4 > innerWidth ? r.left - sr.width : r.right;
+          sm.style.left = Math.max(4, left) + 'px';
+          sm.style.top = Math.max(4, Math.min(r.top - 5, innerHeight - sr.height - 4)) + 'px';
+          subEls[level] = sm;
+        };
+        d.addEventListener('pointerenter', open);
+        d.addEventListener('click', open);
+      } else {
+        d.addEventListener('pointerenter', () => subEls.splice(level).forEach(s => s.remove()));
+        d.addEventListener('click', () => { closeMenu(); it.action?.(); });
+      }
       m.appendChild(d);
     }
     if (m.lastChild?.classList.contains('menu-sep')) m.lastChild.remove();
+    return m;
+  }
+  function openMenu(x, y, items) {
+    closeMenu();
+    const m = buildMenu(items, 0);
     document.body.appendChild(m);
     const r = m.getBoundingClientRect();
     m.style.left = Math.max(4, Math.min(x, innerWidth - r.width - 4)) + 'px';
     m.style.top = Math.max(4, Math.min(y, innerHeight - r.height - 4)) + 'px';
+    if (r.height > innerHeight - 8) { m.style.maxHeight = (innerHeight - 8) + 'px'; m.style.overflowY = 'auto'; }
     menuEl = m;
     setTimeout(() => {
       window.addEventListener('pointerdown', outside, true);
@@ -1418,8 +1504,9 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
       window.addEventListener('resize', closeMenu);
     });
   }
-  function outside(e) { if (menuEl && !menuEl.contains(e.target)) closeMenu(); }
+  function outside(e) { if (menuEl && !menuEl.contains(e.target) && !subEls.some(s => s?.contains(e.target))) closeMenu(); }
   function closeMenu() {
+    subEls.forEach(s => s?.remove()); subEls = [];
     if (!menuEl) return;
     menuEl.remove(); menuEl = null;
     window.removeEventListener('pointerdown', outside, true);
@@ -1522,6 +1609,18 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
       case 'adjustment':
         if (!info.clip) call('addAdjustmentClip', { time: info.t, trackId: trackForDrop(info, 'video') });
         break;
+      case 'sticker':
+      case 'giphy':
+        window.dispatchEvent(new CustomEvent('ve:dropSticker', { detail: { kind, id, time: info.t, trackId: trackForDrop(info, 'video') } }));
+        break;
+      case 'voice':
+      case 'apreset': {
+        const c = info.clip;
+        if (!c || locked || !(c.type === 'audio' || c.type === 'video')) { window.dispatchEvent(new CustomEvent('ve:toast', { detail: 'Drop audio effects onto a clip with sound' })); return; }
+        if (kind === 'voice') call('setVoice', id, [c.id]); else call('applyAudioPreset', AUDIO_PRESETS.find(p => p.id === id), [c.id]);
+        store.select(c.id);
+        break;
+      }
       case 'filter':
       case 'effect': {
         if (!info.clip) { call('addAdjustmentClip', { time: info.t, trackId: trackForDrop(info, 'video'), filter: id }); break; }

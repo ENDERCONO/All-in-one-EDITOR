@@ -3,8 +3,15 @@
 import { store, mediaRuntime, uid } from './state.js';
 import { FILTERS, TRANSITIONS, TITLE_PRESETS, SAMPLE_COLORS } from './catalog.js';
 import { icon } from './icons.js';
+import { VOICE_FILTERS, AUDIO_PRESETS } from './audio.js';
+import { BUILTIN_STICKERS, EMOJI_STICKERS, STICKER_CATS, stickerThumb, stickerFile, giphyKey, setGiphyKey, giphySearch, giphyFile } from './stickers.js';
 
 const EFFECT_CATS = new Set(['Stylize', 'Distort', 'Lens', 'Meme']);
+const VOICE_EMOJI = { none: '🚫', chipmunk: '🐿️', deep: '🎙️', giant: '🗿', demon: '😈', robot: '🤖', dalek: '👾', anonymous: '🎭', alien: '👽',
+  telephone: '📞', radio: '📻', megaphone: '📢', underwater: '🌊', cave: '⛰️', ghost: '👻', choir: '⛪', wobble: '〰️', helicopter: '🚁', blownMic: '🎤' };
+const PRESET_EMOJI = { reset: '↺', behindWall: '🧱', slowedReverb: '🌙', nightcore: '⚡', orbit8d: '🎧', underwater: '🫧', oldRadio: '📻',
+  timeMachine: '⏳', nextRoom: '🚪', pacing: '👣', canyon: '🏜️', stadium: '🏟️', slapback: '🔁' };
+const audioTile = (emoji, hue) => `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,hsl(${hue} 35% 22%),hsl(${hue} 30% 14%));font-size:28px">${emoji}</div>`;
 const fmtDur = s => { s = Math.max(0, s || 0); const m = Math.floor(s / 60), ss = Math.floor(s % 60); return `${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`; };
 
 function kindOf(file) {
@@ -93,7 +100,7 @@ async function decodeAnimated(file) {
 
 let importCount = 0;
 // Import files into the media bin. Returns the created media ids.
-export async function importFiles(files, { audio, addToTimeline = false, time, trackId, ops } = {}) {
+export async function importFiles(files, { audio, addToTimeline = false, time, trackId, ops, transform } = {}) {
   const ids = [];
   for (let file of files) {
     const kind = kindOf(file);
@@ -132,7 +139,7 @@ export async function importFiles(files, { audio, addToTimeline = false, time, t
   }
   if (addToTimeline && ops) {
     let t = time ?? store.playhead;
-    for (const id of ids) { const c = ops.insertMedia(id, { time: t, trackId }); if (c) t = c.start + c.duration; }
+    for (const id of ids) { const c = ops.insertMedia(id, { time: t, trackId, transform }); if (c) t = c.start + c.duration; }
   }
   return ids;
 }
@@ -195,6 +202,14 @@ function filterSwatch(id) {
     vivid: 'saturate(2)', cyberpunk: 'hue-rotate(260deg) saturate(1.8)', duotone: 'grayscale(1) sepia(1) hue-rotate(160deg) saturate(3)', pixelate: 'blur(.5px)',
     posterize: 'contrast(2)', glitch: 'hue-rotate(90deg)', vhs: 'saturate(1.3) blur(.6px)', film_grain: 'contrast(1.2)', edge: 'invert(1) contrast(3) grayscale(1)', emboss: 'grayscale(1) contrast(.6)',
     mirror: '', fisheye: '', wave: '', chromatic: 'saturate(1.4)', bloom: 'brightness(1.3) blur(.8px)', letterbox: '',
+    sunny_days: 'saturate(1.3) brightness(1.08) sepia(.15)', golden_hour: 'sepia(.35) saturate(1.3) hue-rotate(-8deg)', fresh: 'saturate(1.25) hue-rotate(8deg)', cozy: 'sepia(.25) contrast(.9)',
+    bw_contrast: 'grayscale(1) contrast(1.7)', bw_soft: 'grayscale(1) contrast(.8) brightness(1.05)', bright_up: 'brightness(1.3)', contrast_up: 'contrast(1.4)', saturation_up: 'saturate(1.8)', white_balance: 'saturate(.9)',
+    moody: 'saturate(.7) contrast(1.15) brightness(.9)', bleach_bypass: 'saturate(.45) contrast(1.4)', blockbuster: 'saturate(1.4) contrast(1.2) hue-rotate(-6deg)', technicolor: 'saturate(1.6) contrast(1.1)', matrix: 'grayscale(.6) sepia(1) hue-rotate(60deg) saturate(2)',
+    pastel: 'saturate(.65) brightness(1.12) contrast(.85)', soft_skin: 'brightness(1.06) contrast(.92)', rosy: 'sepia(.2) hue-rotate(-20deg) saturate(1.2)',
+    winter: 'saturate(.7) hue-rotate(15deg) brightness(1.08)', autumn: 'sepia(.35) saturate(1.5) hue-rotate(-12deg)', spring: 'saturate(1.25) brightness(1.06)', summer: 'saturate(1.5) contrast(1.08)',
+    halloween: 'sepia(.5) hue-rotate(-25deg) saturate(1.6) contrast(1.2)', valentine: 'sepia(.25) hue-rotate(-30deg) saturate(1.3) brightness(1.05)', christmas: 'saturate(1.5) contrast(1.05)',
+    matte: 'contrast(.8) brightness(1.08)', polaroid: 'sepia(.25) contrast(.9) brightness(1.06)', lomo: 'saturate(1.6) contrast(1.3)', cross_process: 'hue-rotate(20deg) saturate(1.4) contrast(1.15)', kodachrome: 'saturate(1.3) contrast(1.15) sepia(.1)',
+    food_fresh: 'saturate(1.4) contrast(1.1)', food_warm: 'sepia(.3) saturate(1.3)', vibrant_land: 'saturate(1.7) contrast(1.1)', sunset: 'sepia(.4) saturate(1.5) hue-rotate(-15deg)', clear_sky: 'saturate(1.4) hue-rotate(5deg)', fake_hdr: 'contrast(1.3) saturate(1.3)',
   }[id] || '';
   return `<div style="position:absolute;inset:0;background:linear-gradient(135deg,#f6b26b,#e06666 40%,#6fa8dc 70%,#93c47d);filter:${css}"></div>${id === 'letterbox' ? '<div style="position:absolute;left:0;right:0;top:0;height:18%;background:#000"></div><div style="position:absolute;left:0;right:0;bottom:0;height:18%;background:#000"></div>' : ''}`;
 }
@@ -228,6 +243,73 @@ export function createLibrary({ store, ops, audio, materials }) {
     store.transact('Add filter', p => { p.clips.find(x => x.id === c.id).filters.push({ id: uid('flt'), type: id, amount: 1 }); });
     toast(`${FILTERS.find(f => f.id === id)?.label} added to ${c.name}`);
   }
+  // ---- stickers ----
+  const giphyCache = new Map(); // id -> result (for drag & drop)
+  let giphyToken = 0, giphyTimer = 0;
+  async function addStickerFile(getFile, { time = store.playhead, trackId = null, scale = 0.4 } = {}) {
+    try {
+      toast('Adding sticker…');
+      const f = await getFile();
+      await importFiles([f], { audio, ops, addToTimeline: true, time, trackId, transform: { scale } });
+    } catch (e) { toast('Could not add that sticker: ' + e.message); }
+  }
+  const builtinById = id => BUILTIN_STICKERS.find(s => s.id === id) || EMOJI_STICKERS.find(s => s.id === id);
+  window.addEventListener('ve:dropSticker', e => {
+    const { kind, id, time, trackId } = e.detail || {};
+    if (kind === 'sticker') { const s = builtinById(id); if (s) addStickerFile(() => stickerFile(s), { time, trackId }); }
+    else if (kind === 'giphy') { const g = giphyCache.get(id); if (g) addStickerFile(() => giphyFile(g), { time, trackId, scale: g.sticker ? 0.4 : 0.6 }); }
+  });
+  function askGiphyKey() {
+    const k = prompt('Paste your free GIPHY API key.\n\nGet one at developers.giphy.com → Create an App → API. It is saved only in this browser.', giphyKey());
+    if (k == null) return;
+    setGiphyKey(k); renderGrid();
+  }
+  function renderGiphy(kind, q) {
+    if (!giphyKey()) {
+      grid.insertAdjacentHTML('beforeend', `<div class="lib-empty giphy-setup">Search millions of GIFs and stickers from <b>GIPHY</b>.<br><br>It needs a free GIPHY API key (one time):<br>1. Go to <b>developers.giphy.com</b> and sign in<br>2. <b>Create an App</b> → choose <b>API</b><br>3. Copy the key and paste it here<br><br><button class="btn primary" data-giphy-key>Add GIPHY key</button></div>`);
+      grid.querySelector('[data-giphy-key]').onclick = askGiphyKey;
+      return;
+    }
+    const head = document.createElement('div'); head.className = 'lib-sub giphy-head';
+    head.innerHTML = `<span>${q ? 'GIPHY results for “' + q.replace(/[<>&]/g, '') + '”' : 'Trending on GIPHY · type in Search to look for something'}</span><button class="btn" data-giphy-key title="Change or remove the GIPHY key">Key</button>`;
+    head.querySelector('[data-giphy-key]').onclick = askGiphyKey;
+    grid.appendChild(head);
+    const box = document.createElement('div'); box.className = 'giphy-results'; box.style.display = 'contents';
+    box.innerHTML = '<div class="lib-empty">Loading…</div>';
+    grid.appendChild(box);
+    const my = ++giphyToken;
+    clearTimeout(giphyTimer);
+    giphyTimer = setTimeout(async () => {
+      try {
+        const res = await giphySearch(kind, q);
+        if (my !== giphyToken) return;
+        box.innerHTML = '';
+        if (!res.length) { box.innerHTML = '<div class="lib-empty">No results</div>'; return; }
+        for (const g of res) {
+          g.sticker = kind === 'stickers'; giphyCache.set(g.id, g);
+          box.appendChild(item({
+            name: g.title, kind: 'giphy', id: g.id, thumbUrl: g.thumb, badge: kind === 'stickers' ? 'STICKER' : 'GIF',
+            title: `${g.title}\nDouble-click or + to add at the playhead · drag onto the timeline\nFrom GIPHY`,
+            onDbl: () => addStickerFile(() => giphyFile(g), { scale: kind === 'stickers' ? 0.4 : 0.6 }),
+          }));
+        }
+        box.insertAdjacentHTML('beforeend', '<div class="lib-sub giphy-credit">Powered by GIPHY</div>');
+      } catch (e) {
+        if (my !== giphyToken) return;
+        box.innerHTML = `<div class="lib-empty">${e.code === 'badkey' ? 'GIPHY did not accept the key. Click <b>Key</b> to fix it.' : 'Could not reach GIPHY: ' + String(e.message).replace(/[<>&]/g, '')}</div>`;
+      }
+    }, q ? 350 : 0);
+  }
+
+  const audioSel = () => store.selectedClips().filter(c => c.type === 'audio' || c.type === 'video');
+  function applyVoice(id) {
+    if (!audioSel().length) { toast('Select a clip with sound first (or drag the voice onto it)'); return; }
+    ops.setVoice(id); toast(`${VOICE_FILTERS.find(v => v.id === id)?.label} voice applied`);
+  }
+  function applyAPreset(id) {
+    if (!audioSel().length) { toast('Select a clip with sound first (or drag the effect onto it)'); return; }
+    ops.applyAudioPreset(AUDIO_PRESETS.find(p => p.id === id)); toast(`${AUDIO_PRESETS.find(p => p.id === id)?.label} applied`);
+  }
   function applyTransition(id) {
     const c = selClip(); if (!c || c.type === 'audio') { toast('Select a clip first (or drag the transition onto a clip edge)'); return; }
     ops.setTransition(c.id, 'in', { type: id, duration: 1 });
@@ -237,11 +319,12 @@ export function createLibrary({ store, ops, audio, materials }) {
   const sides = {
     media: [['all', 'Project Media'], ['video', 'Videos'], ['image', 'Images'], ['audio', 'Audio']],
     audio: [['all', 'Project Audio']],
-    titles: [['all', 'All Titles']],
+    titles: [['all', 'All Titles'], ...[...new Set(TITLE_PRESETS.map(t => t.cat || 'Basic'))].map(c => [c, c])],
     transitions: [['all', 'Included'], ...[...new Set(TRANSITIONS.map(t => t.category))].map(c => [c, c])],
-    effects: [['all', 'All Effects'], ...[...new Set(FILTERS.filter(f => EFFECT_CATS.has(f.category)).map(t => t.category))].map(c => [c, c])],
+    effects: [['all', 'All Effects'], ...[...new Set(FILTERS.filter(f => EFFECT_CATS.has(f.category)).map(t => t.category))].map(c => [c, c]), ['voice', '🎙 Voice Changer'], ['apreset', '🎧 Audio Effects']],
     filters: [['all', 'All Filters'], ...[...new Set(FILTERS.filter(f => !EFFECT_CATS.has(f.category)).map(t => t.category))].map(c => [c, c])],
     elements: [['all', 'Sample Colors']],
+    stickers: [['all', 'All Stickers'], ...STICKER_CATS.map(c => [c, c]), ['giphy_gifs', 'GIPHY GIFs'], ['giphy_stickers', 'GIPHY Stickers']],
     materials: [['all', 'Project Materials']],
   };
 
@@ -348,9 +431,10 @@ export function createLibrary({ store, ops, audio, materials }) {
     }
 
     if (tab === 'titles') {
-      for (const t of TITLE_PRESETS.filter(t => match(t.label))) {
+      for (const t of TITLE_PRESETS.filter(t => (cat === 'all' || (t.cat || 'Basic') === cat) && match(t.label))) {
         const tx = t.text;
-        const style = `font-family:'${tx.font}',sans-serif;font-weight:${tx.bold ? 700 : 400};color:${tx.color};font-size:${Math.max(12, Math.min(24, tx.size / 6))}px;${tx.stroke ? `-webkit-text-stroke:${Math.max(1, tx.stroke / 5)}px ${tx.strokeColor};paint-order:stroke fill;` : ''}${tx.background ? `background:${tx.background};padding:1px 5px;border-radius:3px;` : ''}${tx.shadow ? 'text-shadow:0 1px 3px #000a;' : ''}`;
+        const style0 = `font-family:'${tx.font}',sans-serif;font-weight:${tx.bold ? 700 : 400};color:${tx.color};font-size:${Math.max(12, Math.min(24, tx.size / 6))}px;${tx.stroke ? `-webkit-text-stroke:${Math.max(1, tx.stroke / 5)}px ${tx.strokeColor};paint-order:stroke fill;` : ''}${tx.background ? `background:${tx.background};padding:1px 5px;border-radius:3px;` : ''}${tx.shadow ? 'text-shadow:0 1px 3px #000a;' : ''}`;
+        const style = style0 + (tx.glow ? `text-shadow:0 0 6px ${tx.glowColor || '#0ff'},0 0 12px ${tx.glowColor || '#0ff'};` : '') + (tx.gradient ? `background:linear-gradient(${tx.gradAngle ?? 90}deg,${tx.color},${tx.color2 || '#f0a'});-webkit-background-clip:text;background-clip:text;color:transparent;` : '') + (tx.letterSpacing ? `letter-spacing:${Math.min(4, tx.letterSpacing / 4)}px;` : '') + (tx.underline ? 'text-decoration:underline;' : '');
         add(item({
           name: t.label, kind: 'title', id: t.id,
           thumbHtml: `<div style="position:absolute;inset:0;background:linear-gradient(135deg,#334,#556);display:flex;align-items:center;justify-content:center"><span style="${style}">${tx.content.slice(0, 16)}</span></div>`,
@@ -369,7 +453,24 @@ export function createLibrary({ store, ops, audio, materials }) {
       }
     }
 
-    if (tab === 'effects' || tab === 'filters') {
+    if (tab === 'effects' && (cat === 'voice' || cat === 'all')) {
+      if (cat === 'all' && !q) grid.insertAdjacentHTML('beforeend', '<div class="lib-sub">Voice Changer</div>');
+      for (const v of VOICE_FILTERS.filter(v => v.id !== 'none' && match(v.label))) add(item({
+        name: v.label, kind: 'voice', id: v.id, thumbHtml: audioTile(VOICE_EMOJI[v.id] || '🎙️', 200),
+        title: `${v.label}: ${v.title}\nDrag onto a clip with sound, or double-click to apply to the selected clip`,
+        onDbl: () => applyVoice(v.id),
+      }));
+    }
+    if (tab === 'effects' && (cat === 'apreset' || cat === 'all')) {
+      if (cat === 'all' && !q) grid.insertAdjacentHTML('beforeend', '<div class="lib-sub">Audio Effects</div>');
+      for (const pr of AUDIO_PRESETS.filter(p => match(p.label))) add(item({
+        name: pr.label, kind: 'apreset', id: pr.id, thumbHtml: audioTile(PRESET_EMOJI[pr.id] || '🎧', 280),
+        title: `${pr.label}: ${pr.title}\nDrag onto a clip with sound, or double-click to apply to the selected clip`,
+        onDbl: () => applyAPreset(pr.id),
+      }));
+    }
+    if (tab === 'effects' && cat === 'all' && !q) grid.insertAdjacentHTML('beforeend', '<div class="lib-sub">Video Effects</div>');
+    if ((tab === 'effects' && cat !== 'voice' && cat !== 'apreset') || tab === 'filters') {
       if (tab === 'effects' && cat === 'all' && !q) add(item({
         name: 'Adjustment Layer', kind: 'adjustment', id: 'adj',
         thumbHtml: `<div style="position:absolute;inset:0;background:repeating-linear-gradient(135deg,#5b3d8f 0 10px,#4a3176 10px 20px);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:12px">ADJUST</div>`,
@@ -383,6 +484,22 @@ export function createLibrary({ store, ops, audio, materials }) {
           title: `${f.label}\nDrag onto a clip, or double-click to add to the selected clip`,
           onDbl: () => applyFilter(f.id),
         }));
+      }
+    }
+
+    if (tab === 'stickers') {
+      if (cat === 'giphy_gifs' || cat === 'giphy_stickers') renderGiphy(cat === 'giphy_gifs' ? 'gifs' : 'stickers', search.value.trim());
+      else {
+        for (const s of [...BUILTIN_STICKERS, ...EMOJI_STICKERS].filter(s => (cat === 'all' || s.cat === cat) && match(s.label + ' ' + s.cat))) {
+          const thumb = stickerThumb(s);
+          add(item({
+            name: s.emoji ? 'Emoji ' + s.emoji : s.label, kind: 'sticker', id: s.id,
+            thumbHtml: thumb ? `<div class="sticker-thumb" style="background-image:url('${thumb}')"></div>` : `<div class="sticker-thumb emoji">${s.emoji}</div>`,
+            title: `${s.label}\nDouble-click or + to add at the playhead · drag onto the timeline`,
+            onDbl: () => addStickerFile(() => stickerFile(s)),
+          }));
+        }
+        if (cat === 'all' && !q) grid.insertAdjacentHTML('beforeend', '<div class="lib-empty">More GIFs and animated stickers: pick <b>GIPHY GIFs</b> or <b>GIPHY Stickers</b> on the left.</div>');
       }
     }
 
@@ -434,5 +551,11 @@ export function createLibrary({ store, ops, audio, materials }) {
   store.on('project', e => { if (tab === 'media' || tab === 'audio' || tab === 'materials') later(); });
   store.on('materials', () => { if (tab === 'materials') later(); });
   render();
-  return { render, show(t) { tabs.querySelector(`[data-lib="${t}"]`)?.click(); } };
+  function locate(mediaId) {
+    tabs.querySelector('[data-lib="media"]')?.click();
+    selected = 'media:' + mediaId; renderGrid();
+    const el = grid.querySelector('.lib-item.selected'); el?.scrollIntoView({ block: 'center' });
+    el?.classList.add('flash'); setTimeout(() => el?.classList.remove('flash'), 1200);
+  }
+  return { render, locate, show(t) { tabs.querySelector(`[data-lib="${t}"]`)?.click(); } };
 }

@@ -42,6 +42,11 @@ export function createSources({ store, mediaRuntime }) {
     return rt.image && rt.image.complete && rt.image.naturalWidth ? rt.image : null;
   }
 
+  // Text → canvas. Fields (all optional, old projects keep their look):
+  // content, font, size, color, bold, italic, align, lineHeight, letterSpacing (px), underline,
+  // stroke (px) + strokeColor, background + bgPad (× size) + bgRadius (px),
+  // shadow (bool) + shadowColor, shadowOpacity (0..1), shadowBlur, shadowX, shadowY (px),
+  // glow (px) + glowColor, gradient (bool) + color2 + gradAngle (deg), curve (-100..100 = arc bend).
   function textCanvas(clip) {
     const tx = clip.text || {};
     const key = JSON.stringify(tx);
@@ -49,37 +54,96 @@ export function createSources({ store, mediaRuntime }) {
     if (c && c.key === key) return c;
     const canvas = c?.canvas || document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    const size = Math.max(4, tx.size || 96);
+    const fin = (v, d) => (Number.isFinite(+v) ? +v : d);
+    const size = Math.max(4, fin(tx.size, 96));
     const font = `${tx.italic ? 'italic ' : ''}${tx.bold ? '700' : '400'} ${size}px "${tx.font || 'Inter'}", sans-serif`;
-    ctx.font = font;
+    const ls = fin(tx.letterSpacing, 0);
+    const setFont = () => { ctx.font = font; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'; try { ctx.letterSpacing = ls + 'px'; } catch (e) { /* older browsers */ } };
+    setFont();
     const lines = String(tx.content ?? '').split('\n');
-    const lh = size * (tx.lineHeight || 1.15);
-    const stroke = tx.stroke || 0;
-    const pad = Math.ceil(size * 0.25 + stroke + (tx.shadow ? size * 0.08 : 0));
+    const lh = size * fin(tx.lineHeight, 1.15);
+    const stroke = Math.max(0, fin(tx.stroke, 0));
+    const glow = Math.max(0, fin(tx.glow, 0));
+    const sh = tx.shadow ? {
+      color: tx.shadowColor || '#000000', alpha: Math.max(0, Math.min(1, fin(tx.shadowOpacity, 0.55))),
+      blur: Math.max(0, fin(tx.shadowBlur, size * 0.12)), x: fin(tx.shadowX, 0), y: fin(tx.shadowY, size * 0.04),
+    } : null;
+    // curve: total arc angle up to ±180°
+    const theta = Math.max(-1, Math.min(1, fin(tx.curve, 0) / 100)) * Math.PI;
+    const curved = Math.abs(theta) > 0.01;
     const widths = lines.map(l => ctx.measureText(l || ' ').width);
-    const w = Math.ceil(Math.max(1, ...widths) + pad * 2);
-    const h = Math.ceil(lh * lines.length + pad * 2);
+    const maxW = Math.max(1, ...widths);
+    let R = 0, sag = 0, chord = maxW;
+    if (curved) { R = maxW / Math.abs(theta); sag = R * (1 - Math.cos(Math.abs(theta) / 2)); chord = 2 * R * Math.sin(Math.min(Math.PI / 2, Math.abs(theta) / 2)); if (Math.abs(theta) > Math.PI / 2 * 2 - 1e-3) chord = 2 * R; }
+    const shPad = sh ? sh.blur + Math.max(Math.abs(sh.x), Math.abs(sh.y)) : 0;
+    const bgPad = tx.background ? size * Math.max(0, fin(tx.bgPad, 0.25)) : 0;
+    const pad = Math.ceil(Math.max(size * 0.25, bgPad) + stroke + glow * 1.5 + shPad);
+    const w = Math.ceil((curved ? Math.max(chord, size) : maxW) + pad * 2);
+    const h = Math.ceil(lh * lines.length + (curved ? sag + size * 0.5 : 0) + pad * 2);
     canvas.width = w; canvas.height = h;
-    ctx.font = font; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+    setFont();
     if (tx.background) {
       ctx.fillStyle = tx.background;
-      const r = Math.min(size * 0.2, 24);
-      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(0, 0, w, h, r) : ctx.rect(0, 0, w, h); ctx.fill();
+      const r = Math.max(0, fin(tx.bgRadius, Math.min(size * 0.2, 24)));
+      const inset = Math.max(0, pad - bgPad - size * 0.05);
+      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(inset, inset, w - inset * 2, h - inset * 2, r) : ctx.rect(inset, inset, w - inset * 2, h - inset * 2); ctx.fill();
     }
-    const align = tx.align || 'center';
+    const align = curved ? 'center' : (tx.align || 'center');
     ctx.textAlign = align;
     const x = align === 'left' ? pad : align === 'right' ? w - pad : w / 2;
+    const fillStyle = () => {
+      if (!tx.gradient) return tx.color || '#fff';
+      const a = fin(tx.gradAngle, 90) * Math.PI / 180, dx = Math.sin(a) * w / 2, dy = -Math.cos(a) * h / 2;
+      const g = ctx.createLinearGradient(w / 2 - dx, h / 2 - dy, w / 2 + dx, h / 2 + dy);
+      g.addColorStop(0, tx.color || '#ffffff'); g.addColorStop(1, tx.color2 || '#ff2d9a');
+      return g;
+    };
+    // draws one line with `paint(text, x, y)`; on a curve, glyph by glyph along the arc
+    const drawLine = (line, i, paint) => {
+      const baseY = pad + lh * i + lh / 2 + (curved && theta < 0 ? sag : 0);
+      if (!curved) { paint(line, x, baseY); return; }
+      const glyphs = [...line]; const gw = glyphs.map(g => ctx.measureText(g).width);
+      const total = gw.reduce((s, v) => s + v, 0);
+      const up = theta > 0, cy = up ? baseY + R : baseY - R;
+      let pos = -total / 2;
+      ctx.save(); ctx.textAlign = 'center';
+      glyphs.forEach((g, k) => {
+        const mid = pos + gw[k] / 2; pos += gw[k];
+        const a = up ? -Math.PI / 2 + mid / R : Math.PI / 2 - mid / R;
+        ctx.save();
+        ctx.translate(w / 2 + R * Math.cos(a), cy + R * Math.sin(a));
+        ctx.rotate(up ? a + Math.PI / 2 : a - Math.PI / 2);
+        paint(g, 0, 0);
+        ctx.restore();
+      });
+      ctx.restore();
+    };
+    const hexA = (hex, al) => { const m = /^#?([0-9a-f]{6})$/i.exec(hex || ''); if (!m) return hex; const n = parseInt(m[1], 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${al})`; };
+    const noShadow = () => { ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0; };
     lines.forEach((line, i) => {
-      const y = pad + lh * i + lh / 2;
-      if (tx.shadow) { ctx.shadowColor = 'rgba(0,0,0,0.55)'; ctx.shadowBlur = size * 0.12; ctx.shadowOffsetY = size * 0.04; }
+      // 1) glow halo
+      if (glow > 0) {
+        ctx.shadowColor = tx.glowColor || '#00e5ff'; ctx.shadowBlur = glow; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+        ctx.fillStyle = tx.glowColor || '#00e5ff';
+        for (let k = 0; k < 2; k++) drawLine(line, i, (t, px, py) => ctx.fillText(t, px, py));
+        noShadow();
+      }
+      // 2) outline (carries the drop shadow when there is one)
+      if (sh) { ctx.shadowColor = hexA(sh.color, sh.alpha); ctx.shadowBlur = sh.blur; ctx.shadowOffsetX = sh.x; ctx.shadowOffsetY = sh.y; }
       if (stroke > 0) {
         ctx.strokeStyle = tx.strokeColor || '#000'; ctx.lineWidth = stroke * 2;
-        ctx.strokeText(line, x, y);
-        ctx.shadowColor = 'transparent';
+        drawLine(line, i, (t, px, py) => ctx.strokeText(t, px, py));
+        noShadow();
       }
-      ctx.fillStyle = tx.color || '#fff';
-      ctx.fillText(line, x, y);
-      ctx.shadowColor = 'transparent';
+      // 3) fill
+      ctx.fillStyle = fillStyle();
+      drawLine(line, i, (t, px, py) => ctx.fillText(t, px, py));
+      noShadow();
+      if (tx.underline && !curved) {
+        const lw = widths[i], y = pad + lh * i + lh / 2 + size * 0.42;
+        const x0 = align === 'left' ? x : align === 'right' ? x - lw : x - lw / 2;
+        ctx.fillRect(x0, y, lw, Math.max(1, size * 0.06));
+      }
     });
     c = { key, canvas, version: ++textVersion };
     textCache.set(clip.id, c);

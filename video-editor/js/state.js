@@ -215,13 +215,13 @@ function createStore() {
         const clips = store.clipsOnTrack(track.id);
         let cut = null;
         for (const c of clips) { const ct = store.cutTransition(c, clips); if (ct && t >= ct.from - FRAME_EPS && t < ct.to - FRAME_EPS) { cut = ct; break; } }
-        if (cut && cut.b.type !== 'audio') {
+        if (cut && cut.b.type !== 'audio' && !cut.a.disabled && !cut.b.disabled) {
           out.push({ track, clip: cut.b, time: store.extSourceTime(cut.b, t), transition: {
             type: cut.type, progress: clamp((t - cut.from) / (cut.to - cut.from), 0, 1), phase: 'in',
             other: cut.a, otherTime: store.extSourceTime(cut.a, t) } });
           continue;
         }
-        const clip = clips.find(c => t >= c.start - FRAME_EPS && t < c.start + c.duration - FRAME_EPS);
+        const clip = clips.find(c => !c.disabled && t >= c.start - FRAME_EPS && t < c.start + c.duration - FRAME_EPS);
         if (!clip || clip.type === 'audio') continue;
         let transition = null;
         const local = t - clip.start;
@@ -242,7 +242,7 @@ function createStore() {
       return store.project.clips.filter(c => {
         const tr = tracks.get(c.trackId);
         if (!tr || tr.muted) return false;
-        if (c.audio?.mute) return false;
+        if (c.audio?.mute || c.disabled) return false;
         if (c.type === 'audio') return true;
         if (c.type === 'video') { const m = store.getMedia(c.mediaId); return !!(m && m.hasAudio && !c.audio.detached); }
         return false;

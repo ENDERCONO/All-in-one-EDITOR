@@ -300,7 +300,7 @@
               break;
             }
           }
-          if (cut && cut.b.type !== "audio") {
+          if (cut && cut.b.type !== "audio" && !cut.a.disabled && !cut.b.disabled) {
             out.push({ track, clip: cut.b, time: store2.extSourceTime(cut.b, t), transition: {
               type: cut.type,
               progress: clamp((t - cut.from) / (cut.to - cut.from), 0, 1),
@@ -310,7 +310,7 @@
             } });
             continue;
           }
-          const clip = clips.find((c) => t >= c.start - FRAME_EPS && t < c.start + c.duration - FRAME_EPS);
+          const clip = clips.find((c) => !c.disabled && t >= c.start - FRAME_EPS && t < c.start + c.duration - FRAME_EPS);
           if (!clip || clip.type === "audio") continue;
           let transition = null;
           const local = t - clip.start;
@@ -330,7 +330,7 @@
         return store2.project.clips.filter((c) => {
           const tr = tracks.get(c.trackId);
           if (!tr || tr.muted) return false;
-          if (c.audio?.mute) return false;
+          if (c.audio?.mute || c.disabled) return false;
           if (c.type === "audio") return true;
           if (c.type === "video") {
             const m = store2.getMedia(c.mediaId);
@@ -454,7 +454,44 @@
         { id: "motion_blur", label: "Motion Blur", category: "Lens" },
         // ---- v3: from the site's Seamless Tile tool ----
         { id: "tile_2x2", label: "Tile 2\xD72", category: "Distort" },
-        { id: "tile_mirror", label: "Mirror Tile (seamless)", category: "Distort" }
+        { id: "tile_mirror", label: "Mirror Tile (seamless)", category: "Distort" },
+        // ---- v4: color looks (Filmora-style filter packs), run in FS_FILTER3 ----
+        { id: "sunny_days", label: "Sunny Days", category: "Lifestyle" },
+        { id: "golden_hour", label: "Golden Hour", category: "Lifestyle" },
+        { id: "fresh", label: "Fresh", category: "Lifestyle" },
+        { id: "cozy", label: "Cozy", category: "Lifestyle" },
+        { id: "bw_contrast", label: "B&W High Contrast", category: "Basic" },
+        { id: "bw_soft", label: "B&W Soft", category: "Basic" },
+        { id: "bright_up", label: "Brightness", category: "Basic" },
+        { id: "contrast_up", label: "Contrast", category: "Basic" },
+        { id: "saturation_up", label: "Saturation", category: "Basic" },
+        { id: "white_balance", label: "Auto White Balance", category: "Basic" },
+        { id: "moody", label: "Moody", category: "Cinematic" },
+        { id: "bleach_bypass", label: "Bleach Bypass", category: "Cinematic" },
+        { id: "blockbuster", label: "Blockbuster", category: "Cinematic" },
+        { id: "technicolor", label: "Technicolor", category: "Cinematic" },
+        { id: "matrix", label: "Green Matrix", category: "Cinematic" },
+        { id: "pastel", label: "Pastel", category: "Portrait" },
+        { id: "soft_skin", label: "Soft Skin", category: "Portrait" },
+        { id: "rosy", label: "Rosy", category: "Portrait" },
+        { id: "winter", label: "Winter", category: "Seasons" },
+        { id: "autumn", label: "Autumn", category: "Seasons" },
+        { id: "spring", label: "Spring", category: "Seasons" },
+        { id: "summer", label: "Summer", category: "Seasons" },
+        { id: "halloween", label: "Halloween", category: "Holidays" },
+        { id: "valentine", label: "Valentine", category: "Holidays" },
+        { id: "christmas", label: "Christmas", category: "Holidays" },
+        { id: "matte", label: "Matte", category: "Retro" },
+        { id: "polaroid", label: "Polaroid", category: "Retro" },
+        { id: "lomo", label: "Lomo", category: "Retro" },
+        { id: "cross_process", label: "Cross Process", category: "Retro" },
+        { id: "kodachrome", label: "Kodachrome", category: "Retro" },
+        { id: "food_fresh", label: "Tasty", category: "Food" },
+        { id: "food_warm", label: "Warm Kitchen", category: "Food" },
+        { id: "vibrant_land", label: "Vibrant Landscape", category: "Scenery" },
+        { id: "sunset", label: "Sunset", category: "Scenery" },
+        { id: "clear_sky", label: "Clear Sky", category: "Scenery" },
+        { id: "fake_hdr", label: "HDR Look", category: "Scenery" }
       ];
       TRANSITIONS = [
         { id: "dissolve", label: "Dissolve", category: "Basic" },
@@ -515,7 +552,25 @@
         { id: "youtube", label: "Thumbnail Pop", text: { content: "NO WAY!", font: "Bangers", size: 160, color: "#ffe600", bold: false, stroke: 10, strokeColor: "#000000", shadow: true } },
         { id: "lower", label: "Lower Third", text: { content: "Name Surname", font: "Montserrat", size: 64, color: "#ffffff", bold: true, background: "#18d5b7", shadow: false, align: "left" }, x: -0.3, y: 0.32 },
         { id: "cinema", label: "Cinematic", text: { content: "CHAPTER ONE", font: "Bebas Neue", size: 140, color: "#f2f2f2", bold: false, shadow: true } },
-        { id: "handwritten", label: "Marker", text: { content: "thanks for watching", font: "Permanent Marker", size: 120, color: "#ffffff", stroke: 6, strokeColor: "#111111", shadow: true } }
+        { id: "handwritten", label: "Marker", text: { content: "thanks for watching", font: "Permanent Marker", size: 120, color: "#ffffff", stroke: 6, strokeColor: "#111111", shadow: true } },
+        // ---- styled presets (glow / gradient / shadow / curve) ----
+        { id: "neon", label: "Neon Glow", cat: "Glow", text: { content: "NEON", font: "Montserrat", size: 150, color: "#ffffff", bold: true, glow: 28, glowColor: "#00e5ff", shadow: false } },
+        { id: "neon_pink", label: "Neon Pink", cat: "Glow", text: { content: "LATE NIGHT", font: "Bebas Neue", size: 150, color: "#ffe6f5", glow: 30, glowColor: "#ff2d9a", shadow: false, letterSpacing: 6 } },
+        { id: "fire", label: "Fire", cat: "Gradient", text: { content: "HOT!", font: "Bangers", size: 180, color: "#ffe259", gradient: true, color2: "#ff4e00", gradAngle: 180, stroke: 6, strokeColor: "#3a0a00", glow: 18, glowColor: "#ff6a00", shadow: false } },
+        { id: "gradient_pop", label: "Gradient Pop", cat: "Gradient", text: { content: "AMAZING", font: "Montserrat", size: 140, bold: true, color: "#7f5cff", gradient: true, color2: "#18d5b7", gradAngle: 90, shadow: true, shadowBlur: 0, shadowX: 6, shadowY: 6, shadowOpacity: 0.9 } },
+        { id: "sunset_grad", label: "Sunset", cat: "Gradient", text: { content: "Summer Vibes", font: "Poppins", size: 130, bold: true, color: "#ffcf5c", gradient: true, color2: "#ff5e8a", gradAngle: 180, shadow: true } },
+        { id: "outline", label: "Outline Only", cat: "Outline", text: { content: "OUTLINE", font: "Montserrat", size: 150, bold: true, color: "rgba(0,0,0,0)", stroke: 4, strokeColor: "#ffffff", shadow: false, letterSpacing: 4 } },
+        { id: "thick_outline", label: "Sticker Text", cat: "Outline", text: { content: "WOW", font: "Bangers", size: 190, color: "#ffffff", stroke: 14, strokeColor: "#ff2d55", shadow: true, shadowBlur: 0, shadowX: 0, shadowY: 10, shadowOpacity: 0.6 } },
+        { id: "shadow3d", label: "3D Shadow", cat: "Shadow", text: { content: "EPIC", font: "Bebas Neue", size: 190, color: "#ffffff", shadow: true, shadowColor: "#ff2d55", shadowBlur: 0, shadowX: 10, shadowY: 10, shadowOpacity: 1 } },
+        { id: "soft_shadow", label: "Soft Shadow", cat: "Shadow", text: { content: "Clean title", font: "Inter", size: 110, color: "#ffffff", bold: true, shadow: true, shadowBlur: 30, shadowY: 12, shadowOpacity: 0.7 } },
+        { id: "arch", label: "Curved Arch", cat: "Curve", text: { content: "CURVED TEXT", font: "Montserrat", size: 110, bold: true, color: "#ffffff", stroke: 5, strokeColor: "#111111", curve: 45, letterSpacing: 4, shadow: true } },
+        { id: "smile", label: "Smile Curve", cat: "Curve", text: { content: "smile curve", font: "Poppins", size: 110, bold: true, color: "#ffe600", stroke: 5, strokeColor: "#111111", curve: -40, shadow: true } },
+        { id: "bubble", label: "Speech Bubble", cat: "Box", text: { content: "Hello there!", font: "Poppins", size: 80, bold: true, color: "#111111", background: "#ffffff", bgPad: 0.45, bgRadius: 60, shadow: true, shadowBlur: 20, shadowOpacity: 0.4 } },
+        { id: "tag", label: "Label Box", cat: "Box", text: { content: "BREAKING NEWS", font: "Oswald", size: 80, bold: true, color: "#ffffff", background: "#e3002b", bgPad: 0.3, bgRadius: 4, letterSpacing: 3, shadow: false }, y: 0.35 },
+        { id: "retro80s", label: "Retro 80s", cat: "Glow", text: { content: "RETRO", font: "Bebas Neue", size: 200, color: "#00e5ff", gradient: true, color2: "#ff2d9a", gradAngle: 180, stroke: 3, strokeColor: "#ffffff", glow: 22, glowColor: "#b14bff", shadow: false, italic: true, letterSpacing: 8 } },
+        { id: "gaming", label: "Gaming", cat: "Outline", text: { content: "GG!", font: "Bangers", size: 200, color: "#39ff14", stroke: 10, strokeColor: "#000000", glow: 14, glowColor: "#39ff14", shadow: true, shadowBlur: 0, shadowY: 8, shadowOpacity: 1 } },
+        { id: "minimal", label: "Minimal Spaced", cat: "Basic", text: { content: "MINIMAL", font: "Inter", size: 72, color: "#ffffff", letterSpacing: 24, shadow: false } },
+        { id: "underline", label: "Underlined", cat: "Basic", text: { content: "Chapter 2", font: "Poppins", size: 96, bold: true, color: "#ffffff", underline: true, shadow: true } }
       ];
       SAMPLE_COLORS = ["#000000", "#ffffff", "#ff3b30", "#ff9500", "#ffcc00", "#34c759", "#00c7be", "#30b0ff", "#2a6df4", "#5856d6", "#af52de", "#ff2d55", "#00ff00", "#0000ff", "#8e8e93", "#1c1c1e"];
     }
@@ -589,6 +644,1125 @@
         close: '<path d="M6 6l12 12M18 6 6 18"/>',
         chevron: '<path d="m6 9 6 6 6-6"/>'
       };
+    }
+  });
+
+  // js/audio.js
+  var audio_exports = {};
+  __export(audio_exports, {
+    AUDIO_PRESETS: () => AUDIO_PRESETS,
+    VOICE_FILTERS: () => VOICE_FILTERS,
+    createAudioEngine: () => createAudioEngine,
+    muffleFreq: () => muffleFreq,
+    reverbSeconds: () => reverbSeconds
+  });
+  function* pitchShiftGen(channels, sr, semis) {
+    const L = channels[0].length;
+    const nch = channels.length;
+    const r = Math.pow(2, semis / 12);
+    if (!L || Math.abs(r - 1) < 1e-4) return channels.map((c) => c.slice());
+    let N = 1;
+    while (N < sr * 0.046) N <<= 1;
+    const Hs = N >> 1;
+    const Ha = Hs / r;
+    const D = 4;
+    const delta = N >> 2;
+    const Ld = Math.ceil(L / D);
+    const mono = new Float32Array(Ld);
+    for (let c = 0; c < nch; c++) {
+      const ch = channels[c];
+      for (let i = 0; i < L; i++) mono[i / D | 0] += ch[i];
+    }
+    const win = new Float32Array(N);
+    for (let i = 0; i < N; i++) win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / N);
+    const outLen = Math.ceil(L * r) + N;
+    const out = [];
+    for (let c = 0; c < nch; c++) out.push(new Float32Array(outLen));
+    const wsum = new Float32Array(outLen);
+    const Nd = N / D, delD = delta / D;
+    let prev = 0;
+    const frames = Math.ceil(outLen / Hs);
+    for (let k = 0; k < frames; k++) {
+      const op = k * Hs;
+      let pos;
+      if (k === 0) pos = 0;
+      else {
+        const target = Math.round(k * Ha);
+        const nat = prev + Hs;
+        const natD = nat / D | 0;
+        const lo = Math.max(0, (target - delta) / D | 0);
+        const hi = Math.min(Ld - 1, (target + delta) / D | 0);
+        let best = target / D | 0, bestScore = -Infinity;
+        if (natD < Ld && hi >= lo) {
+          for (let p = lo; p <= hi; p++) {
+            let dot = 0, en = 1e-9;
+            const n = Math.min(Nd, Ld - p, Ld - natD);
+            for (let j = 0; j < n; j++) {
+              const v = mono[p + j];
+              dot += v * mono[natD + j];
+              en += v * v;
+            }
+            const s = dot / Math.sqrt(en);
+            if (s > bestScore) {
+              bestScore = s;
+              best = p;
+            }
+          }
+        }
+        pos = best * D;
+        const ch0 = channels[0];
+        let bestF = pos, bestFS = -Infinity;
+        for (let p = Math.max(0, pos - D); p <= pos + D; p++) {
+          let dot = 0, en = 1e-9;
+          for (let j = 0; j < N; j += 2) {
+            const a = p + j < L ? ch0[p + j] : 0, b = nat + j < L ? ch0[nat + j] : 0;
+            dot += a * b;
+            en += a * a;
+          }
+          const s = dot / Math.sqrt(en);
+          if (s > bestFS) {
+            bestFS = s;
+            bestF = p;
+          }
+        }
+        pos = bestF;
+      }
+      for (let c = 0; c < nch; c++) {
+        const src = channels[c], dst = out[c];
+        for (let j = 0; j < N; j++) {
+          const ip = pos + j, o = op + j;
+          if (o >= outLen) break;
+          if (ip < L) dst[o] += src[ip] * win[j];
+        }
+      }
+      for (let j = 0; j < N && op + j < outLen; j++) wsum[op + j] += win[j];
+      prev = pos;
+      if ((k & 63) === 63) yield k / frames * 0.9;
+    }
+    for (let c = 0; c < nch; c++) {
+      const d = out[c];
+      for (let i = 0; i < outLen; i++) d[i] = wsum[i] > 1e-3 ? d[i] / wsum[i] : 0;
+    }
+    if (r > 1.02) {
+      const taps = 33, h2 = (taps - 1) / 2, fc = 0.5 / r * 0.92;
+      const fir = new Float32Array(taps);
+      let s = 0;
+      for (let i = 0; i < taps; i++) {
+        const x = i - h2;
+        const sinc = x === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * x) / (Math.PI * x);
+        fir[i] = sinc * (0.54 - 0.46 * Math.cos(2 * Math.PI * i / (taps - 1)));
+        s += fir[i];
+      }
+      for (let i = 0; i < taps; i++) fir[i] /= s;
+      for (let c = 0; c < nch; c++) {
+        const d = out[c], f = new Float32Array(outLen);
+        for (let i = 0; i < outLen; i++) {
+          let acc = 0;
+          for (let t = 0; t < taps; t++) {
+            const ix = i + t - h2;
+            if (ix >= 0 && ix < outLen) acc += d[ix] * fir[t];
+          }
+          f[i] = acc;
+        }
+        out[c] = f;
+        yield 0.9 + 0.05 * (c + 1) / nch;
+      }
+    }
+    const res = [];
+    for (let c = 0; c < nch; c++) {
+      const d = out[c], o = new Float32Array(L);
+      for (let i = 0; i < L; i++) {
+        const x = i * r, i1 = x | 0, f = x - i1;
+        const y0 = d[i1 - 1] || 0, y1 = d[i1] || 0, y2 = d[i1 + 1] || 0, y3 = d[i1 + 2] || 0;
+        const c1 = 0.5 * (y2 - y0), c2 = y0 - 2.5 * y1 + 2 * y2 - 0.5 * y3, c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+        o[i] = ((c3 * f + c2) * f + c1) * f + y1;
+      }
+      res.push(o);
+    }
+    return res;
+  }
+  function runGen(gen) {
+    let s;
+    do {
+      s = gen.next();
+    } while (!s.done);
+    return s.value;
+  }
+  async function runGenAsync(gen) {
+    let s, last2 = performance.now();
+    for (; ; ) {
+      s = gen.next();
+      if (s.done) return s.value;
+      if (performance.now() - last2 > 12) {
+        await new Promise((r) => setTimeout(r, 0));
+        last2 = performance.now();
+      }
+    }
+  }
+  function getWorker() {
+    if (pitchWorker || pitchWorkerFailed) return pitchWorker;
+    try {
+      const src = `${pitchShiftGen.toString()}
+${runGen.toString()}
+self.onmessage = e => { const { id, channels, sr, semis } = e.data;
+  try { const out = runGen(pitchShiftGen(channels, sr, semis)); self.postMessage({ id, channels: out }, out.map(c => c.buffer)); }
+  catch (err) { self.postMessage({ id, error: String(err && err.message || err) }); } };`;
+      const url2 = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
+      pitchWorker = new Worker(url2);
+      pitchWorker.onmessage = (e) => {
+        const j = jobs.get(e.data.id);
+        if (!j) return;
+        jobs.delete(e.data.id);
+        if (e.data.error) j.reject(new Error(e.data.error));
+        else j.resolve(e.data.channels);
+      };
+      pitchWorker.onerror = (e) => {
+        console.warn("[audio] pitch worker failed, using main thread", e);
+        pitchWorkerFailed = true;
+        pitchWorker = null;
+        for (const j of jobs.values()) j.fallback();
+        jobs.clear();
+      };
+    } catch (e) {
+      pitchWorkerFailed = true;
+      pitchWorker = null;
+    }
+    return pitchWorker;
+  }
+  function shiftChannels(channels, sr, semis) {
+    const w = getWorker();
+    const local = () => runGenAsync(pitchShiftGen(channels, sr, semis));
+    if (!w) return local();
+    return new Promise((resolve, reject) => {
+      const id = ++jobSeq;
+      const copies = channels.map((c) => c.slice());
+      jobs.set(id, { resolve, reject, fallback: () => local().then(resolve, reject) });
+      w.postMessage({ id, channels: copies, sr, semis }, copies.map((c) => c.buffer));
+    });
+  }
+  function workletState(c) {
+    let s = workletStates.get(c);
+    if (s) return s;
+    s = { ready: false, failed: false, promise: null };
+    workletStates.set(c, s);
+    s.promise = (async () => {
+      try {
+        if (!c.audioWorklet || typeof AudioWorkletNode === "undefined") throw new Error("AudioWorklet unsupported");
+        if (!workletUrl) workletUrl = URL.createObjectURL(new Blob([WORKLET_SRC], { type: "application/javascript" }));
+        await c.audioWorklet.addModule(workletUrl);
+        s.ready = true;
+      } catch (e) {
+        s.failed = true;
+        if (!workletWarned) {
+          workletWarned = true;
+          console.warn("[audio] AudioWorklet unavailable; voice pitch + bitcrusher stages skipped", e);
+        }
+      }
+      return s.ready;
+    })();
+    return s;
+  }
+  function reverbSeconds(size) {
+    return 0.2 * Math.pow(30, Math.max(0, Math.min(1, +size || 0)));
+  }
+  function muffleFreq(amount) {
+    return amount <= 0 ? 2e4 : Math.round(2e4 * Math.pow(250 / 2e4, Math.min(1, amount)));
+  }
+  function driveCurve(amount) {
+    const k = amount * 60, n = 1024, curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = i / (n - 1) * 2 - 1;
+      curve[i] = (1 + k) * x / (1 + k * Math.abs(x));
+    }
+    return curve;
+  }
+  function reverbIR(sampleRate, sec) {
+    const key = sampleRate + "_" + sec.toFixed(2);
+    let b = irCache.get(key);
+    if (b) return b;
+    const len = Math.max(1, Math.floor(sampleRate * sec));
+    b = new AudioBuffer({ length: len, numberOfChannels: 2, sampleRate });
+    let seed = 2654435769;
+    const rnd = () => {
+      seed ^= seed << 13;
+      seed ^= seed >>> 17;
+      seed ^= seed << 5;
+      return (seed >>> 0) / 4294967296;
+    };
+    for (let c = 0; c < 2; c++) {
+      const d = b.getChannelData(c);
+      for (let i = 0; i < len; i++) d[i] = (rnd() * 2 - 1) * Math.pow(1 - i / len, 2.5);
+    }
+    if (irCache.size > 24) irCache.delete(irCache.keys().next().value);
+    irCache.set(key, b);
+    return b;
+  }
+  function buildClipFx(c, a, input, when, local, wlReady) {
+    const nodes = [], oscs = [];
+    const add = (n) => {
+      nodes.push(n);
+      return n;
+    };
+    const gain = (v) => {
+      const g = add(c.createGain());
+      g.gain.value = v;
+      return g;
+    };
+    const osc = (freq, extra = 0) => {
+      const o = add(c.createOscillator());
+      o.frequency.value = freq;
+      const p = 2 * Math.PI * freq * local + extra;
+      o.setPeriodicWave(c.createPeriodicWave(new Float32Array([0, Math.sin(p)]), new Float32Array([0, Math.cos(p)]), { disableNormalization: true }));
+      o.start(when);
+      oscs.push(o);
+      return o;
+    };
+    let node = input;
+    const filt = (type, freq, opts = {}) => {
+      const f = add(c.createBiquadFilter());
+      f.type = type;
+      f.frequency.value = freq;
+      if (opts.Q !== void 0) f.Q.value = opts.Q;
+      if (opts.gain !== void 0) f.gain.value = opts.gain;
+      node.connect(f);
+      node = f;
+      return f;
+    };
+    const fx = { ...defaultAudioFx(), ...a.fx || {} };
+    const num = (v, d) => Number.isFinite(+v) ? +v : d;
+    const def = VOICE_RECIPES[a.voice] || null;
+    const vmix = Math.max(0, Math.min(1, num(a.voiceMix, 1)));
+    if (def && a.voice !== "none" && vmix > 0) {
+      const vin = node, vout = gain(1);
+      if (vmix < 1) {
+        const dry = gain(1 - vmix);
+        vin.connect(dry);
+        dry.connect(vout);
+      }
+      if (def.voices && wlReady) {
+        const sum = gain(1);
+        for (const v of def.voices) {
+          const pn = add(new AudioWorkletNode(c, "voice-pitch", { outputChannelCount: [2] }));
+          pn.parameters.get("semitones").value = v.pitch || 0;
+          pn.parameters.get("vibRate").value = v.vibRate || 0;
+          pn.parameters.get("vibDepth").value = v.vibDepth || 0;
+          const vg = gain((v.gain !== void 0 ? v.gain : 1) / Math.sqrt(def.voices.length));
+          node.connect(pn);
+          pn.connect(vg);
+          vg.connect(sum);
+        }
+        node = sum;
+      }
+      if (def.ring) {
+        const ringMul = gain(0);
+        osc(def.ring.freq).connect(ringMul.gain);
+        const ringWet = gain(def.ring.mix * 1.4), ringDry = gain(1 - def.ring.mix), ringOut = gain(1);
+        node.connect(ringMul);
+        ringMul.connect(ringWet);
+        ringWet.connect(ringOut);
+        node.connect(ringDry);
+        ringDry.connect(ringOut);
+        node = ringOut;
+      }
+      if (def.comb) {
+        const combSum = gain(1);
+        const d = add(c.createDelay(0.1));
+        d.delayTime.value = def.comb.time;
+        const fb = gain(def.comb.fb);
+        node.connect(combSum);
+        combSum.connect(d);
+        d.connect(fb);
+        fb.connect(combSum);
+        const combOut = gain(1 - def.comb.fb * 0.5);
+        combSum.connect(combOut);
+        node = combOut;
+      }
+      if (def.band) {
+        filt("highpass", def.band[0], { Q: 0.9 });
+        filt("highpass", def.band[0], { Q: 0.7 });
+        filt("lowpass", def.band[1], { Q: 0.9 });
+        filt("lowpass", def.band[1], { Q: 0.7 });
+      }
+      if (def.hp) filt("highpass", def.hp, { Q: 0.707 });
+      if (def.lp) {
+        filt("lowpass", def.lp, { Q: 0.707 });
+        filt("lowpass", def.lp, { Q: 0.707 });
+      }
+      if (def.peak) filt("peaking", def.peak.f, { Q: 1.2, gain: def.peak.gain });
+      if (def.lowshelf) filt("lowshelf", 150, { gain: def.lowshelf });
+      if (def.drive) {
+        const ws = add(c.createWaveShaper());
+        ws.curve = driveCurve(def.drive);
+        ws.oversample = "2x";
+        const k = def.drive * 60;
+        const makeup = gain((1 + k * 0.5) / (1 + k));
+        node.connect(ws);
+        ws.connect(makeup);
+        node = makeup;
+      }
+      if (def.tremolo) {
+        const trem = gain(1 - def.tremolo.depth / 2);
+        const depth = gain(def.tremolo.depth / 2);
+        osc(def.tremolo.rate).connect(depth);
+        depth.connect(trem.gain);
+        node.connect(trem);
+        node = trem;
+      }
+      if (def.echo) {
+        const out = gain(1);
+        const d = add(c.createDelay(2));
+        d.delayTime.value = def.echo.time;
+        const damp = add(c.createBiquadFilter());
+        damp.type = "lowpass";
+        damp.frequency.value = def.echo.damp || 4e3;
+        const fb = gain(def.echo.fb), mix = gain(def.echo.mix);
+        node.connect(out);
+        node.connect(d);
+        d.connect(damp);
+        damp.connect(fb);
+        fb.connect(d);
+        damp.connect(mix);
+        mix.connect(out);
+        node = out;
+      }
+      const wet = gain(vmix);
+      node.connect(wet);
+      wet.connect(vout);
+      node = vout;
+    }
+    const crush = Math.max(0, Math.min(1, num(fx.crush, 0)));
+    if (crush > 0 && wlReady) {
+      const cin = node, cout = gain(1);
+      if (crush < 1) {
+        const dry = gain(1 - crush);
+        cin.connect(dry);
+        dry.connect(cout);
+      }
+      const rate = Math.max(500, Math.min(c.sampleRate, num(fx.crushRate, 11025)));
+      filt("lowpass", convFreq(rate), { Q: 0.707 });
+      const cr = add(new AudioWorkletNode(c, "crusher", { outputChannelCount: [2] }));
+      cr.parameters.get("bits").value = Math.max(1, Math.min(16, num(fx.crushBits, 8)));
+      cr.parameters.get("sampleRate").value = rate;
+      node.connect(cr);
+      node = cr;
+      filt("lowpass", convFreq(rate), { Q: 0.707 });
+      const wet = gain(crush);
+      node.connect(wet);
+      wet.connect(cout);
+      node = cout;
+    }
+    const muffle = Math.max(0, Math.min(1, num(fx.lowpass, 0)));
+    if (muffle > 0) filt("lowpass", muffleFreq(muffle), { Q: 0.707 });
+    const hpf = num(fx.highpass, 0);
+    if (hpf > 0) filt("highpass", Math.min(2e4, hpf), { Q: 0.707 });
+    const bass = num(fx.bass, 0);
+    if (bass) filt("lowshelf", 120, { gain: Math.max(-24, Math.min(24, bass)) });
+    const echo = Math.max(0, Math.min(1, num(fx.echo, 0)));
+    if (echo > 0) {
+      const out = gain(1);
+      const d = add(c.createDelay(10));
+      d.delayTime.value = Math.max(1e-3, Math.min(10, num(fx.echoTime, 0.3)));
+      const damp = add(c.createBiquadFilter());
+      damp.type = "lowpass";
+      damp.Q.value = 0.707;
+      damp.frequency.value = Math.max(200, Math.min(2e4, num(fx.echoDamp, 6e3)));
+      const fb = gain(Math.max(0, Math.min(0.95, num(fx.echoFeedback, 0.4))));
+      const wet = gain(echo);
+      node.connect(out);
+      node.connect(d);
+      d.connect(damp);
+      damp.connect(fb);
+      fb.connect(d);
+      d.connect(wet);
+      wet.connect(out);
+      node = out;
+    }
+    const rev = Math.max(0, Math.min(1, num(fx.reverb, 0)));
+    if (rev > 0) {
+      const out = gain(1);
+      const conv2 = add(c.createConvolver());
+      conv2.buffer = reverbIR(c.sampleRate, reverbSeconds(num(fx.reverbSize, 0.5)));
+      const wet = gain(rev), dry = gain(1 - rev);
+      node.connect(conv2);
+      conv2.connect(wet);
+      wet.connect(out);
+      node.connect(dry);
+      dry.connect(out);
+      node = out;
+    }
+    const orbit = Math.max(0, Math.min(1, num(fx.orbit, 0)));
+    const ospeed = Math.max(1e-3, Math.min(20, num(fx.orbitSpeed, 0.25)));
+    if (orbit > 0) {
+      const lp = filt("lowpass", 2e4 - 8e3 * orbit, { Q: 0.707 });
+      const lpDepth = gain(8e3 * orbit);
+      const cosO = osc(ospeed, Math.PI / 2);
+      cosO.connect(lpDepth);
+      lpDepth.connect(lp.frequency);
+      const g = gain(1 - 0.15 * orbit);
+      const gDepth = gain(0.15 * orbit);
+      cosO.connect(gDepth);
+      gDepth.connect(g.gain);
+      node.connect(g);
+      node = g;
+      const p = add(c.createStereoPanner());
+      p.pan.value = 0;
+      const pDepth = gain(orbit);
+      osc(ospeed).connect(pDepth);
+      pDepth.connect(p.pan);
+      node.connect(p);
+      node = p;
+    }
+    let tail = 0;
+    if (def && def.echo) tail += 2;
+    if (echo > 0) tail += Math.min(30, num(fx.echoTime, 0.3) * Math.log(1e-3) / Math.log(Math.max(0.01, num(fx.echoFeedback, 0.4))));
+    if (rev > 0) tail += reverbSeconds(num(fx.reverbSize, 0.5));
+    if (def && def.comb) tail += 0.5;
+    return { out: node, nodes, oscs, tail: tail + 0.2 };
+  }
+  function needsWorklet(a) {
+    const d = a && VOICE_RECIPES[a.voice];
+    return !!(d && d.voices && (a.voiceMix ?? 1) > 0 || a && a.fx && a.fx.crush > 0);
+  }
+  function createAudioEngine({ store: store2, mediaRuntime: mediaRuntime2 }) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AC({ latencyHint: "interactive" });
+    workletState(ctx);
+    const master = ctx.createGain();
+    const monitor = ctx.createGain();
+    const splitter = ctx.createChannelSplitter(2);
+    const anL = ctx.createAnalyser(), anR = ctx.createAnalyser();
+    anL.fftSize = anR.fftSize = 1024;
+    master.connect(monitor);
+    monitor.connect(ctx.destination);
+    master.connect(splitter);
+    splitter.connect(anL, 0);
+    splitter.connect(anR, 1);
+    const meterBuf = new Float32Array(anL.fftSize);
+    const decoding = /* @__PURE__ */ new Map();
+    let playing = false, fromTime = 0, startCtxTime = 0;
+    let live = [];
+    let monitorVolume = 1;
+    const applyMaster = () => {
+      const v = +store2.project.settings.masterVolume;
+      master.gain.value = Math.max(0, Math.min(16, dbToGain(Number.isFinite(v) ? Math.max(-120, Math.min(24, v)) : 0)));
+    };
+    applyMaster();
+    store2.on("project", applyMaster);
+    ctx.onstatechange = () => {
+      if (playing && ctx.state !== "running" && ctx.state !== "closed") ctx.resume().catch(() => {
+      });
+    };
+    function computePeaks(buf) {
+      const bins = Math.max(1, Math.ceil(buf.duration * PEAK_RATE));
+      const min = new Float32Array(bins), max = new Float32Array(bins);
+      const per = buf.sampleRate / PEAK_RATE, nch = buf.numberOfChannels;
+      const chs = [];
+      for (let c = 0; c < nch; c++) chs.push(buf.getChannelData(c));
+      for (let b = 0; b < bins; b++) {
+        const s0 = Math.floor(b * per), s1 = Math.min(buf.length, Math.floor((b + 1) * per));
+        let lo = 0, hi = 0;
+        for (let i = s0; i < s1; i++) {
+          let v = 0;
+          for (let c = 0; c < nch; c++) v += chs[c][i];
+          v /= nch;
+          if (v < lo) lo = v;
+          else if (v > hi) hi = v;
+        }
+        min[b] = lo;
+        max[b] = hi;
+      }
+      return { rate: PEAK_RATE, min, max };
+    }
+    function ensureDecoded(mediaId) {
+      const rt = mediaRuntime2.get(mediaId);
+      if (!rt) return Promise.resolve(null);
+      if (rt.audioBuffer) return Promise.resolve(rt.audioBuffer);
+      if (decoding.has(mediaId)) return decoding.get(mediaId);
+      const p = (async () => {
+        try {
+          if (!rt.file) return null;
+          const ab = await rt.file.arrayBuffer();
+          const buf = await new Promise((res, rej) => {
+            const pr = ctx.decodeAudioData(ab, res, rej);
+            if (pr && pr.then) pr.then(res, rej);
+          });
+          rt.audioBuffer = buf;
+          rt.pitchCache = rt.pitchCache || /* @__PURE__ */ new Map();
+          try {
+            rt.peaks = computePeaks(buf);
+            store2.emit("media", { id: mediaId, what: "peaks" });
+          } catch (e) {
+            console.warn("[audio] peaks failed", e);
+          }
+          return buf;
+        } catch (e) {
+          console.warn("[audio] decode failed for", mediaId, e);
+          return null;
+        } finally {
+          decoding.delete(mediaId);
+        }
+      })();
+      decoding.set(mediaId, p);
+      return p;
+    }
+    function clipSemis(clip) {
+      const a = clip.audio || {};
+      let s = a.pitch || 0;
+      if (a.keepPitch !== false && clip.speed > 0 && Math.abs(clip.speed - 1) > 1e-6) s += -12 * Math.log2(clip.speed);
+      s = Math.round(s * 100) / 100;
+      return Math.abs(s) < 0.01 ? 0 : s;
+    }
+    function soundOk(src, out) {
+      if (!out || !out.length || !out[0] || !out[0].length) return false;
+      const energy = (chs) => {
+        let e = 0, n = 0;
+        for (const d of chs) {
+          const step = Math.max(1, Math.floor(d.length / 2e4));
+          for (let i = 0; i < d.length; i += step) {
+            const v = d[i];
+            if (!Number.isFinite(v)) return NaN;
+            e += v * v;
+            n++;
+          }
+        }
+        return n ? e / n : 0;
+      };
+      const eo = energy(out);
+      if (!Number.isFinite(eo)) return false;
+      const es = energy(src);
+      return !(es > 1e-7 && eo < es * 1e-4);
+    }
+    function makeBuffer(channels, sampleRate) {
+      const b = new AudioBuffer({ length: channels[0].length, numberOfChannels: channels.length, sampleRate });
+      channels.forEach((d, i) => b.copyToChannel(d, i));
+      return b;
+    }
+    function reversedOf(rt) {
+      if (rt.reversedBuffer) return rt.reversedBuffer;
+      const b = rt.audioBuffer, chs = [];
+      for (let c = 0; c < b.numberOfChannels; c++) chs.push(b.getChannelData(c).slice().reverse());
+      rt.reversedBuffer = makeBuffer(chs, b.sampleRate);
+      return rt.reversedBuffer;
+    }
+    function pitchEntry(rt, reverse, semis) {
+      rt.pitchCache = rt.pitchCache || /* @__PURE__ */ new Map();
+      const key = (reverse ? "R" : "F") + semis.toFixed(2);
+      let e = rt.pitchCache.get(key);
+      if (e) return e;
+      const base = reverse ? reversedOf(rt) : rt.audioBuffer;
+      e = { buffer: null, promise: null };
+      const chs = [];
+      for (let c = 0; c < base.numberOfChannels; c++) chs.push(base.getChannelData(c));
+      e.promise = shiftChannels(chs, base.sampleRate, semis).then((out) => {
+        if (!soundOk(chs, out)) throw new Error("pitch-shifted audio came out broken");
+        e.buffer = makeBuffer(out, base.sampleRate);
+        return e.buffer;
+      }).catch((err) => {
+        console.warn("[audio] pitch shift failed; using the unshifted audio", err);
+        e.buffer = base;
+        return base;
+      });
+      rt.pitchCache.set(key, e);
+      return e;
+    }
+    function bufferNow(clip, onLater) {
+      const rt = mediaRuntime2.get(clip.mediaId);
+      if (!rt) return null;
+      if (!rt.audioBuffer) {
+        ensureDecoded(clip.mediaId).then((b) => {
+          if (b && onLater) onLater();
+        });
+        return null;
+      }
+      const semis = clipSemis(clip);
+      const plain = clip.reverse ? reversedOf(rt) : rt.audioBuffer;
+      if (!semis) return plain;
+      const e = pitchEntry(rt, clip.reverse, semis);
+      if (e.buffer) return e.buffer;
+      if (onLater) e.promise.then((b) => {
+        if (b) onLater();
+      });
+      return plain;
+    }
+    async function bufferFinal(clip) {
+      const base = await ensureDecoded(clip.mediaId);
+      if (!base) return null;
+      const rt = mediaRuntime2.get(clip.mediaId);
+      const semis = clipSemis(clip);
+      const plain = clip.reverse ? reversedOf(rt) : base;
+      if (!semis) return plain;
+      const e = pitchEntry(rt, clip.reverse, semis);
+      return await e.promise || plain;
+    }
+    function cutSpan(clip) {
+      const r = { start: clip.start, end: clip.start + clip.duration, xin: 0, xout: 0 };
+      if (clip.type !== "video" || clip.reverse || !store2.cutTransition) return r;
+      const clips = store2.clipsOnTrack(clip.trackId);
+      const tin = store2.cutTransition(clip, clips);
+      if (tin) {
+        r.start = tin.from;
+        r.xin = tin.to - tin.from;
+      }
+      for (const c of clips) {
+        const ct = c !== clip && store2.cutTransition(c, clips);
+        if (ct && ct.a === clip) {
+          r.end = ct.to;
+          r.xout = ct.to - ct.from;
+          break;
+        }
+      }
+      return r;
+    }
+    function scheduleClip(c, clip, buf, dest, from, to, t0, wlReady) {
+      if (!buf || !(clip.speed > 0)) return null;
+      const span = cutSpan(clip);
+      const cs = span.start, ce = Math.min(span.end, to);
+      const s = Math.max(from, cs);
+      if (ce - s <= 1e-4) return null;
+      const src = span.xin || span.xout ? store2.extSourceTime(clip, s) : store2.sourceTime(clip, s);
+      let offset = clip.reverse ? buf.duration - src : src;
+      let dur = (ce - s) * clip.speed;
+      if (offset < 0) {
+        dur += offset;
+        offset = 0;
+      }
+      if (offset >= buf.duration || dur <= 1e-4) return null;
+      const when = t0 + (s - from);
+      const toCtx = (t) => t0 + (t - from);
+      const node = c.createBufferSource();
+      node.buffer = buf;
+      node.playbackRate.value = Math.max(0.0625, Math.min(16, clip.speed));
+      const g = c.createGain();
+      g.channelCount = 2;
+      g.channelCountMode = "explicit";
+      g.channelInterpretation = "speakers";
+      const a = clip.audio || {};
+      const fin2 = (v, d = 0) => Number.isFinite(+v) ? +v : d;
+      const base = Math.max(0, Math.min(16, dbToGain(Math.max(-120, Math.min(24, fin2(a.volume))))));
+      const fi = Math.max(0, fin2(a.fadeIn), fin2(span.xin)), fo = Math.max(0, fin2(a.fadeOut), fin2(span.xout));
+      const cEnd = span.end;
+      const env = (t) => base * Math.max(0, Math.min(1, fi > 0 ? (t - cs) / fi : 1, fo > 0 ? (cEnd - t) / fo : 1));
+      g.gain.setValueAtTime(env(s), when);
+      const pts = [cs + fi, cEnd - fo, cEnd].filter((p) => p > s + 1e-6).sort((x, y) => x - y);
+      for (const p of pts) g.gain.linearRampToValueAtTime(env(p), toCtx(p));
+      const pan = c.createStereoPanner();
+      pan.pan.value = Math.max(-1, Math.min(1, fin2(a.pan)));
+      node.connect(g);
+      let fx;
+      try {
+        fx = buildClipFx(c, a, g, when, s - cs, wlReady);
+      } catch (e) {
+        console.warn("[audio] effects failed on", clip.name, "- playing it without effects", e);
+        fx = { out: g, nodes: [], oscs: [], tail: 0.2 };
+      }
+      fx.out.connect(pan);
+      pan.connect(dest);
+      node.start(when, offset, dur);
+      return { src: node, nodes: [g, pan, ...fx.nodes], oscs: fx.oscs, tail: fx.tail, end: when + (ce - s) };
+    }
+    function overlapping(from, to) {
+      return store2.audibleClips().filter((c) => {
+        if (!c.mediaId || !(c.speed > 0)) return false;
+        const sp = cutSpan(c);
+        return sp.end > from + 1e-4 && sp.start < to;
+      });
+    }
+    let refreshQueued = false;
+    const laterRefresh = () => {
+      if (refreshQueued) return;
+      refreshQueued = true;
+      setTimeout(() => {
+        refreshQueued = false;
+        if (playing) refresh();
+      }, 30);
+    };
+    function play(t = 0) {
+      stop();
+      if (ctx.state !== "running") ctx.resume().catch(() => {
+      });
+      playing = true;
+      fromTime = t;
+      startCtxTime = ctx.currentTime + LEAD;
+      const wl = workletState(ctx);
+      let waitWl = false;
+      for (const clip of overlapping(t, Infinity)) {
+        try {
+          const buf = bufferNow(clip, laterRefresh);
+          if (!wl.ready && !wl.failed && needsWorklet(clip.audio)) waitWl = true;
+          const n = scheduleClip(ctx, clip, buf, master, t, Infinity, startCtxTime, wl.ready);
+          if (n) {
+            live.push(n);
+            scheduleCleanup(n);
+          }
+        } catch (e) {
+          console.warn("[audio] could not play", clip.name, e);
+        }
+      }
+      if (waitWl) wl.promise.then((ok) => {
+        if (ok) laterRefresh();
+      });
+    }
+    function teardown(n) {
+      if (n.dead) return;
+      n.dead = true;
+      try {
+        n.src.stop();
+      } catch (e) {
+      }
+      for (const o of n.oscs || []) {
+        try {
+          o.stop();
+        } catch (e) {
+        }
+      }
+      try {
+        n.src.disconnect();
+      } catch (e) {
+      }
+      for (const x of n.nodes) {
+        try {
+          x.disconnect();
+        } catch (e) {
+        }
+      }
+    }
+    function scheduleCleanup(n) {
+      n.src.onended = () => {
+        if (n.dead) return;
+        const ms = Math.max(0, (n.end + (n.tail || 0) - ctx.currentTime) * 1e3) + 100;
+        setTimeout(() => {
+          if (n.dead) return;
+          teardown(n);
+          live = live.filter((x) => x !== n);
+        }, ms);
+      };
+    }
+    function stop() {
+      if (playing) fromTime = now();
+      playing = false;
+      for (const n of live) teardown(n);
+      live = [];
+    }
+    function now() {
+      if (!playing) return fromTime;
+      return fromTime + Math.max(0, ctx.currentTime - startCtxTime);
+    }
+    function refresh() {
+      if (playing) play(now());
+    }
+    async function renderMix({ start = 0, end: end3, sampleRate, channels } = {}) {
+      const st = store2.project.settings;
+      sampleRate = sampleRate || st.sampleRate || 48e3;
+      channels = channels || st.channels || 2;
+      if (end3 == null) end3 = store2.duration();
+      const length = Math.max(1, Math.ceil((end3 - start) * sampleRate));
+      const clips = overlapping(start, end3);
+      const bufs = await Promise.all(clips.map(bufferFinal));
+      const oc = new OfflineAudioContext({ numberOfChannels: channels, length, sampleRate });
+      const wlReady = clips.some((c) => needsWorklet(c.audio)) ? await workletState(oc).promise : false;
+      const m = oc.createGain();
+      const mv = +st.masterVolume;
+      m.gain.value = Math.max(0, Math.min(16, dbToGain(Number.isFinite(mv) ? Math.max(-120, Math.min(24, mv)) : 0)));
+      m.connect(oc.destination);
+      clips.forEach((clip, i) => {
+        try {
+          scheduleClip(oc, clip, bufs[i], m, start, end3, 0, wlReady);
+        } catch (e) {
+          console.warn("[audio] export: could not mix", clip.name, e);
+        }
+      });
+      return oc.startRendering();
+    }
+    function peakOf(an) {
+      an.getFloatTimeDomainData(meterBuf);
+      let p = 0;
+      for (let i = 0; i < meterBuf.length; i++) {
+        const v = Math.abs(meterBuf[i]);
+        if (v > p) p = v;
+      }
+      return Math.min(1, p);
+    }
+    function meter() {
+      if (!playing) return { l: 0, r: 0 };
+      return { l: peakOf(anL), r: peakOf(anR) };
+    }
+    function setMonitorVolume(v) {
+      monitorVolume = Math.max(0, Math.min(1, +v || 0));
+      monitor.gain.setTargetAtTime(monitorVolume, ctx.currentTime, 0.01);
+    }
+    return {
+      ctx,
+      ensureDecoded,
+      play,
+      stop,
+      now,
+      refresh,
+      renderMix,
+      meter,
+      setMonitorVolume,
+      get monitorVolume() {
+        return monitorVolume;
+      },
+      get playing() {
+        return playing;
+      },
+      // exposed for tests / debugging
+      _pitchShift: (channels, sr, semis) => shiftChannels(channels, sr, semis)
+    };
+  }
+  var PEAK_RATE, LEAD, pitchWorker, pitchWorkerFailed, jobSeq, jobs, WORKLET_SRC, workletStates, workletUrl, workletWarned, VOICE_RECIPES, VOICE_FILTERS, reverbSizeFor, convFreq, irCache, P2, AUDIO_PRESETS;
+  var init_audio = __esm({
+    "js/audio.js"() {
+      init_state();
+      PEAK_RATE = 200;
+      LEAD = 0.06;
+      pitchWorker = null;
+      pitchWorkerFailed = false;
+      jobSeq = 0;
+      jobs = /* @__PURE__ */ new Map();
+      WORKLET_SRC = `
+class Crusher extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'bits', defaultValue: 16, minValue: 1, maxValue: 32, automationRate: 'a-rate' },
+      { name: 'sampleRate', defaultValue: 48000, minValue: 500, maxValue: 192000, automationRate: 'a-rate' },
+    ];
+  }
+  constructor() { super(); this.phaser = 0; this.heldL = 0; this.heldR = 0; }
+  process(inputs, outputs, params) {
+    const input = inputs[0], output = outputs[0];
+    if (!output || output.length === 0) return true;
+    const bitsArr = params.bits, srArr = params.sampleRate;
+    const nChan = output.length, len = output[0].length;
+    const quant = (v, levels) => {
+      const x = v < -1 ? -1 : (v > 1 ? 1 : v);
+      let q = Math.round(x * levels) / levels;
+      return q < -1 ? -1 : (q > 1 ? 1 : q);
+    };
+    for (let i = 0; i < len; i++) {
+      const bits = Math.max(1, Math.min(32, bitsArr.length > 1 ? bitsArr[i] : bitsArr[0]));
+      const targetSr = Math.max(100, Math.min(sampleRate, srArr.length > 1 ? srArr[i] : srArr[0]));
+      const levels = Math.pow(2, bits) - 1;
+      this.phaser += targetSr / sampleRate;
+      if (this.phaser >= 1) {
+        this.phaser -= 1;
+        const inL = input && input[0], inR = input && (input[1] || input[0]);
+        this.heldL = quant(inL ? inL[i] : 0, levels);
+        this.heldR = quant(inR ? inR[i] : 0, levels);
+      }
+      output[0][i] = this.heldL;
+      if (nChan > 1) output[1][i] = this.heldR;
+    }
+    return true;
+  }
+}
+registerProcessor('crusher', Crusher);
+
+class VoicePitch extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'semitones', defaultValue: 0, minValue: -36, maxValue: 36, automationRate: 'k-rate' },
+      { name: 'vibRate', defaultValue: 0, minValue: 0, maxValue: 20, automationRate: 'k-rate' },
+      { name: 'vibDepth', defaultValue: 0, minValue: 0, maxValue: 0.02, automationRate: 'k-rate' },
+    ];
+  }
+  constructor() {
+    super();
+    this.size = 32768; this.mask = this.size - 1;
+    this.bufL = new Float32Array(this.size); this.bufR = new Float32Array(this.size);
+    this.w = 0; this.phase = 0; this.vph = 0;
+    this.win = Math.round(sampleRate * 0.05);
+  }
+  read(buf, d) {
+    const pos = this.w - d, i0 = Math.floor(pos), f = pos - i0;
+    const a = buf[i0 & this.mask], b = buf[(i0 + 1) & this.mask];
+    return a + (b - a) * f;
+  }
+  process(inputs, outputs, params) {
+    const input = inputs[0], output = outputs[0];
+    if (!output || output.length === 0) return true;
+    const inL = input && input[0], inR = input && (input[1] || input[0]);
+    const oL = output[0], oR = output.length > 1 ? output[1] : null;
+    const len = oL.length;
+    const ratio = Math.pow(2, params.semitones[0] / 12);
+    const shifting = Math.abs(ratio - 1) > 1e-4;
+    const step = (1 - ratio) / this.win;
+    const vibRate = params.vibRate[0], vibDepth = params.vibDepth[0] * sampleRate;
+    const vibOn = vibRate > 0 && vibDepth > 0;
+    const vinc = 2 * Math.PI * vibRate / sampleRate, TWO_PI = 2 * Math.PI;
+    for (let i = 0; i < len; i++) {
+      this.bufL[this.w] = inL ? inL[i] : 0;
+      this.bufR[this.w] = inR ? inR[i] : 0;
+      let vib = 0;
+      if (vibOn) {
+        vib = vibDepth * 0.5 * (1 + Math.sin(this.vph));
+        this.vph += vinc; if (this.vph > TWO_PI) this.vph -= TWO_PI;
+      }
+      let l, r;
+      if (shifting) {
+        const p1 = this.phase;
+        let p2 = p1 + 0.5; if (p2 >= 1) p2 -= 1;
+        const d1 = 2 + vib + p1 * this.win, d2 = 2 + vib + p2 * this.win;
+        const sn = Math.sin(Math.PI * p1), g1 = sn * sn, g2 = 1 - g1;
+        l = this.read(this.bufL, d1) * g1 + this.read(this.bufL, d2) * g2;
+        r = this.read(this.bufR, d1) * g1 + this.read(this.bufR, d2) * g2;
+        this.phase += step;
+        if (this.phase < 0) this.phase += 1; else if (this.phase >= 1) this.phase -= 1;
+      } else {
+        l = this.read(this.bufL, 2 + vib); r = this.read(this.bufR, 2 + vib);
+      }
+      oL[i] = l; if (oR) oR[i] = r;
+      this.w = (this.w + 1) & this.mask;
+    }
+    return true;
+  }
+}
+registerProcessor('voice-pitch', VoicePitch);
+`;
+      workletStates = /* @__PURE__ */ new WeakMap();
+      workletUrl = null;
+      workletWarned = false;
+      VOICE_RECIPES = {
+        none: {},
+        chipmunk: { voices: [{ pitch: 9 }], hp: 150 },
+        deep: { voices: [{ pitch: -5 }], lowshelf: 5 },
+        giant: { voices: [{ pitch: -10 }], lowshelf: 6, drive: 0.15 },
+        demon: {
+          voices: [{ pitch: -7 }, { pitch: -19, gain: 0.7 }],
+          drive: 0.45,
+          lowshelf: 4,
+          echo: { time: 0.06, fb: 0.3, mix: 0.25, damp: 3e3 }
+        },
+        robot: { ring: { freq: 50, mix: 0.6 }, comb: { time: 9e-3, fb: 0.55 } },
+        dalek: { ring: { freq: 30, mix: 1 }, band: [250, 4500], drive: 0.2 },
+        anonymous: { voices: [{ pitch: -4 }], ring: { freq: 110, mix: 0.3 }, band: [200, 5e3], drive: 0.25 },
+        alien: { voices: [{ pitch: 5, vibRate: 7, vibDepth: 25e-4 }], ring: { freq: 420, mix: 0.35 } },
+        telephone: { band: [400, 3400], drive: 0.25 },
+        radio: { band: [700, 3e3], drive: 0.6, peak: { f: 1800, gain: 6 } },
+        megaphone: { band: [600, 3500], drive: 0.85, peak: { f: 1400, gain: 8 } },
+        underwater: { lp: 500, voices: [{ pitch: 0, vibRate: 1.1, vibDepth: 6e-3 }], tremolo: { rate: 0.8, depth: 0.25 } },
+        cave: { echo: { time: 0.32, fb: 0.45, mix: 0.45, damp: 2500 }, lowshelf: 2 },
+        ghost: {
+          voices: [{ pitch: 3, vibRate: 4, vibDepth: 2e-3 }],
+          hp: 300,
+          tremolo: { rate: 5, depth: 0.3 },
+          echo: { time: 0.42, fb: 0.55, mix: 0.5, damp: 3e3 }
+        },
+        choir: { voices: [
+          { pitch: 0 },
+          { pitch: -12, gain: 0.6 },
+          { pitch: 7, gain: 0.5 },
+          { pitch: 0, vibRate: 5, vibDepth: 3e-3, gain: 0.6 }
+        ] },
+        wobble: { voices: [{ pitch: 0, vibRate: 6, vibDepth: 4e-3 }] },
+        helicopter: { tremolo: { rate: 14, depth: 0.9 } },
+        blownMic: { drive: 0.9, band: [120, 7e3] }
+      };
+      VOICE_FILTERS = [
+        { id: "none", label: "None", title: "No voice filter" },
+        { id: "chipmunk", label: "Chipmunk", title: "Sped-up squeaky voice, without the speed-up" },
+        { id: "deep", label: "Deep voice", title: "Lower, fuller voice" },
+        { id: "giant", label: "Giant", title: "Huge, slow-sounding voice" },
+        { id: "demon", label: "Demon", title: "Two octaves of growl plus grit" },
+        { id: "robot", label: "Robot", title: "Metallic ring-mod + comb resonance" },
+        { id: "dalek", label: "Dalek", title: "Classic 30 Hz ring modulator" },
+        { id: "anonymous", label: "Anonymous", title: "Deep, masked hacker voice" },
+        { id: "alien", label: "Alien", title: "Pitched up, warbly and ring-modulated" },
+        { id: "telephone", label: "Telephone", title: "Narrow 400\u20133400 Hz phone line" },
+        { id: "radio", label: "Radio", title: "Walkie-talkie / AM radio" },
+        { id: "megaphone", label: "Megaphone", title: "Overdriven bullhorn" },
+        { id: "underwater", label: "Underwater", title: "Muffled and wobbling" },
+        { id: "cave", label: "Cave", title: "Big rocky echo" },
+        { id: "ghost", label: "Ghost", title: "Airy, trembling, haunted" },
+        { id: "choir", label: "Choir", title: "Your voice stacked in harmony" },
+        { id: "wobble", label: "Wobble", title: "Vibrato wobble" },
+        { id: "helicopter", label: "Helicopter", title: "Fast chopping tremolo" },
+        { id: "blownMic", label: "Blown-out mic", title: "Clipped, overloaded microphone" }
+      ];
+      reverbSizeFor = (sec) => Math.round(Math.log(sec / 0.2) / Math.log(30) * 1e3) / 1e3;
+      convFreq = (rate) => Math.max(200, Math.min(2e4, rate / 2 / 1.1));
+      irCache = /* @__PURE__ */ new Map();
+      P2 = (o = {}) => ({ ...defaultAudioFx(), ...o });
+      AUDIO_PRESETS = [
+        {
+          id: "reset",
+          label: "Reset all",
+          title: "Everything back to neutral",
+          apply: () => ({ pitch: 0, voice: "none", voiceMix: 1, keepPitch: true, fx: P2(), clipSpeed: 1 })
+        },
+        {
+          id: "behindWall",
+          label: "Behind the wall",
+          title: "Muffled, boomy, through a wall",
+          apply: () => ({ voice: "none", fx: P2({ lowpass: 0.8, bass: 7, reverb: 0.24, reverbSize: reverbSizeFor(1.8) }) })
+        },
+        {
+          id: "slowedReverb",
+          label: "Slowed + reverb",
+          title: "0.82\xD7 speed, pitch drops, big hall",
+          apply: () => ({ voice: "none", keepPitch: false, fx: P2({ reverb: 0.46, reverbSize: reverbSizeFor(3.2), bass: 4 }), clipSpeed: 0.82 })
+        },
+        {
+          id: "nightcore",
+          label: "Nightcore",
+          title: "1.28\xD7 speed, pitch up",
+          apply: () => ({ voice: "none", keepPitch: false, fx: P2({ reverb: 0.12, reverbSize: reverbSizeFor(1.5), highpass: 60 }), clipSpeed: 1.28 })
+        },
+        {
+          id: "orbit8d",
+          label: "8D orbit",
+          title: "Sound circles around your head",
+          apply: () => ({ voice: "none", fx: P2({ orbit: 1, orbitSpeed: 0.18, reverb: 0.18, reverbSize: reverbSizeFor(1.6) }) })
+        },
+        {
+          id: "underwater",
+          label: "Underwater",
+          title: "Deep muffle, heavy bass, wet room",
+          apply: () => ({ voice: "none", keepPitch: true, fx: P2({ lowpass: 0.88, bass: 9, reverb: 0.36, reverbSize: reverbSizeFor(2.6) }), clipSpeed: 0.94 })
+        },
+        {
+          id: "oldRadio",
+          label: "Old radio",
+          title: "8-bit / 11 kHz crunch through a small speaker",
+          apply: () => ({ voice: "none", fx: P2({ lowpass: 0.44, highpass: 620, crush: 1, crushBits: 8, crushRate: 11e3 }) })
+        },
+        {
+          id: "timeMachine",
+          label: "Time machine",
+          title: "4.6-bit / 3587 Hz vintage sampler crunch",
+          apply: () => ({ voice: "none", fx: P2({ highpass: 594.2, crush: 1, crushBits: 4.6, crushRate: 3587 }) })
+        },
+        {
+          id: "nextRoom",
+          label: "Next room",
+          title: "Coming from the room behind you",
+          apply: () => ({ voice: "none", fx: P2({ lowpass: 0.7, highpass: 130, reverb: 0.32, reverbSize: reverbSizeFor(2.2), orbit: 0.15, orbitSpeed: 0.02 }) })
+        },
+        {
+          id: "pacing",
+          label: "Pacing behind you",
+          title: "Slowly moving around behind you",
+          apply: () => ({ voice: "none", fx: P2({ lowpass: 0.3, reverb: 0.22, reverbSize: reverbSizeFor(2), orbit: 0.6, orbitSpeed: 0.1 }) })
+        },
+        {
+          id: "canyon",
+          label: "Canyon echo",
+          title: "Long dark repeats",
+          apply: () => ({ voice: "none", fx: P2({ echo: 0.55, echoTime: 0.48, echoFeedback: 0.62, echoDamp: 3200, reverb: 0.25, reverbSize: reverbSizeFor(3.4) }) })
+        },
+        {
+          id: "stadium",
+          label: "Stadium",
+          title: "Huge space with a late slap",
+          apply: () => ({ voice: "none", fx: P2({ echo: 0.4, echoTime: 0.9, echoFeedback: 0.45, echoDamp: 2200, reverb: 0.4, reverbSize: reverbSizeFor(4.5), bass: 4 }) })
+        },
+        {
+          id: "slapback",
+          label: "Slapback",
+          title: "Single quick rockabilly repeat",
+          apply: () => ({ voice: "none", fx: P2({ echo: 0.45, echoTime: 0.09, echoFeedback: 0.12, echoDamp: 8e3 }) })
+        }
+      ];
     }
   });
 
@@ -1028,7 +2202,9 @@ ${e.message}`);
         clipHasAudio(c),
         c.text?.content,
         c.fill,
-        c.groupId
+        c.groupId,
+        c.disabled,
+        c.audio?.voice
       ]);
     }
     function buildClipInner(c, row) {
@@ -1086,7 +2262,7 @@ ${e.message}`);
         }
         const x = X(c.start), w = Math.max(3, c.duration * zoom());
         el2.style.cssText = `left:${x}px;top:${row.y + 2}px;width:${w}px;height:${row.h - 4}px;--cc:var(${clipColorVar(c)})`;
-        el2.className = `tl-clip t-${c.type}${sel.has(c.id) ? " sel" : ""}${row.track.locked ? " locked" : ""}${row.track.hidden ? " hidden-trk" : ""}${w < 34 ? " tiny" : ""}${drag?.movingIds?.has(c.id) ? " moving" : ""}`;
+        el2.className = `tl-clip t-${c.type}${sel.has(c.id) ? " sel" : ""}${row.track.locked ? " locked" : ""}${row.track.hidden ? " hidden-trk" : ""}${c.disabled ? " disabled-clip" : ""}${w < 34 ? " tiny" : ""}${drag?.movingIds?.has(c.id) ? " moving" : ""}`;
         const sig = clipSig(c, row);
         if (el2._sig !== sig) {
           el2.innerHTML = buildClipInner(c, row);
@@ -1357,8 +2533,8 @@ ${e.message}`);
         cv.style.left = lx + "px";
         cv.style.width = w + "px";
         cv.style.height = h2 + "px";
-        const W = Math.max(1, Math.round(w * dpr)), H = Math.max(1, Math.round(h2 * dpr));
-        if (cv.width !== W) cv.width = W;
+        const W2 = Math.max(1, Math.round(w * dpr)), H = Math.max(1, Math.round(h2 * dpr));
+        if (cv.width !== W2) cv.width = W2;
         if (cv.height !== H) cv.height = H;
         const g = cv.getContext("2d");
         g.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1665,6 +2841,11 @@ ${e.message}`);
       if (!clipEl || store2.tool === "blade") return;
       const id = clipEl.dataset.clip;
       store2.select(id);
+      const c = store2.getClip(id);
+      if (c) {
+        store2.setPlayhead(c.start);
+        if (X(c.start) < scroll.scrollLeft || X(c.start) > scroll.scrollLeft + scroll.clientWidth) scroll.scrollLeft = Math.max(0, X(c.start) - 40);
+      }
       window.dispatchEvent(new CustomEvent("ve:openClip", { detail: { id } }));
     });
     function beginDrag(ev, d) {
@@ -2123,18 +3304,31 @@ ${e.message}`);
       const y = clamp(ballY, 0, Math.max(0, scroll.clientHeight - 30));
       phBall.style.transform = `translate(-50%, ${scroll.scrollTop + y}px)`;
     }
+    let rightPanned = false;
     elTl.addEventListener("pointerdown", (ev) => {
-      if (ev.button !== 1) return;
-      ev.preventDefault();
-      ev.stopPropagation();
-      closeMenu();
+      if (ev.button !== 1 && ev.button !== 2) return;
+      const right = ev.button === 2;
+      if (!right) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        closeMenu();
+      }
+      rightPanned = false;
       const x0 = ev.clientX, y0 = ev.clientY, sl0 = scroll.scrollLeft, st0 = scroll.scrollTop;
-      elTl.classList.add("panning");
+      let active = !right;
+      if (active) elTl.classList.add("panning");
       try {
         elTl.setPointerCapture(ev.pointerId);
       } catch {
       }
       const move = (e) => {
+        if (!active) {
+          if (Math.hypot(e.clientX - x0, e.clientY - y0) < 5) return;
+          active = true;
+          rightPanned = true;
+          closeMenu();
+          elTl.classList.add("panning");
+        }
         const need = sl0 - (e.clientX - x0) + scroll.clientWidth;
         if (need > contentW) {
           contentW = need + 10;
@@ -2155,6 +3349,13 @@ ${e.message}`);
     }, true);
     elTl.addEventListener("mousedown", (ev) => {
       if (ev.button === 1) ev.preventDefault();
+    }, true);
+    elTl.addEventListener("contextmenu", (ev) => {
+      if (rightPanned) {
+        rightPanned = false;
+        ev.preventDefault();
+        ev.stopPropagation();
+      }
     }, true);
     elTl.addEventListener("auxclick", (ev) => {
       if (ev.button === 1) {
@@ -2438,6 +3639,16 @@ ${e.message}`);
       const canDetach = sel.some((c) => c.type === "video" && store2.getMedia(c.mediaId)?.hasAudio && !c.audio?.detached);
       const speedable = clip.type === "video" || clip.type === "audio";
       const ids = sel.map((c) => c.id);
+      const visual = VISUAL2.has(clip.type);
+      const vid = clip.type === "video";
+      const canTrim = store2.playhead > clip.start + FRAME_EPS && store2.playhead < endOf(clip) - FRAME_EPS;
+      const act = (name, arg) => window.dispatchEvent(new CustomEvent("ve:clipAction", { detail: { act: name, arg, ids } }));
+      const curVoice = clip.audio?.voice || "none";
+      const filterCats = [...new Set(FILTERS.map((f) => f.category))];
+      const addFilter = (f) => store2.transact("Add filter", (pj) => ids.forEach((id) => {
+        const c = pj.clips.find((x) => x.id === id);
+        if (c && VISUAL2.has(c.type)) c.filters = [...c.filters || [], { id: uid("flt"), type: f.id, amount: 1 }];
+      }));
       openMenu(ev.clientX, ev.clientY, [
         { label: "Cut", kbd: "Ctrl+X", disabled: locked, action: () => call("cut") },
         { label: "Copy", kbd: "Ctrl+C", action: () => call("copy") },
@@ -2447,17 +3658,39 @@ ${e.message}`);
         { label: "Ripple Delete", kbd: "Shift+Del", disabled: locked, action: () => call("deleteSelected", { ripple: true }) },
         "-",
         { label: "Split", kbd: "Ctrl+B", disabled: locked || !(splitT > clip.start + FRAME_EPS && splitT < endOf(clip) - FRAME_EPS), action: () => call("splitAt", splitT, [clip.id]) },
+        { label: "Trim Start to Playhead", kbd: "Alt+[", disabled: locked || !canTrim, action: () => call("trimStartTo", store2.playhead) },
+        { label: "Trim End to Playhead", kbd: "Alt+]", disabled: locked || !canTrim, action: () => call("trimEndTo", store2.playhead) },
+        { label: "Crop and Zoom", kbd: "Alt+C", disabled: locked || !(vid || clip.type === "image"), action: () => act("crop") },
+        { label: "Crop to Fit (fill frame)", disabled: locked || !(vid || clip.type === "image"), action: () => act("fill") },
+        { label: "Rotate & Flip", disabled: locked || !visual, sub: [
+          { label: "Rotate 90\xB0 CW", kbd: "Ctrl+Alt+Right", action: () => call("rotateBy", 90, ids) },
+          { label: "Rotate 90\xB0 CCW", kbd: "Ctrl+Alt+Left", action: () => call("rotateBy", -90, ids) },
+          { label: "Rotate 180\xB0", action: () => call("rotateBy", 180, ids) },
+          "-",
+          { label: "Flip Horizontal", checked: !!clip.transform?.flipH, action: () => call("flip", "h", ids) },
+          { label: "Flip Vertical", checked: !!clip.transform?.flipV, action: () => call("flip", "v", ids) }
+        ] },
+        "-",
+        { label: "Adjust Audio", disabled: !hasA, action: () => act("audioTab") },
         { label: "Detach Audio", kbd: "Ctrl+Alt+D", disabled: locked || !canDetach, action: () => call("detachAudio") },
-        { label: clip.audio?.mute ? "Unmute clip" : "Mute clip", disabled: locked || !hasA, action: () => {
+        { label: "Speech to Text (auto subtitles)\u2026", disabled: !hasA, action: () => autoTool("captions") },
+        { label: clip.audio?.mute ? "Unmute" : "Mute", kbd: "Ctrl+Shift+M", disabled: locked || !hasA, action: () => {
           const m = !clip.audio?.mute;
           store2.transact(m ? "Mute clip" : "Unmute clip", (pj) => ids.forEach((id) => {
             const c = pj.clips.find((x) => x.id === id);
             if (c?.audio) c.audio.mute = m;
           }));
         } },
+        { label: "Voice Changer", disabled: locked || !hasA, sub: VOICE_FILTERS.map((v) => ({ label: v.label, checked: curVoice === v.id, action: () => call("setVoice", v.id, ids) })) },
+        { label: "Audio Effects", disabled: locked || !hasA, sub: AUDIO_PRESETS.map((pr) => ({ label: pr.label, action: () => call("applyAudioPreset", pr, ids) })) },
         "-",
-        ...[0.5, 1, 2].map((s) => ({ label: `Speed ${s}x`, checked: clip.speed === s, disabled: locked || !speedable, action: () => setSpeed(s, ids) })),
-        { label: clip.reverse ? "Un-reverse" : "Reverse", disabled: locked || !speedable, action: () => {
+        { label: "Speed", disabled: locked || !speedable, sub: [
+          ...[0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4].map((sp) => ({ label: sp + "x" + (sp === 1 ? " (normal)" : ""), checked: clip.speed === sp, action: () => setSpeed(sp, ids) })),
+          "-",
+          { label: "Custom speed\u2026", kbd: "Ctrl+R", action: () => act("speedTab") },
+          { label: "Freeze frame here", kbd: "Alt+F", disabled: !vid, action: () => call("freezeFrame", store2.playhead) }
+        ] },
+        { label: clip.reverse ? "Un-reverse" : "Reverse", kbd: "Shift+R", disabled: locked || !speedable, action: () => {
           const r = !clip.reverse;
           store2.transact("Reverse", (pj) => ids.forEach((id) => {
             const c = pj.clips.find((x) => x.id === id);
@@ -2465,30 +3698,51 @@ ${e.message}`);
           }));
         } },
         "-",
-        { label: "Add transition (Dissolve)", disabled: locked || !VISUAL2.has(clip.type), action: () => {
-          call("setTransition", clip.id, "in", { type: "dissolve", duration: 1 });
-          call("selectTransition", clip.id, "in");
-        } },
-        { label: "Remove transitions", disabled: locked || !(clip.transitionIn || clip.transitionOut), action: () => {
-          store2.transact("Remove transitions", (pj) => {
+        { label: "Effect & Filter", disabled: locked || !visual, sub: [
+          ...filterCats.map((cat) => ({ label: cat, sub: FILTERS.filter((f) => f.category === cat).map((f) => ({ label: f.label, action: () => addFilter(f) })) })),
+          "-",
+          { label: "Copy effects", action: () => call("copyEffects") },
+          { label: "Paste effects", action: () => call("pasteEffects") },
+          { label: "Remove all effects", disabled: !(clip.filters?.length || clip.materialId || clip.chroma?.enabled), action: () => call("removeEffects", ids) },
+          { label: "Open in Effects panel", action: () => act("effectsTab") }
+        ] },
+        { label: "Transitions", disabled: locked || !visual, sub: [
+          { label: "Add Dissolve at start", action: () => {
+            call("setTransition", clip.id, "in", { type: "dissolve", duration: 1 });
+            call("selectTransition", clip.id, "in");
+          } },
+          { label: "Add Dissolve at end", action: () => {
+            call("setTransition", clip.id, "out", { type: "dissolve", duration: 1 });
+            call("selectTransition", clip.id, "out");
+          } },
+          { label: "Remove transitions", disabled: !(clip.transitionIn || clip.transitionOut), action: () => store2.transact("Remove transitions", (pj) => {
             const c = pj.clips.find((x) => x.id === clip.id);
             c.transitionIn = null;
             c.transitionOut = null;
-          });
-        } },
+          }) }
+        ] },
+        { label: "Smart Edit Tool", sub: [
+          { label: "Auto subtitles\u2026", disabled: !hasA, action: () => autoTool("captions") },
+          { label: "Remove silences\u2026", disabled: locked || !hasA, action: () => autoTool("silence") },
+          { label: "Detect scenes\u2026", disabled: locked || !vid, action: () => autoTool("scenes") },
+          { label: "Cut to beat\u2026", disabled: locked || !hasA, action: () => autoTool("beats") },
+          { label: "Auto reframe", disabled: locked || !(vid || clip.type === "image"), action: () => autoTool("reframe") },
+          { label: "Remove background (AI)\u2026", disabled: clip.type !== "image", action: () => autoTool("removeBg") }
+        ] },
         "-",
-        // auto subtitles / auto edit: app.js opens the tool for the selection
-        { label: "Auto subtitles\u2026", disabled: !(clip.type === "video" || clip.type === "audio"), action: () => autoTool("captions") },
-        { label: "Remove silences\u2026", disabled: locked || !hasA, action: () => autoTool("silence") },
-        { label: "Detect scenes\u2026", disabled: locked || clip.type !== "video", action: () => autoTool("scenes") },
-        { label: "Cut to beat\u2026", disabled: locked || !hasA, action: () => autoTool("beats") },
-        "-",
-        { label: "Group", disabled: sel.length < 2, action: () => ops2?.group ? ops2.group() : fallbackGroup(ids) },
-        { label: "Ungroup", disabled: !sel.some((c) => c.groupId), action: () => ops2?.ungroup ? ops2.ungroup() : store2.transact("Ungroup", (pj) => ids.forEach((id) => {
+        { label: "Create Compound Clip (group)", kbd: "Ctrl+G", disabled: sel.length < 2, action: () => ops2?.group ? ops2.group() : fallbackGroup(ids) },
+        { label: "Ungroup", kbd: "Ctrl+Alt+G", disabled: !sel.some((c) => c.groupId), action: () => ops2?.ungroup ? ops2.ungroup() : store2.transact("Ungroup", (pj) => ids.forEach((id) => {
           pj.clips.find((x) => x.id === id).groupId = null;
         })) },
         "-",
-        { label: "Properties\u2026", action: () => window.dispatchEvent(new CustomEvent("ve:openClip", { detail: { id: clip.id } })) }
+        { label: "Rename", kbd: "F2", action: () => act("rename") },
+        { label: clip.disabled ? "Enable Clip" : "Disable Clip", kbd: "E", disabled: locked, action: () => call("toggleDisabled", ids) },
+        { label: "Edit Properties", kbd: "Alt+E", action: () => window.dispatchEvent(new CustomEvent("ve:openClip", { detail: { id: clip.id } })) },
+        { label: "Export Selected Clips\u2026", action: () => act("exportSel") },
+        { label: "Select Clip Range", kbd: "X", action: () => act("selectRange") },
+        { label: "Locate in the Resource Panel", disabled: !clip.mediaId, action: () => act("locate") },
+        "-",
+        { label: "Enable Timeline Snapping", kbd: "N", checked: !!store2.snap, action: () => store2.setSnap(!store2.snap) }
       ]);
     });
     const autoTool = (tool) => window.dispatchEvent(new CustomEvent("ve:autoTool", { detail: { tool } }));
@@ -2507,8 +3761,8 @@ ${e.message}`);
         pj.clips.find((x) => x.id === id).groupId = g;
       }));
     }
-    function openMenu(x, y, items) {
-      closeMenu();
+    let subEls = [];
+    function buildMenu(items, level) {
       const m = document.createElement("div");
       m.className = "menu-pop tl-menu";
       for (const it of items) {
@@ -2517,19 +3771,45 @@ ${e.message}`);
           continue;
         }
         const d = document.createElement("div");
-        d.className = "menu-item" + (it.disabled ? " disabled" : "") + (it.checked ? " checked" : "");
-        d.innerHTML = `<span>${esc2(it.label)}</span>${it.kbd ? `<span class="kbd">${esc2(it.kbd)}</span>` : ""}`;
-        d.addEventListener("click", () => {
-          closeMenu();
-          it.action?.();
-        });
+        const hasSub = Array.isArray(it.sub) && it.sub.length;
+        d.className = "menu-item" + (it.disabled ? " disabled" : "") + (it.checked ? " checked" : "") + (hasSub ? " has-sub" : "");
+        d.innerHTML = `<span>${esc2(it.label)}</span>${it.kbd ? `<span class="kbd">${esc2(it.kbd)}</span>` : hasSub ? '<span class="kbd">\u25B8</span>' : ""}`;
+        if (hasSub) {
+          const open = () => {
+            subEls.splice(level).forEach((s) => s.remove());
+            const sm = buildMenu(it.sub, level + 1);
+            document.body.appendChild(sm);
+            const r = d.getBoundingClientRect(), sr = sm.getBoundingClientRect();
+            const left = r.right + sr.width + 4 > innerWidth ? r.left - sr.width : r.right;
+            sm.style.left = Math.max(4, left) + "px";
+            sm.style.top = Math.max(4, Math.min(r.top - 5, innerHeight - sr.height - 4)) + "px";
+            subEls[level] = sm;
+          };
+          d.addEventListener("pointerenter", open);
+          d.addEventListener("click", open);
+        } else {
+          d.addEventListener("pointerenter", () => subEls.splice(level).forEach((s) => s.remove()));
+          d.addEventListener("click", () => {
+            closeMenu();
+            it.action?.();
+          });
+        }
         m.appendChild(d);
       }
       if (m.lastChild?.classList.contains("menu-sep")) m.lastChild.remove();
+      return m;
+    }
+    function openMenu(x, y, items) {
+      closeMenu();
+      const m = buildMenu(items, 0);
       document.body.appendChild(m);
       const r = m.getBoundingClientRect();
       m.style.left = Math.max(4, Math.min(x, innerWidth - r.width - 4)) + "px";
       m.style.top = Math.max(4, Math.min(y, innerHeight - r.height - 4)) + "px";
+      if (r.height > innerHeight - 8) {
+        m.style.maxHeight = innerHeight - 8 + "px";
+        m.style.overflowY = "auto";
+      }
       menuEl = m;
       setTimeout(() => {
         window.addEventListener("pointerdown", outside, true);
@@ -2538,9 +3818,11 @@ ${e.message}`);
       });
     }
     function outside(e) {
-      if (menuEl && !menuEl.contains(e.target)) closeMenu();
+      if (menuEl && !menuEl.contains(e.target) && !subEls.some((s) => s?.contains(e.target))) closeMenu();
     }
     function closeMenu() {
+      subEls.forEach((s) => s?.remove());
+      subEls = [];
       if (!menuEl) return;
       menuEl.remove();
       menuEl = null;
@@ -2659,6 +3941,22 @@ ${e.message}`);
         case "adjustment":
           if (!info.clip) call("addAdjustmentClip", { time: info.t, trackId: trackForDrop(info, "video") });
           break;
+        case "sticker":
+        case "giphy":
+          window.dispatchEvent(new CustomEvent("ve:dropSticker", { detail: { kind, id, time: info.t, trackId: trackForDrop(info, "video") } }));
+          break;
+        case "voice":
+        case "apreset": {
+          const c = info.clip;
+          if (!c || locked || !(c.type === "audio" || c.type === "video")) {
+            window.dispatchEvent(new CustomEvent("ve:toast", { detail: "Drop audio effects onto a clip with sound" }));
+            return;
+          }
+          if (kind === "voice") call("setVoice", id, [c.id]);
+          else call("applyAudioPreset", AUDIO_PRESETS.find((p) => p.id === id), [c.id]);
+          store2.select(c.id);
+          break;
+        }
         case "filter":
         case "effect": {
           if (!info.clip) {
@@ -2730,6 +4028,7 @@ ${e.message}`);
       init_state();
       init_icons();
       init_catalog();
+      init_audio();
       RULER_H = 28;
       X0 = 0;
       SNAP_PX = 8;
@@ -5526,6 +6825,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       mask: makeProgram(FS_MASK),
       gradblur: makeProgram(FS_GRADBLUR),
       filter2: makeProgram(FS_FILTER2),
+      filter3: makeProgram(FS_FILTER3),
       transition2: makeProgram(FS_TRANSITION2)
     };
     const vao = gl.createVertexArray();
@@ -5733,10 +7033,10 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
     }
     const dimsCache = /* @__PURE__ */ new Map();
     function baseSize(clip, sw, sh) {
-      const { width: W, height: H } = settings();
-      if (FULLFRAME.has(clip.type)) return [W, H];
+      const { width: W2, height: H } = settings();
+      if (FULLFRAME.has(clip.type)) return [W2, H];
       if (clip.type === "text") return [sw, sh];
-      const f = Math.min(W / sw, H / sh);
+      const f = Math.min(W2 / sw, H / sh);
       return [sw * f, sh * f];
     }
     const num = (v, d) => {
@@ -5782,8 +7082,8 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       return [l, 1 - b, r, 1 - t];
     }
     function sourceDims(clip) {
-      const { width: W, height: H } = settings();
-      if (FULLFRAME.has(clip.type)) return [W, H];
+      const { width: W2, height: H } = settings();
+      if (FULLFRAME.has(clip.type)) return [W2, H];
       if (clip.type === "text") {
         try {
           const f = sources.getFrame(clip);
@@ -5802,12 +7102,12 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
         const m = clip.mediaId && store2.getMedia(clip.mediaId);
         if (m && m.width && m.height) return [m.width, m.height];
       }
-      return [W, H];
+      return [W2, H];
     }
     function getClipQuad(clip) {
       if (clip.type === "adjustment") {
-        const { width: W, height: H } = settings();
-        return [{ x: -W / 2, y: -H / 2 }, { x: W / 2, y: -H / 2 }, { x: W / 2, y: H / 2 }, { x: -W / 2, y: H / 2 }];
+        const { width: W2, height: H } = settings();
+        return [{ x: -W2 / 2, y: -H / 2 }, { x: W2 / 2, y: -H / 2 }, { x: W2 / 2, y: H / 2 }, { x: -W2 / 2, y: H / 2 }];
       }
       const [sw, sh] = sourceDims(clip);
       const [X, Y, Wr] = clipHomography(clip, sw, sh);
@@ -5852,20 +7152,20 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
     }
     function processLayer(clip, t, frameTex = null) {
       if (!clip || !VISUAL3.has(clip.type)) return null;
-      const { width: W, height: H } = settings();
+      const { width: W2, height: H } = settings();
       let srcTex, sw, sh;
       if (clip.type === "color") {
         srcTex = colorTexture(clip.fill || "#2a6df4");
-        sw = W;
+        sw = W2;
         sh = H;
       } else if (clip.type === "adjustment") {
         if (!frameTex) return null;
         srcTex = frameTex;
-        sw = W;
+        sw = W2;
         sh = H;
       } else if (clip.type === "material") {
         srcTex = transparentTex;
-        sw = W;
+        sw = W2;
         sh = H;
       } else {
         let frame = null;
@@ -5903,7 +7203,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       const [bw, bh] = baseSize(clip, sw, sh);
       const tr = clip.transform || {};
       const sc = Math.abs(tr.scale ?? 1);
-      const disp = canvasW / W;
+      const disp = canvasW / W2;
       const dispW = bw * sc * Math.abs(tr.scaleX ?? 1) * disp, dispH = bh * sc * Math.abs(tr.scaleY ?? 1) * disp;
       let lw, lh;
       if (FULLFRAME.has(clip.type)) {
@@ -6047,7 +7347,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       }
       for (const f of filters) {
         const fi = FILTER_INDEX.get(f.type);
-        step(fi >= FILTER_V2 ? P3.filter2 : P3.filter, (pr) => {
+        step(fi >= FILTER_V3 ? P3.filter3 : fi >= FILTER_V2 ? P3.filter2 : P3.filter, (pr) => {
           u2f(pr, "u_res", lw, lh);
           u1i(pr, "u_type", fi);
           u1f(pr, "u_amt", Math.max(0, Math.min(4, num(f.amount, 1))));
@@ -6109,17 +7409,17 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       return new Float32Array([i0[0], r1[0], i2[0], i0[1], r1[1], i2[1], i0[2], r1[2], i2[2]]);
     }
     const identityInv = () => {
-      const { width: W, height: H } = settings();
-      return new Float32Array([1 / W, 0, 0, 0, -1 / H, 0, 0.5, 0.5, 1]);
+      const { width: W2, height: H } = settings();
+      return new Float32Array([1 / W2, 0, 0, 0, -1 / H, 0, 0.5, 0.5, 1]);
     };
     function composite(srcTex, inv, crop, opacity, mode, dstTex, out) {
-      const { width: W, height: H } = settings();
+      const { width: W2, height: H } = settings();
       pass(P3.composite, out, (pr) => {
         bindTex(0, srcTex);
         u1i(pr, "u_src", 0);
         bindTex(1, dstTex || transparentTex);
         u1i(pr, "u_dst", 1);
-        u2f(pr, "u_frame", W, H);
+        u2f(pr, "u_frame", W2, H);
         gl.uniformMatrix3fv(pr.loc("u_inv"), false, inv);
         gl.uniform4f(pr.loc("u_crop"), crop[0], crop[1], crop[2], crop[3]);
         u1f(pr, "u_opacity", opacity);
@@ -6257,7 +7557,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
     });
     return { render, setSize, getClipQuad, dispose, gl };
   }
-  var materialsMod, materialsPromise, ident, DEFINES, FILTER_INDEX, TRANSITION_INDEX, BLEND_INDEX, FILTER_V2, TRANSITION_V2, COLOR_KEYS, VS, HEAD, FS_COPY, FS_FILL, FS_CHROMA, FS_COLOR, FS_HUE, FS_BLUR, FS_FILTER, FS_FILTER2, FS_MASK, FS_GRADBLUR, FS_COMPOSITE, TR_COMMON, FS_TRANSITION, FS_TRANSITION2, VISUAL3, FULLFRAME;
+  var materialsMod, materialsPromise, ident, DEFINES, FILTER_INDEX, TRANSITION_INDEX, BLEND_INDEX, FILTER_V2, FILTER_V3, TRANSITION_V2, COLOR_KEYS, VS, HEAD, FS_COPY, FS_FILL, FS_CHROMA, FS_COLOR, FS_HUE, FS_BLUR, FS_FILTER, FS_FILTER2, FS_FILTER3, FS_MASK, FS_GRADBLUR, FS_COMPOSITE, TR_COMMON, FS_TRANSITION, FS_TRANSITION2, VISUAL3, FULLFRAME;
   var init_renderer = __esm({
     "js/renderer.js"() {
       init_catalog();
@@ -6272,6 +7572,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       TRANSITION_INDEX = new Map(TRANSITIONS.map((f, i) => [f.id, i]));
       BLEND_INDEX = new Map(BLEND_MODES.map((f, i) => [f.id, i]));
       FILTER_V2 = FILTER_INDEX.get("deep_fry") ?? FILTERS.length;
+      FILTER_V3 = FILTER_INDEX.get("sunny_days") ?? FILTERS.length;
       TRANSITION_V2 = TRANSITION_INDEX.get("cube_left") ?? TRANSITIONS.length;
       COLOR_KEYS = [
         "brightness",
@@ -6761,6 +8062,87 @@ void main() {
   r.rgb = clamp(r.rgb, 0.0, 1.0);
   outColor = direct ? r : mix(o, r, a);
 }`;
+      FS_FILTER3 = HEAD + `
+uniform sampler2D u_tex; uniform vec2 u_res; uniform int u_type; uniform float u_amt, u_time;
+vec3 sat(vec3 c, float s) { return mix(vec3(luma(c)), c, s); }
+vec3 con(vec3 c, float k) { return (c - 0.5) * k + 0.5; }
+vec3 lift(vec3 c, float b) { return b + c * (1.0 - b); }
+vec3 split(vec3 c, vec3 sh, vec3 hi) { float l = luma(c); return c + sh * (1.0 - smoothstep(0.0, 0.55, l)) + hi * smoothstep(0.45, 1.0, l); }
+vec3 scurve(vec3 c, float k) { vec3 s = c * c * (3.0 - 2.0 * c); return mix(c, s, k); }
+float vig(vec2 uv, float k) { return 1.0 - k * smoothstep(0.3, 1.1, length(uv - 0.5) * 1.4142); }
+vec3 rgb2hsv(vec3 c) {
+  vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+  vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+  vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+  float d = q.x - min(q.w, q.y); float e = 1.0e-10;
+  return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+vec3 hsv2rgb(vec3 c) { vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0); return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y); }
+// weight of pixels near hue h (0..1) with width w, ignoring greys
+float hueW(vec3 hsv, float h, float w) { float d = abs(hsv.x - h); d = min(d, 1.0 - d); return (1.0 - smoothstep(w * 0.5, w, d)) * smoothstep(0.05, 0.2, hsv.y); }
+// move hues near "from" towards "to", scale saturation there
+vec3 hueMove(vec3 c, float from, float to, float w, float s) {
+  vec3 h = rgb2hsv(c); float k = hueW(h, from, w); float dh = to - from; dh -= floor(dh + 0.5);
+  return hsv2rgb(vec3(fract(h.x + dh * k), clamp(h.y * mix(1.0, s, k), 0.0, 1.0), h.z));
+}
+void main() {
+  vec2 uv = v_uv; vec4 o = texture(u_tex, uv); vec3 c = o.rgb; float a = u_amt; float l = luma(c);
+  vec3 r = c; int t = u_type;
+  if (t == F_sunny_days) r = sat(con(c * vec3(1.08, 1.03, 0.9) + 0.03, 1.08), 1.2);
+  else if (t == F_golden_hour) r = sat(split(c * vec3(1.06, 1.0, 0.88), vec3(0.05, 0.02, -0.02), vec3(0.1, 0.05, -0.06)), 1.12);
+  else if (t == F_fresh) r = hueMove(sat(con(c, 1.05) + 0.02, 1.15), 0.22, 0.3, 0.2, 1.25);
+  else if (t == F_cozy) r = lift(sat(c * vec3(1.07, 0.99, 0.86), 0.9), 0.05) * vig(uv, 0.35);
+  else if (t == F_bw_contrast) r = vec3(scurve(vec3(l), 1.0).r);
+  else if (t == F_bw_soft) r = vec3(lift(vec3(l), 0.08).r * 0.95);
+  else if (t == F_bright_up) r = c * 1.25 + 0.03;
+  else if (t == F_contrast_up) r = con(c, 1.35);
+  else if (t == F_saturation_up) r = sat(c, 1.6);
+  else if (t == F_white_balance) {
+    // grey-world-ish: pull the frame's tint towards neutral using a coarse average
+    vec3 avg = vec3(0.0);
+    for (int i = 0; i < 4; i++) for (int j = 0; j < 4; j++) avg += texture(u_tex, (vec2(float(i), float(j)) + 0.5) / 4.0).rgb;
+    avg /= 16.0; float g = luma(avg);
+    r = c * clamp(vec3(g) / max(avg, vec3(0.02)), vec3(0.6), vec3(1.6));
+  }
+  else if (t == F_moody) r = split(lift(sat(con(c, 1.12), 0.7), 0.03) * 0.92, vec3(-0.02, 0.03, 0.06), vec3(0.04, 0.02, -0.02)) * vig(uv, 0.45);
+  else if (t == F_bleach_bypass) r = con(mix(c, vec3(l), 0.55), 1.4);
+  else if (t == F_blockbuster) {
+    vec3 tint = mix(vec3(0.68, 1.0, 1.2), vec3(1.22, 0.98, 0.72), smoothstep(0.1, 0.8, l));
+    r = scurve(sat(c * tint, 1.2), 0.6);
+  }
+  else if (t == F_technicolor) {
+    vec3 cy = vec3(1.0) - vec3(c.r); vec3 rd = vec3(1.0) - vec3(c.g * 0.5 + c.b * 0.5);
+    r = sat(clamp(vec3(c.r, c.g * 0.9 + c.b * 0.1, c.b), 0.0, 1.0) * (1.0 - cy * vec3(0.0, 0.1, 0.1)) * (1.0 - rd * vec3(0.1, 0.0, 0.0)), 1.35);
+  }
+  else if (t == F_matrix) r = con(vec3(l * 0.55, l * 1.05 + 0.03, l * 0.5) * 0.6 + c * vec3(0.2, 0.5, 0.2), 1.15);
+  else if (t == F_pastel) r = lift(sat(c, 0.7), 0.1) + vec3(0.03, 0.0, 0.03);
+  else if (t == F_soft_skin) r = hueMove(lift(c * vec3(1.03, 1.0, 0.98), 0.04), 0.05, 0.06, 0.12, 0.85) * 1.03;
+  else if (t == F_rosy) r = split(c, vec3(0.03, -0.01, 0.02), vec3(0.06, 0.0, 0.03));
+  else if (t == F_winter) r = lift(sat(c * vec3(0.9, 0.98, 1.12), 0.75), 0.04) * 1.04;
+  else if (t == F_autumn) r = hueMove(hueMove(c, 0.25, 0.09, 0.22, 1.25), 0.1, 0.07, 0.15, 1.3) * vec3(1.05, 0.98, 0.88);
+  else if (t == F_spring) r = hueMove(sat(c, 1.15), 0.28, 0.3, 0.18, 1.2) + vec3(0.03, 0.01, 0.03) * smoothstep(0.5, 1.0, l);
+  else if (t == F_summer) r = hueMove(sat(con(c, 1.08) * vec3(1.05, 1.02, 0.96), 1.3), 0.55, 0.53, 0.15, 1.3);
+  else if (t == F_halloween) r = split(sat(con(c, 1.2), 0.85), vec3(0.06, -0.02, 0.1), vec3(0.14, 0.04, -0.08)) * vig(uv, 0.6);
+  else if (t == F_valentine) r = lift(split(c, vec3(0.06, 0.0, 0.04), vec3(0.06, 0.0, 0.03)), 0.04);
+  else if (t == F_christmas) r = hueMove(hueMove(sat(c, 1.2), 0.0, 0.99, 0.1, 1.35), 0.33, 0.36, 0.2, 1.35) * vec3(1.03, 1.0, 0.95);
+  else if (t == F_matte) r = lift(con(c, 0.85), 0.1) * vec3(1.0, 0.99, 0.97);
+  else if (t == F_polaroid) r = split(lift(con(c, 0.92), 0.06), vec3(0.0, 0.03, 0.02), vec3(0.06, 0.03, -0.04)) * vig(uv, 0.25);
+  else if (t == F_lomo) r = scurve(sat(c, 1.4), 0.7) * vig(uv, 0.9) + vec3(0.0, 0.0, 0.04);
+  else if (t == F_cross_process) r = vec3(scurve(vec3(c.r), 0.8).r, pow(c.g, 0.9), c.b * 0.75 + 0.12);
+  else if (t == F_kodachrome) r = scurve(sat(c * vec3(1.06, 1.0, 0.94), 1.25), 0.5) + vec3(0.0, 0.01, -0.01);
+  else if (t == F_food_fresh) r = hueMove(sat(con(c, 1.1), 1.3), 0.03, 0.02, 0.15, 1.2) * 1.04;
+  else if (t == F_food_warm) r = sat(c * vec3(1.1, 1.0, 0.82), 1.15) * vig(uv, 0.3);
+  else if (t == F_vibrant_land) r = hueMove(hueMove(sat(con(c, 1.1), 1.4), 0.6, 0.6, 0.2, 1.3), 0.3, 0.3, 0.2, 1.3);
+  else if (t == F_sunset) r = split(sat(c, 1.2) * vec3(1.1, 0.95, 0.85), vec3(0.04, -0.02, 0.06), vec3(0.12, 0.04, -0.06));
+  else if (t == F_clear_sky) r = hueMove(c, 0.58, 0.6, 0.18, 1.45);
+  else if (t == F_fake_hdr) {
+    vec2 px = 1.0 / u_res; vec3 bl = vec3(0.0);
+    for (int i = -2; i <= 2; i++) for (int j = -2; j <= 2; j++) bl += texture(u_tex, uv + vec2(float(i), float(j)) * px * 6.0).rgb;
+    bl /= 25.0; r = sat(c + (c - bl) * 1.2, 1.2);
+  }
+  r = clamp(r, 0.0, 1.0);
+  outColor = mix(o, vec4(r, o.a), clamp(a, 0.0, 4.0) > 1.0 ? 1.0 : a);
+}`;
       FS_MASK = HEAD + `
 uniform sampler2D u_tex; uniform vec2 u_size, u_c, u_half; uniform int u_mtype, u_inv; uniform float u_ang, u_feather;
 float sdBox(vec2 q, vec2 b) { vec2 d = abs(q) - b; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0); }
@@ -7241,9 +8623,9 @@ void main() {
   }
   function createGizmo({ layer, canvas, store: store2, renderer }) {
     layer.classList.add("gizmo-layer");
-    const svg2 = el("svg", { class: "gizmo-svg" }, layer);
-    const guides = el("g", { class: "gz-guides" }, svg2);
-    const box2 = el("g", { class: "gz-box" }, svg2);
+    const svg3 = el("svg", { class: "gizmo-svg" }, layer);
+    const guides = el("g", { class: "gz-guides" }, svg3);
+    const box2 = el("g", { class: "gz-box" }, svg3);
     const outline = el("polygon", { class: "gz-outline" }, box2);
     const rotLine = el("line", { class: "gz-rotline" }, box2);
     const centerDot = el("circle", { class: "gz-center", r: 3 }, box2);
@@ -7271,11 +8653,11 @@ void main() {
     function mapping() {
       const cr = canvas.getBoundingClientRect();
       const lr = layer.getBoundingClientRect();
-      const { width: W, height: H } = store2.project.settings;
-      const sx = cr.width / W, sy = cr.height / H;
+      const { width: W2, height: H } = store2.project.settings;
+      const sx = cr.width / W2, sy = cr.height / H;
       const ox = cr.left - lr.left + cr.width / 2, oy = cr.top - lr.top + cr.height / 2;
       return {
-        W,
+        W: W2,
         H,
         sx,
         sy,
@@ -7301,8 +8683,8 @@ void main() {
     function refresh() {
       rafPending = false;
       const m = mapping();
-      svg2.setAttribute("width", Math.max(1, m.lr.width));
-      svg2.setAttribute("height", Math.max(1, m.lr.height));
+      svg3.setAttribute("width", Math.max(1, m.lr.width));
+      svg3.setAttribute("height", Math.max(1, m.lr.height));
       const clip = drag ? store2.getClip(drag.clipId) : selectedVisible();
       if (!clip || !renderer) {
         box2.style.display = "none";
@@ -7574,1081 +8956,6 @@ void main() {
       VISUAL4 = /* @__PURE__ */ new Set(["video", "image", "text", "color", "material"]);
       SNAP_PX2 = 7;
       ROT_HANDLE_PX = 26;
-    }
-  });
-
-  // js/audio.js
-  var audio_exports = {};
-  __export(audio_exports, {
-    AUDIO_PRESETS: () => AUDIO_PRESETS,
-    VOICE_FILTERS: () => VOICE_FILTERS,
-    createAudioEngine: () => createAudioEngine,
-    muffleFreq: () => muffleFreq,
-    reverbSeconds: () => reverbSeconds
-  });
-  function* pitchShiftGen(channels, sr, semis) {
-    const L = channels[0].length;
-    const nch = channels.length;
-    const r = Math.pow(2, semis / 12);
-    if (!L || Math.abs(r - 1) < 1e-4) return channels.map((c) => c.slice());
-    let N = 1;
-    while (N < sr * 0.046) N <<= 1;
-    const Hs = N >> 1;
-    const Ha = Hs / r;
-    const D = 4;
-    const delta = N >> 2;
-    const Ld = Math.ceil(L / D);
-    const mono = new Float32Array(Ld);
-    for (let c = 0; c < nch; c++) {
-      const ch = channels[c];
-      for (let i = 0; i < L; i++) mono[i / D | 0] += ch[i];
-    }
-    const win = new Float32Array(N);
-    for (let i = 0; i < N; i++) win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / N);
-    const outLen = Math.ceil(L * r) + N;
-    const out = [];
-    for (let c = 0; c < nch; c++) out.push(new Float32Array(outLen));
-    const wsum = new Float32Array(outLen);
-    const Nd = N / D, delD = delta / D;
-    let prev = 0;
-    const frames = Math.ceil(outLen / Hs);
-    for (let k = 0; k < frames; k++) {
-      const op = k * Hs;
-      let pos;
-      if (k === 0) pos = 0;
-      else {
-        const target = Math.round(k * Ha);
-        const nat = prev + Hs;
-        const natD = nat / D | 0;
-        const lo = Math.max(0, (target - delta) / D | 0);
-        const hi = Math.min(Ld - 1, (target + delta) / D | 0);
-        let best = target / D | 0, bestScore = -Infinity;
-        if (natD < Ld && hi >= lo) {
-          for (let p = lo; p <= hi; p++) {
-            let dot = 0, en = 1e-9;
-            const n = Math.min(Nd, Ld - p, Ld - natD);
-            for (let j = 0; j < n; j++) {
-              const v = mono[p + j];
-              dot += v * mono[natD + j];
-              en += v * v;
-            }
-            const s = dot / Math.sqrt(en);
-            if (s > bestScore) {
-              bestScore = s;
-              best = p;
-            }
-          }
-        }
-        pos = best * D;
-        const ch0 = channels[0];
-        let bestF = pos, bestFS = -Infinity;
-        for (let p = Math.max(0, pos - D); p <= pos + D; p++) {
-          let dot = 0, en = 1e-9;
-          for (let j = 0; j < N; j += 2) {
-            const a = p + j < L ? ch0[p + j] : 0, b = nat + j < L ? ch0[nat + j] : 0;
-            dot += a * b;
-            en += a * a;
-          }
-          const s = dot / Math.sqrt(en);
-          if (s > bestFS) {
-            bestFS = s;
-            bestF = p;
-          }
-        }
-        pos = bestF;
-      }
-      for (let c = 0; c < nch; c++) {
-        const src = channels[c], dst = out[c];
-        for (let j = 0; j < N; j++) {
-          const ip = pos + j, o = op + j;
-          if (o >= outLen) break;
-          if (ip < L) dst[o] += src[ip] * win[j];
-        }
-      }
-      for (let j = 0; j < N && op + j < outLen; j++) wsum[op + j] += win[j];
-      prev = pos;
-      if ((k & 63) === 63) yield k / frames * 0.9;
-    }
-    for (let c = 0; c < nch; c++) {
-      const d = out[c];
-      for (let i = 0; i < outLen; i++) d[i] = wsum[i] > 1e-3 ? d[i] / wsum[i] : 0;
-    }
-    if (r > 1.02) {
-      const taps = 33, h2 = (taps - 1) / 2, fc = 0.5 / r * 0.92;
-      const fir = new Float32Array(taps);
-      let s = 0;
-      for (let i = 0; i < taps; i++) {
-        const x = i - h2;
-        const sinc = x === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * x) / (Math.PI * x);
-        fir[i] = sinc * (0.54 - 0.46 * Math.cos(2 * Math.PI * i / (taps - 1)));
-        s += fir[i];
-      }
-      for (let i = 0; i < taps; i++) fir[i] /= s;
-      for (let c = 0; c < nch; c++) {
-        const d = out[c], f = new Float32Array(outLen);
-        for (let i = 0; i < outLen; i++) {
-          let acc = 0;
-          for (let t = 0; t < taps; t++) {
-            const ix = i + t - h2;
-            if (ix >= 0 && ix < outLen) acc += d[ix] * fir[t];
-          }
-          f[i] = acc;
-        }
-        out[c] = f;
-        yield 0.9 + 0.05 * (c + 1) / nch;
-      }
-    }
-    const res = [];
-    for (let c = 0; c < nch; c++) {
-      const d = out[c], o = new Float32Array(L);
-      for (let i = 0; i < L; i++) {
-        const x = i * r, i1 = x | 0, f = x - i1;
-        const y0 = d[i1 - 1] || 0, y1 = d[i1] || 0, y2 = d[i1 + 1] || 0, y3 = d[i1 + 2] || 0;
-        const c1 = 0.5 * (y2 - y0), c2 = y0 - 2.5 * y1 + 2 * y2 - 0.5 * y3, c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
-        o[i] = ((c3 * f + c2) * f + c1) * f + y1;
-      }
-      res.push(o);
-    }
-    return res;
-  }
-  function runGen(gen) {
-    let s;
-    do {
-      s = gen.next();
-    } while (!s.done);
-    return s.value;
-  }
-  async function runGenAsync(gen) {
-    let s, last2 = performance.now();
-    for (; ; ) {
-      s = gen.next();
-      if (s.done) return s.value;
-      if (performance.now() - last2 > 12) {
-        await new Promise((r) => setTimeout(r, 0));
-        last2 = performance.now();
-      }
-    }
-  }
-  function getWorker() {
-    if (pitchWorker || pitchWorkerFailed) return pitchWorker;
-    try {
-      const src = `${pitchShiftGen.toString()}
-${runGen.toString()}
-self.onmessage = e => { const { id, channels, sr, semis } = e.data;
-  try { const out = runGen(pitchShiftGen(channels, sr, semis)); self.postMessage({ id, channels: out }, out.map(c => c.buffer)); }
-  catch (err) { self.postMessage({ id, error: String(err && err.message || err) }); } };`;
-      const url2 = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
-      pitchWorker = new Worker(url2);
-      pitchWorker.onmessage = (e) => {
-        const j = jobs.get(e.data.id);
-        if (!j) return;
-        jobs.delete(e.data.id);
-        if (e.data.error) j.reject(new Error(e.data.error));
-        else j.resolve(e.data.channels);
-      };
-      pitchWorker.onerror = (e) => {
-        console.warn("[audio] pitch worker failed, using main thread", e);
-        pitchWorkerFailed = true;
-        pitchWorker = null;
-        for (const j of jobs.values()) j.fallback();
-        jobs.clear();
-      };
-    } catch (e) {
-      pitchWorkerFailed = true;
-      pitchWorker = null;
-    }
-    return pitchWorker;
-  }
-  function shiftChannels(channels, sr, semis) {
-    const w = getWorker();
-    const local = () => runGenAsync(pitchShiftGen(channels, sr, semis));
-    if (!w) return local();
-    return new Promise((resolve, reject) => {
-      const id = ++jobSeq;
-      const copies = channels.map((c) => c.slice());
-      jobs.set(id, { resolve, reject, fallback: () => local().then(resolve, reject) });
-      w.postMessage({ id, channels: copies, sr, semis }, copies.map((c) => c.buffer));
-    });
-  }
-  function workletState(c) {
-    let s = workletStates.get(c);
-    if (s) return s;
-    s = { ready: false, failed: false, promise: null };
-    workletStates.set(c, s);
-    s.promise = (async () => {
-      try {
-        if (!c.audioWorklet || typeof AudioWorkletNode === "undefined") throw new Error("AudioWorklet unsupported");
-        if (!workletUrl) workletUrl = URL.createObjectURL(new Blob([WORKLET_SRC], { type: "application/javascript" }));
-        await c.audioWorklet.addModule(workletUrl);
-        s.ready = true;
-      } catch (e) {
-        s.failed = true;
-        if (!workletWarned) {
-          workletWarned = true;
-          console.warn("[audio] AudioWorklet unavailable; voice pitch + bitcrusher stages skipped", e);
-        }
-      }
-      return s.ready;
-    })();
-    return s;
-  }
-  function reverbSeconds(size) {
-    return 0.2 * Math.pow(30, Math.max(0, Math.min(1, +size || 0)));
-  }
-  function muffleFreq(amount) {
-    return amount <= 0 ? 2e4 : Math.round(2e4 * Math.pow(250 / 2e4, Math.min(1, amount)));
-  }
-  function driveCurve(amount) {
-    const k = amount * 60, n = 1024, curve = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      const x = i / (n - 1) * 2 - 1;
-      curve[i] = (1 + k) * x / (1 + k * Math.abs(x));
-    }
-    return curve;
-  }
-  function reverbIR(sampleRate, sec) {
-    const key = sampleRate + "_" + sec.toFixed(2);
-    let b = irCache.get(key);
-    if (b) return b;
-    const len = Math.max(1, Math.floor(sampleRate * sec));
-    b = new AudioBuffer({ length: len, numberOfChannels: 2, sampleRate });
-    let seed = 2654435769;
-    const rnd = () => {
-      seed ^= seed << 13;
-      seed ^= seed >>> 17;
-      seed ^= seed << 5;
-      return (seed >>> 0) / 4294967296;
-    };
-    for (let c = 0; c < 2; c++) {
-      const d = b.getChannelData(c);
-      for (let i = 0; i < len; i++) d[i] = (rnd() * 2 - 1) * Math.pow(1 - i / len, 2.5);
-    }
-    if (irCache.size > 24) irCache.delete(irCache.keys().next().value);
-    irCache.set(key, b);
-    return b;
-  }
-  function buildClipFx(c, a, input, when, local, wlReady) {
-    const nodes = [], oscs = [];
-    const add = (n) => {
-      nodes.push(n);
-      return n;
-    };
-    const gain = (v) => {
-      const g = add(c.createGain());
-      g.gain.value = v;
-      return g;
-    };
-    const osc = (freq, extra = 0) => {
-      const o = add(c.createOscillator());
-      o.frequency.value = freq;
-      const p = 2 * Math.PI * freq * local + extra;
-      o.setPeriodicWave(c.createPeriodicWave(new Float32Array([0, Math.sin(p)]), new Float32Array([0, Math.cos(p)]), { disableNormalization: true }));
-      o.start(when);
-      oscs.push(o);
-      return o;
-    };
-    let node = input;
-    const filt = (type, freq, opts = {}) => {
-      const f = add(c.createBiquadFilter());
-      f.type = type;
-      f.frequency.value = freq;
-      if (opts.Q !== void 0) f.Q.value = opts.Q;
-      if (opts.gain !== void 0) f.gain.value = opts.gain;
-      node.connect(f);
-      node = f;
-      return f;
-    };
-    const fx = { ...defaultAudioFx(), ...a.fx || {} };
-    const num = (v, d) => Number.isFinite(+v) ? +v : d;
-    const def = VOICE_RECIPES[a.voice] || null;
-    const vmix = Math.max(0, Math.min(1, num(a.voiceMix, 1)));
-    if (def && a.voice !== "none" && vmix > 0) {
-      const vin = node, vout = gain(1);
-      if (vmix < 1) {
-        const dry = gain(1 - vmix);
-        vin.connect(dry);
-        dry.connect(vout);
-      }
-      if (def.voices && wlReady) {
-        const sum = gain(1);
-        for (const v of def.voices) {
-          const pn = add(new AudioWorkletNode(c, "voice-pitch", { outputChannelCount: [2] }));
-          pn.parameters.get("semitones").value = v.pitch || 0;
-          pn.parameters.get("vibRate").value = v.vibRate || 0;
-          pn.parameters.get("vibDepth").value = v.vibDepth || 0;
-          const vg = gain((v.gain !== void 0 ? v.gain : 1) / Math.sqrt(def.voices.length));
-          node.connect(pn);
-          pn.connect(vg);
-          vg.connect(sum);
-        }
-        node = sum;
-      }
-      if (def.ring) {
-        const ringMul = gain(0);
-        osc(def.ring.freq).connect(ringMul.gain);
-        const ringWet = gain(def.ring.mix * 1.4), ringDry = gain(1 - def.ring.mix), ringOut = gain(1);
-        node.connect(ringMul);
-        ringMul.connect(ringWet);
-        ringWet.connect(ringOut);
-        node.connect(ringDry);
-        ringDry.connect(ringOut);
-        node = ringOut;
-      }
-      if (def.comb) {
-        const combSum = gain(1);
-        const d = add(c.createDelay(0.1));
-        d.delayTime.value = def.comb.time;
-        const fb = gain(def.comb.fb);
-        node.connect(combSum);
-        combSum.connect(d);
-        d.connect(fb);
-        fb.connect(combSum);
-        const combOut = gain(1 - def.comb.fb * 0.5);
-        combSum.connect(combOut);
-        node = combOut;
-      }
-      if (def.band) {
-        filt("highpass", def.band[0], { Q: 0.9 });
-        filt("highpass", def.band[0], { Q: 0.7 });
-        filt("lowpass", def.band[1], { Q: 0.9 });
-        filt("lowpass", def.band[1], { Q: 0.7 });
-      }
-      if (def.hp) filt("highpass", def.hp, { Q: 0.707 });
-      if (def.lp) {
-        filt("lowpass", def.lp, { Q: 0.707 });
-        filt("lowpass", def.lp, { Q: 0.707 });
-      }
-      if (def.peak) filt("peaking", def.peak.f, { Q: 1.2, gain: def.peak.gain });
-      if (def.lowshelf) filt("lowshelf", 150, { gain: def.lowshelf });
-      if (def.drive) {
-        const ws = add(c.createWaveShaper());
-        ws.curve = driveCurve(def.drive);
-        ws.oversample = "2x";
-        const k = def.drive * 60;
-        const makeup = gain((1 + k * 0.5) / (1 + k));
-        node.connect(ws);
-        ws.connect(makeup);
-        node = makeup;
-      }
-      if (def.tremolo) {
-        const trem = gain(1 - def.tremolo.depth / 2);
-        const depth = gain(def.tremolo.depth / 2);
-        osc(def.tremolo.rate).connect(depth);
-        depth.connect(trem.gain);
-        node.connect(trem);
-        node = trem;
-      }
-      if (def.echo) {
-        const out = gain(1);
-        const d = add(c.createDelay(2));
-        d.delayTime.value = def.echo.time;
-        const damp = add(c.createBiquadFilter());
-        damp.type = "lowpass";
-        damp.frequency.value = def.echo.damp || 4e3;
-        const fb = gain(def.echo.fb), mix = gain(def.echo.mix);
-        node.connect(out);
-        node.connect(d);
-        d.connect(damp);
-        damp.connect(fb);
-        fb.connect(d);
-        damp.connect(mix);
-        mix.connect(out);
-        node = out;
-      }
-      const wet = gain(vmix);
-      node.connect(wet);
-      wet.connect(vout);
-      node = vout;
-    }
-    const crush = Math.max(0, Math.min(1, num(fx.crush, 0)));
-    if (crush > 0 && wlReady) {
-      const cin = node, cout = gain(1);
-      if (crush < 1) {
-        const dry = gain(1 - crush);
-        cin.connect(dry);
-        dry.connect(cout);
-      }
-      const rate = Math.max(500, Math.min(c.sampleRate, num(fx.crushRate, 11025)));
-      filt("lowpass", convFreq(rate), { Q: 0.707 });
-      const cr = add(new AudioWorkletNode(c, "crusher", { outputChannelCount: [2] }));
-      cr.parameters.get("bits").value = Math.max(1, Math.min(16, num(fx.crushBits, 8)));
-      cr.parameters.get("sampleRate").value = rate;
-      node.connect(cr);
-      node = cr;
-      filt("lowpass", convFreq(rate), { Q: 0.707 });
-      const wet = gain(crush);
-      node.connect(wet);
-      wet.connect(cout);
-      node = cout;
-    }
-    const muffle = Math.max(0, Math.min(1, num(fx.lowpass, 0)));
-    if (muffle > 0) filt("lowpass", muffleFreq(muffle), { Q: 0.707 });
-    const hpf = num(fx.highpass, 0);
-    if (hpf > 0) filt("highpass", Math.min(2e4, hpf), { Q: 0.707 });
-    const bass = num(fx.bass, 0);
-    if (bass) filt("lowshelf", 120, { gain: Math.max(-24, Math.min(24, bass)) });
-    const echo = Math.max(0, Math.min(1, num(fx.echo, 0)));
-    if (echo > 0) {
-      const out = gain(1);
-      const d = add(c.createDelay(10));
-      d.delayTime.value = Math.max(1e-3, Math.min(10, num(fx.echoTime, 0.3)));
-      const damp = add(c.createBiquadFilter());
-      damp.type = "lowpass";
-      damp.Q.value = 0.707;
-      damp.frequency.value = Math.max(200, Math.min(2e4, num(fx.echoDamp, 6e3)));
-      const fb = gain(Math.max(0, Math.min(0.95, num(fx.echoFeedback, 0.4))));
-      const wet = gain(echo);
-      node.connect(out);
-      node.connect(d);
-      d.connect(damp);
-      damp.connect(fb);
-      fb.connect(d);
-      d.connect(wet);
-      wet.connect(out);
-      node = out;
-    }
-    const rev = Math.max(0, Math.min(1, num(fx.reverb, 0)));
-    if (rev > 0) {
-      const out = gain(1);
-      const conv2 = add(c.createConvolver());
-      conv2.buffer = reverbIR(c.sampleRate, reverbSeconds(num(fx.reverbSize, 0.5)));
-      const wet = gain(rev), dry = gain(1 - rev);
-      node.connect(conv2);
-      conv2.connect(wet);
-      wet.connect(out);
-      node.connect(dry);
-      dry.connect(out);
-      node = out;
-    }
-    const orbit = Math.max(0, Math.min(1, num(fx.orbit, 0)));
-    const ospeed = Math.max(1e-3, Math.min(20, num(fx.orbitSpeed, 0.25)));
-    if (orbit > 0) {
-      const lp = filt("lowpass", 2e4 - 8e3 * orbit, { Q: 0.707 });
-      const lpDepth = gain(8e3 * orbit);
-      const cosO = osc(ospeed, Math.PI / 2);
-      cosO.connect(lpDepth);
-      lpDepth.connect(lp.frequency);
-      const g = gain(1 - 0.15 * orbit);
-      const gDepth = gain(0.15 * orbit);
-      cosO.connect(gDepth);
-      gDepth.connect(g.gain);
-      node.connect(g);
-      node = g;
-      const p = add(c.createStereoPanner());
-      p.pan.value = 0;
-      const pDepth = gain(orbit);
-      osc(ospeed).connect(pDepth);
-      pDepth.connect(p.pan);
-      node.connect(p);
-      node = p;
-    }
-    let tail = 0;
-    if (def && def.echo) tail += 2;
-    if (echo > 0) tail += Math.min(30, num(fx.echoTime, 0.3) * Math.log(1e-3) / Math.log(Math.max(0.01, num(fx.echoFeedback, 0.4))));
-    if (rev > 0) tail += reverbSeconds(num(fx.reverbSize, 0.5));
-    if (def && def.comb) tail += 0.5;
-    return { out: node, nodes, oscs, tail: tail + 0.2 };
-  }
-  function needsWorklet(a) {
-    const d = a && VOICE_RECIPES[a.voice];
-    return !!(d && d.voices && (a.voiceMix ?? 1) > 0 || a && a.fx && a.fx.crush > 0);
-  }
-  function createAudioEngine({ store: store2, mediaRuntime: mediaRuntime2 }) {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    const ctx = new AC({ latencyHint: "interactive" });
-    workletState(ctx);
-    const master = ctx.createGain();
-    const monitor = ctx.createGain();
-    const splitter = ctx.createChannelSplitter(2);
-    const anL = ctx.createAnalyser(), anR = ctx.createAnalyser();
-    anL.fftSize = anR.fftSize = 1024;
-    master.connect(monitor);
-    monitor.connect(ctx.destination);
-    master.connect(splitter);
-    splitter.connect(anL, 0);
-    splitter.connect(anR, 1);
-    const meterBuf = new Float32Array(anL.fftSize);
-    const decoding = /* @__PURE__ */ new Map();
-    let playing = false, fromTime = 0, startCtxTime = 0;
-    let live = [];
-    let monitorVolume = 1;
-    const applyMaster = () => {
-      master.gain.value = dbToGain(store2.project.settings.masterVolume || 0);
-    };
-    applyMaster();
-    store2.on("project", applyMaster);
-    function computePeaks(buf) {
-      const bins = Math.max(1, Math.ceil(buf.duration * PEAK_RATE));
-      const min = new Float32Array(bins), max = new Float32Array(bins);
-      const per = buf.sampleRate / PEAK_RATE, nch = buf.numberOfChannels;
-      const chs = [];
-      for (let c = 0; c < nch; c++) chs.push(buf.getChannelData(c));
-      for (let b = 0; b < bins; b++) {
-        const s0 = Math.floor(b * per), s1 = Math.min(buf.length, Math.floor((b + 1) * per));
-        let lo = 0, hi = 0;
-        for (let i = s0; i < s1; i++) {
-          let v = 0;
-          for (let c = 0; c < nch; c++) v += chs[c][i];
-          v /= nch;
-          if (v < lo) lo = v;
-          else if (v > hi) hi = v;
-        }
-        min[b] = lo;
-        max[b] = hi;
-      }
-      return { rate: PEAK_RATE, min, max };
-    }
-    function ensureDecoded(mediaId) {
-      const rt = mediaRuntime2.get(mediaId);
-      if (!rt) return Promise.resolve(null);
-      if (rt.audioBuffer) return Promise.resolve(rt.audioBuffer);
-      if (decoding.has(mediaId)) return decoding.get(mediaId);
-      const p = (async () => {
-        try {
-          if (!rt.file) return null;
-          const ab = await rt.file.arrayBuffer();
-          const buf = await new Promise((res, rej) => {
-            const pr = ctx.decodeAudioData(ab, res, rej);
-            if (pr && pr.then) pr.then(res, rej);
-          });
-          rt.audioBuffer = buf;
-          rt.pitchCache = rt.pitchCache || /* @__PURE__ */ new Map();
-          try {
-            rt.peaks = computePeaks(buf);
-            store2.emit("media", { id: mediaId, what: "peaks" });
-          } catch (e) {
-            console.warn("[audio] peaks failed", e);
-          }
-          return buf;
-        } catch (e) {
-          console.warn("[audio] decode failed for", mediaId, e);
-          return null;
-        } finally {
-          decoding.delete(mediaId);
-        }
-      })();
-      decoding.set(mediaId, p);
-      return p;
-    }
-    function clipSemis(clip) {
-      const a = clip.audio || {};
-      let s = a.pitch || 0;
-      if (a.keepPitch !== false && clip.speed > 0 && Math.abs(clip.speed - 1) > 1e-6) s += -12 * Math.log2(clip.speed);
-      s = Math.round(s * 100) / 100;
-      return Math.abs(s) < 0.01 ? 0 : s;
-    }
-    function makeBuffer(channels, sampleRate) {
-      const b = new AudioBuffer({ length: channels[0].length, numberOfChannels: channels.length, sampleRate });
-      channels.forEach((d, i) => b.copyToChannel(d, i));
-      return b;
-    }
-    function reversedOf(rt) {
-      if (rt.reversedBuffer) return rt.reversedBuffer;
-      const b = rt.audioBuffer, chs = [];
-      for (let c = 0; c < b.numberOfChannels; c++) chs.push(b.getChannelData(c).slice().reverse());
-      rt.reversedBuffer = makeBuffer(chs, b.sampleRate);
-      return rt.reversedBuffer;
-    }
-    function pitchEntry(rt, reverse, semis) {
-      rt.pitchCache = rt.pitchCache || /* @__PURE__ */ new Map();
-      const key = (reverse ? "R" : "F") + semis.toFixed(2);
-      let e = rt.pitchCache.get(key);
-      if (e) return e;
-      const base = reverse ? reversedOf(rt) : rt.audioBuffer;
-      e = { buffer: null, promise: null };
-      const chs = [];
-      for (let c = 0; c < base.numberOfChannels; c++) chs.push(base.getChannelData(c));
-      e.promise = shiftChannels(chs, base.sampleRate, semis).then((out) => {
-        e.buffer = makeBuffer(out, base.sampleRate);
-        return e.buffer;
-      }).catch((err) => {
-        console.warn("[audio] pitch shift failed", err);
-        rt.pitchCache.delete(key);
-        return null;
-      });
-      rt.pitchCache.set(key, e);
-      return e;
-    }
-    function bufferNow(clip, onLater) {
-      const rt = mediaRuntime2.get(clip.mediaId);
-      if (!rt) return null;
-      if (!rt.audioBuffer) {
-        ensureDecoded(clip.mediaId).then((b) => {
-          if (b && onLater) onLater();
-        });
-        return null;
-      }
-      const semis = clipSemis(clip);
-      const plain = clip.reverse ? reversedOf(rt) : rt.audioBuffer;
-      if (!semis) return plain;
-      const e = pitchEntry(rt, clip.reverse, semis);
-      if (e.buffer) return e.buffer;
-      if (onLater) e.promise.then((b) => {
-        if (b) onLater();
-      });
-      return plain;
-    }
-    async function bufferFinal(clip) {
-      const base = await ensureDecoded(clip.mediaId);
-      if (!base) return null;
-      const rt = mediaRuntime2.get(clip.mediaId);
-      const semis = clipSemis(clip);
-      const plain = clip.reverse ? reversedOf(rt) : base;
-      if (!semis) return plain;
-      const e = pitchEntry(rt, clip.reverse, semis);
-      return await e.promise || plain;
-    }
-    function cutSpan(clip) {
-      const r = { start: clip.start, end: clip.start + clip.duration, xin: 0, xout: 0 };
-      if (clip.type !== "video" || clip.reverse || !store2.cutTransition) return r;
-      const clips = store2.clipsOnTrack(clip.trackId);
-      const tin = store2.cutTransition(clip, clips);
-      if (tin) {
-        r.start = tin.from;
-        r.xin = tin.to - tin.from;
-      }
-      for (const c of clips) {
-        const ct = c !== clip && store2.cutTransition(c, clips);
-        if (ct && ct.a === clip) {
-          r.end = ct.to;
-          r.xout = ct.to - ct.from;
-          break;
-        }
-      }
-      return r;
-    }
-    function scheduleClip(c, clip, buf, dest, from, to, t0, wlReady) {
-      if (!buf || !(clip.speed > 0)) return null;
-      const span = cutSpan(clip);
-      const cs = span.start, ce = Math.min(span.end, to);
-      const s = Math.max(from, cs);
-      if (ce - s <= 1e-4) return null;
-      const src = span.xin || span.xout ? store2.extSourceTime(clip, s) : store2.sourceTime(clip, s);
-      let offset = clip.reverse ? buf.duration - src : src;
-      let dur = (ce - s) * clip.speed;
-      if (offset < 0) {
-        dur += offset;
-        offset = 0;
-      }
-      if (offset >= buf.duration || dur <= 1e-4) return null;
-      const when = t0 + (s - from);
-      const toCtx = (t) => t0 + (t - from);
-      const node = c.createBufferSource();
-      node.buffer = buf;
-      node.playbackRate.value = clip.speed;
-      const g = c.createGain();
-      g.channelCount = 2;
-      g.channelCountMode = "explicit";
-      g.channelInterpretation = "speakers";
-      const a = clip.audio || {};
-      const base = dbToGain(a.volume || 0);
-      const fi = Math.max(0, a.fadeIn || 0, span.xin), fo = Math.max(0, a.fadeOut || 0, span.xout);
-      const cEnd = span.end;
-      const env = (t) => base * Math.max(0, Math.min(1, fi > 0 ? (t - cs) / fi : 1, fo > 0 ? (cEnd - t) / fo : 1));
-      g.gain.setValueAtTime(env(s), when);
-      const pts = [cs + fi, cEnd - fo, cEnd].filter((p) => p > s + 1e-6).sort((x, y) => x - y);
-      for (const p of pts) g.gain.linearRampToValueAtTime(env(p), toCtx(p));
-      const pan = c.createStereoPanner();
-      pan.pan.value = Math.max(-1, Math.min(1, a.pan || 0));
-      node.connect(g);
-      const fx = buildClipFx(c, a, g, when, s - cs, wlReady);
-      fx.out.connect(pan);
-      pan.connect(dest);
-      node.start(when, offset, dur);
-      return { src: node, nodes: [g, pan, ...fx.nodes], oscs: fx.oscs, tail: fx.tail, end: when + (ce - s) };
-    }
-    function overlapping(from, to) {
-      return store2.audibleClips().filter((c) => {
-        if (!c.mediaId || !(c.speed > 0)) return false;
-        const sp = cutSpan(c);
-        return sp.end > from + 1e-4 && sp.start < to;
-      });
-    }
-    let refreshQueued = false;
-    const laterRefresh = () => {
-      if (refreshQueued) return;
-      refreshQueued = true;
-      setTimeout(() => {
-        refreshQueued = false;
-        if (playing) refresh();
-      }, 30);
-    };
-    function play(t = 0) {
-      stop();
-      if (ctx.state !== "running") ctx.resume().catch(() => {
-      });
-      playing = true;
-      fromTime = t;
-      startCtxTime = ctx.currentTime + LEAD;
-      const wl = workletState(ctx);
-      let waitWl = false;
-      for (const clip of overlapping(t, Infinity)) {
-        const buf = bufferNow(clip, laterRefresh);
-        if (!wl.ready && !wl.failed && needsWorklet(clip.audio)) waitWl = true;
-        const n = scheduleClip(ctx, clip, buf, master, t, Infinity, startCtxTime, wl.ready);
-        if (n) {
-          live.push(n);
-          scheduleCleanup(n);
-        }
-      }
-      if (waitWl) wl.promise.then((ok) => {
-        if (ok) laterRefresh();
-      });
-    }
-    function teardown(n) {
-      if (n.dead) return;
-      n.dead = true;
-      try {
-        n.src.stop();
-      } catch (e) {
-      }
-      for (const o of n.oscs || []) {
-        try {
-          o.stop();
-        } catch (e) {
-        }
-      }
-      try {
-        n.src.disconnect();
-      } catch (e) {
-      }
-      for (const x of n.nodes) {
-        try {
-          x.disconnect();
-        } catch (e) {
-        }
-      }
-    }
-    function scheduleCleanup(n) {
-      n.src.onended = () => {
-        if (n.dead) return;
-        const ms = Math.max(0, (n.end + (n.tail || 0) - ctx.currentTime) * 1e3) + 100;
-        setTimeout(() => {
-          if (n.dead) return;
-          teardown(n);
-          live = live.filter((x) => x !== n);
-        }, ms);
-      };
-    }
-    function stop() {
-      if (playing) fromTime = now();
-      playing = false;
-      for (const n of live) teardown(n);
-      live = [];
-    }
-    function now() {
-      if (!playing) return fromTime;
-      return fromTime + Math.max(0, ctx.currentTime - startCtxTime);
-    }
-    function refresh() {
-      if (playing) play(now());
-    }
-    async function renderMix({ start = 0, end: end3, sampleRate, channels } = {}) {
-      const st = store2.project.settings;
-      sampleRate = sampleRate || st.sampleRate || 48e3;
-      channels = channels || st.channels || 2;
-      if (end3 == null) end3 = store2.duration();
-      const length = Math.max(1, Math.ceil((end3 - start) * sampleRate));
-      const clips = overlapping(start, end3);
-      const bufs = await Promise.all(clips.map(bufferFinal));
-      const oc = new OfflineAudioContext({ numberOfChannels: channels, length, sampleRate });
-      const wlReady = clips.some((c) => needsWorklet(c.audio)) ? await workletState(oc).promise : false;
-      const m = oc.createGain();
-      m.gain.value = dbToGain(st.masterVolume || 0);
-      m.connect(oc.destination);
-      clips.forEach((clip, i) => scheduleClip(oc, clip, bufs[i], m, start, end3, 0, wlReady));
-      return oc.startRendering();
-    }
-    function peakOf(an) {
-      an.getFloatTimeDomainData(meterBuf);
-      let p = 0;
-      for (let i = 0; i < meterBuf.length; i++) {
-        const v = Math.abs(meterBuf[i]);
-        if (v > p) p = v;
-      }
-      return Math.min(1, p);
-    }
-    function meter() {
-      if (!playing) return { l: 0, r: 0 };
-      return { l: peakOf(anL), r: peakOf(anR) };
-    }
-    function setMonitorVolume(v) {
-      monitorVolume = Math.max(0, Math.min(1, +v || 0));
-      monitor.gain.setTargetAtTime(monitorVolume, ctx.currentTime, 0.01);
-    }
-    return {
-      ctx,
-      ensureDecoded,
-      play,
-      stop,
-      now,
-      refresh,
-      renderMix,
-      meter,
-      setMonitorVolume,
-      get monitorVolume() {
-        return monitorVolume;
-      },
-      get playing() {
-        return playing;
-      },
-      // exposed for tests / debugging
-      _pitchShift: (channels, sr, semis) => shiftChannels(channels, sr, semis)
-    };
-  }
-  var PEAK_RATE, LEAD, pitchWorker, pitchWorkerFailed, jobSeq, jobs, WORKLET_SRC, workletStates, workletUrl, workletWarned, VOICE_RECIPES, VOICE_FILTERS, reverbSizeFor, convFreq, irCache, P2, AUDIO_PRESETS;
-  var init_audio = __esm({
-    "js/audio.js"() {
-      init_state();
-      PEAK_RATE = 200;
-      LEAD = 0.06;
-      pitchWorker = null;
-      pitchWorkerFailed = false;
-      jobSeq = 0;
-      jobs = /* @__PURE__ */ new Map();
-      WORKLET_SRC = `
-class Crusher extends AudioWorkletProcessor {
-  static get parameterDescriptors() {
-    return [
-      { name: 'bits', defaultValue: 16, minValue: 1, maxValue: 32, automationRate: 'a-rate' },
-      { name: 'sampleRate', defaultValue: 48000, minValue: 500, maxValue: 192000, automationRate: 'a-rate' },
-    ];
-  }
-  constructor() { super(); this.phaser = 0; this.heldL = 0; this.heldR = 0; }
-  process(inputs, outputs, params) {
-    const input = inputs[0], output = outputs[0];
-    if (!output || output.length === 0) return true;
-    const bitsArr = params.bits, srArr = params.sampleRate;
-    const nChan = output.length, len = output[0].length;
-    const quant = (v, levels) => {
-      const x = v < -1 ? -1 : (v > 1 ? 1 : v);
-      let q = Math.round(x * levels) / levels;
-      return q < -1 ? -1 : (q > 1 ? 1 : q);
-    };
-    for (let i = 0; i < len; i++) {
-      const bits = Math.max(1, Math.min(32, bitsArr.length > 1 ? bitsArr[i] : bitsArr[0]));
-      const targetSr = Math.max(100, Math.min(sampleRate, srArr.length > 1 ? srArr[i] : srArr[0]));
-      const levels = Math.pow(2, bits) - 1;
-      this.phaser += targetSr / sampleRate;
-      if (this.phaser >= 1) {
-        this.phaser -= 1;
-        const inL = input && input[0], inR = input && (input[1] || input[0]);
-        this.heldL = quant(inL ? inL[i] : 0, levels);
-        this.heldR = quant(inR ? inR[i] : 0, levels);
-      }
-      output[0][i] = this.heldL;
-      if (nChan > 1) output[1][i] = this.heldR;
-    }
-    return true;
-  }
-}
-registerProcessor('crusher', Crusher);
-
-class VoicePitch extends AudioWorkletProcessor {
-  static get parameterDescriptors() {
-    return [
-      { name: 'semitones', defaultValue: 0, minValue: -36, maxValue: 36, automationRate: 'k-rate' },
-      { name: 'vibRate', defaultValue: 0, minValue: 0, maxValue: 20, automationRate: 'k-rate' },
-      { name: 'vibDepth', defaultValue: 0, minValue: 0, maxValue: 0.02, automationRate: 'k-rate' },
-    ];
-  }
-  constructor() {
-    super();
-    this.size = 32768; this.mask = this.size - 1;
-    this.bufL = new Float32Array(this.size); this.bufR = new Float32Array(this.size);
-    this.w = 0; this.phase = 0; this.vph = 0;
-    this.win = Math.round(sampleRate * 0.05);
-  }
-  read(buf, d) {
-    const pos = this.w - d, i0 = Math.floor(pos), f = pos - i0;
-    const a = buf[i0 & this.mask], b = buf[(i0 + 1) & this.mask];
-    return a + (b - a) * f;
-  }
-  process(inputs, outputs, params) {
-    const input = inputs[0], output = outputs[0];
-    if (!output || output.length === 0) return true;
-    const inL = input && input[0], inR = input && (input[1] || input[0]);
-    const oL = output[0], oR = output.length > 1 ? output[1] : null;
-    const len = oL.length;
-    const ratio = Math.pow(2, params.semitones[0] / 12);
-    const shifting = Math.abs(ratio - 1) > 1e-4;
-    const step = (1 - ratio) / this.win;
-    const vibRate = params.vibRate[0], vibDepth = params.vibDepth[0] * sampleRate;
-    const vibOn = vibRate > 0 && vibDepth > 0;
-    const vinc = 2 * Math.PI * vibRate / sampleRate, TWO_PI = 2 * Math.PI;
-    for (let i = 0; i < len; i++) {
-      this.bufL[this.w] = inL ? inL[i] : 0;
-      this.bufR[this.w] = inR ? inR[i] : 0;
-      let vib = 0;
-      if (vibOn) {
-        vib = vibDepth * 0.5 * (1 + Math.sin(this.vph));
-        this.vph += vinc; if (this.vph > TWO_PI) this.vph -= TWO_PI;
-      }
-      let l, r;
-      if (shifting) {
-        const p1 = this.phase;
-        let p2 = p1 + 0.5; if (p2 >= 1) p2 -= 1;
-        const d1 = 2 + vib + p1 * this.win, d2 = 2 + vib + p2 * this.win;
-        const sn = Math.sin(Math.PI * p1), g1 = sn * sn, g2 = 1 - g1;
-        l = this.read(this.bufL, d1) * g1 + this.read(this.bufL, d2) * g2;
-        r = this.read(this.bufR, d1) * g1 + this.read(this.bufR, d2) * g2;
-        this.phase += step;
-        if (this.phase < 0) this.phase += 1; else if (this.phase >= 1) this.phase -= 1;
-      } else {
-        l = this.read(this.bufL, 2 + vib); r = this.read(this.bufR, 2 + vib);
-      }
-      oL[i] = l; if (oR) oR[i] = r;
-      this.w = (this.w + 1) & this.mask;
-    }
-    return true;
-  }
-}
-registerProcessor('voice-pitch', VoicePitch);
-`;
-      workletStates = /* @__PURE__ */ new WeakMap();
-      workletUrl = null;
-      workletWarned = false;
-      VOICE_RECIPES = {
-        none: {},
-        chipmunk: { voices: [{ pitch: 9 }], hp: 150 },
-        deep: { voices: [{ pitch: -5 }], lowshelf: 5 },
-        giant: { voices: [{ pitch: -10 }], lowshelf: 6, drive: 0.15 },
-        demon: {
-          voices: [{ pitch: -7 }, { pitch: -19, gain: 0.7 }],
-          drive: 0.45,
-          lowshelf: 4,
-          echo: { time: 0.06, fb: 0.3, mix: 0.25, damp: 3e3 }
-        },
-        robot: { ring: { freq: 50, mix: 0.6 }, comb: { time: 9e-3, fb: 0.55 } },
-        dalek: { ring: { freq: 30, mix: 1 }, band: [250, 4500], drive: 0.2 },
-        anonymous: { voices: [{ pitch: -4 }], ring: { freq: 110, mix: 0.3 }, band: [200, 5e3], drive: 0.25 },
-        alien: { voices: [{ pitch: 5, vibRate: 7, vibDepth: 25e-4 }], ring: { freq: 420, mix: 0.35 } },
-        telephone: { band: [400, 3400], drive: 0.25 },
-        radio: { band: [700, 3e3], drive: 0.6, peak: { f: 1800, gain: 6 } },
-        megaphone: { band: [600, 3500], drive: 0.85, peak: { f: 1400, gain: 8 } },
-        underwater: { lp: 500, voices: [{ pitch: 0, vibRate: 1.1, vibDepth: 6e-3 }], tremolo: { rate: 0.8, depth: 0.25 } },
-        cave: { echo: { time: 0.32, fb: 0.45, mix: 0.45, damp: 2500 }, lowshelf: 2 },
-        ghost: {
-          voices: [{ pitch: 3, vibRate: 4, vibDepth: 2e-3 }],
-          hp: 300,
-          tremolo: { rate: 5, depth: 0.3 },
-          echo: { time: 0.42, fb: 0.55, mix: 0.5, damp: 3e3 }
-        },
-        choir: { voices: [
-          { pitch: 0 },
-          { pitch: -12, gain: 0.6 },
-          { pitch: 7, gain: 0.5 },
-          { pitch: 0, vibRate: 5, vibDepth: 3e-3, gain: 0.6 }
-        ] },
-        wobble: { voices: [{ pitch: 0, vibRate: 6, vibDepth: 4e-3 }] },
-        helicopter: { tremolo: { rate: 14, depth: 0.9 } },
-        blownMic: { drive: 0.9, band: [120, 7e3] }
-      };
-      VOICE_FILTERS = [
-        { id: "none", label: "None", title: "No voice filter" },
-        { id: "chipmunk", label: "Chipmunk", title: "Sped-up squeaky voice, without the speed-up" },
-        { id: "deep", label: "Deep voice", title: "Lower, fuller voice" },
-        { id: "giant", label: "Giant", title: "Huge, slow-sounding voice" },
-        { id: "demon", label: "Demon", title: "Two octaves of growl plus grit" },
-        { id: "robot", label: "Robot", title: "Metallic ring-mod + comb resonance" },
-        { id: "dalek", label: "Dalek", title: "Classic 30 Hz ring modulator" },
-        { id: "anonymous", label: "Anonymous", title: "Deep, masked hacker voice" },
-        { id: "alien", label: "Alien", title: "Pitched up, warbly and ring-modulated" },
-        { id: "telephone", label: "Telephone", title: "Narrow 400\u20133400 Hz phone line" },
-        { id: "radio", label: "Radio", title: "Walkie-talkie / AM radio" },
-        { id: "megaphone", label: "Megaphone", title: "Overdriven bullhorn" },
-        { id: "underwater", label: "Underwater", title: "Muffled and wobbling" },
-        { id: "cave", label: "Cave", title: "Big rocky echo" },
-        { id: "ghost", label: "Ghost", title: "Airy, trembling, haunted" },
-        { id: "choir", label: "Choir", title: "Your voice stacked in harmony" },
-        { id: "wobble", label: "Wobble", title: "Vibrato wobble" },
-        { id: "helicopter", label: "Helicopter", title: "Fast chopping tremolo" },
-        { id: "blownMic", label: "Blown-out mic", title: "Clipped, overloaded microphone" }
-      ];
-      reverbSizeFor = (sec) => Math.round(Math.log(sec / 0.2) / Math.log(30) * 1e3) / 1e3;
-      convFreq = (rate) => Math.max(200, Math.min(2e4, rate / 2 / 1.1));
-      irCache = /* @__PURE__ */ new Map();
-      P2 = (o = {}) => ({ ...defaultAudioFx(), ...o });
-      AUDIO_PRESETS = [
-        {
-          id: "reset",
-          label: "Reset all",
-          title: "Everything back to neutral",
-          apply: () => ({ pitch: 0, voice: "none", voiceMix: 1, keepPitch: true, fx: P2(), clipSpeed: 1 })
-        },
-        {
-          id: "behindWall",
-          label: "Behind the wall",
-          title: "Muffled, boomy, through a wall",
-          apply: () => ({ voice: "none", fx: P2({ lowpass: 0.8, bass: 7, reverb: 0.24, reverbSize: reverbSizeFor(1.8) }) })
-        },
-        {
-          id: "slowedReverb",
-          label: "Slowed + reverb",
-          title: "0.82\xD7 speed, pitch drops, big hall",
-          apply: () => ({ voice: "none", keepPitch: false, fx: P2({ reverb: 0.46, reverbSize: reverbSizeFor(3.2), bass: 4 }), clipSpeed: 0.82 })
-        },
-        {
-          id: "nightcore",
-          label: "Nightcore",
-          title: "1.28\xD7 speed, pitch up",
-          apply: () => ({ voice: "none", keepPitch: false, fx: P2({ reverb: 0.12, reverbSize: reverbSizeFor(1.5), highpass: 60 }), clipSpeed: 1.28 })
-        },
-        {
-          id: "orbit8d",
-          label: "8D orbit",
-          title: "Sound circles around your head",
-          apply: () => ({ voice: "none", fx: P2({ orbit: 1, orbitSpeed: 0.18, reverb: 0.18, reverbSize: reverbSizeFor(1.6) }) })
-        },
-        {
-          id: "underwater",
-          label: "Underwater",
-          title: "Deep muffle, heavy bass, wet room",
-          apply: () => ({ voice: "none", keepPitch: true, fx: P2({ lowpass: 0.88, bass: 9, reverb: 0.36, reverbSize: reverbSizeFor(2.6) }), clipSpeed: 0.94 })
-        },
-        {
-          id: "oldRadio",
-          label: "Old radio",
-          title: "8-bit / 11 kHz crunch through a small speaker",
-          apply: () => ({ voice: "none", fx: P2({ lowpass: 0.44, highpass: 620, crush: 1, crushBits: 8, crushRate: 11e3 }) })
-        },
-        {
-          id: "timeMachine",
-          label: "Time machine",
-          title: "4.6-bit / 3587 Hz vintage sampler crunch",
-          apply: () => ({ voice: "none", fx: P2({ highpass: 594.2, crush: 1, crushBits: 4.6, crushRate: 3587 }) })
-        },
-        {
-          id: "nextRoom",
-          label: "Next room",
-          title: "Coming from the room behind you",
-          apply: () => ({ voice: "none", fx: P2({ lowpass: 0.7, highpass: 130, reverb: 0.32, reverbSize: reverbSizeFor(2.2), orbit: 0.15, orbitSpeed: 0.02 }) })
-        },
-        {
-          id: "pacing",
-          label: "Pacing behind you",
-          title: "Slowly moving around behind you",
-          apply: () => ({ voice: "none", fx: P2({ lowpass: 0.3, reverb: 0.22, reverbSize: reverbSizeFor(2), orbit: 0.6, orbitSpeed: 0.1 }) })
-        },
-        {
-          id: "canyon",
-          label: "Canyon echo",
-          title: "Long dark repeats",
-          apply: () => ({ voice: "none", fx: P2({ echo: 0.55, echoTime: 0.48, echoFeedback: 0.62, echoDamp: 3200, reverb: 0.25, reverbSize: reverbSizeFor(3.4) }) })
-        },
-        {
-          id: "stadium",
-          label: "Stadium",
-          title: "Huge space with a late slap",
-          apply: () => ({ voice: "none", fx: P2({ echo: 0.4, echoTime: 0.9, echoFeedback: 0.45, echoDamp: 2200, reverb: 0.4, reverbSize: reverbSizeFor(4.5), bass: 4 }) })
-        },
-        {
-          id: "slapback",
-          label: "Slapback",
-          title: "Single quick rockabilly repeat",
-          apply: () => ({ voice: "none", fx: P2({ echo: 0.45, echoTime: 0.09, echoFeedback: 0.12, echoDamp: 8e3 }) })
-        }
-      ];
     }
   });
 
@@ -12181,7 +12488,7 @@ ${notes}`;
     back.className = "modal-back ve-export-back";
     back.innerHTML = `
   <div class="modal ve-export" role="dialog" aria-label="Export">
-    <div class="modal-head"><span>Export</span><button class="ve-x-close" title="Close">${svg("close", 16)}</button></div>
+    <div class="modal-head"><span>Export</span><button class="ve-x-close" title="Close">${svg2("close", 16)}</button></div>
     <div class="ve-x-main">
       <aside class="ve-x-formats">
         <div class="ve-x-group">Video</div>
@@ -12252,7 +12559,7 @@ ${notes}`;
       const ok = usable(f);
       const why = f.kind !== "audio" && !hasWebCodecs ? "WebCodecs is not available in this browser" : f.ffmpeg && !ffHost ? "Needs ffmpeg.wasm from the main site" : f.desc;
       return `<button class="ve-x-fmt" data-fmt="${f.id}" ${ok ? "" : "disabled"} title="${esc3(why)}">
-      <span class="ve-x-fico">${svg(f.icon)}</span><span class="ve-x-flabel">${f.label}${f.ffmpeg ? "<sup>*</sup>" : ""}</span></button>`;
+      <span class="ve-x-fico">${svg2(f.icon)}</span><span class="ve-x-flabel">${f.label}${f.ffmpeg ? "<sup>*</sup>" : ""}</span></button>`;
     }
     const $2 = (s) => back.querySelector(s);
     const $$ = (s) => [...back.querySelectorAll(s)];
@@ -12293,7 +12600,7 @@ ${notes}`;
       const sz = size();
       input("w").value = sz.w;
       input("h").value = sz.h;
-      $2(".ve-x-lock").innerHTML = svg(st.lock ? "lock" : "unlock", 14);
+      $2(".ve-x-lock").innerHTML = svg2(st.lock ? "lock" : "unlock", 14);
       $2(".ve-x-lock").classList.toggle("active", st.lock);
       input("kbps").value = st.quality === "custom" ? st.kbps : Math.round(videoBitrate() / 1e3);
       input("hw").value = st.hw;
@@ -12775,7 +13082,7 @@ ${notes}`;
       return new Blob([data], { type: mime });
     }
   }
-  var VENDOR, PREF_KEY, ICONS, svg, FORMATS, QUALITY_BPP, GIF_FPS, ABR, even, fmtBytes, fmtTime, fmtTc, esc3, sanitize, Cancelled, lameLoading, AVC_LEVELS;
+  var VENDOR, PREF_KEY, ICONS, svg2, FORMATS, QUALITY_BPP, GIF_FPS, ABR, even, fmtBytes, fmtTime, fmtTc, esc3, sanitize, Cancelled, lameLoading, AVC_LEVELS;
   var init_export = __esm({
     "js/export.js"() {
       init_catalog();
@@ -12791,7 +13098,7 @@ ${notes}`;
         unlock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/>',
         close: '<path d="M6 6l12 12M18 6 6 18"/>'
       };
-      svg = (n, s = 18) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICONS[n]}</svg>`;
+      svg2 = (n, s = 18) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICONS[n]}</svg>`;
       FORMATS = [
         { id: "mp4", label: "MP4", ext: "mp4", kind: "video", icon: "video", desc: "H.264 video + AAC audio. Plays everywhere." },
         { id: "webm", label: "WebM", ext: "webm", kind: "video", icon: "video", desc: "VP9 video + Opus audio. Open web format." },
@@ -13751,7 +14058,7 @@ ${notes}`;
     const visual = (c) => (c.type === "video" || c.type === "image") && c.mediaId && !store2.getTrack(c.trackId)?.locked;
     let targets = store2.selectedClips().filter(visual);
     if (!targets.length) targets = store2.project.clips.filter((c) => c.type === "video" && visual(c));
-    const { width: W, height: H } = store2.project.settings;
+    const { width: W2, height: H } = store2.project.settings;
     const ids = targets.filter((c) => {
       const md = store2.getMedia(c.mediaId);
       return md?.width && md?.height;
@@ -13765,7 +14072,7 @@ ${notes}`;
         const c = p.clips.find((x) => x.id === id), md = p.media.find((x) => x.id === c.mediaId);
         const cr = c.crop || { l: 0, t: 0, r: 0, b: 0 };
         const sw = md.width * Math.max(0.01, 1 - cr.l - cr.r), sh = md.height * Math.max(0.01, 1 - cr.t - cr.b);
-        const contain = Math.min(W / sw, H / sh), cover = Math.max(W / sw, H / sh);
+        const contain = Math.min(W2 / sw, H / sh), cover = Math.max(W2 / sw, H / sh);
         c.transform = { ...c.transform, scale: cover / contain, scaleX: 1, scaleY: 1, x: 0, y: 0 };
       }
     });
@@ -14792,7 +15099,7 @@ ${c.text}
     isFree: (trackId, start, dur, exclude) => isFree(store.project, trackId, start, dur, exclude),
     overwriteRange,
     trackFor: (kind, start, dur, preferId) => trackFor(store.project, kind, start, dur, preferId),
-    insertMedia(mediaId, { time = store.playhead, trackId = null, select = true } = {}) {
+    insertMedia(mediaId, { time = store.playhead, trackId = null, select = true, transform = null } = {}) {
       const m = store.getMedia(mediaId);
       if (!m) return null;
       const type = m.kind === "audio" ? "audio" : m.kind === "image" ? "image" : "video";
@@ -14803,7 +15110,7 @@ ${c.text}
         const pref = trackId && p.tracks.find((t) => t.id === trackId && t.kind === kindForType(type) && !t.locked);
         if (pref) overwriteRange(p, pref.id, time, time + dur);
         const tid = pref ? pref.id : trackFor(p, kindForType(type), time, dur, trackId);
-        clip = makeClip({ trackId: tid, type, mediaId, name: m.name, start: time, duration: dur });
+        clip = makeClip({ trackId: tid, type, mediaId, name: m.name, start: time, duration: dur, ...transform ? { transform } : {} });
         p.clips.push(clip);
       });
       if (select) store.select([clip.id]);
@@ -15227,7 +15534,71 @@ ${c.text}
       }
       return [...s].sort((a, b) => a - b);
     },
-    isVisual: (c) => VISUAL.has(c.type)
+    isVisual: (c) => VISUAL.has(c.type),
+    // ---- clip menu helpers (each one undo step) ----
+    toggleDisabled(ids = store.selection.clipIds) {
+      const sel = ids.map((id) => store.getClip(id)).filter(Boolean);
+      if (!sel.length) return;
+      const to = !sel.every((c) => c.disabled);
+      store.transact(to ? "Disable clip" : "Enable clip", (p) => sel.forEach((c0) => {
+        p.clips.find((x) => x.id === c0.id).disabled = to;
+      }));
+      return to;
+    },
+    rotateBy(deg, ids = store.selection.clipIds) {
+      const sel = ids.map((id) => store.getClip(id)).filter((c) => c && VISUAL.has(c.type));
+      if (!sel.length) return false;
+      store.transact("Rotate " + deg + "\xB0", (p) => sel.forEach((c0) => {
+        const t = p.clips.find((x) => x.id === c0.id).transform;
+        t.rotation = (((t.rotation || 0) + deg) % 360 + 540) % 360 - 180;
+      }));
+      return true;
+    },
+    flip(axis = "h", ids = store.selection.clipIds) {
+      const sel = ids.map((id) => store.getClip(id)).filter((c) => c && VISUAL.has(c.type));
+      if (!sel.length) return false;
+      const k = axis === "h" ? "flipH" : "flipV";
+      store.transact(axis === "h" ? "Flip horizontal" : "Flip vertical", (p) => sel.forEach((c0) => {
+        const t = p.clips.find((x) => x.id === c0.id).transform;
+        t[k] = !t[k];
+      }));
+      return true;
+    },
+    setVoice(voice, ids = store.selection.clipIds) {
+      const sel = ids.map((id) => store.getClip(id)).filter((c) => c && (c.type === "audio" || c.type === "video"));
+      if (!sel.length) return false;
+      store.transact("Voice filter", (p) => sel.forEach((c0) => {
+        p.clips.find((x) => x.id === c0.id).audio.voice = voice;
+      }));
+      return true;
+    },
+    // preset = an AUDIO_PRESETS entry from audio.js (apply() may also return clipSpeed)
+    applyAudioPreset(preset, ids = store.selection.clipIds) {
+      const sel = ids.map((id) => store.getClip(id)).filter((c) => c && (c.type === "audio" || c.type === "video"));
+      if (!sel.length || !preset) return false;
+      store.transact("Preset " + preset.label, (p) => sel.forEach((c0) => {
+        const x = p.clips.find((y) => y.id === c0.id);
+        const { clipSpeed, fx, ...rest } = preset.apply(x.audio) || {};
+        Object.assign(x.audio, rest);
+        if (fx) x.audio.fx = { ...defaultAudioFx(), ...x.audio.fx || {}, ...fx };
+        if (clipSpeed) {
+          x.duration = x.duration * x.speed / clipSpeed;
+          x.speed = clipSpeed;
+        }
+      }));
+      return true;
+    },
+    removeEffects(ids = store.selection.clipIds) {
+      const sel = ids.map((id) => store.getClip(id)).filter(Boolean);
+      if (!sel.length) return false;
+      store.transact("Remove effects", (p) => sel.forEach((c0) => {
+        const x = p.clips.find((y) => y.id === c0.id);
+        x.filters = [];
+        x.materialId = null;
+        if (x.chroma) x.chroma.enabled = false;
+      }));
+      return true;
+    }
   };
 
   // js/sources.js
@@ -15288,47 +15659,136 @@ ${c.text}
       if (c && c.key === key) return c;
       const canvas = c?.canvas || document.createElement("canvas");
       const ctx = canvas.getContext("2d");
-      const size = Math.max(4, tx.size || 96);
+      const fin2 = (v, d) => Number.isFinite(+v) ? +v : d;
+      const size = Math.max(4, fin2(tx.size, 96));
       const font = `${tx.italic ? "italic " : ""}${tx.bold ? "700" : "400"} ${size}px "${tx.font || "Inter"}", sans-serif`;
-      ctx.font = font;
+      const ls = fin2(tx.letterSpacing, 0);
+      const setFont = () => {
+        ctx.font = font;
+        ctx.textBaseline = "middle";
+        ctx.lineJoin = "round";
+        try {
+          ctx.letterSpacing = ls + "px";
+        } catch (e) {
+        }
+      };
+      setFont();
       const lines = String(tx.content ?? "").split("\n");
-      const lh = size * (tx.lineHeight || 1.15);
-      const stroke = tx.stroke || 0;
-      const pad = Math.ceil(size * 0.25 + stroke + (tx.shadow ? size * 0.08 : 0));
+      const lh = size * fin2(tx.lineHeight, 1.15);
+      const stroke = Math.max(0, fin2(tx.stroke, 0));
+      const glow = Math.max(0, fin2(tx.glow, 0));
+      const sh = tx.shadow ? {
+        color: tx.shadowColor || "#000000",
+        alpha: Math.max(0, Math.min(1, fin2(tx.shadowOpacity, 0.55))),
+        blur: Math.max(0, fin2(tx.shadowBlur, size * 0.12)),
+        x: fin2(tx.shadowX, 0),
+        y: fin2(tx.shadowY, size * 0.04)
+      } : null;
+      const theta = Math.max(-1, Math.min(1, fin2(tx.curve, 0) / 100)) * Math.PI;
+      const curved = Math.abs(theta) > 0.01;
       const widths = lines.map((l) => ctx.measureText(l || " ").width);
-      const w = Math.ceil(Math.max(1, ...widths) + pad * 2);
-      const h2 = Math.ceil(lh * lines.length + pad * 2);
+      const maxW = Math.max(1, ...widths);
+      let R = 0, sag = 0, chord = maxW;
+      if (curved) {
+        R = maxW / Math.abs(theta);
+        sag = R * (1 - Math.cos(Math.abs(theta) / 2));
+        chord = 2 * R * Math.sin(Math.min(Math.PI / 2, Math.abs(theta) / 2));
+        if (Math.abs(theta) > Math.PI / 2 * 2 - 1e-3) chord = 2 * R;
+      }
+      const shPad = sh ? sh.blur + Math.max(Math.abs(sh.x), Math.abs(sh.y)) : 0;
+      const bgPad = tx.background ? size * Math.max(0, fin2(tx.bgPad, 0.25)) : 0;
+      const pad = Math.ceil(Math.max(size * 0.25, bgPad) + stroke + glow * 1.5 + shPad);
+      const w = Math.ceil((curved ? Math.max(chord, size) : maxW) + pad * 2);
+      const h2 = Math.ceil(lh * lines.length + (curved ? sag + size * 0.5 : 0) + pad * 2);
       canvas.width = w;
       canvas.height = h2;
-      ctx.font = font;
-      ctx.textBaseline = "middle";
-      ctx.lineJoin = "round";
+      setFont();
       if (tx.background) {
         ctx.fillStyle = tx.background;
-        const r = Math.min(size * 0.2, 24);
+        const r = Math.max(0, fin2(tx.bgRadius, Math.min(size * 0.2, 24)));
+        const inset = Math.max(0, pad - bgPad - size * 0.05);
         ctx.beginPath();
-        ctx.roundRect ? ctx.roundRect(0, 0, w, h2, r) : ctx.rect(0, 0, w, h2);
+        ctx.roundRect ? ctx.roundRect(inset, inset, w - inset * 2, h2 - inset * 2, r) : ctx.rect(inset, inset, w - inset * 2, h2 - inset * 2);
         ctx.fill();
       }
-      const align = tx.align || "center";
+      const align = curved ? "center" : tx.align || "center";
       ctx.textAlign = align;
       const x = align === "left" ? pad : align === "right" ? w - pad : w / 2;
+      const fillStyle = () => {
+        if (!tx.gradient) return tx.color || "#fff";
+        const a = fin2(tx.gradAngle, 90) * Math.PI / 180, dx = Math.sin(a) * w / 2, dy = -Math.cos(a) * h2 / 2;
+        const g = ctx.createLinearGradient(w / 2 - dx, h2 / 2 - dy, w / 2 + dx, h2 / 2 + dy);
+        g.addColorStop(0, tx.color || "#ffffff");
+        g.addColorStop(1, tx.color2 || "#ff2d9a");
+        return g;
+      };
+      const drawLine = (line, i, paint) => {
+        const baseY = pad + lh * i + lh / 2 + (curved && theta < 0 ? sag : 0);
+        if (!curved) {
+          paint(line, x, baseY);
+          return;
+        }
+        const glyphs = [...line];
+        const gw = glyphs.map((g) => ctx.measureText(g).width);
+        const total = gw.reduce((s, v) => s + v, 0);
+        const up = theta > 0, cy = up ? baseY + R : baseY - R;
+        let pos = -total / 2;
+        ctx.save();
+        ctx.textAlign = "center";
+        glyphs.forEach((g, k) => {
+          const mid = pos + gw[k] / 2;
+          pos += gw[k];
+          const a = up ? -Math.PI / 2 + mid / R : Math.PI / 2 - mid / R;
+          ctx.save();
+          ctx.translate(w / 2 + R * Math.cos(a), cy + R * Math.sin(a));
+          ctx.rotate(up ? a + Math.PI / 2 : a - Math.PI / 2);
+          paint(g, 0, 0);
+          ctx.restore();
+        });
+        ctx.restore();
+      };
+      const hexA = (hex, al) => {
+        const m = /^#?([0-9a-f]{6})$/i.exec(hex || "");
+        if (!m) return hex;
+        const n = parseInt(m[1], 16);
+        return `rgba(${n >> 16},${n >> 8 & 255},${n & 255},${al})`;
+      };
+      const noShadow = () => {
+        ctx.shadowColor = "transparent";
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+      };
       lines.forEach((line, i) => {
-        const y = pad + lh * i + lh / 2;
-        if (tx.shadow) {
-          ctx.shadowColor = "rgba(0,0,0,0.55)";
-          ctx.shadowBlur = size * 0.12;
-          ctx.shadowOffsetY = size * 0.04;
+        if (glow > 0) {
+          ctx.shadowColor = tx.glowColor || "#00e5ff";
+          ctx.shadowBlur = glow;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 0;
+          ctx.fillStyle = tx.glowColor || "#00e5ff";
+          for (let k = 0; k < 2; k++) drawLine(line, i, (t, px, py) => ctx.fillText(t, px, py));
+          noShadow();
+        }
+        if (sh) {
+          ctx.shadowColor = hexA(sh.color, sh.alpha);
+          ctx.shadowBlur = sh.blur;
+          ctx.shadowOffsetX = sh.x;
+          ctx.shadowOffsetY = sh.y;
         }
         if (stroke > 0) {
           ctx.strokeStyle = tx.strokeColor || "#000";
           ctx.lineWidth = stroke * 2;
-          ctx.strokeText(line, x, y);
-          ctx.shadowColor = "transparent";
+          drawLine(line, i, (t, px, py) => ctx.strokeText(t, px, py));
+          noShadow();
         }
-        ctx.fillStyle = tx.color || "#fff";
-        ctx.fillText(line, x, y);
-        ctx.shadowColor = "transparent";
+        ctx.fillStyle = fillStyle();
+        drawLine(line, i, (t, px, py) => ctx.fillText(t, px, py));
+        noShadow();
+        if (tx.underline && !curved) {
+          const lw = widths[i], y = pad + lh * i + lh / 2 + size * 0.42;
+          const x0 = align === "left" ? x : align === "right" ? x - lw : x - lw / 2;
+          ctx.fillRect(x0, y, lw, Math.max(1, size * 0.06));
+        }
       });
       c = { key, canvas, version: ++textVersion };
       textCache.set(clip.id, c);
@@ -15526,6 +15986,10 @@ ${c.text}
     }
     function loop() {
       if (!store2.playing) return;
+      if (jumpTimer) {
+        raf = requestAnimationFrame(loop);
+        return;
+      }
       let t = clockNow();
       const end3 = store2.duration();
       const loopRange = store2.loopRange;
@@ -15540,7 +16004,9 @@ ${c.text}
         store2.setPlayhead(end3);
         return;
       }
+      fromLoop = true;
       store2.setPlayhead(t);
+      fromLoop = false;
       sources.sync(t, true);
       draw(t);
       raf = requestAnimationFrame(loop);
@@ -15609,8 +16075,33 @@ ${c.text}
       }).catch(() => {
       });
     }
+    let fromLoop = false, jumpTimer = 0, lastJump = 0;
+    function jump() {
+      jumpTimer = 0;
+      lastJump = performance.now();
+      if (!store2.playing) return;
+      const t = store2.playhead;
+      try {
+        audio?.stop();
+        audio?.play(t);
+      } catch (e) {
+        console.error("[audio.jump]", e);
+      }
+      wallStart = performance.now();
+      wallFrom = t;
+      sources.sync(t, true);
+      draw(t);
+    }
     store2.on("playhead", () => {
-      if (!store2.playing) requestStill();
+      if (!store2.playing) return requestStill();
+      if (fromLoop) return;
+      clearTimeout(jumpTimer);
+      const wait = Math.max(0, 90 - (performance.now() - lastJump));
+      if (!wait) jump();
+      else {
+        draw(store2.playhead);
+        jumpTimer = setTimeout(jump, wait);
+      }
     });
     store2.on("project", () => {
       if (store2.playing) {
@@ -15655,7 +16146,157 @@ ${c.text}
   init_state();
   init_catalog();
   init_icons();
+  init_audio();
+
+  // js/stickers.js
+  var W = 512;
+  var svg = (body, vb = "0 0 512 512") => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" width="${W}" height="${W * (+vb.split(" ")[3] / +vb.split(" ")[2])}">${body}</svg>`;
+  var FONT = `font-family="Arial Black, Impact, Arial, sans-serif" font-weight="900"`;
+  var BUILTIN_STICKERS = [
+    { id: "subscribe", label: "Subscribe", cat: "Social", svg: () => svg(`<rect x="8" y="8" width="496" height="144" rx="30" fill="#e00"/><text x="256" y="104" text-anchor="middle" ${FONT} font-size="74" fill="#fff">SUBSCRIBE</text>`, "0 0 512 160") },
+    { id: "subscribed", label: "Subscribed", cat: "Social", svg: () => svg(`<rect x="8" y="8" width="496" height="144" rx="30" fill="#606060"/><text x="256" y="102" text-anchor="middle" ${FONT} font-size="64" fill="#fff">SUBSCRIBED \u2713</text>`, "0 0 512 160") },
+    { id: "like", label: "Like", cat: "Social", svg: () => svg(`<rect x="8" y="8" width="496" height="160" rx="40" fill="#ff2d55"/><path d="M78 88c0-26 33-38 50-14 17-24 50-12 50 14 0 30-50 54-50 54s-50-24-50-54z" fill="#fff"/><text x="330" y="116" text-anchor="middle" ${FONT} font-size="80" fill="#fff">LIKE</text>`, "0 0 512 176") },
+    { id: "bell", label: "Bell", cat: "Social", svg: () => svg(`<circle cx="256" cy="256" r="240" fill="#ffcc00"/><path d="M256 110c-60 0-100 44-100 104v70l-36 50h272l-36-50v-70c0-60-40-104-100-104z" fill="#222"/><circle cx="256" cy="380" r="34" fill="#222"/>`) },
+    { id: "thumbs", label: "Thumbs Up", cat: "Social", svg: () => svg(`<circle cx="256" cy="256" r="240" fill="#2a6df4"/><path d="M150 230h56v150h-56zM226 380V236l70-110c22 0 34 16 30 38l-14 62h86c22 0 36 20 30 40l-34 96c-6 14-18 18-30 18z" fill="#fff"/>`) },
+    { id: "live", label: "LIVE", cat: "Labels", svg: () => svg(`<rect x="8" y="8" width="300" height="128" rx="22" fill="#e3002b"/><circle cx="66" cy="72" r="24" fill="#fff"/><text x="196" y="100" text-anchor="middle" ${FONT} font-size="74" fill="#fff">LIVE</text>`, "0 0 316 144") },
+    { id: "new", label: "NEW burst", cat: "Labels", svg: () => {
+      let pts = "";
+      for (let i = 0; i < 32; i++) {
+        const r = i % 2 ? 190 : 240, a = i / 32 * Math.PI * 2;
+        pts += `${256 + r * Math.cos(a)},${256 + r * Math.sin(a)} `;
+      }
+      return svg(`<polygon points="${pts}" fill="#ffe600" stroke="#111" stroke-width="10"/><text x="256" y="290" text-anchor="middle" ${FONT} font-size="120" fill="#e3002b">NEW</text>`);
+    } },
+    { id: "breaking", label: "Breaking News", cat: "Labels", svg: () => svg(`<rect x="0" y="0" width="1024" height="160" fill="#c4001d"/><rect x="0" y="110" width="1024" height="50" fill="#111"/><text x="40" y="88" ${FONT} font-size="76" fill="#fff" font-style="italic">BREAKING NEWS</text>`, "0 0 1024 160") },
+    { id: "arrow_r", label: "Arrow", cat: "Arrows", svg: () => svg(`<path d="M40 200h300v-90l140 146-140 146v-90H40z" fill="#ff3b30" stroke="#fff" stroke-width="16" stroke-linejoin="round"/>`) },
+    { id: "arrow_curve", label: "Curved Arrow", cat: "Arrows", svg: () => svg(`<path d="M70 420C90 220 220 120 400 130" fill="none" stroke="#ffe600" stroke-width="34" stroke-linecap="round"/><path d="M350 70l90 60-80 80" fill="none" stroke="#ffe600" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>`) },
+    { id: "circle", label: "Highlight Circle", cat: "Shapes", svg: () => svg(`<ellipse cx="256" cy="256" rx="226" ry="180" fill="none" stroke="#ff2d55" stroke-width="22" transform="rotate(-8 256 256)"/>`) },
+    { id: "underline", label: "Swoosh Underline", cat: "Shapes", svg: () => svg(`<path d="M20 110C200 40 380 40 500 80" fill="none" stroke="#ffe600" stroke-width="26" stroke-linecap="round"/>`, "0 0 520 140") },
+    { id: "speech", label: "Speech Bubble", cat: "Shapes", svg: () => svg(`<path d="M40 60h432a30 30 0 0 1 30 30v220a30 30 0 0 1-30 30H200l-90 90v-90H40a30 30 0 0 1-30-30V90a30 30 0 0 1 30-30z" fill="#fff" stroke="#111" stroke-width="12"/>`) },
+    { id: "thought", label: "Thought Bubble", cat: "Shapes", svg: () => svg(`<ellipse cx="270" cy="200" rx="220" ry="150" fill="#fff" stroke="#111" stroke-width="12"/><circle cx="120" cy="390" r="36" fill="#fff" stroke="#111" stroke-width="10"/><circle cx="70" cy="460" r="20" fill="#fff" stroke="#111" stroke-width="8"/>`) },
+    { id: "star", label: "Star", cat: "Shapes", svg: () => {
+      let pts = "";
+      for (let i = 0; i < 10; i++) {
+        const r = i % 2 ? 100 : 236, a = -Math.PI / 2 + i / 10 * Math.PI * 2;
+        pts += `${256 + r * Math.cos(a)},${266 + r * Math.sin(a)} `;
+      }
+      return svg(`<polygon points="${pts}" fill="#ffcc00" stroke="#c78a00" stroke-width="12" stroke-linejoin="round"/>`);
+    } },
+    { id: "heart", label: "Heart", cat: "Shapes", svg: () => svg(`<path d="M256 450C120 350 30 270 30 170 30 100 85 50 150 50c45 0 80 24 106 60 26-36 61-60 106-60 65 0 120 50 120 120 0 100-90 180-226 280z" fill="#ff2d55"/>`) },
+    { id: "check", label: "Check", cat: "Shapes", svg: () => svg(`<circle cx="256" cy="256" r="236" fill="#34c759"/><path d="M140 262l80 80 160-170" fill="none" stroke="#fff" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>`) },
+    { id: "cross", label: "Cross", cat: "Shapes", svg: () => svg(`<circle cx="256" cy="256" r="236" fill="#ff3b30"/><path d="M160 160l192 192M352 160L160 352" stroke="#fff" stroke-width="48" stroke-linecap="round"/>`) },
+    { id: "click", label: "Click Here", cat: "Labels", svg: () => svg(`<rect x="8" y="8" width="496" height="144" rx="72" fill="#18d5b7"/><text x="256" y="102" text-anchor="middle" ${FONT} font-size="70" fill="#fff">CLICK HERE</text>`, "0 0 512 160") },
+    { id: "thanks", label: "Thanks for watching", cat: "Labels", svg: () => svg(`<rect x="8" y="8" width="1008" height="184" rx="30" fill="#111" stroke="#ff2d9a" stroke-width="10"/><text x="512" y="124" text-anchor="middle" ${FONT} font-size="86" fill="#fff">THANKS FOR WATCHING</text>`, "0 0 1024 200") }
+  ];
+  var EMOJI = ["\u{1F602}", "\u{1F923}", "\u{1F62D}", "\u{1F60D}", "\u{1F60E}", "\u{1F914}", "\u{1F631}", "\u{1F621}", "\u{1F97A}", "\u{1F92F}", "\u{1F480}", "\u{1F440}", "\u{1F525}", "\u{1F4AF}", "\u2764\uFE0F", "\u{1F44D}", "\u{1F44F}", "\u{1F64F}", "\u{1F389}", "\u2728", "\u2B50", "\u26A1", "\u{1F4A5}", "\u{1F4A2}", "\u2753", "\u2757", "\u2705", "\u274C", "\u{1F6A8}", "\u{1F3AE}", "\u{1F3C6}", "\u{1F4B0}", "\u{1F37F}", "\u{1F451}", "\u{1F921}", "\u{1F47B}", "\u{1F383}", "\u{1F5FF}", "\u{1FAE0}", "\u{1F608}"];
+  var EMOJI_STICKERS = EMOJI.map((e, i) => ({ id: "emoji" + i, label: e, cat: "Emoji", emoji: e }));
+  var STICKER_CATS = [...new Set([...BUILTIN_STICKERS, ...EMOJI_STICKERS].map((s) => s.cat))];
+  function stickerThumb(s) {
+    if (s.emoji) return null;
+    return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(s.svg());
+  }
+  async function stickerFile(s) {
+    const c = document.createElement("canvas");
+    if (s.emoji) {
+      c.width = c.height = W;
+      const g = c.getContext("2d");
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.font = `${W * 0.8}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+      g.fillText(s.emoji, W / 2, W * 0.54);
+    } else {
+      const src = s.svg();
+      const img = new Image();
+      await new Promise((res, rej) => {
+        img.onload = res;
+        img.onerror = () => rej(new Error("sticker failed to draw"));
+        img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(src);
+      });
+      c.width = img.naturalWidth || W;
+      c.height = img.naturalHeight || W;
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    }
+    const blob = await new Promise((r) => c.toBlob(r, "image/png"));
+    return new File([blob], `Sticker ${s.emoji ? "emoji" : s.label}.png`, { type: "image/png" });
+  }
+  var KEY = "ve.giphyKey";
+  var giphyKey = () => {
+    try {
+      return localStorage.getItem(KEY) || "";
+    } catch (e) {
+      return "";
+    }
+  };
+  var setGiphyKey = (k) => {
+    try {
+      k ? localStorage.setItem(KEY, k.trim()) : localStorage.removeItem(KEY);
+    } catch (e) {
+    }
+  };
+  async function giphySearch(kind, q, { limit = 30 } = {}) {
+    const key = giphyKey();
+    if (!key) throw Object.assign(new Error("No GIPHY key"), { code: "nokey" });
+    const base = `https://api.giphy.com/v1/${kind === "stickers" ? "stickers" : "gifs"}/${q ? "search" : "trending"}`;
+    const url2 = `${base}?api_key=${encodeURIComponent(key)}&limit=${limit}&rating=pg-13${q ? "&q=" + encodeURIComponent(q) : ""}`;
+    const r = await fetch(url2);
+    if (r.status === 401 || r.status === 403) throw Object.assign(new Error("GIPHY rejected the API key"), { code: "badkey" });
+    if (!r.ok) throw new Error("GIPHY error " + r.status);
+    const j = await r.json();
+    return (j.data || []).map((g) => {
+      const im = g.images || {};
+      const thumb = im.fixed_width_small?.webp || im.fixed_width_small?.url || im.fixed_width?.webp || im.fixed_width?.url;
+      const full = im.original?.webp || im.original?.url || im.downsized?.url;
+      return { id: g.id, title: g.title || "GIF", thumb, full, w: +im.original?.width || 0, h: +im.original?.height || 0 };
+    }).filter((g) => g.thumb && g.full);
+  }
+  async function giphyFile(g) {
+    const r = await fetch(g.full);
+    if (!r.ok) throw new Error("Could not download that GIF (" + r.status + ")");
+    const b = await r.blob();
+    const ext = /webp/.test(b.type) ? "webp" : "gif";
+    const name = (g.title || "GIF").replace(/[\\/:*?"<>|]+/g, "").slice(0, 40).trim() || "GIF";
+    return new File([b], `${name}.${ext}`, { type: b.type || "image/" + ext });
+  }
+
+  // js/media.js
   var EFFECT_CATS = /* @__PURE__ */ new Set(["Stylize", "Distort", "Lens", "Meme"]);
+  var VOICE_EMOJI = {
+    none: "\u{1F6AB}",
+    chipmunk: "\u{1F43F}\uFE0F",
+    deep: "\u{1F399}\uFE0F",
+    giant: "\u{1F5FF}",
+    demon: "\u{1F608}",
+    robot: "\u{1F916}",
+    dalek: "\u{1F47E}",
+    anonymous: "\u{1F3AD}",
+    alien: "\u{1F47D}",
+    telephone: "\u{1F4DE}",
+    radio: "\u{1F4FB}",
+    megaphone: "\u{1F4E2}",
+    underwater: "\u{1F30A}",
+    cave: "\u26F0\uFE0F",
+    ghost: "\u{1F47B}",
+    choir: "\u26EA",
+    wobble: "\u3030\uFE0F",
+    helicopter: "\u{1F681}",
+    blownMic: "\u{1F3A4}"
+  };
+  var PRESET_EMOJI = {
+    reset: "\u21BA",
+    behindWall: "\u{1F9F1}",
+    slowedReverb: "\u{1F319}",
+    nightcore: "\u26A1",
+    orbit8d: "\u{1F3A7}",
+    underwater: "\u{1FAE7}",
+    oldRadio: "\u{1F4FB}",
+    timeMachine: "\u23F3",
+    nextRoom: "\u{1F6AA}",
+    pacing: "\u{1F463}",
+    canyon: "\u{1F3DC}\uFE0F",
+    stadium: "\u{1F3DF}\uFE0F",
+    slapback: "\u{1F501}"
+  };
+  var audioTile = (emoji, hue) => `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,hsl(${hue} 35% 22%),hsl(${hue} 30% 14%));font-size:28px">${emoji}</div>`;
   var fmtDur = (s) => {
     s = Math.max(0, s || 0);
     const m = Math.floor(s / 60), ss = Math.floor(s % 60);
@@ -15775,7 +16416,7 @@ ${c.text}
     }
   }
   var importCount = 0;
-  async function importFiles(files, { audio, addToTimeline = false, time, trackId, ops: ops2 } = {}) {
+  async function importFiles(files, { audio, addToTimeline = false, time, trackId, ops: ops2, transform } = {}) {
     const ids = [];
     for (let file of files) {
       const kind = kindOf(file);
@@ -15840,7 +16481,7 @@ ${c.text}
     if (addToTimeline && ops2) {
       let t = time ?? store.playhead;
       for (const id of ids) {
-        const c = ops2.insertMedia(id, { time: t, trackId });
+        const c = ops2.insertMedia(id, { time: t, trackId, transform });
         if (c) t = c.start + c.duration;
       }
     }
@@ -15931,7 +16572,43 @@ ${c.text}
       wave: "",
       chromatic: "saturate(1.4)",
       bloom: "brightness(1.3) blur(.8px)",
-      letterbox: ""
+      letterbox: "",
+      sunny_days: "saturate(1.3) brightness(1.08) sepia(.15)",
+      golden_hour: "sepia(.35) saturate(1.3) hue-rotate(-8deg)",
+      fresh: "saturate(1.25) hue-rotate(8deg)",
+      cozy: "sepia(.25) contrast(.9)",
+      bw_contrast: "grayscale(1) contrast(1.7)",
+      bw_soft: "grayscale(1) contrast(.8) brightness(1.05)",
+      bright_up: "brightness(1.3)",
+      contrast_up: "contrast(1.4)",
+      saturation_up: "saturate(1.8)",
+      white_balance: "saturate(.9)",
+      moody: "saturate(.7) contrast(1.15) brightness(.9)",
+      bleach_bypass: "saturate(.45) contrast(1.4)",
+      blockbuster: "saturate(1.4) contrast(1.2) hue-rotate(-6deg)",
+      technicolor: "saturate(1.6) contrast(1.1)",
+      matrix: "grayscale(.6) sepia(1) hue-rotate(60deg) saturate(2)",
+      pastel: "saturate(.65) brightness(1.12) contrast(.85)",
+      soft_skin: "brightness(1.06) contrast(.92)",
+      rosy: "sepia(.2) hue-rotate(-20deg) saturate(1.2)",
+      winter: "saturate(.7) hue-rotate(15deg) brightness(1.08)",
+      autumn: "sepia(.35) saturate(1.5) hue-rotate(-12deg)",
+      spring: "saturate(1.25) brightness(1.06)",
+      summer: "saturate(1.5) contrast(1.08)",
+      halloween: "sepia(.5) hue-rotate(-25deg) saturate(1.6) contrast(1.2)",
+      valentine: "sepia(.25) hue-rotate(-30deg) saturate(1.3) brightness(1.05)",
+      christmas: "saturate(1.5) contrast(1.05)",
+      matte: "contrast(.8) brightness(1.08)",
+      polaroid: "sepia(.25) contrast(.9) brightness(1.06)",
+      lomo: "saturate(1.6) contrast(1.3)",
+      cross_process: "hue-rotate(20deg) saturate(1.4) contrast(1.15)",
+      kodachrome: "saturate(1.3) contrast(1.15) sepia(.1)",
+      food_fresh: "saturate(1.4) contrast(1.1)",
+      food_warm: "sepia(.3) saturate(1.3)",
+      vibrant_land: "saturate(1.7) contrast(1.1)",
+      sunset: "sepia(.4) saturate(1.5) hue-rotate(-15deg)",
+      clear_sky: "saturate(1.4) hue-rotate(5deg)",
+      fake_hdr: "contrast(1.3) saturate(1.3)"
     }[id] || "";
     return `<div style="position:absolute;inset:0;background:linear-gradient(135deg,#f6b26b,#e06666 40%,#6fa8dc 70%,#93c47d);filter:${css2}"></div>${id === "letterbox" ? '<div style="position:absolute;left:0;right:0;top:0;height:18%;background:#000"></div><div style="position:absolute;left:0;right:0;bottom:0;height:18%;background:#000"></div>' : ""}`;
   }
@@ -15972,6 +16649,100 @@ ${c.text}
       });
       toast3(`${FILTERS.find((f) => f.id === id)?.label} added to ${c.name}`);
     }
+    const giphyCache = /* @__PURE__ */ new Map();
+    let giphyToken = 0, giphyTimer = 0;
+    async function addStickerFile(getFile, { time = store2.playhead, trackId = null, scale = 0.4 } = {}) {
+      try {
+        toast3("Adding sticker\u2026");
+        const f = await getFile();
+        await importFiles([f], { audio, ops: ops2, addToTimeline: true, time, trackId, transform: { scale } });
+      } catch (e) {
+        toast3("Could not add that sticker: " + e.message);
+      }
+    }
+    const builtinById = (id) => BUILTIN_STICKERS.find((s) => s.id === id) || EMOJI_STICKERS.find((s) => s.id === id);
+    window.addEventListener("ve:dropSticker", (e) => {
+      const { kind, id, time, trackId } = e.detail || {};
+      if (kind === "sticker") {
+        const s = builtinById(id);
+        if (s) addStickerFile(() => stickerFile(s), { time, trackId });
+      } else if (kind === "giphy") {
+        const g = giphyCache.get(id);
+        if (g) addStickerFile(() => giphyFile(g), { time, trackId, scale: g.sticker ? 0.4 : 0.6 });
+      }
+    });
+    function askGiphyKey() {
+      const k = prompt("Paste your free GIPHY API key.\n\nGet one at developers.giphy.com \u2192 Create an App \u2192 API. It is saved only in this browser.", giphyKey());
+      if (k == null) return;
+      setGiphyKey(k);
+      renderGrid();
+    }
+    function renderGiphy(kind, q) {
+      if (!giphyKey()) {
+        grid.insertAdjacentHTML("beforeend", `<div class="lib-empty giphy-setup">Search millions of GIFs and stickers from <b>GIPHY</b>.<br><br>It needs a free GIPHY API key (one time):<br>1. Go to <b>developers.giphy.com</b> and sign in<br>2. <b>Create an App</b> \u2192 choose <b>API</b><br>3. Copy the key and paste it here<br><br><button class="btn primary" data-giphy-key>Add GIPHY key</button></div>`);
+        grid.querySelector("[data-giphy-key]").onclick = askGiphyKey;
+        return;
+      }
+      const head = document.createElement("div");
+      head.className = "lib-sub giphy-head";
+      head.innerHTML = `<span>${q ? "GIPHY results for \u201C" + q.replace(/[<>&]/g, "") + "\u201D" : "Trending on GIPHY \xB7 type in Search to look for something"}</span><button class="btn" data-giphy-key title="Change or remove the GIPHY key">Key</button>`;
+      head.querySelector("[data-giphy-key]").onclick = askGiphyKey;
+      grid.appendChild(head);
+      const box2 = document.createElement("div");
+      box2.className = "giphy-results";
+      box2.style.display = "contents";
+      box2.innerHTML = '<div class="lib-empty">Loading\u2026</div>';
+      grid.appendChild(box2);
+      const my = ++giphyToken;
+      clearTimeout(giphyTimer);
+      giphyTimer = setTimeout(async () => {
+        try {
+          const res = await giphySearch(kind, q);
+          if (my !== giphyToken) return;
+          box2.innerHTML = "";
+          if (!res.length) {
+            box2.innerHTML = '<div class="lib-empty">No results</div>';
+            return;
+          }
+          for (const g of res) {
+            g.sticker = kind === "stickers";
+            giphyCache.set(g.id, g);
+            box2.appendChild(item({
+              name: g.title,
+              kind: "giphy",
+              id: g.id,
+              thumbUrl: g.thumb,
+              badge: kind === "stickers" ? "STICKER" : "GIF",
+              title: `${g.title}
+Double-click or + to add at the playhead \xB7 drag onto the timeline
+From GIPHY`,
+              onDbl: () => addStickerFile(() => giphyFile(g), { scale: kind === "stickers" ? 0.4 : 0.6 })
+            }));
+          }
+          box2.insertAdjacentHTML("beforeend", '<div class="lib-sub giphy-credit">Powered by GIPHY</div>');
+        } catch (e) {
+          if (my !== giphyToken) return;
+          box2.innerHTML = `<div class="lib-empty">${e.code === "badkey" ? "GIPHY did not accept the key. Click <b>Key</b> to fix it." : "Could not reach GIPHY: " + String(e.message).replace(/[<>&]/g, "")}</div>`;
+        }
+      }, q ? 350 : 0);
+    }
+    const audioSel = () => store2.selectedClips().filter((c) => c.type === "audio" || c.type === "video");
+    function applyVoice(id) {
+      if (!audioSel().length) {
+        toast3("Select a clip with sound first (or drag the voice onto it)");
+        return;
+      }
+      ops2.setVoice(id);
+      toast3(`${VOICE_FILTERS.find((v) => v.id === id)?.label} voice applied`);
+    }
+    function applyAPreset(id) {
+      if (!audioSel().length) {
+        toast3("Select a clip with sound first (or drag the effect onto it)");
+        return;
+      }
+      ops2.applyAudioPreset(AUDIO_PRESETS.find((p) => p.id === id));
+      toast3(`${AUDIO_PRESETS.find((p) => p.id === id)?.label} applied`);
+    }
     function applyTransition(id) {
       const c = selClip();
       if (!c || c.type === "audio") {
@@ -15984,11 +16755,12 @@ ${c.text}
     const sides = {
       media: [["all", "Project Media"], ["video", "Videos"], ["image", "Images"], ["audio", "Audio"]],
       audio: [["all", "Project Audio"]],
-      titles: [["all", "All Titles"]],
+      titles: [["all", "All Titles"], ...[...new Set(TITLE_PRESETS.map((t) => t.cat || "Basic"))].map((c) => [c, c])],
       transitions: [["all", "Included"], ...[...new Set(TRANSITIONS.map((t) => t.category))].map((c) => [c, c])],
-      effects: [["all", "All Effects"], ...[...new Set(FILTERS.filter((f) => EFFECT_CATS.has(f.category)).map((t) => t.category))].map((c) => [c, c])],
+      effects: [["all", "All Effects"], ...[...new Set(FILTERS.filter((f) => EFFECT_CATS.has(f.category)).map((t) => t.category))].map((c) => [c, c]), ["voice", "\u{1F399} Voice Changer"], ["apreset", "\u{1F3A7} Audio Effects"]],
       filters: [["all", "All Filters"], ...[...new Set(FILTERS.filter((f) => !EFFECT_CATS.has(f.category)).map((t) => t.category))].map((c) => [c, c])],
       elements: [["all", "Sample Colors"]],
+      stickers: [["all", "All Stickers"], ...STICKER_CATS.map((c) => [c, c]), ["giphy_gifs", "GIPHY GIFs"], ["giphy_stickers", "GIPHY Stickers"]],
       materials: [["all", "Project Materials"]]
     };
     function render() {
@@ -16145,9 +16917,10 @@ Double-click or + to add at the playhead \xB7 drag onto the timeline`,
         if (!list.length && tab === "media" && !q) grid.insertAdjacentHTML("beforeend", `<div class="lib-empty">Drop videos, images or audio here, click Import, or paste an image with <b>Ctrl+V</b>.</div>`);
       }
       if (tab === "titles") {
-        for (const t of TITLE_PRESETS.filter((t2) => match(t2.label))) {
+        for (const t of TITLE_PRESETS.filter((t2) => (cat === "all" || (t2.cat || "Basic") === cat) && match(t2.label))) {
           const tx = t.text;
-          const style = `font-family:'${tx.font}',sans-serif;font-weight:${tx.bold ? 700 : 400};color:${tx.color};font-size:${Math.max(12, Math.min(24, tx.size / 6))}px;${tx.stroke ? `-webkit-text-stroke:${Math.max(1, tx.stroke / 5)}px ${tx.strokeColor};paint-order:stroke fill;` : ""}${tx.background ? `background:${tx.background};padding:1px 5px;border-radius:3px;` : ""}${tx.shadow ? "text-shadow:0 1px 3px #000a;" : ""}`;
+          const style0 = `font-family:'${tx.font}',sans-serif;font-weight:${tx.bold ? 700 : 400};color:${tx.color};font-size:${Math.max(12, Math.min(24, tx.size / 6))}px;${tx.stroke ? `-webkit-text-stroke:${Math.max(1, tx.stroke / 5)}px ${tx.strokeColor};paint-order:stroke fill;` : ""}${tx.background ? `background:${tx.background};padding:1px 5px;border-radius:3px;` : ""}${tx.shadow ? "text-shadow:0 1px 3px #000a;" : ""}`;
+          const style = style0 + (tx.glow ? `text-shadow:0 0 6px ${tx.glowColor || "#0ff"},0 0 12px ${tx.glowColor || "#0ff"};` : "") + (tx.gradient ? `background:linear-gradient(${tx.gradAngle ?? 90}deg,${tx.color},${tx.color2 || "#f0a"});-webkit-background-clip:text;background-clip:text;color:transparent;` : "") + (tx.letterSpacing ? `letter-spacing:${Math.min(4, tx.letterSpacing / 4)}px;` : "") + (tx.underline ? "text-decoration:underline;" : "");
           add(item({
             name: t.label,
             kind: "title",
@@ -16170,7 +16943,32 @@ Drag onto the start or end of a clip, or double-click to add it to the selected 
           }));
         }
       }
-      if (tab === "effects" || tab === "filters") {
+      if (tab === "effects" && (cat === "voice" || cat === "all")) {
+        if (cat === "all" && !q) grid.insertAdjacentHTML("beforeend", '<div class="lib-sub">Voice Changer</div>');
+        for (const v of VOICE_FILTERS.filter((v2) => v2.id !== "none" && match(v2.label))) add(item({
+          name: v.label,
+          kind: "voice",
+          id: v.id,
+          thumbHtml: audioTile(VOICE_EMOJI[v.id] || "\u{1F399}\uFE0F", 200),
+          title: `${v.label}: ${v.title}
+Drag onto a clip with sound, or double-click to apply to the selected clip`,
+          onDbl: () => applyVoice(v.id)
+        }));
+      }
+      if (tab === "effects" && (cat === "apreset" || cat === "all")) {
+        if (cat === "all" && !q) grid.insertAdjacentHTML("beforeend", '<div class="lib-sub">Audio Effects</div>');
+        for (const pr of AUDIO_PRESETS.filter((p) => match(p.label))) add(item({
+          name: pr.label,
+          kind: "apreset",
+          id: pr.id,
+          thumbHtml: audioTile(PRESET_EMOJI[pr.id] || "\u{1F3A7}", 280),
+          title: `${pr.label}: ${pr.title}
+Drag onto a clip with sound, or double-click to apply to the selected clip`,
+          onDbl: () => applyAPreset(pr.id)
+        }));
+      }
+      if (tab === "effects" && cat === "all" && !q) grid.insertAdjacentHTML("beforeend", '<div class="lib-sub">Video Effects</div>');
+      if (tab === "effects" && cat !== "voice" && cat !== "apreset" || tab === "filters") {
         if (tab === "effects" && cat === "all" && !q) add(item({
           name: "Adjustment Layer",
           kind: "adjustment",
@@ -16190,6 +16988,24 @@ Drag onto the start or end of a clip, or double-click to add it to the selected 
 Drag onto a clip, or double-click to add to the selected clip`,
             onDbl: () => applyFilter(f.id)
           }));
+        }
+      }
+      if (tab === "stickers") {
+        if (cat === "giphy_gifs" || cat === "giphy_stickers") renderGiphy(cat === "giphy_gifs" ? "gifs" : "stickers", search.value.trim());
+        else {
+          for (const s of [...BUILTIN_STICKERS, ...EMOJI_STICKERS].filter((s2) => (cat === "all" || s2.cat === cat) && match(s2.label + " " + s2.cat))) {
+            const thumb = stickerThumb(s);
+            add(item({
+              name: s.emoji ? "Emoji " + s.emoji : s.label,
+              kind: "sticker",
+              id: s.id,
+              thumbHtml: thumb ? `<div class="sticker-thumb" style="background-image:url('${thumb}')"></div>` : `<div class="sticker-thumb emoji">${s.emoji}</div>`,
+              title: `${s.label}
+Double-click or + to add at the playhead \xB7 drag onto the timeline`,
+              onDbl: () => addStickerFile(() => stickerFile(s))
+            }));
+          }
+          if (cat === "all" && !q) grid.insertAdjacentHTML("beforeend", '<div class="lib-empty">More GIFs and animated stickers: pick <b>GIPHY GIFs</b> or <b>GIPHY Stickers</b> on the left.</div>');
         }
       }
       if (tab === "elements") {
@@ -16275,7 +17091,16 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       if (tab === "materials") later();
     });
     render();
-    return { render, show(t) {
+    function locate(mediaId) {
+      tabs.querySelector('[data-lib="media"]')?.click();
+      selected = "media:" + mediaId;
+      renderGrid();
+      const el2 = grid.querySelector(".lib-item.selected");
+      el2?.scrollIntoView({ block: "center" });
+      el2?.classList.add("flash");
+      setTimeout(() => el2?.classList.remove("flash"), 1200);
+    }
+    return { render, locate, show(t) {
       tabs.querySelector(`[data-lib="${t}"]`)?.click();
     } };
   }
@@ -16602,12 +17427,12 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     const pctS = { toUI: (v) => v * 100, fromUI: (v) => v / 100, unit: "%" };
     function transformSec(c) {
       const fixed = c.type === "color" || c.type === "material";
-      const W = store2.project.settings.width, H = store2.project.settings.height;
+      const W2 = store2.project.settings.width, H = store2.project.settings.height;
       return section("transform", "Transform", `
       ${slider2("Scale", "transform.scale", { min: 0, max: 500, step: 1, ...pctS, def: 1 })}
       ${slider2("Width", "transform.scaleX", { min: 0, max: 500, step: 1, ...pctS, def: 1 })}
       ${slider2("Height", "transform.scaleY", { min: 0, max: 500, step: 1, ...pctS, def: 1 })}
-      ${slider2("Position X", "transform.x", { min: -W, max: W, step: 1, unit: "px" })}
+      ${slider2("Position X", "transform.x", { min: -W2, max: W2, step: 1, unit: "px" })}
       ${slider2("Position Y", "transform.y", { min: -H, max: H, step: 1, unit: "px" })}
       ${slider2("Rotate", "transform.rotation", { min: -180, max: 180, step: 0.5, decimals: 1, unit: "\xB0" })}
       <div class="prop wide"><label>Flip</label><div class="btn-row">${toggleBtn("Horizontal", "transform.flipH")}${toggleBtn("Vertical", "transform.flipV")}</div></div>
@@ -16691,7 +17516,30 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       ${slider2("Outline", "text.stroke", { min: 0, max: 40, unit: "px", hardMin: 0 })}
       ${color("Outline color", "text.strokeColor")}
       <div class="prop wide"><label>Background</label><div style="display:flex;gap:6px;align-items:center"><input type="color" id="insTextBg"><button class="btn" data-do="noBg">None</button></div></div>
-    `);
+      ${slider2("Box padding", "text.bgPad", { min: 0, max: 1, step: 0.01, def: 0.25, ...pctS, hardMin: 0 })}
+      ${slider2("Box corners", "text.bgRadius", { min: 0, max: 120, unit: "px", def: 20, hardMin: 0 })}
+      ${slider2("Letter spacing", "text.letterSpacing", { min: -10, max: 60, step: 0.5, unit: "px" })}
+      <div class="prop wide"><label>More</label><div class="btn-row">${toggleBtn("Underline", "text.underline")}${toggleBtn("Gradient", "text.gradient")}</div></div>
+    `) + section("tpresets", "Style Presets", `<div class="chip-grid tpreset-grid">${TITLE_PRESETS.map((t) => `<button class="btn tpreset" data-tpreset="${t.id}" title="Apply the ${esc(t.label)} style (keeps your text)"><span style="${presetCss(t.text)}">Aa</span> ${esc(t.label)}</button>`).join("")}</div>`) + section("tgrad", "Gradient", `
+      ${toggle("Gradient fill", "text.gradient")}
+      ${color("Second color", "text.color2")}
+      ${slider2("Angle", "text.gradAngle", { min: 0, max: 360, unit: "\xB0", def: 90 })}`) + section("tshadow", "Shadow", `
+      ${toggle("Drop shadow", "text.shadow")}
+      ${color("Shadow color", "text.shadowColor")}
+      ${slider2("Opacity", "text.shadowOpacity", { min: 0, max: 1, step: 0.01, def: 0.55, ...pctS, hardMin: 0, hardMax: 100 })}
+      ${slider2("Blur", "text.shadowBlur", { min: 0, max: 80, unit: "px", def: Math.round((c.text?.size || 96) * 0.12), hardMin: 0 })}
+      ${slider2("Offset X", "text.shadowX", { min: -60, max: 60, unit: "px" })}
+      ${slider2("Offset Y", "text.shadowY", { min: -60, max: 60, unit: "px", def: Math.round((c.text?.size || 96) * 0.04) })}`) + section("tglow", "Glow", `
+      ${slider2("Glow size", "text.glow", { min: 0, max: 80, unit: "px", hardMin: 0 })}
+      ${color("Glow color", "text.glowColor")}`) + section("tcurve", "Shape", `
+      ${slider2("Curve", "text.curve", { min: -100, max: 100, unit: "" })}
+      <div class="dim" style="font-size:11px">Positive = arch, negative = smile. Double-click the label to make it straight again.</div>`);
+    }
+    function presetCss(tx = {}) {
+      const glow = tx.glow ? `0 0 ${Math.min(8, tx.glow / 4)}px ${tx.glowColor || "#00e5ff"},` : "";
+      const sh = tx.shadow ? `${Math.max(-3, Math.min(3, (tx.shadowX || 0) / 3))}px ${Math.max(-3, Math.min(3, (tx.shadowY ?? 4) / 3))}px ${Math.min(4, (tx.shadowBlur ?? 10) / 6)}px ${tx.shadowColor || "#000"}` : "";
+      const ts = (glow + sh).replace(/,$/, "");
+      return `font-family:'${tx.font || "Inter"}',sans-serif;font-weight:${tx.bold ? 700 : 400};${tx.italic ? "font-style:italic;" : ""}` + (tx.gradient ? `background:linear-gradient(${tx.gradAngle ?? 90}deg,${tx.color || "#fff"},${tx.color2 || "#f0a"});-webkit-background-clip:text;background-clip:text;color:transparent;` : `color:${tx.color || "#fff"};`) + (tx.stroke ? `-webkit-text-stroke:1px ${tx.strokeColor || "#000"};` : "") + (ts ? `text-shadow:${ts};` : "") + (tx.background ? `background-color:${tx.background};padding:0 3px;border-radius:3px;` : "");
     }
     function audioTab(c) {
       return section("audio", "Audio", `
@@ -16980,6 +17828,45 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         if (!v) return;
         store2.transact("Add filter", (p) => p.clips.find((y) => y.id === clip().id).filters.push({ id: uid("flt"), type: v, amount: 1 }));
       });
+      root.querySelectorAll("[data-tpreset]").forEach((b) => b.addEventListener("click", () => {
+        const pr = TITLE_PRESETS.find((t) => t.id === b.dataset.tpreset);
+        if (!pr) return;
+        const STYLE = [
+          "font",
+          "size",
+          "color",
+          "bold",
+          "italic",
+          "stroke",
+          "strokeColor",
+          "background",
+          "bgPad",
+          "bgRadius",
+          "shadow",
+          "shadowColor",
+          "shadowOpacity",
+          "shadowBlur",
+          "shadowX",
+          "shadowY",
+          "glow",
+          "glowColor",
+          "gradient",
+          "color2",
+          "gradAngle",
+          "curve",
+          "letterSpacing",
+          "underline"
+        ];
+        store2.transact("Title style " + pr.label, (p) => {
+          for (const id of store2.selection.clipIds) {
+            const x = p.clips.find((y) => y.id === id);
+            if (!x?.text) continue;
+            for (const k of STYLE) delete x.text[k];
+            const { content, ...style } = pr.text;
+            Object.assign(x.text, { stroke: 0, strokeColor: "#000000", background: "", shadow: false }, style);
+          }
+        });
+      }));
       root.querySelectorAll("[data-case]").forEach((b) => b.addEventListener("click", () => {
         const f = CASES[b.dataset.case];
         if (!f) return;
@@ -17005,8 +17892,8 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     function cropFor(x, a) {
       if (!a.w || !a.h) return { l: 0, t: 0, r: 0, b: 0 };
       const m = store2.getMedia(x.mediaId);
-      const W = m?.width || store2.project.settings.width, H = m?.height || store2.project.settings.height;
-      const src = W / H, want = a.w / a.h;
+      const W2 = m?.width || store2.project.settings.width, H = m?.height || store2.project.settings.height;
+      const src = W2 / H, want = a.w / a.h;
       if (src > want) {
         const e2 = (1 - want / src) / 2;
         return { l: e2, r: e2, t: 0, b: 0 };
@@ -17352,14 +18239,14 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     let quality = +$("#previewQuality").value;
     function layoutPreview() {
       const wrap2 = $("#previewWrap"), stage = $("#previewStage");
-      const { width: W, height: H } = store.project.settings;
+      const { width: W2, height: H } = store.project.settings;
       const ww = wrap2.clientWidth - 16, wh = wrap2.clientHeight - 16;
-      const s = Math.max(0.01, Math.min(ww / W, wh / H));
-      stage.style.width = Math.floor(W * s) + "px";
+      const s = Math.max(0.01, Math.min(ww / W2, wh / H));
+      stage.style.width = Math.floor(W2 * s) + "px";
       stage.style.height = Math.floor(H * s) + "px";
-      const cap = Math.min(1, Math.floor(W * s) * devicePixelRatio * 1.25 / W);
+      const cap = Math.min(1, Math.floor(W2 * s) * devicePixelRatio * 1.25 / W2);
       const q = Math.max(0.1, Math.min(quality, Math.max(cap, 0.25)));
-      const cw = Math.max(2, Math.round(W * q)), ch = Math.max(2, Math.round(H * q));
+      const cw = Math.max(2, Math.round(W2 * q)), ch = Math.max(2, Math.round(H * q));
       if (canvas.width !== cw || canvas.height !== ch) {
         renderer ? renderer.setSize(cw, ch) : (canvas.width = cw, canvas.height = ch);
       }
@@ -17478,6 +18365,19 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     };
     $("#btnFullscreen").onclick = () => toggleFullscreen();
     const toggleFullscreen = () => document.fullscreenElement ? document.exitFullscreen() : $("#player").requestFullscreen?.();
+    const FS_IN = '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>', FS_OUT = '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>';
+    const fsBtn = $("#btnAppFs");
+    fsBtn?.addEventListener("click", () => {
+      if (document.fullscreenElement) document.exitFullscreen?.();
+      else document.documentElement.requestFullscreen?.().catch((e) => toast2("Full screen was blocked: " + e.message));
+    });
+    document.addEventListener("fullscreenchange", () => {
+      const on = document.fullscreenElement === document.documentElement;
+      if (fsBtn) {
+        fsBtn.querySelector("svg").innerHTML = on ? FS_OUT : FS_IN;
+        fsBtn.title = on ? "Exit full screen (Esc)" : "Full screen (click again or Esc to exit)";
+      }
+    });
     const bars = $("#meter").querySelectorAll("i");
     (function meterLoop() {
       const m = store.playing && audio?.meter ? audio.meter() : { l: 0, r: 0 };
@@ -17636,15 +18536,85 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     store.on("history", syncTools);
     syncTools();
     const inspector = createInspector({ root: $("#inspector"), store, ops, materialsApi: materials, audioApi: audioMod, pickColor, openProjectSettings });
-    window.addEventListener("ve:editText", (e) => {
-      store.select([e.detail.id]);
+    window.addEventListener("ve:editText", (e) => editTextOnCanvas(e.detail.id));
+    function editTextOnCanvas(id) {
+      const c0 = store.getClip(id);
+      if (!c0 || c0.type !== "text") return;
+      playback.pause();
+      store.select([id]);
       inspector.showTab("titles");
-      setTimeout(() => {
-        const ta = $("#inspector textarea");
-        ta?.focus();
-        ta?.select();
-      }, 30);
-    });
+      document.querySelector(".text-edit-ov")?.remove();
+      const original = c0.text?.content ?? "";
+      const ta = document.createElement("textarea");
+      ta.className = "text-edit-ov";
+      ta.value = original;
+      ta.spellcheck = false;
+      const place = () => {
+        const c = store.getClip(id);
+        if (!c) return;
+        const S = store.project.settings, cr = canvas.getBoundingClientRect();
+        const sx = cr.width / S.width, sy = cr.height / S.height;
+        const q = renderer?.getClipQuad?.(c) || [];
+        const pts = q.map((p) => ({ x: cr.left + cr.width / 2 + p.x * sx, y: cr.top + cr.height / 2 + p.y * sy }));
+        const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+        const left = pts.length ? Math.min(...xs) : cr.left + cr.width / 4, top = pts.length ? Math.min(...ys) : cr.top + cr.height / 3;
+        const w = pts.length ? Math.max(...xs) - left : cr.width / 2, h2 = pts.length ? Math.max(...ys) - top : 60;
+        const tx = c.text || {}, sc = (c.transform?.scale ?? 1) * (c.transform?.scaleX ?? 1);
+        const fs = Math.max(8, (tx.size || 96) * sy * sc);
+        Object.assign(ta.style, {
+          left: left + "px",
+          top: top + "px",
+          width: Math.max(140, w) + "px",
+          height: Math.max(fs * 1.4, h2) + "px",
+          font: `${tx.italic ? "italic " : ""}${tx.bold ? 700 : 400} ${fs}px "${tx.font || "Inter"}", sans-serif`,
+          lineHeight: String(tx.lineHeight || 1.15),
+          textAlign: tx.align || "center",
+          letterSpacing: (tx.letterSpacing || 0) * sy * sc + "px",
+          paddingTop: Math.max(0, (Math.max(fs * 1.4, h2) - fs * (tx.lineHeight || 1.15) * ta.value.split("\n").length) / 2) + "px"
+        });
+      };
+      document.body.appendChild(ta);
+      place();
+      ta.focus();
+      ta.select();
+      let raf = 0;
+      const live = () => {
+        store.update("Edit text", (p) => {
+          const x = p.clips.find((y) => y.id === id);
+          if (x?.text) {
+            x.text.content = ta.value;
+            if (!x.name || x.name === original.slice(0, 40)) x.name = ta.value.slice(0, 40) || "Title";
+          }
+        }, { coalesce: "ontext:" + id });
+        cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(place);
+      };
+      let done = false;
+      const finish = (cancel) => {
+        if (done) return;
+        done = true;
+        if (cancel && ta.value !== original) {
+          ta.value = original;
+          live();
+        }
+        ta.remove();
+        cancelAnimationFrame(raf);
+        window.removeEventListener("resize", place);
+      };
+      ta.addEventListener("input", live);
+      ta.addEventListener("keydown", (e) => {
+        e.stopPropagation();
+        if (e.key === "Escape") {
+          e.preventDefault();
+          finish(true);
+        } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+          e.preventDefault();
+          finish(false);
+        }
+      });
+      ta.addEventListener("blur", () => finish(false));
+      window.addEventListener("resize", place);
+    }
     function pickColor() {
       return new Promise((resolve) => {
         const layer = $("#gizmoLayer");
@@ -17748,6 +18718,55 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     window.addEventListener("ve:autoTool", (e) => {
       const f = autoActions[e.detail?.tool];
       if (f) f();
+    });
+    const renameClip = () => {
+      const c = store.selectedClips()[0];
+      if (!c) return toast2("Select a clip first");
+      const n = prompt("Clip name", c.name);
+      if (n == null || !n.trim() || n === c.name) return;
+      store.transact("Rename clip", (p) => {
+        p.clips.find((x) => x.id === c.id).name = n.trim();
+      });
+    };
+    const clipActions = {
+      crop: () => actions.crop(),
+      fill: () => {
+        const n = autoFill();
+        toast2(n ? "Filled the frame" : "Select a video or image clip");
+      },
+      audioTab: () => inspector.showTab("audio"),
+      speedTab: () => inspector.showTab("speed"),
+      effectsTab: () => {
+        inspector.showTab("effects");
+        library.show("filters");
+      },
+      rename: renameClip,
+      selectRange: () => {
+        const sel = store.selectedClips();
+        if (!sel.length) return;
+        const a = Math.min(...sel.map((c) => c.start)), b = Math.max(...sel.map((c) => c.start + c.duration));
+        store.transact("Mark clip", (p) => {
+          p.settings.markIn = a;
+          p.settings.markOut = b;
+        });
+        toast2("In/out set to the selected clip");
+      },
+      exportSel: () => {
+        clipActions.selectRange();
+        openExport();
+      },
+      locate: () => {
+        const c = store.selectedClips()[0];
+        if (c?.mediaId) library.locate?.(c.mediaId);
+      }
+    };
+    window.addEventListener("ve:clipAction", (e) => {
+      const f = clipActions[e.detail?.act];
+      if (f) f(e.detail.arg);
+    });
+    window.addEventListener("ve:openClip", (e) => {
+      const c = store.getClip(e.detail?.id);
+      if (c?.type === "text") inspector.showTab("titles");
     });
     window.addEventListener("ve:importMedia", async (e) => {
       try {
@@ -17869,9 +18888,9 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         });
         layoutPreview();
       } }], { width: 560 });
-      const el2 = m.el, W = el2.querySelector("#psW"), H = el2.querySelector("#psH"), A = el2.querySelector("#psAspect");
+      const el2 = m.el, W2 = el2.querySelector("#psW"), H = el2.querySelector("#psH"), A = el2.querySelector("#psAspect");
       el2.querySelector("#psName").value = store.project.name;
-      W.value = s.width;
+      W2.value = s.width;
       H.value = s.height;
       A.value = s.aspect || "custom";
       el2.querySelector("#psFps").value = s.fps;
@@ -17887,34 +18906,34 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       A.onchange = () => {
         const a = ASPECTS.find((x) => x.id === A.value);
         if (a?.w) {
-          const short = Math.min(+W.value, +H.value);
+          const short = Math.min(+W2.value, +H.value);
           const k = short / Math.min(a.w, a.h);
-          W.value = Math.round(a.w * k / 2) * 2;
+          W2.value = Math.round(a.w * k / 2) * 2;
           H.value = Math.round(a.h * k / 2) * 2;
           ratio = a.w / a.h;
         }
       };
-      W.oninput = () => {
-        if (el2.querySelector("#psLock").checked) H.value = Math.round(W.value / ratio / 2) * 2;
+      W2.oninput = () => {
+        if (el2.querySelector("#psLock").checked) H.value = Math.round(W2.value / ratio / 2) * 2;
         else {
           A.value = "custom";
-          ratio = W.value / H.value;
+          ratio = W2.value / H.value;
         }
       };
       H.oninput = () => {
-        if (el2.querySelector("#psLock").checked) W.value = Math.round(H.value * ratio / 2) * 2;
+        if (el2.querySelector("#psLock").checked) W2.value = Math.round(H.value * ratio / 2) * 2;
         else {
           A.value = "custom";
-          ratio = W.value / H.value;
+          ratio = W2.value / H.value;
         }
       };
       el2.querySelectorAll("[data-short]").forEach((b) => b.onclick = () => {
         const sh = +b.dataset.short;
         if (ratio >= 1) {
           H.value = sh;
-          W.value = Math.round(sh * ratio / 2) * 2;
+          W2.value = Math.round(sh * ratio / 2) * 2;
         } else {
-          W.value = sh;
+          W2.value = sh;
           H.value = Math.round(sh / ratio / 2) * 2;
         }
       });
@@ -18606,7 +19625,16 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         if (map[lk]) return run(map[lk]);
         return;
       }
+      if (ctrl && alt && (k === "ArrowRight" || k === "ArrowLeft")) return run(() => {
+        if (!ops.rotateBy(k === "ArrowRight" ? 90 : -90)) toast2("Select a visual clip to rotate");
+      });
       if (alt && k === "Enter") return run(actions.fullscreen);
+      if (alt && lk === "c") return run(actions.crop);
+      if (alt && lk === "e") return run(() => {
+        const c = store.selectedClips()[0];
+        if (c) window.dispatchEvent(new CustomEvent("ve:openClip", { detail: { id: c.id } }));
+      });
+      if (!ctrl && !alt && k === "F2") return run(renameClip);
       if (alt && (k === "[" || e.code === "BracketLeft")) return run(actions.trimStart);
       if (alt && (k === "]" || e.code === "BracketRight")) return run(actions.trimEnd);
       if (alt && lk === "f") return run(actions.freeze);
@@ -18666,6 +19694,11 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
           });
         case "f":
           return run(zoomToSelection);
+        case "e":
+          return run(() => {
+            const to = ops.toggleDisabled();
+            if (to != null) toast2(to ? "Clip disabled (skipped in playback and export) \xB7 E to enable" : "Clip enabled");
+          });
         case "g":
           return run(toggleGuides);
         case "+":

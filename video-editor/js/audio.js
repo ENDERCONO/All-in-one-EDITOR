@@ -644,9 +644,11 @@ export function createAudioEngine({ store, mediaRuntime }) {
   let live = [];                  // [{ src, nodes }]
   let monitorVolume = 1;
 
-  const applyMaster = () => { master.gain.value = dbToGain(store.project.settings.masterVolume || 0); };
+  const applyMaster = () => { const v = +store.project.settings.masterVolume; master.gain.value = Math.max(0, Math.min(16, dbToGain(Number.isFinite(v) ? Math.max(-120, Math.min(24, v)) : 0))); };
   applyMaster();
   store.on('project', applyMaster);
+  // the browser can suspend the context (tab switch, device change); wake it while playing
+  ctx.onstatechange = () => { if (playing && ctx.state !== 'running' && ctx.state !== 'closed') ctx.resume().catch(() => {}); };
 
   // ---- decoding + peaks ----
   function computePeaks(buf) {
@@ -703,6 +705,15 @@ export function createAudioEngine({ store, mediaRuntime }) {
     return Math.abs(s) < 0.01 ? 0 : s;
   }
 
+  // Shifted output sanity check: finite samples, and not silent when the source has sound.
+  function soundOk(src, out) {
+    if (!out || !out.length || !out[0] || !out[0].length) return false;
+    const energy = chs => { let e = 0, n = 0; for (const d of chs) { const step = Math.max(1, Math.floor(d.length / 20000)); for (let i = 0; i < d.length; i += step) { const v = d[i]; if (!Number.isFinite(v)) return NaN; e += v * v; n++; } } return n ? e / n : 0; };
+    const eo = energy(out); if (!Number.isFinite(eo)) return false;
+    const es = energy(src);
+    return !(es > 1e-7 && eo < es * 1e-4);
+  }
+
   function makeBuffer(channels, sampleRate) {
     const b = new AudioBuffer({ length: channels[0].length, numberOfChannels: channels.length, sampleRate });
     channels.forEach((d, i) => b.copyToChannel(d, i));
@@ -727,9 +738,14 @@ export function createAudioEngine({ store, mediaRuntime }) {
     e = { buffer: null, promise: null };
     const chs = []; for (let c = 0; c < base.numberOfChannels; c++) chs.push(base.getChannelData(c));
     e.promise = shiftChannels(chs, base.sampleRate, semis).then(out => {
+      if (!soundOk(chs, out)) throw new Error('pitch-shifted audio came out broken');
       e.buffer = makeBuffer(out, base.sampleRate);
       return e.buffer;
-    }).catch(err => { console.warn('[audio] pitch shift failed', err); rt.pitchCache.delete(key); return null; });
+    }).catch(err => {
+      console.warn('[audio] pitch shift failed; using the unshifted audio', err);
+      e.buffer = base; // remember the fallback so playback keeps sound (no retry loop)
+      return base;
+    });
     rt.pitchCache.set(key, e);
     return e;
   }
@@ -789,21 +805,27 @@ export function createAudioEngine({ store, mediaRuntime }) {
 
     const node = c.createBufferSource();
     node.buffer = buf;
-    node.playbackRate.value = clip.speed;
+    node.playbackRate.value = Math.max(0.0625, Math.min(16, clip.speed));
     const g = c.createGain();
     g.channelCount = 2; g.channelCountMode = 'explicit'; g.channelInterpretation = 'speakers'; // mono -> L=R
     const a = clip.audio || {};
-    const base = dbToGain(a.volume || 0);
-    const fi = Math.max(0, a.fadeIn || 0, span.xin), fo = Math.max(0, a.fadeOut || 0, span.xout);
+    const fin = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
+    const base = Math.max(0, Math.min(16, dbToGain(Math.max(-120, Math.min(24, fin(a.volume))))));
+    const fi = Math.max(0, fin(a.fadeIn), fin(span.xin)), fo = Math.max(0, fin(a.fadeOut), fin(span.xout));
     const cEnd = span.end;
     const env = t => base * Math.max(0, Math.min(1, fi > 0 ? (t - cs) / fi : 1, fo > 0 ? (cEnd - t) / fo : 1));
     g.gain.setValueAtTime(env(s), when);
     const pts = [cs + fi, cEnd - fo, cEnd].filter(p => p > s + 1e-6).sort((x, y) => x - y);
     for (const p of pts) g.gain.linearRampToValueAtTime(env(p), toCtx(p));
     const pan = c.createStereoPanner();
-    pan.pan.value = Math.max(-1, Math.min(1, a.pan || 0));
+    pan.pan.value = Math.max(-1, Math.min(1, fin(a.pan)));
     node.connect(g);
-    const fx = buildClipFx(c, a, g, when, s - cs, wlReady);
+    let fx;
+    try { fx = buildClipFx(c, a, g, when, s - cs, wlReady); }
+    catch (e) {
+      console.warn('[audio] effects failed on', clip.name, '- playing it without effects', e);
+      fx = { out: g, nodes: [], oscs: [], tail: 0.2 };
+    }
     fx.out.connect(pan); pan.connect(dest);
     node.start(when, offset, dur);
     return { src: node, nodes: [g, pan, ...fx.nodes], oscs: fx.oscs, tail: fx.tail, end: when + (ce - s) };
@@ -830,10 +852,12 @@ export function createAudioEngine({ store, mediaRuntime }) {
     const wl = workletState(ctx);
     let waitWl = false;
     for (const clip of overlapping(t, Infinity)) {
-      const buf = bufferNow(clip, laterRefresh);
-      if (!wl.ready && !wl.failed && needsWorklet(clip.audio)) waitWl = true;
-      const n = scheduleClip(ctx, clip, buf, master, t, Infinity, startCtxTime, wl.ready);
-      if (n) { live.push(n); scheduleCleanup(n); }
+      try {
+        const buf = bufferNow(clip, laterRefresh);
+        if (!wl.ready && !wl.failed && needsWorklet(clip.audio)) waitWl = true;
+        const n = scheduleClip(ctx, clip, buf, master, t, Infinity, startCtxTime, wl.ready);
+        if (n) { live.push(n); scheduleCleanup(n); }
+      } catch (e) { console.warn('[audio] could not play', clip.name, e); }
     }
     if (waitWl) wl.promise.then(ok => { if (ok) laterRefresh(); });
   }
@@ -887,9 +911,10 @@ export function createAudioEngine({ store, mediaRuntime }) {
     // Worklet modules are per context: register (and wait) before scheduling anything.
     const wlReady = clips.some(c => needsWorklet(c.audio)) ? await workletState(oc).promise : false;
     const m = oc.createGain();
-    m.gain.value = dbToGain(st.masterVolume || 0);
+    const mv = +st.masterVolume;
+    m.gain.value = Math.max(0, Math.min(16, dbToGain(Number.isFinite(mv) ? Math.max(-120, Math.min(24, mv)) : 0)));
     m.connect(oc.destination);
-    clips.forEach((clip, i) => scheduleClip(oc, clip, bufs[i], m, start, end, 0, wlReady));
+    clips.forEach((clip, i) => { try { scheduleClip(oc, clip, bufs[i], m, start, end, 0, wlReady); } catch (e) { console.warn('[audio] export: could not mix', clip.name, e); } });
     return oc.startRendering();
   }
 

@@ -2,7 +2,7 @@
 // Video (transform, crop, compositing, green screen, material, transitions),
 // Titles, Audio, Color, Speed, Effects. With nothing selected: Project Info.
 import { mediaRuntime, uid, defaultColor, defaultHueMatch, defaultAudioFx, defaultMask, defaultGradBlur } from './state.js';
-import { BLEND_MODES, FILTERS, TRANSITIONS, FONTS, MASK_TYPES, CROP_ASPECTS } from './catalog.js';
+import { BLEND_MODES, FILTERS, TRANSITIONS, FONTS, MASK_TYPES, CROP_ASPECTS, TITLE_PRESETS } from './catalog.js';
 import { icon } from './icons.js';
 import { numField } from './numfield.js';
 
@@ -157,7 +157,37 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
       ${slider('Outline', 'text.stroke', { min: 0, max: 40, unit: 'px', hardMin: 0 })}
       ${color('Outline color', 'text.strokeColor')}
       <div class="prop wide"><label>Background</label><div style="display:flex;gap:6px;align-items:center"><input type="color" id="insTextBg"><button class="btn" data-do="noBg">None</button></div></div>
-    `);
+      ${slider('Box padding', 'text.bgPad', { min: 0, max: 1, step: 0.01, def: 0.25, ...pctS, hardMin: 0 })}
+      ${slider('Box corners', 'text.bgRadius', { min: 0, max: 120, unit: 'px', def: 20, hardMin: 0 })}
+      ${slider('Letter spacing', 'text.letterSpacing', { min: -10, max: 60, step: 0.5, unit: 'px' })}
+      <div class="prop wide"><label>More</label><div class="btn-row">${toggleBtn('Underline', 'text.underline')}${toggleBtn('Gradient', 'text.gradient')}</div></div>
+    `) + section('tpresets', 'Style Presets', `<div class="chip-grid tpreset-grid">${TITLE_PRESETS.map(t => `<button class="btn tpreset" data-tpreset="${t.id}" title="Apply the ${esc(t.label)} style (keeps your text)"><span style="${presetCss(t.text)}">Aa</span> ${esc(t.label)}</button>`).join('')}</div>`)
+      + section('tgrad', 'Gradient', `
+      ${toggle('Gradient fill', 'text.gradient')}
+      ${color('Second color', 'text.color2')}
+      ${slider('Angle', 'text.gradAngle', { min: 0, max: 360, unit: '°', def: 90 })}`)
+      + section('tshadow', 'Shadow', `
+      ${toggle('Drop shadow', 'text.shadow')}
+      ${color('Shadow color', 'text.shadowColor')}
+      ${slider('Opacity', 'text.shadowOpacity', { min: 0, max: 1, step: 0.01, def: 0.55, ...pctS, hardMin: 0, hardMax: 100 })}
+      ${slider('Blur', 'text.shadowBlur', { min: 0, max: 80, unit: 'px', def: Math.round((c.text?.size || 96) * 0.12), hardMin: 0 })}
+      ${slider('Offset X', 'text.shadowX', { min: -60, max: 60, unit: 'px' })}
+      ${slider('Offset Y', 'text.shadowY', { min: -60, max: 60, unit: 'px', def: Math.round((c.text?.size || 96) * 0.04) })}`)
+      + section('tglow', 'Glow', `
+      ${slider('Glow size', 'text.glow', { min: 0, max: 80, unit: 'px', hardMin: 0 })}
+      ${color('Glow color', 'text.glowColor')}`)
+      + section('tcurve', 'Shape', `
+      ${slider('Curve', 'text.curve', { min: -100, max: 100, unit: '' })}
+      <div class="dim" style="font-size:11px">Positive = arch, negative = smile. Double-click the label to make it straight again.</div>`);
+  }
+  // Small CSS preview of a title style (library + preset grid)
+  function presetCss(tx = {}) {
+    const glow = tx.glow ? `0 0 ${Math.min(8, tx.glow / 4)}px ${tx.glowColor || '#00e5ff'},` : '';
+    const sh = tx.shadow ? `${Math.max(-3, Math.min(3, (tx.shadowX || 0) / 3))}px ${Math.max(-3, Math.min(3, (tx.shadowY ?? 4) / 3))}px ${Math.min(4, (tx.shadowBlur ?? 10) / 6)}px ${tx.shadowColor || '#000'}` : '';
+    const ts = (glow + sh).replace(/,$/, '');
+    return `font-family:'${tx.font || 'Inter'}',sans-serif;font-weight:${tx.bold ? 700 : 400};${tx.italic ? 'font-style:italic;' : ''}` +
+      (tx.gradient ? `background:linear-gradient(${tx.gradAngle ?? 90}deg,${tx.color || '#fff'},${tx.color2 || '#f0a'});-webkit-background-clip:text;background-clip:text;color:transparent;` : `color:${tx.color || '#fff'};`) +
+      (tx.stroke ? `-webkit-text-stroke:1px ${tx.strokeColor || '#000'};` : '') + (ts ? `text-shadow:${ts};` : '') + (tx.background ? `background-color:${tx.background};padding:0 3px;border-radius:3px;` : '');
   }
 
   function audioTab(c) {
@@ -372,6 +402,18 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
     });
     root.querySelectorAll('[data-fdel]').forEach(b => b.addEventListener('click', () => store.transact('Remove filter', p => { const x = p.clips.find(y => y.id === clip().id); x.filters.splice(+b.dataset.fdel, 1); })));
     root.querySelector('#insAddFilter')?.addEventListener('change', e => { const v = e.target.value; if (!v) return; store.transact('Add filter', p => p.clips.find(y => y.id === clip().id).filters.push({ id: uid('flt'), type: v, amount: 1 })); });
+    // Title style presets: replace the look, keep the words
+    root.querySelectorAll('[data-tpreset]').forEach(b => b.addEventListener('click', () => {
+      const pr = TITLE_PRESETS.find(t => t.id === b.dataset.tpreset); if (!pr) return;
+      const STYLE = ['font', 'size', 'color', 'bold', 'italic', 'stroke', 'strokeColor', 'background', 'bgPad', 'bgRadius', 'shadow', 'shadowColor', 'shadowOpacity', 'shadowBlur', 'shadowX', 'shadowY',
+        'glow', 'glowColor', 'gradient', 'color2', 'gradAngle', 'curve', 'letterSpacing', 'underline'];
+      store.transact('Title style ' + pr.label, p => { for (const id of store.selection.clipIds) {
+        const x = p.clips.find(y => y.id === id); if (!x?.text) continue;
+        for (const k of STYLE) delete x.text[k];
+        const { content, ...style } = pr.text;
+        Object.assign(x.text, { stroke: 0, strokeColor: '#000000', background: '', shadow: false }, style);
+      } });
+    }));
     // Text case (the site's Text Case tool)
     root.querySelectorAll('[data-case]').forEach(b => b.addEventListener('click', () => {
       const f = CASES[b.dataset.case]; if (!f) return;

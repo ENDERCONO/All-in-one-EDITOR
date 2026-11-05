@@ -16,12 +16,13 @@ export function createPlayback({ store, sources, renderer, audio, onFrame }) {
 
   function loop() {
     if (!store.playing) return;
+    if (jumpTimer) { raf = requestAnimationFrame(loop); return; } // user is dragging the playhead
     let t = clockNow();
     const end = store.duration();
     const loopRange = store.loopRange;
     if (loopRange && t >= loopRange[1]) { seek(loopRange[0]); play(); return; }
     if (t >= end) { t = end; pause(); store.setPlayhead(end); return; }
-    store.setPlayhead(t);
+    fromLoop = true; store.setPlayhead(t); fromLoop = false;
     sources.sync(t, true);
     draw(t);
     raf = requestAnimationFrame(loop);
@@ -72,7 +73,25 @@ export function createPlayback({ store, sources, renderer, audio, onFrame }) {
     sources.prepare(t).then(() => { if (my === token && !store.playing) draw(t); }).catch(() => {});
   }
 
-  store.on('playhead', () => { if (!store.playing) requestStill(); });
+  // Playhead moved by the user while playing (ruler click, scrub, J/L keys…): keep playing
+  // from the new spot. Restarts are throttled during a drag, with a final one at the end.
+  let fromLoop = false, jumpTimer = 0, lastJump = 0;
+  function jump() {
+    jumpTimer = 0; lastJump = performance.now();
+    if (!store.playing) return;
+    const t = store.playhead;
+    try { audio?.stop(); audio?.play(t); } catch (e) { console.error('[audio.jump]', e); }
+    wallStart = performance.now(); wallFrom = t;
+    sources.sync(t, true);
+    draw(t);
+  }
+  store.on('playhead', () => {
+    if (!store.playing) return requestStill();
+    if (fromLoop) return;
+    clearTimeout(jumpTimer);
+    const wait = Math.max(0, 90 - (performance.now() - lastJump));
+    if (!wait) jump(); else { draw(store.playhead); jumpTimer = setTimeout(jump, wait); }
+  });
   store.on('project', () => {
     if (store.playing) {
       clearTimeout(refreshTimer);
