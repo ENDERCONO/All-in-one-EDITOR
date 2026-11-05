@@ -1366,12 +1366,20 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
         store.transact('Remove transitions', pj => { const c = pj.clips.find(x => x.id === clip.id); c.transitionIn = null; c.transitionOut = null; });
       } },
       '-',
+      // auto subtitles / auto edit: app.js opens the tool for the selection
+      { label: 'Auto subtitles…', disabled: !(clip.type === 'video' || clip.type === 'audio'), action: () => autoTool('captions') },
+      { label: 'Remove silences…', disabled: locked || !hasA, action: () => autoTool('silence') },
+      { label: 'Detect scenes…', disabled: locked || clip.type !== 'video', action: () => autoTool('scenes') },
+      { label: 'Cut to beat…', disabled: locked || !hasA, action: () => autoTool('beats') },
+      '-',
       { label: 'Group', disabled: sel.length < 2, action: () => (ops?.group ? ops.group() : fallbackGroup(ids)) },
       { label: 'Ungroup', disabled: !sel.some(c => c.groupId), action: () => (ops?.ungroup ? ops.ungroup() : store.transact('Ungroup', pj => ids.forEach(id => { pj.clips.find(x => x.id === id).groupId = null; }))) },
       '-',
       { label: 'Properties…', action: () => window.dispatchEvent(new CustomEvent('ve:openClip', { detail: { id: clip.id } })) },
     ]);
   });
+
+  const autoTool = tool => window.dispatchEvent(new CustomEvent('ve:autoTool', { detail: { tool } }));
 
   function setSpeed(s, ids) {
     if (ops?.setSpeed) return ops.setSpeed(s, ids);

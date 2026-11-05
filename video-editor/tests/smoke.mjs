@@ -65,6 +65,41 @@ await step('play 1.5s', async () => {
   const t = await page.evaluate(() => window.__ve.store.playhead);
   if (!(t > 1.05)) throw new Error('playhead did not advance: ' + t);
 });
+await step('player right-click: zoom, reset, corner crop', async () => {
+  const vid = () => page.evaluate(() => { const c = window.__ve.store.project.clips.find(x => x.type === 'video'); return { ...c.crop, s: c.transform.scale, x: c.transform.x, zoomed: !!c.zoomSpot }; });
+  await page.evaluate(() => { const { store } = window.__ve; store.select([store.project.clips.find(x => x.type === 'video').id]); });
+  const box = await page.locator('#previewStage').boundingBox();
+  const pick = async (fx, fy, label) => {
+    await page.mouse.click(box.x + box.width * fx, box.y + box.height * fy, { button: 'right' });
+    await page.locator('.menu-item', { hasText: label }).first().click({ timeout: 3000 });
+  };
+  const c0 = await vid();
+  await pick(0.75, 0.25, 'Zoom 2×');
+  let c = await vid();
+  if (!(c.zoomed && Math.abs(c.s - c0.s * 2) < 1e-6 && c.l > 0.4 && c.x < 0)) throw new Error('zoom 2x wrong: ' + JSON.stringify(c));
+  await pick(0.5, 0.5, 'Reset zoom');
+  c = await vid();
+  if (c.zoomed || c.s !== c0.s || c.x !== c0.x || c.l !== c0.l) throw new Error('reset zoom wrong: ' + JSON.stringify(c));
+  await pick(0.25, 0.25, 'Crop corner');
+  c = await vid();
+  if (!(c.l > 0.1 && c.t > 0.1 && c.r === c0.r && c.b === c0.b)) throw new Error('corner crop wrong: ' + JSON.stringify(c));
+  await page.evaluate(() => window.__ve.store.undo());
+  c = await vid();
+  if (c.l !== c0.l || c.t !== c0.t) throw new Error('corner crop is not one undo step');
+});
+await step('captions go on the top title track', async () => {
+  const r = await page.evaluate(async () => {
+    const { store } = window.__ve; const ai = await import('./js/ai.js');
+    const n0 = store.project.tracks.length;
+    const t1 = ai.addCaptionTrack(store, [{ start: 0, end: 1, text: 'a' }]).track;
+    const t2 = ai.addCaptionTrack(store, [{ start: 2, end: 3, text: 'b' }]).track;   // free → same track
+    const t3 = ai.addCaptionTrack(store, [{ start: 0.5, end: 1.5, text: 'c' }]).track; // clash → new top track
+    const ok = t1.id === t2.id && t3.id !== t1.id && store.project.tracks[0].id === t3.id && store.project.tracks[1].id === t1.id && store.project.tracks.length === n0 + 2;
+    store.undo(); store.undo(); store.undo();
+    return { ok, back: store.project.tracks.length === n0 };
+  });
+  if (!r.ok || !r.back) throw new Error('caption track placement: ' + JSON.stringify(r));
+});
 await step('material on a clip', async () => {
   await page.evaluate(() => {
     const { store, materials } = window.__ve;

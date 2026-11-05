@@ -2455,6 +2455,12 @@ ${e.message}`);
           });
         } },
         "-",
+        // auto subtitles / auto edit: app.js opens the tool for the selection
+        { label: "Auto subtitles\u2026", disabled: !(clip.type === "video" || clip.type === "audio"), action: () => autoTool("captions") },
+        { label: "Remove silences\u2026", disabled: locked || !hasA, action: () => autoTool("silence") },
+        { label: "Detect scenes\u2026", disabled: locked || clip.type !== "video", action: () => autoTool("scenes") },
+        { label: "Cut to beat\u2026", disabled: locked || !hasA, action: () => autoTool("beats") },
+        "-",
         { label: "Group", disabled: sel.length < 2, action: () => ops2?.group ? ops2.group() : fallbackGroup(ids) },
         { label: "Ungroup", disabled: !sel.some((c) => c.groupId), action: () => ops2?.ungroup ? ops2.ungroup() : store2.transact("Ungroup", (pj) => ids.forEach((id) => {
           pj.clips.find((x) => x.id === id).groupId = null;
@@ -2463,6 +2469,7 @@ ${e.message}`);
         { label: "Properties\u2026", action: () => window.dispatchEvent(new CustomEvent("ve:openClip", { detail: { id: clip.id } })) }
       ]);
     });
+    const autoTool = (tool) => window.dispatchEvent(new CustomEvent("ve:autoTool", { detail: { tool } }));
     function setSpeed(s, ids) {
       if (ops2?.setSpeed) return ops2.setSpeed(s, ids);
       store2.transact("Speed " + s + "x", (pj) => ids.forEach((id) => {
@@ -13875,13 +13882,22 @@ ${notes}`;
     const { width = 1920, height = 1080 } = store2.project.settings;
     const k = Math.min(width, height) / 1080;
     const ypx = Math.round(((y ?? st.y) / 100 - 0.5) * height);
+    const a = caps.length ? Math.min(...caps.map((c) => c.start)) : 0;
+    const b = caps.length ? Math.max(...caps.map((c) => c.end)) : 0;
     let track, clips = [];
     store2.transact("Auto captions", (p) => {
-      const names = new Set(p.tracks.map((t) => t.name));
-      let name = "Captions", i = 2;
-      while (names.has(name)) name = "Captions " + i++;
-      track = makeTrack("video", name);
-      p.tracks.splice(0, 0, track);
+      const top = p.tracks[0];
+      const free2 = (t) => !p.clips.some((c) => c.trackId === t.id && c.start < b - 1e-6 && c.start + c.duration > a + 1e-6);
+      const onlyText = (t) => p.clips.every((c) => c.trackId !== t.id || c.type === "text");
+      if (top && top.kind === "video" && !top.locked && TITLE_TRACK.test(top.name) && onlyText(top) && free2(top)) {
+        track = top;
+      } else {
+        const names = new Set(p.tracks.map((t) => t.name));
+        let name = "Captions", i = 2;
+        while (names.has(name)) name = "Captions " + i++;
+        track = makeTrack("video", name);
+        p.tracks.splice(0, 0, track);
+      }
       for (const c of caps) {
         const content = st.upper ? c.text.toLocaleUpperCase() : c.text;
         const clip = makeClip({
@@ -14141,7 +14157,7 @@ ${c.text}
         lastClips = clips;
         store2.select(clips.map((c) => c.id));
         status2("");
-        show(".ai-result", `<b>${words.length} word${words.length === 1 ? "" : "s"} \u2192 ${clips.length} caption${clips.length === 1 ? "" : "s"}</b> on the new \u201C${esc5(track.name)}\u201D track.` + (res.granularity !== "word" ? '<br><span class="dim">Word timings were estimated from sentence timestamps.</span>' : "") + '<br><span class="dim">Edit any caption in the Inspector \xB7 Ctrl+Z removes them all.</span>');
+        show(".ai-result", `<b>${words.length} word${words.length === 1 ? "" : "s"} \u2192 ${clips.length} caption${clips.length === 1 ? "" : "s"}</b> on the \u201C${esc5(track.name)}\u201D track at the top.` + (res.granularity !== "word" ? '<br><span class="dim">Word timings were estimated from sentence timestamps.</span>' : "") + '<br><span class="dim">Edit any caption in the Inspector \xB7 Ctrl+Z removes them all.</span>');
         q(".ai-srt").hidden = false;
       } catch (e) {
         if (e.code === "cancel" || signal.aborted) {
@@ -14511,7 +14527,7 @@ ${c.text}
     };
     return { el: back, close };
   }
-  var AI_MODELS, LANGUAGES, CAPTION_STYLES, BASE_TEXT, MIN_DUR, PAUSE, MAX_CHARS, CJK, isAIAvailable, joinWord, styleOf, srtTime, worker, runSeq, workerTranscribe, workerSegment, esc5, fmtT, mb, PREF_KEY2, loadPrefs2, savePrefs2, BG_MODELS;
+  var AI_MODELS, LANGUAGES, CAPTION_STYLES, BASE_TEXT, MIN_DUR, PAUSE, MAX_CHARS, CJK, isAIAvailable, joinWord, styleOf, TITLE_TRACK, srtTime, worker, runSeq, workerTranscribe, workerSegment, esc5, fmtT, mb, PREF_KEY2, loadPrefs2, savePrefs2, BG_MODELS;
   var init_ai = __esm({
     "js/ai.js"() {
       init_state();
@@ -14602,6 +14618,7 @@ ${c.text}
         return cur + " " + w;
       };
       styleOf = (id) => CAPTION_STYLES.find((s) => s.id === id) || CAPTION_STYLES[0];
+      TITLE_TRACK = /^(captions|subtitles|titles?)\b/i;
       srtTime = (t) => {
         const ms = Math.max(0, Math.round(t * 1e3));
         const p = (n, l = 2) => String(n).padStart(l, "0");
@@ -17704,6 +17721,10 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     window.addEventListener("ve:linkToTimeline", (e) => linkToTimeline(e.detail.url, e.detail));
     window.addEventListener("ve:status", (e) => status(e.detail));
     window.addEventListener("ve:removeBg", (e) => autoActions.removeBg(e.detail?.mediaIds));
+    window.addEventListener("ve:autoTool", (e) => {
+      const f = autoActions[e.detail?.tool];
+      if (f) f();
+    });
     window.addEventListener("ve:importMedia", async (e) => {
       try {
         e.detail.resolve(await importFiles([...e.detail.files], { audio }));
@@ -18362,6 +18383,8 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       e.preventDefault();
       const c = store.selectedClips()[0];
       const vis = c && c.type !== "audio";
+      const zoomable = !!c && (c.type === "video" || c.type === "image") && !!store.getMedia(c.mediaId)?.width;
+      const hasCrop = !!c?.crop && !!(c.crop.l || c.crop.r || c.crop.t || c.crop.b);
       showMenu(e.clientX, e.clientY, [
         { label: "Fit to frame", disabled: !vis, run: () => document.querySelector('#inspector [data-do="fit"]') ? document.querySelector('#inspector [data-do="fit"]').click() : store.transact("Fit", (p) => {
           const x = p.clips.find((y) => y.id === c.id);
@@ -18379,26 +18402,18 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
           const x = p.clips.find((y) => y.id === c.id);
           x.transform.flipH = !x.transform.flipH;
         }) },
-        // Zoom in and centre on the clicked spot: crops the clip around the point (undoable)
-        ...[2, 4].map((z) => ({ label: `Zoom ${z}\xD7 on this spot`, disabled: !vis, run: () => {
-          const r = $("#previewStage").getBoundingClientRect();
-          const fx = clamp((e.clientX - r.left) / r.width, 0, 1), fy = clamp((e.clientY - r.top) / r.height, 0, 1);
-          const v = 1 / z;
-          const place = (f) => {
-            const l = clamp(f - v / 2, 0, 1 - v);
-            return { a: l, b: 1 - v - l };
-          };
-          const h2 = place(fx), vv = place(fy);
-          store.transact("Zoom on spot", (p) => {
-            const x = p.clips.find((y) => y.id === c.id);
-            x.crop = { l: h2.a, r: h2.b, t: vv.a, b: vv.b };
-          });
-          toast2(`Zoomed ${z}\xD7 on the clicked spot \u2014 right-click > Reset zoom to undo`);
-        } })),
-        { label: "Reset zoom (crop)", disabled: !vis || !c?.crop || !(c.crop.l || c.crop.r || c.crop.t || c.crop.b), run: () => store.transact("Reset zoom", (p) => {
+        { sep: true },
+        // Zoom in and centre on the clicked spot (crop + scale, one undo step each)
+        ...[2, 4].map((z) => ({ label: `Zoom ${z}\xD7 on this spot`, disabled: !zoomable, run: () => zoomOnSpot(e, c, z) })),
+        { label: "Reset zoom", disabled: !c?.zoomSpot, run: () => resetZoom(c) },
+        { label: "Crop corner to here", disabled: !zoomable, run: () => cropCorner(e, c) },
+        { label: "Reset crop", disabled: !hasCrop, run: () => store.transact("Reset crop", (p) => {
           const x = p.clips.find((y) => y.id === c.id);
           x.crop = { l: 0, r: 0, t: 0, b: 0 };
+          delete x.zoomSpot;
         }) },
+        { sep: true },
+        { label: "Auto subtitles\u2026", run: () => autoActions.captions() },
         { sep: true },
         { label: "Guides (thirds \xB7 safe zones)", kbd: "G", checked: !$("#guides").hidden, run: toggleGuides },
         { label: "Reset preview zoom", disabled: pv.z === 1 && !pv.x && !pv.y, run: () => {
@@ -18408,6 +18423,72 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         { label: "Snapshot (PNG)", kbd: "Ctrl+Alt+S", run: actions.snapshot }
       ]);
     });
+    function clickOnClip(e, c) {
+      const S = store.project.settings, r = $("#previewStage").getBoundingClientRect();
+      const q = renderer?.getClipQuad?.(c);
+      if (!q || !r.width || !r.height) return null;
+      const px = ((e.clientX - r.left) / r.width - 0.5) * S.width, py = ((e.clientY - r.top) / r.height - 0.5) * S.height;
+      const ax = q[1].x - q[0].x, ay = q[1].y - q[0].y, bx = q[3].x - q[0].x, by = q[3].y - q[0].y;
+      const det = ax * by - ay * bx;
+      if (Math.abs(det) < 1e-6) return null;
+      const dx = px - q[0].x, dy = py - q[0].y;
+      const a = clamp((dx * by - dy * bx) / det, 0, 1), b = clamp((ax * dy - ay * dx) / det, 0, 1);
+      const cr = c.crop || {}, l = cr.l || 0, t = cr.t || 0, rr = 1 - (cr.r || 0), bb = 1 - (cr.b || 0);
+      return { a, b, u: l + a * (rr - l), v: t + b * (bb - t) };
+    }
+    function zoomOnSpot(e, c, z) {
+      const m = store.getMedia(c.mediaId), hit = clickOnClip(e, c);
+      if (!m?.width || !m?.height || !hit) return toast2("Select a video or image clip to zoom");
+      const S = store.project.settings;
+      const base = c.zoomSpot?.base || { crop: { l: 0, t: 0, r: 0, b: 0, ...c.crop }, transform: { ...c.transform } };
+      const bc = base.crop, bt = base.transform;
+      const bw = 1 - bc.l - bc.r, bh = 1 - bc.t - bc.b, w = bw / z, h2 = bh / z;
+      const l = clamp(hit.u - w / 2, bc.l, bc.l + bw - w), t = clamp(hit.v - h2 / 2, bc.t, bc.t + bh - h2);
+      const fit = Math.min(S.width / m.width, S.height / m.height), s0 = bt.scale ?? 1;
+      const dw = m.width * fit * s0 * (bt.scaleX ?? 1), dh = m.height * fit * s0 * (bt.scaleY ?? 1);
+      let dx = (bc.l + bw / 2 - 0.5) * dw - (l + w / 2 - 0.5) * dw * z;
+      let dy = (bc.t + bh / 2 - 0.5) * dh - (t + h2 / 2 - 0.5) * dh * z;
+      if (bt.flipH) dx = -dx;
+      if (bt.flipV) dy = -dy;
+      const th = (bt.rotation || 0) * Math.PI / 180, co = Math.cos(th), si = Math.sin(th);
+      store.transact(`Zoom ${z}\xD7 on spot`, (p) => {
+        const x = p.clips.find((y) => y.id === c.id);
+        if (!x) return;
+        x.crop = { l, t, r: Math.max(0, 1 - l - w), b: Math.max(0, 1 - t - h2) };
+        x.transform.scale = s0 * z;
+        x.transform.x = (bt.x || 0) + dx * co - dy * si;
+        x.transform.y = (bt.y || 0) + dx * si + dy * co;
+        x.zoomSpot = { z, base };
+      });
+      toast2(`Zoomed ${z}\xD7 on the clicked spot \xB7 right-click > Reset zoom to go back`);
+    }
+    function resetZoom(c) {
+      const base = c?.zoomSpot?.base;
+      if (!base) return;
+      store.transact("Reset zoom", (p) => {
+        const x = p.clips.find((y) => y.id === c.id);
+        if (!x) return;
+        x.crop = { ...base.crop };
+        Object.assign(x.transform, { scale: base.transform.scale ?? 1, x: base.transform.x || 0, y: base.transform.y || 0 });
+        delete x.zoomSpot;
+      });
+    }
+    function cropCorner(e, c) {
+      const hit = clickOnClip(e, c);
+      if (!hit) return toast2("Select a video or image clip to crop");
+      const cr = { l: 0, t: 0, r: 0, b: 0, ...c.crop };
+      if (hit.a < 0.5) cr.l = hit.u;
+      else cr.r = 1 - hit.u;
+      if (hit.b < 0.5) cr.t = hit.v;
+      else cr.b = 1 - hit.v;
+      store.transact("Crop corner", (p) => {
+        const x = p.clips.find((y) => y.id === c.id);
+        if (x) {
+          x.crop = cr;
+          delete x.zoomSpot;
+        }
+      });
+    }
     function autoFill() {
       const s = store.project.settings;
       let n = 0;

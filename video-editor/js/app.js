@@ -343,6 +343,8 @@ async function boot() {
   window.addEventListener('ve:linkToTimeline', e => linkToTimeline(e.detail.url, e.detail));
   window.addEventListener('ve:status', e => status(e.detail));
   window.addEventListener('ve:removeBg', e => autoActions.removeBg(e.detail?.mediaIds));
+  // timeline right-click → auto subtitles / auto edit tools
+  window.addEventListener('ve:autoTool', e => { const f = autoActions[e.detail?.tool]; if (f) f(); });
 
   // Import without adding to the timeline; resolves with the new media ids (used by the material editor)
   window.addEventListener('ve:importMedia', async e => {
@@ -693,28 +695,84 @@ async function boot() {
   pwrap.addEventListener('contextmenu', e => {
     e.preventDefault();
     const c = store.selectedClips()[0]; const vis = c && c.type !== 'audio';
+    const zoomable = !!c && (c.type === 'video' || c.type === 'image') && !!store.getMedia(c.mediaId)?.width;
+    const hasCrop = !!c?.crop && !!(c.crop.l || c.crop.r || c.crop.t || c.crop.b);
     showMenu(e.clientX, e.clientY, [
       { label: 'Fit to frame', disabled: !vis, run: () => document.querySelector('#inspector [data-do="fit"]') ? document.querySelector('#inspector [data-do="fit"]').click() : store.transact('Fit', p => { const x = p.clips.find(y => y.id === c.id); Object.assign(x.transform, { scale: 1, scaleX: 1, scaleY: 1 }); }) },
       { label: 'Fill frame (crop to cover)', disabled: !vis, run: () => { const n = autoFill(); toast(n ? 'Filled the frame' : 'Select a video or image clip'); } },
       { label: 'Reset transform', disabled: !vis, run: () => store.transact('Reset transform', p => { const x = p.clips.find(y => y.id === c.id); x.transform = { ...x.transform, x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, rotation: 0, flipH: false, flipV: false }; }) },
       { label: 'Flip horizontal', disabled: !vis, run: () => store.transact('Flip', p => { const x = p.clips.find(y => y.id === c.id); x.transform.flipH = !x.transform.flipH; }) },
-      // Zoom in and centre on the clicked spot: crops the clip around the point (undoable)
-      ...[2, 4].map(z => ({ label: `Zoom ${z}× on this spot`, disabled: !vis, run: () => {
-        const r = $('#previewStage').getBoundingClientRect();
-        const fx = clamp((e.clientX - r.left) / r.width, 0, 1), fy = clamp((e.clientY - r.top) / r.height, 0, 1);
-        const v = 1 / z;
-        const place = f => { const l = clamp(f - v / 2, 0, 1 - v); return { a: l, b: 1 - v - l }; };
-        const h = place(fx), vv = place(fy);
-        store.transact('Zoom on spot', p => { const x = p.clips.find(y => y.id === c.id); x.crop = { l: h.a, r: h.b, t: vv.a, b: vv.b }; });
-        toast(`Zoomed ${z}× on the clicked spot — right-click > Reset zoom to undo`);
-      } })),
-      { label: 'Reset zoom (crop)', disabled: !vis || !c?.crop || !(c.crop.l || c.crop.r || c.crop.t || c.crop.b), run: () => store.transact('Reset zoom', p => { const x = p.clips.find(y => y.id === c.id); x.crop = { l: 0, r: 0, t: 0, b: 0 }; }) },
+      { sep: true },
+      // Zoom in and centre on the clicked spot (crop + scale, one undo step each)
+      ...[2, 4].map(z => ({ label: `Zoom ${z}× on this spot`, disabled: !zoomable, run: () => zoomOnSpot(e, c, z) })),
+      { label: 'Reset zoom', disabled: !c?.zoomSpot, run: () => resetZoom(c) },
+      { label: 'Crop corner to here', disabled: !zoomable, run: () => cropCorner(e, c) },
+      { label: 'Reset crop', disabled: !hasCrop, run: () => store.transact('Reset crop', p => { const x = p.clips.find(y => y.id === c.id); x.crop = { l: 0, r: 0, t: 0, b: 0 }; delete x.zoomSpot; }) },
+      { sep: true },
+      { label: 'Auto subtitles…', run: () => autoActions.captions() },
       { sep: true },
       { label: 'Guides (thirds · safe zones)', kbd: 'G', checked: !$('#guides').hidden, run: toggleGuides },
       { label: 'Reset preview zoom', disabled: pv.z === 1 && !pv.x && !pv.y, run: () => { pv = { z: 1, x: 0, y: 0 }; applyPv(); } },
       { label: 'Snapshot (PNG)', kbd: 'Ctrl+Alt+S', run: actions.snapshot },
     ]);
   });
+  // Click on the player → where it lands on the clip: a, b = fractions across the visible
+  // (cropped) box, u, v = source uv. Uses the renderer's quad, so flips / rotation are handled.
+  function clickOnClip(e, c) {
+    const S = store.project.settings, r = $('#previewStage').getBoundingClientRect();
+    const q = renderer?.getClipQuad?.(c); if (!q || !r.width || !r.height) return null;
+    const px = ((e.clientX - r.left) / r.width - 0.5) * S.width, py = ((e.clientY - r.top) / r.height - 0.5) * S.height;
+    const ax = q[1].x - q[0].x, ay = q[1].y - q[0].y, bx = q[3].x - q[0].x, by = q[3].y - q[0].y;
+    const det = ax * by - ay * bx; if (Math.abs(det) < 1e-6) return null;
+    const dx = px - q[0].x, dy = py - q[0].y;
+    const a = clamp((dx * by - dy * bx) / det, 0, 1), b = clamp((ax * dy - ay * dx) / det, 0, 1);
+    const cr = c.crop || {}, l = cr.l || 0, t = cr.t || 0, rr = 1 - (cr.r || 0), bb = 1 - (cr.b || 0);
+    return { a, b, u: l + a * (rr - l), v: t + b * (bb - t) };
+  }
+  // Zoom z× relative to the pre-zoom state: crop a window around the clicked spot and scale the
+  // clip up so the window fills the same box, with the clicked spot in its centre.
+  function zoomOnSpot(e, c, z) {
+    const m = store.getMedia(c.mediaId), hit = clickOnClip(e, c);
+    if (!m?.width || !m?.height || !hit) return toast('Select a video or image clip to zoom');
+    const S = store.project.settings;
+    const base = c.zoomSpot?.base || { crop: { l: 0, t: 0, r: 0, b: 0, ...c.crop }, transform: { ...c.transform } };
+    const bc = base.crop, bt = base.transform;
+    const bw = 1 - bc.l - bc.r, bh = 1 - bc.t - bc.b, w = bw / z, h = bh / z;
+    const l = clamp(hit.u - w / 2, bc.l, bc.l + bw - w), t = clamp(hit.v - h / 2, bc.t, bc.t + bh - h);
+    const fit = Math.min(S.width / m.width, S.height / m.height), s0 = bt.scale ?? 1;
+    const dw = m.width * fit * s0 * (bt.scaleX ?? 1), dh = m.height * fit * s0 * (bt.scaleY ?? 1);
+    // keep the new window's centre where the old visible centre was
+    let dx = (bc.l + bw / 2 - 0.5) * dw - (l + w / 2 - 0.5) * dw * z;
+    let dy = (bc.t + bh / 2 - 0.5) * dh - (t + h / 2 - 0.5) * dh * z;
+    if (bt.flipH) dx = -dx; if (bt.flipV) dy = -dy;
+    const th = (bt.rotation || 0) * Math.PI / 180, co = Math.cos(th), si = Math.sin(th);
+    store.transact(`Zoom ${z}× on spot`, p => {
+      const x = p.clips.find(y => y.id === c.id); if (!x) return;
+      x.crop = { l, t, r: Math.max(0, 1 - l - w), b: Math.max(0, 1 - t - h) };
+      x.transform.scale = s0 * z;
+      x.transform.x = (bt.x || 0) + dx * co - dy * si;
+      x.transform.y = (bt.y || 0) + dx * si + dy * co;
+      x.zoomSpot = { z, base };
+    });
+    toast(`Zoomed ${z}× on the clicked spot · right-click > Reset zoom to go back`);
+  }
+  function resetZoom(c) {
+    const base = c?.zoomSpot?.base; if (!base) return;
+    store.transact('Reset zoom', p => {
+      const x = p.clips.find(y => y.id === c.id); if (!x) return;
+      x.crop = { ...base.crop };
+      Object.assign(x.transform, { scale: base.transform.scale ?? 1, x: base.transform.x || 0, y: base.transform.y || 0 });
+      delete x.zoomSpot;
+    });
+  }
+  // Move the visible corner nearest to the click onto the clicked point (crops two edges)
+  function cropCorner(e, c) {
+    const hit = clickOnClip(e, c); if (!hit) return toast('Select a video or image clip to crop');
+    const cr = { l: 0, t: 0, r: 0, b: 0, ...c.crop };
+    if (hit.a < 0.5) cr.l = hit.u; else cr.r = 1 - hit.u;
+    if (hit.b < 0.5) cr.t = hit.v; else cr.b = 1 - hit.v;
+    store.transact('Crop corner', p => { const x = p.clips.find(y => y.id === c.id); if (x) { x.crop = cr; delete x.zoomSpot; } });
+  }
   // Scale selected visual clips so they cover the frame (handy after switching to 9:16)
   function autoFill() {
     const s = store.project.settings; let n = 0;

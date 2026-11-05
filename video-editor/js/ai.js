@@ -132,18 +132,30 @@ export function buildCaptions(store, words, { style = 'subtitle', maxWords, offs
   return fixTimings(groupWords(words, { maxWords: mw, maxChars }), { offset, fps });
 }
 
-// Captions → text clips on a new "Captions" video track at the top. One undo step.
+// Captions → text clips on the top title track. The top track is reused when it is an
+// unlocked caption/title track with nothing in the captions' time range; otherwise a new
+// "Captions" track goes on top and every other track moves one row down. One undo step.
+const TITLE_TRACK = /^(captions|subtitles|titles?)\b/i;
 export function addCaptionTrack(store, caps, { style = 'subtitle', y, color } = {}) {
   const st = styleOf(style);
   const { width = 1920, height = 1080 } = store.project.settings;
   const k = Math.min(width, height) / 1080;
   const ypx = Math.round(((y ?? st.y) / 100 - 0.5) * height);
+  const a = caps.length ? Math.min(...caps.map(c => c.start)) : 0;
+  const b = caps.length ? Math.max(...caps.map(c => c.end)) : 0;
   let track, clips = [];
   store.transact('Auto captions', p => {
-    const names = new Set(p.tracks.map(t => t.name));
-    let name = 'Captions', i = 2; while (names.has(name)) name = 'Captions ' + i++;
-    track = makeTrack('video', name);
-    p.tracks.splice(0, 0, track);
+    const top = p.tracks[0];
+    const free = t => !p.clips.some(c => c.trackId === t.id && c.start < b - 1e-6 && c.start + c.duration > a + 1e-6);
+    const onlyText = t => p.clips.every(c => c.trackId !== t.id || c.type === 'text');
+    if (top && top.kind === 'video' && !top.locked && TITLE_TRACK.test(top.name) && onlyText(top) && free(top)) {
+      track = top;
+    } else {
+      const names = new Set(p.tracks.map(t => t.name));
+      let name = 'Captions', i = 2; while (names.has(name)) name = 'Captions ' + i++;
+      track = makeTrack('video', name);
+      p.tracks.splice(0, 0, track);
+    }
     for (const c of caps) {
       const content = st.upper ? c.text.toLocaleUpperCase() : c.text;
       const clip = makeClip({
@@ -359,7 +371,7 @@ export function openAutoCaptions({ store, ops, audio, mediaRuntime, transcribe, 
       lastClips = clips;
       store.select(clips.map(c => c.id));
       status('');
-      show('.ai-result', `<b>${words.length} word${words.length === 1 ? '' : 's'} → ${clips.length} caption${clips.length === 1 ? '' : 's'}</b> on the new “${esc(track.name)}” track.` +
+      show('.ai-result', `<b>${words.length} word${words.length === 1 ? '' : 's'} → ${clips.length} caption${clips.length === 1 ? '' : 's'}</b> on the “${esc(track.name)}” track at the top.` +
         (res.granularity !== 'word' ? '<br><span class="dim">Word timings were estimated from sentence timestamps.</span>' : '') +
         '<br><span class="dim">Edit any caption in the Inspector · Ctrl+Z removes them all.</span>');
       q('.ai-srt').hidden = false;
