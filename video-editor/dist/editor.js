@@ -601,7 +601,8 @@
     downloadUrl: () => downloadUrl,
     explainDlError: () => explainDlError,
     isMediaLink: () => isMediaLink,
-    openImportFromUrl: () => openImportFromUrl
+    openImportFromUrl: () => openImportFromUrl,
+    wakeOnlineServer: () => wakeOnlineServer
   });
   async function ping(base, ms) {
     const ctrl = new AbortController();
@@ -639,6 +640,14 @@
       }
     }
     return null;
+  }
+  function wakeOnlineServer() {
+    if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) return;
+    try {
+      fetch(DEFAULT_ONLINE_API + "/api/dl/ping", { cache: "no-store" }).catch(() => {
+      });
+    } catch (e) {
+    }
   }
   async function convertForImport(file, kind, onStatus) {
     const target = kind === "audio" ? "mp3" : kind === "image" ? "png" : "mp4";
@@ -17301,6 +17310,8 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
   }
   async function boot() {
     applyIcons();
+    Promise.resolve().then(() => (init_integrations(), integrations_exports)).then((m) => m.wakeOnlineServer?.()).catch(() => {
+    });
     const [{ createTimeline: createTimeline2 }, { createRenderer: createRenderer2 }, { createGizmo: createGizmo2 }, materials, audioMod, exportMod] = await Promise.all([
       safeImport("./timeline.js", () => Promise.resolve().then(() => (init_timeline(), timeline_exports))),
       safeImport("./renderer.js", () => Promise.resolve().then(() => (init_renderer(), renderer_exports))),

@@ -28,6 +28,12 @@ export async function apiBase(onStatus) {
   return null;
 }
 
+// Fire-and-forget ping so the free online server is awake before the first download.
+export function wakeOnlineServer() {
+  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) return;
+  try { fetch(DEFAULT_ONLINE_API + '/api/dl/ping', { cache: 'no-store' }).catch(() => {}); } catch (e) { /* ignore */ }
+}
+
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ---------------- Convert files the browser can't decode ----------------

@@ -1,10 +1,13 @@
 # Keeps the free Render downloader server awake (Render sleeps free services after
-# ~15 minutes without traffic). Pings its ping endpoint every 10 minutes.
+# ~15 minutes without traffic). Pings its ping endpoint every 5 minutes (GitHub often
+# starts scheduled runs late, so 5 keeps it under Render's 15-minute limit).
+# Free: public repos have unlimited Actions minutes; one always-on Render service
+# fits in Render's 750 free hours a month.
 name: Keep downloader server awake
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions:

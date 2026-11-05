@@ -91,6 +91,7 @@ function modal(title, bodyHtml, buttons = [], { width = 520 } = {}) {
 // ======================================================================
 async function boot() {
   applyIcons();
+  import('./integrations.js').then(m => m.wakeOnlineServer?.()).catch(() => {}); // wake the free online server early
   const [{ createTimeline }, { createRenderer }, { createGizmo }, materials, audioMod, exportMod] = await Promise.all([
     safeImport('./timeline.js', () => import('./timeline.js')), safeImport('./renderer.js', () => import('./renderer.js')), safeImport('./gizmo.js', () => import('./gizmo.js')),
     safeImport('./materials.js', () => import('./materials.js')), safeImport('./audio.js', () => import('./audio.js')), safeImport('./export.js', () => import('./export.js')),

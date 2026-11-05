@@ -17536,6 +17536,12 @@ window.resolveApiBase = function(onStatus) {
   return window._apiBasePromise;
 };
 
+// Wake the free online server as soon as the site opens (it sleeps when unused), so it
+// is awake by the time someone pastes a link. Fire-and-forget: sends nothing but the ping.
+if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+  try { fetch(window.DEFAULT_ONLINE_API + '/api/dl/ping', { cache: 'no-store' }).catch(() => {}); } catch (e) {}
+}
+
 // If the page was double-clicked from disk but the local server is running,
 // hop straight to the served version — same origin, everything just works.
 if (location.protocol === 'file:') {
