@@ -1,0 +1,26 @@
+# Keeps the free Render downloader server awake (Render sleeps free services after
+# ~15 minutes without traffic). Pings its ping endpoint every 10 minutes.
+name: Keep downloader server awake
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the server
+        run: |
+          for i in 1 2 3; do
+            if curl -fsS --max-time 90 https://all-in-one-editor.onrender.com/api/dl/ping; then
+              echo; exit 0
+            fi
+            sleep 20
+          done
+          echo "Ping failed (the server may be down)" >&2
+          exit 0

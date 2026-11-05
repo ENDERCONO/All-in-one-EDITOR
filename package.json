@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "postinstall": "node scripts/setup-lovejs.js",
+    "postinstall": "node scripts/setup-lovejs.js && node scripts/fetch-tools.js",
     "start": "node server.js"
   },
   "dependencies": {
