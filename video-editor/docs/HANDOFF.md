@@ -53,9 +53,16 @@ services, no proxy pools. Ask the user before anything that reads their data.
 
 ## Open items
 
-1. **Make the local flow fully automatic on Windows.** Confirm `START-SERVER.bat` works
-   on the user's PC after Node.js is installed. Optional: a Startup shortcut so the server
-   starts at login (explain it, don't install it silently).
+1. **Local flow on Windows: done (2026-11-05), tested on the user's PC.** `START-SERVER.bat`
+   sets itself up: if the server already answers on port 3000 it just opens the site; if
+   Node.js is missing it offers to install it (Volta, else winget; asks with a 20 s default
+   of Yes, never in `/quiet`); it re-runs `npm install` whenever `package.json` differs from
+   `node_modules/.installed-package.json`; it restarts the server after a crash (gives up
+   after 5). `START-SERVER.bat /quiet` = no browser, no questions. `START-AT-LOGIN.bat`
+   turns a Startup-folder shortcut (minimized, `/quiet`) on or off; it is opt-in and was
+   not run on the user's PC. Fixed: `npm -v` without `call` ended the old script early on
+   a normal (non-Volta) Node.js install. Delays use `ping`, not `timeout` (which fails
+   without a console).
 2. **YouTube "not a bot" check.** Unverified on the user's home connection. Ask for the
    `[downloader]` lines from the server console and for whether the download said
    "via this PC" or "via the online server".
