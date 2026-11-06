@@ -22,6 +22,7 @@ public sealed class FileTransferManager : IDisposable
     private readonly IUserPrompts _prompts;
     private readonly AuditLog _audit;
     private readonly string? _tempDir;
+    private readonly string? _autoAcceptDir;
     private readonly object _lock = new();
 
     // incoming
@@ -38,11 +39,29 @@ public sealed class FileTransferManager : IDisposable
 
     public FileTransferManager(string label, string controllerId, string fingerprint, bool viewOnly,
         Action<object> sendControl, Action<byte[]> sendChunk, Func<ulong> fileBuffered,
-        IUserPrompts prompts, AuditLog audit, string? tempDir = null)
+        IUserPrompts prompts, AuditLog audit, string? tempDir = null, string? autoAcceptDir = null)
     {
         _label = label; _controllerId = controllerId; _fingerprint = fingerprint; _viewOnly = viewOnly;
         _sendControl = sendControl; _sendChunk = sendChunk; _fileBuffered = fileBuffered;
-        _prompts = prompts; _audit = audit; _tempDir = tempDir;
+        _prompts = prompts; _audit = audit; _tempDir = tempDir; _autoAcceptDir = autoAcceptDir;
+    }
+
+    /// <summary>The folder uploads from a "my device" go to without a dialog.</summary>
+    public static string DefaultInbox => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "GlobalRemoteControl");
+
+    /// <summary><paramref name="dir"/>\name, or "name (2).ext", "name (3).ext" … — never an existing file.</summary>
+    internal static string UniquePath(string dir, string safeName)
+    {
+        Directory.CreateDirectory(dir);
+        var stem = Path.GetFileNameWithoutExtension(safeName);
+        var ext = Path.GetExtension(safeName);
+        for (int i = 1; i < 10000; i++)
+        {
+            var candidate = Path.Combine(dir, i == 1 ? safeName : $"{stem} ({i}){ext}");
+            if (!File.Exists(candidate) && !Directory.Exists(candidate)) return candidate;
+        }
+        throw new IOException("Too many files with that name");
     }
 
     public bool OutgoingActive { get { lock (_lock) return _outId != null; } }
@@ -83,8 +102,17 @@ public sealed class FileTransferManager : IDisposable
         string? dest = null;
         CancellationToken promptToken;
         lock (_lock) promptToken = _inPromptCts?.Token ?? new CancellationToken(true);
-        try { dest = await _prompts.ApproveIncomingFileAsync(_label, _fingerprint, safeName, o.Size, TimeSpan.FromSeconds(60), promptToken); }
-        catch (Exception) { dest = null; }
+        if (_autoAcceptDir != null)
+        {
+            // "my device" (PROTOCOL section 8): no dialog, fixed folder, never overwrites
+            try { dest = UniquePath(_autoAcceptDir, safeName); }
+            catch (Exception) { dest = null; }
+        }
+        else
+        {
+            try { dest = await _prompts.ApproveIncomingFileAsync(_label, _fingerprint, safeName, o.Size, TimeSpan.FromSeconds(60), promptToken); }
+            catch (Exception) { dest = null; }
+        }
         lock (_lock) { _inPromptCts?.Dispose(); _inPromptCts = null; }
 
         bool finalizeNow = false;

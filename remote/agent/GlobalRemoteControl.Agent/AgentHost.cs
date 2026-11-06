@@ -30,7 +30,8 @@ public sealed class AgentHost : IDisposable
         Store = new TrustedControllerStore(paths.TrustedControllersFile);
         Gate = new SessionGate();
         Signaling = new SignalingClient(Identity, () => Settings.DeviceName);
-        Pairing = new PairingHandler(Signaling, Store, prompts, audit);
+        Approvals = new OwnerApprovals(Signaling, Identity, Store, audit);
+        Pairing = new PairingHandler(Signaling, Store, prompts, audit, Approvals, Identity.DeviceId);
         var services = new SessionServices
         {
             Monitors = Monitors.Enumerate,
@@ -42,13 +43,20 @@ public sealed class AgentHost : IDisposable
             Audit = audit,
         };
         Negotiator = new SessionNegotiator(Signaling, Identity, Store, Gate, prompts, audit,
-            (info, fp) => new RemoteSession(info, fp, Signaling.IceServers, Gate, services));
+            (info, fp) => new RemoteSession(info, fp, Signaling.IceServers, Gate, services), Approvals);
 
         Signaling.StateChanged += OnSignalingState;
         Signaling.MessageReceived += OnMessage;
         Signaling.BinaryReceived += Negotiator.OnRelayFrame; // encrypted relay frames, in order, on the receive loop
-        Gate.Ended += (info, reason) => Audit.Write("session-closed", info.ControllerName, info.ControllerId, reason);
+        Gate.Ended += (info, reason) =>
+        {
+            Audit.Write("session-closed", info.ControllerName, info.ControllerId, reason);
+            Store.RemoveTemporary(info.ControllerId); // an "Allow once" is over with its session
+        };
     }
+
+    /// <summary>"My device" approvals (PROTOCOL section 8).</summary>
+    public OwnerApprovals Approvals { get; }
 
     public AgentPaths Paths { get; }
     public AuditLog Audit { get; }
@@ -116,6 +124,8 @@ public sealed class AgentHost : IDisposable
         {
             "pairing-code" => Run(() => Pairing.OnPairingCode(m)),
             "pair-request" => Pairing.OnPairRequestAsync(m),
+            "code-request" => Pairing.OnCodeRequestAsync(m),
+            "approval-result" => Run(() => Approvals.OnResult(m)),
             // relay-start completes synchronously here, before the receive loop reads the binary frames after it
             "session-request" or "session-auth" or "signal" or "session-end" or "relay-start" => Negotiator.HandleAsync(type, m),
             "error" => Run(() => Audit.Write("server-error", details:

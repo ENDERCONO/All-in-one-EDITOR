@@ -3,7 +3,9 @@ namespace GlobalRemoteControl.Agent.Session;
 public enum SessionMode { Control, View }
 public enum SessionKind { Browser, Mcp }
 
-public sealed record SessionInfo(string Key, SessionKind Kind, string ControllerName, string ControllerId, SessionMode Mode, DateTimeOffset Started)
+/// <param name="Owner">The controller is a "my device" (PROTOCOL section 8): its uploads need no dialog.</param>
+public sealed record SessionInfo(string Key, SessionKind Kind, string ControllerName, string ControllerId, SessionMode Mode, DateTimeOffset Started,
+    bool Owner = false)
 {
     public string Label => Kind == SessionKind.Mcp ? "Claude (MCP)" : ControllerName;
     public string ModeText => Mode == SessionMode.Control ? "full control" : "view only";
@@ -43,13 +45,13 @@ public sealed class SessionGate
     }
 
     /// <summary>Turns a reservation into an active session (after the local user approved).</summary>
-    public bool Activate(string key, SessionKind kind, string controllerName, string controllerId, SessionMode mode)
+    public bool Activate(string key, SessionKind kind, string controllerName, string controllerId, SessionMode mode, bool owner = false)
     {
         lock (_lock)
         {
             if (_reservedKey != key || _active != null) return false;
             _reservedKey = null;
-            _active = new SessionInfo(key, kind, controllerName, controllerId, mode, DateTimeOffset.UtcNow);
+            _active = new SessionInfo(key, kind, controllerName, controllerId, mode, DateTimeOffset.UtcNow, owner);
         }
         Changed?.Invoke();
         return true;

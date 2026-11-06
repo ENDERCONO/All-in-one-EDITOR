@@ -27,7 +27,8 @@ The server is a stateless relay (Render's free disk is wiped on restart). **The 
   Signed data is the UTF-8 bytes of the strings given below.
 * Public keys travel as base64 SPKI DER.
 * A pairing code alone gives nothing: the person at the PC must approve the controller (pairing), and must approve
-  **every** session. The agent itself verifies controller signatures; it never trusts the server's word.
+  **every** session — either at the PC, or from one of their own **"my device"** controllers (section 8), which the
+  person at the PC opted in, one by one. The agent itself verifies controller signatures; it never trusts the server's word.
 * The agent signs its SDP answer and the controller signs its offer, so the server cannot man-in-the-middle the
   WebRTC DTLS connection (the DTLS fingerprint is inside the signed SDP).
 
@@ -62,8 +63,10 @@ C→S  { type:"pair", code:"ABCD-EFGH" }
 S→C  { type:"pair-pending", requestId, device:{ id, name, publicKey } }    // or error code "bad-code" | "rate-limited" | "device-offline"
 S→D  { type:"pair-request", requestId, controller:{ id, name, publicKey } } // identity verified by the server at hello
 D→S  { type:"pair-result", requestId, approved:true|false }
-S→C  { type:"pair-result", requestId, approved, device:{ id, name, publicKey } }
+S→C  { type:"pair-result", requestId, approved, device:{ id, name, publicKey }, temporary? }
 ```
+`temporary:true` (from the device, forwarded as is) = approved "once" from a my-device (section 8): the browser keeps the
+device only for the current page, not in IndexedDB.
 The agent stores approved controllers (id, name, publicKey, addedAt) locally. The browser stores paired devices
 (id, name, publicKey) in IndexedDB. Revocation = the agent deletes the controller (tray UI); the browser can
 "forget" a device locally.
@@ -216,3 +219,48 @@ plaintext       = u8 channel (0 control, 1 video, 2 audio, 3 file) | payload (ex
   WebSocket's buffered amount is above 1 MB (browser `ws.bufferedAmount`; agent: bounded send queue).
 * Unordered/unreliable audio semantics don't exist on the relay; it's fine (ordered delivery).
 * The browser shows a "Relayed" badge; Auto quality starts at the Smooth preset in relay mode.
+
+## 8. My devices: unattended access and approving from your phone
+
+The person at the PC can mark a paired controller as **"My device"** in the app (trusted devices list). It is off for
+every controller by default, can only be set at the PC (never over the network, never by MCP), and is stored with the
+controller (`Owner: true` in the trusted controllers file). For a my-device controller:
+
+1. **Sessions need no dialog.** After the usual `session-auth` signature check the agent accepts at once with
+   `mode:"control"` (audit `session-auto-approved`). The session bar, tray state and kill switch work as always.
+2. **Uploads need no dialog.** A `file-offer` from it is accepted into `%USERPROFILE%\Downloads\GlobalRemoteControl\`
+   (sanitized name, never overwrites: ` (2)`, ` (3)` …). Audited like any transfer.
+3. **It can approve for the PC.** Whenever the agent opens a pairing or session approval dialog, it also sends an
+   approval request to every my-device controller (except the one asking). The first valid answer — the PC dialog or
+   any my-device — wins; the others are closed.
+4. **It can ask for a pairing code**, so a new browser (e.g. a school computer) can pair while nobody is home.
+
+```
+D→S  { type:"approval-request", to:<controllerId>, approvalId, kind:"pair"|"session", subject:{ id, name, fingerprint },
+       expiresAt:<ms epoch>, signature: deviceSign("grc-approval:" + approvalId + ":" + kind + ":" + subject.id + ":" +
+       subject.fingerprint + ":" + expiresAt + ":" + subject.name) }
+S→C  { type:"approval-request", deviceId, approvalId, kind, subject, expiresAt, signature }   // to every socket of `to`; dropped if offline
+C→S  { type:"approval-result", deviceId, approvalId, decision,
+       signature: sign("grc-approve:" + deviceId + ":" + approvalId + ":" + kind + ":" + decision) }
+S→D  { type:"approval-result", controllerId, approvalId, decision, signature }   // controllerId = the sender's authenticated id
+D→S  { type:"approval-cancel", to, approvalId }  →  S→C { type:"approval-cancel", deviceId, approvalId }
+```
+* `decision`: for `pair` `"once" | "trust" | "deny"`; for `session` `"control" | "view" | "deny"`.
+* The controller verifies the request's signature with the device key it stored at pairing before showing it, so the
+  server can't change who is asking. The agent accepts a result only for an outstanding `approvalId` it sent to that
+  controller, only while that controller is still a my-device, and only with a valid signature from its stored key.
+  `approvalId` = 22-char base64url random; requests live as long as the PC dialog (60 s).
+* The server forwards `approval-result` only from the controller the request went to, for an `approvalId` it forwarded
+  in the last 2 min, and drops it after the first answer.
+* **"once"** trusts the new controller in memory only, for **one** session started within 10 min, which is accepted
+  as `control` without another prompt; that trust ends with the session, after 10 min, or when the app restarts.
+  The device answers `pair-result` with `temporary:true`. **"trust"** pairs it normally (later sessions ask again).
+
+```
+C→S  { type:"code-request", deviceId, requestId, ts:<ms epoch>, signature: sign("grc-code-request:" + deviceId + ":" + requestId + ":" + ts) }
+S→D  { type:"code-request", controllerId, requestId, ts, signature }
+D→S  { type:"code-reply", to:<controllerId>, requestId, code?, expiresAt?, error? }  →  S→C { type:"code-reply", deviceId, requestId, code?, expiresAt?, error? }
+```
+The agent answers only a my-device controller (else `error:"not-allowed"`), only for `|ts − now| ≤ 2 min` and a
+`requestId` it hasn't seen, at most 5 per 10 min (`rate-limited`). It then requests a normal pairing code (section 2),
+shows it on the PC screen as usual, and replies with it. The server rate-limits `code-request` like `pair`.

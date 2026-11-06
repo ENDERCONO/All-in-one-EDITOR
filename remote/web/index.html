@@ -41,6 +41,8 @@
         <input id="nameInput" maxlength="64" aria-label="This browser's name">
       </label>
       <div class="field"><span class="flabel">Fingerprint</span> <code id="myFp">…</code></div>
+      <p class="muted small" id="ownerHint">Mark this browser as <b>My device</b> in the Windows app to connect without approval, approve other devices from here, and get pairing codes while you're away. Keep this page open to receive approval requests.</p>
+      <button class="btn" id="notifyBtn" type="button" hidden>Alert me about approval requests</button>
       <p class="muted small warnline" id="persistWarn" hidden>Storage is unavailable here (private window?). Pairings will be lost when you close this page.</p>
       <p class="field small"><span class="flabel">Server</span> <code id="serverUrl"></code></p>
     </section>
@@ -122,7 +124,7 @@
   <div class="box" role="alertdialog" aria-modal="true" aria-labelledby="modalHead" aria-describedby="modalText">
     <div class="boxhead" id="modalHead">Confirm</div>
     <p id="modalText"></p>
-    <div class="row"><button class="btn" id="modalNo">Decline</button><button class="btn primary" id="modalYes">Accept</button></div>
+    <div class="row" id="modalRow"><button class="btn" id="modalNo">Decline</button><button class="btn primary" id="modalYes">Accept</button></div>
   </div>
 </div>
 <div id="toasts" class="toasts" aria-live="polite"></div>

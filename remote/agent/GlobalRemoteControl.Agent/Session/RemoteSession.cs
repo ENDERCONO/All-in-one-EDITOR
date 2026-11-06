@@ -19,6 +19,8 @@ public sealed class SessionServices
     public required Func<bool> AudioAvailable { get; init; }
     public required IUserPrompts Prompts { get; init; }
     public required AuditLog Audit { get; init; }
+    /// <summary>Where uploads from a "my device" land without a dialog (PROTOCOL section 8).</summary>
+    public string FileInbox { get; init; } = FileTransferManager.DefaultInbox;
 }
 
 /// <summary>
@@ -98,7 +100,8 @@ public sealed class RemoteSession : IRemotePeer
             Log = m => svc.Audit.Write("input-dropped", info.ControllerName, info.ControllerId, m),
         };
         _files = new FileTransferManager(info.ControllerName, info.ControllerId, fingerprint, info.Mode == SessionMode.View,
-            SendControl, d => _transport.Send(RelayChannel.File, d), () => _transport.Buffered(RelayChannel.File), svc.Prompts, svc.Audit);
+            SendControl, d => _transport.Send(RelayChannel.File, d), () => _transport.Buffered(RelayChannel.File), svc.Prompts, svc.Audit,
+            autoAcceptDir: info.Owner ? svc.FileInbox : null);
     }
 
     public bool IsRelayed => _relayed;

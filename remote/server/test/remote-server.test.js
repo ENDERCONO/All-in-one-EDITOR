@@ -676,3 +676,144 @@ test('relay: unauthenticated binary is rejected', async () => {
     assert.equal((await c.next('error')).code, 'bad-message');
   } finally { await srv.stop(); }
 });
+
+// ---------- section 8: my devices (approval requests, code requests) ----------
+const fp8 = '1234-ABCD-5678-EF90';
+const id22 = () => rid().slice(0, 22);
+function approvalReq(to, extra = {}) {
+  return { type: 'approval-request', to, approvalId: id22(), kind: 'pair',
+    subject: { id: id22(), name: 'School PC', fingerprint: fp8 }, expiresAt: Date.now() + 60000, signature: 'A'.repeat(88), ...extra };
+}
+
+test('approval-request reaches every tab of the owner; the result goes back to the device once', async () => {
+  const srv = await startServer();
+  try {
+    const dev = await connect(srv, 'device');
+    const ownerKeys = makeKeys();
+    const tab1 = await connect(srv, 'controller', ownerKeys);
+    const tab2 = await connect(srv, 'controller', ownerKeys);
+    const other = await connect(srv, 'controller');
+    const req = approvalReq(tab1.id);
+    dev.send(req);
+    const got1 = await tab1.next('approval-request');
+    const got2 = await tab2.next('approval-request');
+    assert.equal(got1.deviceId, dev.id);
+    assert.deepEqual(got1.subject, req.subject);
+    assert.equal(got2.approvalId, req.approvalId);
+    await other.expectNone('approval-request');
+
+    // someone else can't answer it
+    other.send({ type: 'approval-result', deviceId: dev.id, approvalId: req.approvalId, decision: 'trust', signature: 'B'.repeat(88) });
+    assert.equal((await other.next('error')).code, 'unknown-request');
+    await dev.expectNone('approval-result');
+
+    tab1.send({ type: 'approval-result', deviceId: dev.id, approvalId: req.approvalId, decision: 'once', signature: 'B'.repeat(88) });
+    const res = await dev.next('approval-result');
+    assert.deepEqual(res, { type: 'approval-result', controllerId: tab1.id, approvalId: req.approvalId, decision: 'once', signature: 'B'.repeat(88) });
+    assert.equal((await tab2.next('approval-cancel')).approvalId, req.approvalId); // the other tab closes its prompt
+
+    // only the first answer counts
+    tab2.send({ type: 'approval-result', deviceId: dev.id, approvalId: req.approvalId, decision: 'deny', signature: 'B'.repeat(88) });
+    assert.equal((await tab2.next('error')).code, 'unknown-request');
+    await dev.expectNone('approval-result');
+  } finally { await srv.stop(); }
+});
+
+test('approval: bad requests, bad decisions, cancel, and a controller cannot send requests', async () => {
+  const srv = await startServer();
+  try {
+    const dev = await connect(srv, 'device');
+    const owner = await connect(srv, 'controller');
+    dev.send(approvalReq(owner.id, { kind: 'shell' }));
+    assert.equal((await dev.next('error')).code, 'bad-message');
+    dev.send(approvalReq(owner.id, { subject: { id: owner.id, name: 'x', fingerprint: 'nope' } }));
+    assert.equal((await dev.next('error')).code, 'bad-message');
+    await owner.expectNone('approval-request');
+
+    const req = approvalReq(owner.id);
+    dev.send(req);
+    await owner.next('approval-request');
+    owner.send({ type: 'approval-result', deviceId: dev.id, approvalId: req.approvalId, decision: 'root', signature: 'B'.repeat(88) });
+    assert.equal((await owner.next('error')).code, 'bad-message');
+    dev.send({ type: 'approval-cancel', approvalId: req.approvalId });
+    assert.equal((await owner.next('approval-cancel')).approvalId, req.approvalId);
+    owner.send({ type: 'approval-result', deviceId: dev.id, approvalId: req.approvalId, decision: 'deny', signature: 'B'.repeat(88) });
+    assert.equal((await owner.next('error')).code, 'unknown-request'); // cancelled = gone
+
+    owner.send(approvalReq(dev.id));
+    assert.equal((await owner.next('error')).code, 'unknown-type');
+  } finally { await srv.stop(); }
+});
+
+test('approval-request is rate limited per device', async () => {
+  const srv = await startServer();
+  try {
+    const dev = await connect(srv, 'device');
+    const owner = await connect(srv, 'controller');
+    for (let i = 0; i < 20; i++) dev.send(approvalReq(owner.id));
+    for (let i = 0; i < 20; i++) await owner.next('approval-request');
+    dev.send(approvalReq(owner.id));
+    assert.equal((await dev.next('error')).code, 'rate-limited');
+  } finally { await srv.stop(); }
+});
+
+test('code-request goes to the device with the sender id; code-reply only to the requester', async () => {
+  const srv = await startServer();
+  try {
+    const dev = await connect(srv, 'device');
+    const owner = await connect(srv, 'controller');
+    const other = await connect(srv, 'controller');
+    const requestId = id22();
+    owner.send({ type: 'code-request', deviceId: dev.id, requestId, ts: Date.now(), signature: 'C'.repeat(88) });
+    const got = await dev.next('code-request');
+    assert.equal(got.controllerId, owner.id);
+    assert.equal(got.requestId, requestId);
+    dev.send({ type: 'code-reply', to: owner.id, requestId, code: 'ABCD-EFGH', expiresAt: Date.now() + 300000 });
+    const r = await owner.next('code-reply');
+    assert.equal(r.code, 'ABCD-EFGH');
+    assert.equal(r.deviceId, dev.id);
+    await other.expectNone('code-reply');
+    dev.send({ type: 'code-reply', to: owner.id, requestId, code: 'ABCD-EFGH', expiresAt: 1 });
+    assert.equal((await dev.next('error')).code, 'unknown-request'); // one reply per request
+
+    const r2 = id22();
+    owner.send({ type: 'code-request', deviceId: dev.id, requestId: r2, ts: Date.now(), signature: 'C'.repeat(88) });
+    await dev.next('code-request');
+    dev.send({ type: 'code-reply', to: owner.id, requestId: r2, error: 'not-allowed' });
+    assert.equal((await owner.next('code-reply')).error, 'not-allowed');
+
+    owner.send({ type: 'code-request', deviceId: id22(), requestId: id22(), ts: Date.now(), signature: 'C'.repeat(88) });
+    assert.equal((await owner.next('error')).code, 'device-offline');
+  } finally { await srv.stop(); }
+});
+
+test('code-request is rate limited like pair', async () => {
+  const srv = await startServer();
+  try {
+    const dev = await connect(srv, 'device');
+    const owner = await connect(srv, 'controller');
+    for (let i = 0; i < 5; i++) owner.send({ type: 'code-request', deviceId: dev.id, requestId: id22(), ts: Date.now(), signature: 'C'.repeat(88) });
+    for (let i = 0; i < 5; i++) await dev.next('code-request');
+    owner.send({ type: 'code-request', deviceId: dev.id, requestId: id22(), ts: Date.now(), signature: 'C'.repeat(88) });
+    assert.equal((await owner.next('error')).code, 'rate-limited');
+  } finally { await srv.stop(); }
+});
+
+test('pair-result forwards temporary:true only when approved', async () => {
+  const srv = await startServer();
+  try {
+    const dev = await connect(srv, 'device');
+    const ctl = await connect(srv, 'controller');
+    dev.send({ type: 'pairing-code-request' });
+    const { code } = await dev.next('pairing-code');
+    ctl.send({ type: 'pair', code });
+    await ctl.next('pair-pending');
+    const req = await dev.next('pair-request');
+    dev.send({ type: 'pair-result', requestId: req.requestId, approved: true, temporary: true });
+    const res = await ctl.next('pair-result');
+    assert.equal(res.temporary, true);
+    assert.equal(res.device.id, dev.id);
+    const r2 = await pairUp(dev, ctl);
+    assert.equal(r2.temporary, undefined);
+  } finally { await srv.stop(); }
+});

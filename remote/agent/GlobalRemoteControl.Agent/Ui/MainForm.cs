@@ -25,6 +25,7 @@ internal sealed class MainForm : Form
         HeaderStyle = ColumnHeaderStyle.Nonclickable,
     };
     private readonly Button _revoke = new() { Text = "Revoke", AutoSize = true, Enabled = false, MinimumSize = new Size(100, 30) };
+    private readonly Button _owner = new() { Text = "Mark as my device…", AutoSize = true, Enabled = false, MinimumSize = new Size(160, 30), Name = "OwnerButton" };
     private readonly TextBox _serverUrl = new() { Width = 470 };
     private readonly Label _serverNote = new() { AutoSize = true, ForeColor = SystemColors.GrayText, MaximumSize = new Size(640, 0) };
     private readonly CheckBox _startAtLogin = new() { Text = "Start at login (adds a visible entry for your Windows user only)", AutoSize = true };
@@ -87,14 +88,25 @@ internal sealed class MainForm : Form
         var pair = new Button { Text = "Pair a new device", AutoSize = true, MinimumSize = new Size(170, 34), Name = "PairButton", AccessibleName = "Pair a new device" };
         pair.Click += (_, _) => PairRequested?.Invoke();
         root.Controls.Add(pair);
-        _controllers.Columns.Add("Name", 200);
-        _controllers.Columns.Add("Fingerprint", 210);
-        _controllers.Columns.Add("Added", 200);
+        _controllers.Columns.Add("Name", 180);
+        _controllers.Columns.Add("Fingerprint", 190);
+        _controllers.Columns.Add("Added", 150);
+        _controllers.Columns.Add("My device", 100);
         _controllers.Margin = new Padding(0, 8, 0, 4);
-        _controllers.SelectedIndexChanged += (_, _) => _revoke.Enabled = _controllers.SelectedItems.Count == 1;
+        _controllers.SelectedIndexChanged += (_, _) => UpdateControllerButtons();
         root.Controls.Add(_controllers);
         _revoke.Click += (_, _) => RevokeSelected();
-        root.Controls.Add(_revoke);
+        _owner.Click += (_, _) => ToggleOwnerSelected();
+        var ctlButtons = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+        ctlButtons.Controls.Add(_revoke);
+        ctlButtons.Controls.Add(_owner);
+        root.Controls.Add(ctlButtons);
+        root.Controls.Add(new Label
+        {
+            AutoSize = true, MaximumSize = new Size(640, 0), ForeColor = SystemColors.GrayText,
+            Text = "A device marked \"My device\" connects without asking, sends files to Downloads\\GlobalRemoteControl, " +
+                   "can approve other devices for you and can ask for a pairing code. Only mark your own phone or computer.",
+        });
 
         // settings
         root.Controls.Add(Header("Settings"));
@@ -206,14 +218,46 @@ internal sealed class MainForm : Form
         _controllers.Items.Clear();
         foreach (var c in _host.Store.All.OrderBy(c => c.AddedAt))
         {
-            var item = new ListViewItem(new[] { c.Name, c.Fingerprint, c.AddedAt.ToLocalTime().ToString("g", CultureInfo.CurrentCulture) }) { Tag = c.Id };
+            var item = new ListViewItem(new[] { c.Name, c.Fingerprint, c.AddedAt.ToLocalTime().ToString("g", CultureInfo.CurrentCulture),
+                c.Owner ? "Yes" : "" }) { Tag = c.Id };
             _controllers.Items.Add(item);
             if (c.Id == selected) item.Selected = true;
         }
         if (_controllers.Items.Count == 0)
-            _controllers.Items.Add(new ListViewItem(new[] { "(no devices paired yet)", "", "" }) { ForeColor = SystemColors.GrayText });
+            _controllers.Items.Add(new ListViewItem(new[] { "(no devices paired yet)", "", "", "" }) { ForeColor = SystemColors.GrayText });
         _controllers.EndUpdate();
-        _revoke.Enabled = _controllers.SelectedItems.Count == 1 && _controllers.SelectedItems[0].Tag is string;
+        UpdateControllerButtons();
+    }
+
+    private void UpdateControllerButtons()
+    {
+        var id = _controllers.SelectedItems.Count == 1 ? _controllers.SelectedItems[0].Tag as string : null;
+        var c = _host.Store.Get(id);
+        _revoke.Enabled = c != null;
+        _owner.Enabled = c != null && !c.Temporary;
+        _owner.Text = c?.Owner == true ? "Not my device" : "Mark as my device…";
+    }
+
+    private void ToggleOwnerSelected()
+    {
+        if (_controllers.SelectedItems.Count != 1 || _controllers.SelectedItems[0].Tag is not string id) return;
+        var c = _host.Store.Get(id);
+        if (c == null || c.Temporary) return;
+        if (!c.Owner)
+        {
+            if (MessageBox.Show(this,
+                    $"Mark \"{c.Name}\" ({c.Fingerprint}) as your own device?\n\n" +
+                    "It will be able to:\n" +
+                    " • connect with full control without anyone approving here,\n" +
+                    " • send files into Downloads\\GlobalRemoteControl without asking,\n" +
+                    " • approve or deny other devices and sessions for you,\n" +
+                    " • ask this PC for a pairing code.\n\n" +
+                    "The session bar and the kill switch (Ctrl+Alt+Shift+F12) still work, and everything is logged.\n" +
+                    "Only do this for a phone or computer that only you use.",
+                    "My device", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+            if (_host.Store.SetOwner(id, true)) _host.Audit.Write("owner-enabled", c.Name, c.Id, "fingerprint " + c.Fingerprint);
+        }
+        else if (_host.Store.SetOwner(id, false)) _host.Audit.Write("owner-disabled", c.Name, c.Id, "fingerprint " + c.Fingerprint);
     }
 
     private void RevokeSelected()
