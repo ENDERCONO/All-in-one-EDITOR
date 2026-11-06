@@ -606,7 +606,26 @@ public class AgentPipeRoundTripTests
         server.Start();
         var client = new AgentPipeClient(name, null);
         var r = await SendWithRetry(client, "pairing-code");
-        Assert.Equal("123456", r!["code"]!.GetValue<string>());
+        Assert.True(r != null, "no reply from the ACL'd pipe (client refused it or the server could not create it)");
+        Assert.True(r!["code"] != null, "unexpected reply: " + r.ToJsonString());
+        Assert.Equal("123456", r["code"]!.GetValue<string>());
         Assert.Equal(1, agent.PairingTriggered);
+    }
+
+    [WindowsFact]
+    public void Client_AcceptsOnlyPipesOwnedByTheUserSid_NotTheTokenDefaultOwner()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        using var id = WindowsIdentity.GetCurrent();
+        // what the tray app creates: owner = user SID (also when it runs elevated)
+        Assert.True(AgentPipeClient.OwnedByCurrentUser(AgentPipeServer.CurrentUserOnlySecurity()));
+        // a pipe someone else created under our name
+        foreach (var other in new[] { WellKnownSidType.WorldSid, WellKnownSidType.BuiltinAdministratorsSid, WellKnownSidType.LocalSystemSid })
+        {
+            var sec = new PipeSecurity();
+            sec.SetOwner(new SecurityIdentifier(other, null));
+            Assert.False(AgentPipeClient.OwnedByCurrentUser(sec), other.ToString());
+        }
+        Assert.False(AgentPipeClient.OwnedByCurrentUser(null));
     }
 }

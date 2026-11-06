@@ -28,12 +28,17 @@ public sealed class AgentPipeClient : IAgentBridge
 
     public async Task<JsonObject?> SendAsync(string cmd, TimeSpan timeout, CancellationToken ct)
     {
-        // CurrentUserOnly: refuse to talk to a pipe that someone else created under our name.
-        using var pipe = new NamedPipeClientStream(".", _pipeName, PipeDirection.InOut, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        // Refuse to talk to a pipe that someone else created under our name. On Windows we check the owner ourselves:
+        // PipeOptions.CurrentUserOnly compares it with the token's *default owner*, which in an elevated process is
+        // BUILTIN\Administrators, not the user, so an elevated client would reject the real tray app's pipe (owned by
+        // the user SID, see AgentPipeServer.CurrentUserOnlySecurity) and report "not running".
+        var options = PipeOptions.Asynchronous | (OperatingSystem.IsWindows() ? PipeOptions.None : PipeOptions.CurrentUserOnly);
+        using var pipe = new NamedPipeClientStream(".", _pipeName, PipeDirection.InOut, options);
         try { await pipe.ConnectAsync(TimeSpan.FromMilliseconds(800), ct).ConfigureAwait(false); }
         catch (TimeoutException) { return null; }
         catch (IOException) { return null; }
         catch (UnauthorizedAccessException) { return null; }
+        if (OperatingSystem.IsWindows() && !OwnedByCurrentUser(GetSecurity(pipe))) return null;
 
         // The pipe exists from here on: every failure is a reply-level error object, never null ("not running" would
         // make open_agent start a second copy) and never an exception (that would surface as a JSON-RPC internal error).
@@ -53,6 +58,22 @@ public sealed class AgentPipeClient : IAgentBridge
         {
             return AgentPipeProtocol.Error("bad-reply", "The connection to GlobalRemoteControl broke.");
         }
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static PipeSecurity? GetSecurity(NamedPipeClientStream pipe)
+    {
+        try { return pipe.GetAccessControl(); } catch (Exception) { return null; }
+    }
+
+    /// <summary>True only when the pipe's owner is this Windows user's SID (elevated or not).</summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    internal static bool OwnedByCurrentUser(PipeSecurity? sec)
+    {
+        if (sec == null) return false;
+        using var id = System.Security.Principal.WindowsIdentity.GetCurrent();
+        return sec.GetOwner(typeof(System.Security.Principal.SecurityIdentifier)) is System.Security.Principal.SecurityIdentifier owner
+            && owner == id.User;
     }
 
     public string? Launch()
