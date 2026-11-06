@@ -22,6 +22,7 @@ public sealed class VideoStreamer : IDisposable
     private readonly Func<ulong> _bufferedAmount;
     private readonly Action<object> _sendControl;
     private readonly Func<CursorState> _cursorSource;
+    private readonly Func<DateTime> _clock;
     private readonly AckWindow _window = new();
     private readonly KeyframePolicy _keyframes = new();
     private readonly DeltaEncoder _delta;
@@ -50,7 +51,7 @@ public sealed class VideoStreamer : IDisposable
 
     public VideoStreamer(IScreenCapturer capturer, Func<IReadOnlyList<MonitorInfo>> monitors, int monitorIndex,
         Action<byte[]> sendChunk, Func<ulong> bufferedAmount, Action<object> sendControl,
-        IRectEncoder? encoder = null, Func<CursorState>? cursorSource = null)
+        IRectEncoder? encoder = null, Func<CursorState>? cursorSource = null, Func<DateTime>? clock = null)
     {
         _capturer = capturer;
         _monitors = monitors;
@@ -60,6 +61,7 @@ public sealed class VideoStreamer : IDisposable
         _sendControl = sendControl;
         _delta = new DeltaEncoder(encoder);
         _cursorSource = cursorSource ?? CursorState.Read;
+        _clock = clock ?? (() => DateTime.UtcNow);
     }
 
     public int MonitorIndex => _monitorIndex;
@@ -103,7 +105,7 @@ public sealed class VideoStreamer : IDisposable
 
     public void Ack(uint frameId)
     {
-        if (_window.OnAck(frameId, DateTime.UtcNow)) _wake.Set();
+        if (_window.OnAck(frameId, _clock())) _wake.Set();
     }
 
     private void CaptureLoop()
@@ -118,7 +120,7 @@ public sealed class VideoStreamer : IDisposable
             {
                 if (!timer.Wait(next - sw.Elapsed, ct)) break;
                 // Flow control: wait (without capturing) until the sender is idle and the window is open.
-                while (!(_senderIdle.IsSet && _window.CanSend(_bufferedAmount(), DateTime.UtcNow)))
+                while (!CanProduce())
                 {
                     if (WaitHandle.WaitAny(new[] { _wake, ct.WaitHandle }, 5) == 1) return;
                 }
@@ -147,7 +149,7 @@ public sealed class VideoStreamer : IDisposable
             _reported = (mon.Index, _full.Width, _full.Height);
             _sendControl(new { t = "monitor", index = mon.Index, width = _full.Width, height = _full.Height });
         }
-        var now = DateTime.UtcNow;
+        var now = _clock();
         double scale = Volatile.Read(ref _scale);
         bool forceKey = _keyframes.ShouldSend(now, mon.Index, _full.Width, _full.Height, scale);
         var payload = _delta.Encode(_full, _dirty, scale, _quality, forceKey, out bool keyframe);
@@ -170,26 +172,47 @@ public sealed class VideoStreamer : IDisposable
     private void SendLoop()
     {
         var ct = _cts.Token;
-        var sw = new Stopwatch();
         while (true)
         {
             if (WaitHandle.WaitAny(new[] { _sendReady, ct.WaitHandle }) == 1) return;
-            var chunks = Interlocked.Exchange(ref _pending, null);
-            if (chunks == null) continue;
-            sw.Restart();
-            long bytes = 0;
-            try
-            {
-                foreach (var c in chunks) { _sendChunk(c); bytes += c.Length; }
-            }
-            catch (Exception ex) { Log?.Invoke("video send failed: " + ex.Message); }
-            _sendMs += sw.Elapsed.TotalMilliseconds;
-            Interlocked.Increment(ref _framesSent);
-            Interlocked.Add(ref _bytesSent, bytes);
-            Interlocked.Add(ref _chunksSent, chunks.Count);
-            _senderIdle.Set();
-            _wake.Set();
+            SendPending();
         }
+    }
+
+    /// <summary>Hands the chunks of the ready frame (if any) to the channel. Runs on the send thread.</summary>
+    internal bool SendPending()
+    {
+        var chunks = Interlocked.Exchange(ref _pending, null);
+        if (chunks == null) return false;
+        var sw = Stopwatch.StartNew();
+        long bytes = 0;
+        try
+        {
+            foreach (var c in chunks) { _sendChunk(c); bytes += c.Length; }
+        }
+        catch (Exception ex) { Log?.Invoke("video send failed: " + ex.Message); }
+        _sendMs += sw.Elapsed.TotalMilliseconds;
+        Interlocked.Increment(ref _framesSent);
+        Interlocked.Add(ref _bytesSent, bytes);
+        Interlocked.Add(ref _chunksSent, chunks.Count);
+        _senderIdle.Set();
+        _wake.Set();
+        return true;
+    }
+
+    /// <summary>True when the capture thread may produce the next frame (sender idle and the ack window open).</summary>
+    internal bool CanProduce() => _senderIdle.IsSet && _window.CanSend(_bufferedAmount(), _clock());
+
+    /// <summary>One cursor poll (runs on the cursor thread); returns the message that was sent, if any.</summary>
+    internal object? PollCursor()
+    {
+        if (Interlocked.Exchange(ref _cursorMonitorDirty, 0) == 1) _cursorTracker.Reset();
+        var monitors = _monitors();
+        if (monitors.Count == 0) return null;
+        var mon = monitors[Math.Min(_monitorIndex, monitors.Count - 1)];
+        var msg = _cursorTracker.Update(_cursorSource(), mon.Bounds, _clock());
+        if (msg != null) _sendControl(msg);
+        return msg;
     }
 
     private void CursorLoop()
@@ -199,15 +222,7 @@ public sealed class VideoStreamer : IDisposable
         var period = TimeSpan.FromSeconds(1.0 / CursorTracker.MaxRate);
         while (timer.Wait(period, ct))
         {
-            try
-            {
-                if (Interlocked.Exchange(ref _cursorMonitorDirty, 0) == 1) _cursorTracker.Reset();
-                var monitors = _monitors();
-                if (monitors.Count == 0) continue;
-                var mon = monitors[Math.Min(_monitorIndex, monitors.Count - 1)];
-                var msg = _cursorTracker.Update(_cursorSource(), mon.Bounds, DateTime.UtcNow);
-                if (msg != null) _sendControl(msg);
-            }
+            try { PollCursor(); }
             catch (Exception ex) { Log?.Invoke("cursor update failed: " + ex.Message); }
         }
     }

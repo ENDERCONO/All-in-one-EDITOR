@@ -33,6 +33,13 @@ public static class FrameV2
     {
         if (width is <= 0 or > ushort.MaxValue || height is <= 0 or > ushort.MaxValue) throw new ArgumentOutOfRangeException(nameof(width));
         if (rects.Count > ushort.MaxValue) throw new ArgumentException("too many rects");
+        foreach (var r in rects)
+        {
+            // the browser rejects (and drops the whole frame for) empty rects or rects outside the picture
+            if (r.W <= 0 || r.H <= 0 || r.X < 0 || r.Y < 0 || r.X + r.W > width || r.Y + r.H > height)
+                throw new ArgumentException($"rect {r.X},{r.Y} {r.W}x{r.H} outside the {width}x{height} picture");
+            if (r.Length < 0 || r.Length > r.Data.Length) throw new ArgumentException("bad rect length");
+        }
         var buf = new byte[Size(rects)];
         var s = buf.AsSpan();
         s[0] = Version;
@@ -58,13 +65,17 @@ public static class FrameV2
 
     public sealed record Parsed(bool Keyframe, int Width, int Height, List<(Rectangle Rect, byte Codec, byte[] Data)> Rects);
 
-    /// <summary>Parses a payload the way the browser does (tests / diagnostics). Returns null when malformed.</summary>
+    /// <summary>
+    /// Parses a payload with the same checks as the browser's <c>parseFrameV2</c> (remote/web/protocol.js), plus no
+    /// trailing bytes (tests / diagnostics). Returns null when malformed.
+    /// </summary>
     public static Parsed? Read(ReadOnlySpan<byte> s)
     {
         if (s.Length < HeaderSize || s[0] != Version) return null;
         bool key = (s[1] & FlagKeyframe) != 0;
         int w = BinaryPrimitives.ReadUInt16LittleEndian(s[2..]), h = BinaryPrimitives.ReadUInt16LittleEndian(s[4..]);
         int count = BinaryPrimitives.ReadUInt16LittleEndian(s[6..]);
+        if (w == 0 || h == 0) return null;
         var list = new List<(Rectangle, byte, byte[])>(count);
         int o = HeaderSize;
         for (int i = 0; i < count; i++)
@@ -76,6 +87,7 @@ public static class FrameV2
             uint len = BinaryPrimitives.ReadUInt32LittleEndian(s[(o + 9)..]);
             o += RectHeaderSize;
             if (len > (uint)(s.Length - o)) return null;
+            if (codec != CodecJpeg || r.Width == 0 || r.Height == 0 || r.Right > w || r.Bottom > h) return null;
             list.Add((r, codec, s.Slice(o, (int)len).ToArray()));
             o += (int)len;
         }

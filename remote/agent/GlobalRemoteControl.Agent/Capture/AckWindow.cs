@@ -27,6 +27,12 @@ public sealed class AckWindow
 
     public uint NextFrameId() { lock (_lock) return _lastSent + 1; }
 
+    /// <summary>Forgets everything outstanding (the stream restarts; late acks for older frames are ignored).</summary>
+    public void Reset(DateTime now)
+    {
+        lock (_lock) { _inFlight.Clear(); _unackedBytes = 0; _lastAcked = _lastSent; _lastProgress = now; }
+    }
+
     public bool CanSend(ulong bufferedAmount, DateTime now)
     {
         if (bufferedAmount >= MaxBuffered) return false;
@@ -80,18 +86,24 @@ public sealed class KeyframePolicy
     private DateTime _lastKeyframe = DateTime.MinValue;
     private (int Monitor, int W, int H, double Scale) _last = (-1, 0, 0, 0);
 
+    /// <summary>A <c>{t:"keyframe"}</c> request (any thread).</summary>
     public void Request() => Interlocked.Exchange(ref _requested, 1);
 
+    public bool Pending => Volatile.Read(ref _requested) == 1;
+
+    /// <summary>
+    /// True when the next frame must be a keyframe. Consumes a pending request atomically, so a request that arrives
+    /// while this frame is being encoded is kept for the next one instead of being lost. (If the encode then fails
+    /// the encoder is reset, which forces a keyframe anyway.)
+    /// </summary>
     public bool ShouldSend(DateTime now, int monitor, int width, int height, double scale)
     {
         bool changed = _last != (monitor, width, height, scale);
         _last = (monitor, width, height, scale);
-        return changed | Volatile.Read(ref _requested) == 1 | now - _lastKeyframe >= Interval;
+        bool requested = Interlocked.Exchange(ref _requested, 0) == 1;
+        return changed | requested | now - _lastKeyframe >= Interval;
     }
 
-    public void OnSent(DateTime now)
-    {
-        _lastKeyframe = now;
-        Interlocked.Exchange(ref _requested, 0);
-    }
+    /// <summary>A keyframe went out (forced or because most of the picture changed): restarts the safety interval.</summary>
+    public void OnSent(DateTime now) => _lastKeyframe = now;
 }
