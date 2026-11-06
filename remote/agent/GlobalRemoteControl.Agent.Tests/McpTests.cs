@@ -547,11 +547,15 @@ public class AgentPipeRoundTripTests
     [Fact]
     public async Task PlainPipe_StatusAndPairingRefusal_RoundTrip()
     {
-        // No ACL here (pipe ACLs are Windows-only); production always uses CurrentUserOnlySecurity.
+        // No ACL off Windows (pipe ACLs are Windows-only). On Windows the client only talks to a pipe owned by the
+        // user SID, and a plain pipe's owner is the token's default owner (Administrators when elevated, e.g. on CI),
+        // so use the production security there; production always uses CurrentUserOnlySecurity.
         using var agent = new FakeAgent();
         var name = "grc-test-" + Guid.NewGuid().ToString("N")[..12];
         using var server = new AgentPipeServer(name, agent.Commands, agent.Audit,
-            () => new NamedPipeServerStream(name, PipeDirection.InOut, 4, PipeTransmissionMode.Byte, PipeOptions.Asynchronous));
+            () => OperatingSystem.IsWindows()
+                ? NamedPipeServerStreamAcl.Create(name, PipeDirection.InOut, 4, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0, AgentPipeServer.CurrentUserOnlySecurity())
+                : new NamedPipeServerStream(name, PipeDirection.InOut, 4, PipeTransmissionMode.Byte, PipeOptions.Asynchronous));
         server.Start();
         var client = new AgentPipeClient(name, null);
 
