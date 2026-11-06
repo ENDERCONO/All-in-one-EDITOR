@@ -24,7 +24,8 @@ jobs:
         with:
           dotnet-version: 8.0.x
       - name: Test
-        run: dotnet test remote/agent/GlobalRemoteControl.sln -c Release
+        # GitHubActions logger: each failing test becomes an annotation (readable without opening the log)
+        run: dotnet test remote/agent/GlobalRemoteControl.sln -c Release --logger GitHubActions
       - name: Publish single exe
         shell: pwsh
         run: ./remote/agent/publish.ps1
