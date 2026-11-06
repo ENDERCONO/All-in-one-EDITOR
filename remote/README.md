@@ -22,8 +22,10 @@ file to the browser.
 
 ## Claude / MCP
 
-Not included in this build. The planned design (approval-gated MCP tools) is kept in `docs/PROTOCOL.md` section 6
-but is not implemented.
+A minimal bridge (`docs/PROTOCOL.md` section 6): `GlobalRemoteControl.exe --mcp` lets Claude open the app, read its
+status and — only when **Allow Claude (MCP)** is ticked (off by default) — show a pairing code on the PC's screen.
+Claude cannot approve devices or sessions, see the screen, send input or touch files. **Copy Claude setup** in the main
+window copies the `claude mcp add …` command. Every request is written to the audit log.
 
 ## How it works
 

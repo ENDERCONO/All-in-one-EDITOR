@@ -43,6 +43,14 @@ public static class AgentPipeProtocol
         catch (JsonException) { error = "bad-request"; return null; }
     }
 
+    /// <summary>Client side: the agent's reply line as an object (an error object when it is unusable).</summary>
+    public static JsonObject ParseReply(string? line, bool tooLarge)
+    {
+        if (line == null || tooLarge) return Error("bad-reply", "The agent sent no usable reply.");
+        try { return JsonNode.Parse(line) as JsonObject ?? Error("bad-reply", "The agent sent no usable reply."); }
+        catch (JsonException) { return Error("bad-reply", "The agent sent no usable reply."); }
+    }
+
     public static JsonObject Error(string code, string message) => new() { ["ok"] = false, ["error"] = code, ["message"] = message };
 
     /// <summary>Reads bytes up to '\n'. Returns null on EOF before any newline; sets tooLarge past the limit.</summary>
@@ -88,6 +96,13 @@ public sealed class AgentPipeCommands
         Func<CancellationToken, Task<JsonObject>> pairingCode)
     {
         _audit = audit; _mcpAllowed = mcpAllowed; _status = status; _pairingCode = pairingCode;
+    }
+
+    /// <summary>One request line → one response line (without the trailing newline).</summary>
+    public async Task<string> HandleLineAsync(string? line, CancellationToken ct)
+    {
+        var tooLarge = line != null && Encoding.UTF8.GetByteCount(line) > AgentPipeProtocol.MaxMessageBytes;
+        return (await HandleAsync(tooLarge ? null : line, tooLarge, ct).ConfigureAwait(false)).ToJsonString();
     }
 
     public async Task<JsonObject> HandleAsync(string? line, bool tooLarge, CancellationToken ct)

@@ -32,8 +32,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         _host = host;
         _ui = ui;
-        // AgentHost still clears McpEnabled when it loads the settings; restore the persisted choice (default off).
-        _host.Settings.McpEnabled = AgentSettings.Load(_host.Paths.SettingsFile).McpEnabled;
         var size = SystemInformation.SmallIconSize.Width;
         foreach (var s in Enum.GetValues<TrayState>()) _icons[s] = AppIcons.Create(s, Math.Max(16, size));
 
@@ -187,7 +185,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             var (code, expires) = await got.Task.WaitAsync(TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
             return new JsonObject
             {
-                ["ok"] = true, ["code"] = code,
+                ["ok"] = true, ["code"] = code, ["server"] = _host.EffectiveServerUrl,
                 ["expiresAt"] = expires.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture),
             };
         }

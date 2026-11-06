@@ -268,16 +268,7 @@ internal sealed class MainForm : Form
     }
 
     /// <summary>The Claude Code command and a Claude Desktop config snippet for this exe (PROTOCOL section 6).</summary>
-    internal static string ClaudeSetupText(string exe) =>
-        $"claude mcp add globalremotecontrol -- \"{exe}\" --mcp\r\n\r\n" +
-        "Claude Desktop (claude_desktop_config.json):\r\n" +
-        System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
-        {
-            ["mcpServers"] = new Dictionary<string, object>
-            {
-                ["globalremotecontrol"] = new { command = exe, args = new[] { "--mcp" } },
-            },
-        }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }).Replace("\n", "\r\n").Replace("\r\r\n", "\r\n");
+    internal static string ClaudeSetupText(string exe) => Mcp.McpStdioServer.ClaudeSetupText(exe);
 
     private void CopyClaudeSetup()
     {
