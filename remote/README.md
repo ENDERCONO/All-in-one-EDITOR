@@ -73,7 +73,8 @@ quality preset. Your own TURN server still works if you want one (`REMOTE_TURN_U
 | Agent against the local server | `dotnet run --project remote/agent/GlobalRemoteControl.Agent -- --server ws://localhost:3000/remote/ws` |
 | Server tests | `node --test "remote/server/test/*.test.js"` |
 | Web logic tests | `node --test "remote/web/test/*.test.mjs"` |
-| Agent tests | `dotnet test remote/agent` (Windows) |
+| Agent tests | `dotnet test remote/agent` (Windows; with `node` on PATH it also cross-checks relay frames and video frames against `web/protocol.js`) |
+| Regenerate the relay test vector (after changing `RelayCodec` in `web/protocol.js`) | `node remote/agent/GlobalRemoteControl.Agent.Tests/Fixtures/make-relay-vector.mjs` |
 | Build the single exe | `powershell remote/agent/publish.ps1` → `remote/agent/dist/GlobalRemoteControl.exe` |
 
 Releases: pushing changes under `remote/agent/` to `main` runs `.github/workflows/remote-agent.yml`, which tests,
