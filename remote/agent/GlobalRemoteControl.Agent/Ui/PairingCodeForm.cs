@@ -88,6 +88,10 @@ internal sealed class PairingCodeForm : Form
 
     public void SetNotConnected()
     {
+        if (_code.Text == "—") return;
+        _expires = null; // the server forgets a device's code when its connection drops
+        CurrentCode = null;
+        _code.AccessibleName = null;
         _code.Text = "—";
         _status.Text = "Not connected to the server yet. The code will appear once connected.";
         _newCode.Enabled = true;
