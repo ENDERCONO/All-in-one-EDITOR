@@ -17,7 +17,14 @@ session approved by you at the PC.
    **Stop** button, the tray menu, or **Ctrl+Alt+Shift+F12**.
 
 In a session: monitor picker, quality, audio on/off, send files (the PC asks where to save each one), on-screen
-keyboard and touchpad mode for phones, fullscreen. From the PC's tray, **Send a file to the remote device…** pushes a
+keyboard, fullscreen (where the browser allows it; not iPhone Safari).
+
+On a phone or tablet: **pinch with two fingers to zoom** into the PC's screen and drag with two fingers to move
+around (the **1:1** button resets the zoom). **Touchpad** mode (default on touch screens) moves a cursor like a laptop
+touchpad: tap = click, hold then drag = drag, two-finger tap = right click, two-finger drag = scroll (or pan when
+zoomed). With Touchpad off the finger is the mouse: tap = click, drag = drag, long press or two-finger tap = right
+click, two-finger drag = scroll (or pan when zoomed). On mobile data, where a direct connection usually fails, the
+session switches to the encrypted relay automatically. From the PC's tray, **Send a file to the remote device…** pushes a
 file to the browser.
 
 ## Claude / MCP (minimal, off by default)

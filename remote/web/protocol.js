@@ -341,3 +341,134 @@ export class RelayCodec {
     return r;
   }
 }
+
+// ---------- touch: pinch-zoom view and gestures (phones / tablets) ----------
+/**
+ * Zoom + pan of the remote screen inside the stage: a stage point p shows local point (p - offset) / scale.
+ * Applied as CSS `translate(x, y) scale(s)` (transform-origin 0 0); input mapping uses the transformed rect, so it
+ * stays correct automatically. Never zooms out below 1 and never pans past the edges.
+ */
+export class ViewZoom {
+  constructor(maxScale = 6) { this.max = maxScale; this.reset(); }
+  reset() { this.scale = 1; this.x = 0; this.y = 0; }
+  get zoomed() { return this.scale > 1.001; }
+  clamp(w, h) {
+    this.scale = clamp(this.scale, 1, this.max);
+    this.x = clamp(this.x, w * (1 - this.scale), 0); this.y = clamp(this.y, h * (1 - this.scale), 0);
+    if (!this.zoomed) this.reset();
+  }
+  /** Zoom by `factor` keeping stage point (cx, cy) fixed. Snaps back to 1 just above it. */
+  zoomAt(cx, cy, factor, w, h) {
+    const s = clamp(this.scale * factor, 1, this.max), k = s / this.scale;
+    this.x = cx - (cx - this.x) * k; this.y = cy - (cy - this.y) * k; this.scale = s < 1.03 ? 1 : s;
+    this.clamp(w, h);
+  }
+  pan(dx, dy, w, h) { this.x += dx; this.y += dy; this.clamp(w, h); }
+  /** Pans the least needed so stage point (px, py) is at least `margin` px inside the stage (touchpad cursor). */
+  follow(px, py, w, h, margin = 40) {
+    const m = Math.min(margin, w / 4, h / 4);
+    let dx = 0, dy = 0;
+    if (px < m) dx = m - px; else if (px > w - m) dx = w - m - px;
+    if (py < m) dy = m - py; else if (py > h - m) dy = h - m - py;
+    if (dx || dy) this.pan(dx, dy, w, h);
+  }
+  css() { return this.zoomed ? `translate(${this.x}px, ${this.y}px) scale(${this.scale})` : ''; }
+}
+
+/**
+ * Two-finger gesture classifier. Decides once per gesture: a pinch (zoom, which also pans with the fingers),
+ * a pan of a zoomed view, or a scroll (wheel) of an unzoomed one. A quick still two-finger tap = right click.
+ */
+export class TwoFinger {
+  constructor(a, b, t) {
+    this.t0 = t; this.kind = null; this.travel = 0;
+    this.c = TwoFinger.mid(a, b); this.d0 = this.d = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+  }
+  static mid(a, b) { return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }
+  /** @returns {{kind:'zoom'|'pan'|'scroll', cx, cy, factor, dx, dy}|null} null while undecided */
+  move(a, b, zoomed) {
+    const c = TwoFinger.mid(a, b), d = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+    const dx = c.x - this.c.x, dy = c.y - this.c.y, factor = d / this.d;
+    this.c = c; this.d = d; this.travel += Math.hypot(dx, dy);
+    if (!this.kind) {
+      if (Math.abs(Math.log(d / this.d0)) > 0.08) this.kind = 'zoom';
+      else if (this.travel > 12) this.kind = zoomed ? 'pan' : 'scroll';
+      else return null;
+    }
+    return { kind: this.kind, cx: c.x, cy: c.y, factor: this.kind === 'zoom' ? factor : 1, dx, dy };
+  }
+  /** True when the gesture was a still, short two-finger tap. */
+  isTap(t) { return !this.kind && this.travel <= 12 && t - this.t0 < 350; }
+}
+
+/**
+ * Direct touch (the finger is the mouse) for phones. One finger: tap = left click, drag = left drag (the press
+ * starts once the finger moves, so a second finger can still turn it into a gesture), long press = right click.
+ * Two fingers: TwoFinger (pinch zoom / pan / scroll, two-finger tap = right click). Emits through `out`:
+ * {t:'move',x,y} {t:'button',button,down,x,y} {t:'two', ...TwoFinger.move result} {t:'vibrate'} in client px.
+ * `setTimer(fn, ms)` / `clearTimer(id)` / `now()` are injectable for tests.
+ */
+export class DirectTouch {
+  constructor(out, { now = () => performance.now(), setTimer = (f, ms) => setTimeout(f, ms), clearTimer = (id) => clearTimeout(id), zoomed = () => false } = {}) {
+    Object.assign(this, { out, now, setTimer, clearTimer, zoomed });
+    this.ptrs = new Map(); this.state = 'idle'; this.timer = 0; this.two = null; this.start = null; this.last = null;
+  }
+  static LONG_MS = 500;
+  static SLOP = 8;
+  _first() { return this.ptrs.values().next().value; }
+  _pair() { const it = this.ptrs.values(); return [it.next().value, it.next().value]; }
+  _click(button, p) {
+    this.out({ t: 'move', x: p.x, y: p.y });
+    this.out({ t: 'button', button, down: true, x: p.x, y: p.y });
+    this.out({ t: 'button', button, down: false, x: p.x, y: p.y });
+  }
+  down(id, x, y) {
+    if (this.ptrs.size >= 2) return;
+    this.ptrs.set(id, { x, y });
+    if (this.ptrs.size === 1) {
+      if (this.state !== 'idle') return; // a finger left over from an earlier gesture
+      this.state = 'pending'; this.start = { x, y }; this.last = { x, y };
+      this.timer = this.setTimer(() => {
+        if (this.state !== 'pending') return;
+        this.state = 'held'; this.out({ t: 'vibrate' }); this._click('right', this.start);
+      }, DirectTouch.LONG_MS);
+      return;
+    }
+    // second finger
+    this.clearTimer(this.timer);
+    if (this.state === 'drag') this.out({ t: 'button', button: 'left', down: false, x: this.last.x, y: this.last.y });
+    const [a, b] = this._pair();
+    this.two = new TwoFinger(a, b, this.now()); this.state = 'two';
+  }
+  move(id, x, y) {
+    const p = this.ptrs.get(id); if (!p) return;
+    p.x = x; p.y = y;
+    if (this.state === 'pending' && Math.hypot(x - this.start.x, y - this.start.y) > DirectTouch.SLOP) {
+      this.clearTimer(this.timer); this.state = 'drag';
+      this.out({ t: 'move', x: this.start.x, y: this.start.y });
+      this.out({ t: 'button', button: 'left', down: true, x: this.start.x, y: this.start.y });
+    }
+    if (this.state === 'drag') { this.last = { x, y }; this.out({ t: 'move', x, y }); }
+    else if (this.state === 'two' && this.ptrs.size === 2) {
+      const [a, b] = this._pair(); const r = this.two.move(a, b, this.zoomed());
+      if (r) this.out({ t: 'two', ...r });
+    }
+  }
+  up(id) {
+    if (!this.ptrs.delete(id)) return;
+    if (this.state === 'pending') {
+      this.clearTimer(this.timer); this._click('left', this.start); this.state = 'idle';
+    } else if (this.state === 'drag') {
+      this.out({ t: 'button', button: 'left', down: false, x: this.last.x, y: this.last.y }); this.state = 'idle';
+    } else if (this.state === 'two') {
+      if (this.two.isTap(this.now())) this._click('right', this.two.c);
+      this.two = null; this.state = this.ptrs.size ? 'done' : 'idle';
+    } else if (this.ptrs.size === 0) this.state = 'idle'; // held / done
+  }
+  /** Lost the pointers (blur, cancel): release a drag in progress. */
+  cancel() {
+    this.clearTimer(this.timer);
+    if (this.state === 'drag') this.out({ t: 'button', button: 'left', down: false, x: this.last.x, y: this.last.y });
+    this.ptrs.clear(); this.state = 'idle'; this.two = null;
+  }
+}

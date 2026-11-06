@@ -154,7 +154,7 @@ function connect(dev) {
   $('overlay').hidden = false; $('overlayText').textContent = 'Connecting…';
   canvas.width = 16; canvas.height = 9; canvas.getContext('2d').clearRect(0, 0, 16, 9);
   setAudioUi(false); $('osk').hidden = true; $('xfer').hidden = true;
-  setPad(matchMedia('(pointer: coarse)').matches);
+  setPad(matchMedia('(pointer: coarse)').matches); view.reset(); applyView();
 
   s.on('status', (t) => { $('overlayText').textContent = t; });
   s.on('accepted', (mode) => { $('viewBadge').hidden = mode !== 'view'; updateCursorUi(); });
@@ -171,7 +171,7 @@ function connect(dev) {
   });
   s.on('monitor', (m) => { $('monitorSel').value = m.index; });
   s.on('open', () => { sendQuality(); canvas.focus(); });
-  s.on('frame-size', () => { $('overlay').hidden = true; placeCursor(); placeRCursor(); });
+  s.on('frame-size', () => { $('overlay').hidden = true; applyView(); });
   s.on('relay', onRelay);
   s.on('cursor', onCursor);
   s.on('stats', onStats);
@@ -189,7 +189,7 @@ function connect(dev) {
   });
   s.on('ended', (reason) => {
     if (cur !== s) return;
-    cur = null; releaseAllKeys(); $('streamPop').hidden = true; $('streamBtn').setAttribute('aria-expanded', 'false');
+    cur = null; releaseAllKeys(); view.reset(); applyView(); $('streamPop').hidden = true; $('streamBtn').setAttribute('aria-expanded', 'false');
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     $('session').hidden = true; $('home').hidden = false; $('modal').hidden = true;
     toast(reason, reason === 'Disconnected.' ? '' : 'err', 9000);
@@ -266,8 +266,8 @@ function placeRCursor() {
   const el = $('rcursor');
   el.hidden = !(cur && rc.has && rc.visible && !useNative() && !padMode);
   if (el.hidden) return;
-  const r = canvas.getBoundingClientRect(), f = P.fitRect(r.width, r.height, canvas.width, canvas.height);
-  el.style.left = (f.x + P.clamp(rc.x, 0, 1) * f.w) + 'px'; el.style.top = (f.y + P.clamp(rc.y, 0, 1) * f.h) + 'px';
+  const p = toStage(rc.x, rc.y);
+  el.style.left = p.x + 'px'; el.style.top = p.y + 'px';
 }
 $('monitorSel').onchange = () => cur && cur.sendControl({ t: 'select-monitor', index: Number($('monitorSel').value) });
 
@@ -280,6 +280,7 @@ $('audioBtn').onclick = () => { // runs inside a click: allowed to start the Aud
 };
 
 // ---- fullscreen ----
+if (!document.fullscreenEnabled || !$('session').requestFullscreen) $('fsBtn').hidden = true;
 $('fsBtn').onclick = () => {
   if (document.fullscreenElement) document.exitFullscreen();
   else $('session').requestFullscreen().catch(() => toast('Fullscreen is not allowed here', 'err'));
@@ -318,6 +319,49 @@ function mapEvent(e, clamp = true) {
   const r = canvas.getBoundingClientRect();
   return P.mapPoint(e.clientX - r.left, e.clientY - r.top, r.width, r.height, canvas.width, canvas.height, clamp);
 }
+/** 0..1 remote point -> stage-local px (follows zoom/pan, since the canvas rect is the transformed one). */
+function toStage(x, y) {
+  const r = canvas.getBoundingClientRect(), sr = stage.getBoundingClientRect(), f = P.fitRect(r.width, r.height, canvas.width, canvas.height);
+  return { x: r.left - sr.left + f.x + P.clamp(x, 0, 1) * f.w, y: r.top - sr.top + f.y + P.clamp(y, 0, 1) * f.h };
+}
+function mapXY(x, y) {
+  const r = canvas.getBoundingClientRect();
+  return P.mapPoint(x - r.left, y - r.top, r.width, r.height, canvas.width, canvas.height, true);
+}
+
+// ---- pinch zoom / pan of the remote screen (touch) ----
+const view = new P.ViewZoom();
+function applyView() {
+  view.clamp(stage.clientWidth, stage.clientHeight);
+  canvas.style.transformOrigin = '0 0'; canvas.style.transform = view.css();
+  $('zoomBtn').hidden = !view.zoomed;
+  placeCursor(); placeRCursor();
+}
+$('zoomBtn').onclick = () => { view.reset(); applyView(); canvas.focus(); };
+/** A decided two-finger gesture (TwoFinger.move result, client px). */
+function onTwo(r) {
+  const sr = stage.getBoundingClientRect(), w = stage.clientWidth, h = stage.clientHeight;
+  if (r.kind === 'scroll') { co.wheel(Math.round(r.dx * 1.5), Math.round(r.dy * 1.5)); sched(); return; }
+  if (r.kind === 'zoom') view.zoomAt(r.cx - sr.left, r.cy - sr.top, r.factor, w, h);
+  view.pan(r.dx, r.dy, w, h);
+  applyView();
+  if (padMode) keepPadCursorVisible();
+}
+/** Touchpad mode: after a zoom/pan, pull the virtual cursor back into the visible part of the screen. */
+function keepPadCursorVisible() {
+  const sr = stage.getBoundingClientRect(), m = 24;
+  const a = mapXY(sr.left + m, sr.top + m), b = mapXY(sr.right - m, sr.bottom - m);
+  const cx = P.clamp(pad.cx, a.x, b.x), cy = P.clamp(pad.cy, a.y, b.y);
+  if (cx === pad.cx && cy === pad.cy) return;
+  pad.cx = cx; pad.cy = cy; placeCursor(); queueMove({ x: cx, y: cy });
+}
+const touch = new P.DirectTouch((e) => {
+  if (e.t === 'move') queueMove(mapXY(e.x, e.y));
+  else if (e.t === 'button') sendButton(e.button, e.down, mapXY(e.x, e.y));
+  else if (e.t === 'two') onTwo(e);
+  else if (e.t === 'vibrate') navigator.vibrate?.(20);
+}, { zoomed: () => view.zoomed });
+
 const co = new P.InputCoalescer((m) => { if (cur) cur.sendInput(m); });
 let flushRaf = 0;
 function sched() { if (!flushRaf) flushRaf = requestAnimationFrame(() => { flushRaf = 0; co.flush(); }); }
@@ -335,11 +379,10 @@ const pad = { ptrs: new Map(), cx: 0.5, cy: 0.5, moved: false, dragging: false, 
 function setPad(on) { padMode = on; updateCursorUi(); $('padBtn').setAttribute('aria-pressed', String(on)); $('vcursor').hidden = !on; placeCursor(); }
 $('padBtn').onclick = () => setPad(!padMode);
 function placeCursor() {
-  const r = canvas.getBoundingClientRect(), f = P.fitRect(r.width, r.height, canvas.width, canvas.height);
-  const v = $('vcursor');
-  v.style.left = (f.x + pad.cx * f.w) + 'px'; v.style.top = (f.y + pad.cy * f.h) + 'px';
+  const p = toStage(pad.cx, pad.cy), v = $('vcursor');
+  v.style.left = p.x + 'px'; v.style.top = p.y + 'px';
 }
-addEventListener('resize', () => { placeCursor(); placeRCursor(); });
+addEventListener('resize', () => applyView());
 function padDown(e) {
   pad.ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY });
   if (pad.ptrs.size === 1) {
@@ -348,7 +391,8 @@ function padDown(e) {
     pad.timer = setTimeout(() => { if (!pad.moved && pad.ptrs.size === 1) { pad.dragging = true; navigator.vibrate?.(20); sendButton('left', true, { x: pad.cx, y: pad.cy }); } }, 450);
   } else if (pad.ptrs.size === 2) {
     clearTimeout(pad.timer);
-    pad.two = { t0: performance.now(), moved: false };
+    const [a, b] = pad.ptrs.values();
+    pad.two = new P.TwoFinger(a, b, performance.now());
     pad.moved = true; // no left click when the second finger lifts first
   }
 }
@@ -361,11 +405,13 @@ function padMove(e) {
     if (!pad.moved && !pad.dragging) return;
     const r = canvas.getBoundingClientRect(), f = P.fitRect(r.width, r.height, canvas.width, canvas.height);
     pad.cx = P.clamp(pad.cx + (dx * 1.6) / f.w, 0, 1); pad.cy = P.clamp(pad.cy + (dy * 1.6) / f.h, 0, 1);
-    placeCursor(); queueMove({ x: pad.cx, y: pad.cy });
+    if (view.zoomed) { const sp = toStage(pad.cx, pad.cy); view.follow(sp.x, sp.y, stage.clientWidth, stage.clientHeight); applyView(); }
+    else placeCursor();
+    queueMove({ x: pad.cx, y: pad.cy });
   } else if (pad.ptrs.size === 2 && pad.two) {
-    // centroid movement of the pair = wheel (one pointer event moves one finger, so halve it)
-    if (Math.abs(dx) + Math.abs(dy) > 0.5) pad.two.moved = pad.two.moved || Math.hypot(p.x - p.sx, p.y - p.sy) > 12;
-    co.wheel(Math.round(dx * 1.5), Math.round(dy * 1.5)); sched();
+    const [a, b] = pad.ptrs.values();
+    const r = pad.two.move(a, b, view.zoomed);
+    if (r) onTwo(r);
   }
 }
 function padUp(e) {
@@ -374,7 +420,7 @@ function padUp(e) {
   pad.ptrs.delete(e.pointerId);
   clearTimeout(pad.timer);
   if (wasTwo && pad.two) {
-    if (!pad.two.moved && performance.now() - pad.two.t0 < 400) { sendButton('right', true, { x: pad.cx, y: pad.cy }); sendButton('right', false, { x: pad.cx, y: pad.cy }); }
+    if (pad.two.isTap(performance.now())) { sendButton('right', true, { x: pad.cx, y: pad.cy }); sendButton('right', false, { x: pad.cx, y: pad.cy }); }
     pad.two = null;
   } else if (pad.ptrs.size === 0) {
     if (pad.dragging) sendButton('left', false, { x: pad.cx, y: pad.cy });
@@ -387,23 +433,24 @@ function padUp(e) {
 canvas.addEventListener('pointerdown', (e) => {
   notePointer(e.pointerType);
   canvas.focus(); e.preventDefault();
-  canvas.setPointerCapture(e.pointerId);
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
   if (e.pointerType === 'touch' && padMode) return padDown(e);
+  if (e.pointerType === 'touch') return touch.down(e.pointerId, e.clientX, e.clientY);
   const pt = mapEvent(e);
-  if (e.pointerType === 'touch') { co.move(pt.x, pt.y); sendButton('left', true, pt); return; }
   if (e.button > 2) return; // back/forward buttons must not turn into left clicks
   sendButton(BTN[e.button], true, pt);
 });
 canvas.addEventListener('pointermove', (e) => {
   notePointer(e.pointerType);
   if (e.pointerType === 'touch' && padMode) return padMove(e);
-  if (e.pointerType === 'touch' && !e.buttons && e.pressure === 0) return;
+  if (e.pointerType === 'touch') return touch.move(e.pointerId, e.clientX, e.clientY);
   queueMove(mapEvent(e));
 });
 const pointerUp = (e) => {
   if (e.pointerType === 'touch' && padMode) return padUp(e);
-  if (e.pointerType !== 'touch' && e.button > 2) return;
-  sendButton(e.pointerType === 'touch' ? 'left' : (BTN[e.button] || 'left'), false, mapEvent(e));
+  if (e.pointerType === 'touch') return e.type === 'pointercancel' ? touch.cancel() : touch.up(e.pointerId);
+  if (e.button > 2) return;
+  sendButton(BTN[e.button] || 'left', false, mapEvent(e));
 };
 canvas.addEventListener('pointerup', pointerUp);
 canvas.addEventListener('pointercancel', pointerUp);
@@ -431,6 +478,7 @@ function releaseAllKeys() {
     for (const code of mods) co.push({ t: 'key', code, down: false });
     sendButton('left', false); sendButton('right', false); sendButton('middle', false);
   }
+  touch.cancel();
   heldKeys.clear(); mods.clear(); pad.ptrs.clear(); pad.dragging = false; pad.two = null;
   document.querySelectorAll('.mod').forEach((b) => b.setAttribute('aria-pressed', 'false'));
 }
