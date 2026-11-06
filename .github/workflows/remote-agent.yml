@@ -1,0 +1,43 @@
+# Builds the Remote tab's Windows app (remote/agent) into one self-contained GlobalRemoteControl.exe and
+# publishes it to the GitHub release "remote-agent-latest", which the site's download button points to.
+name: Build remote agent
+
+on:
+  push:
+    branches: ["main"]
+    paths: ["remote/agent/**", ".github/workflows/remote-agent.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: remote-agent
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Test
+        run: dotnet test remote/agent/GlobalRemoteControl.sln -c Release
+      - name: Publish single exe
+        shell: pwsh
+        run: ./remote/agent/publish.ps1
+      - name: Upload to release remote-agent-latest
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = 'remote-agent-latest'
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --title "Remote agent (latest)" --notes "Windows app for the Remote tab. Built from $env:GITHUB_SHA." --latest=false
+          } else {
+            gh release edit $tag --notes "Windows app for the Remote tab. Built from $env:GITHUB_SHA."
+          }
+          gh release upload $tag remote/agent/dist/GlobalRemoteControl.exe --clobber

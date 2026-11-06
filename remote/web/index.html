@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Remote — GlobalRemoteControl</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="home">
+  <header class="top">
+    <div class="brand"><span class="logo">&#9638;</span> Remote <small>control your own PC from any browser</small></div>
+    <div class="conn" id="connState" title="Connection to the signaling server"><span class="dot"></span><span id="connText">Connecting…</span></div>
+  </header>
+
+  <main class="cols">
+    <section class="card" id="devicesCard">
+      <h2>Your devices</h2>
+      <ul id="deviceList" class="devices"></ul>
+      <p class="muted" id="noDevices">No PC paired yet. Use "Add a device" to pair one.</p>
+    </section>
+
+    <section class="card" id="addCard">
+      <h2>Add a device</h2>
+      <a class="btn primary big" id="downloadBtn" href="#" download>&#11015; Download the Windows app</a>
+      <ol class="steps">
+        <li>Run the .exe on your PC (no install needed).</li>
+        <li>Click <b>Pair a new device</b> to get a code.</li>
+        <li>Enter the code here:</li>
+      </ol>
+      <form id="pairForm" autocomplete="off">
+        <input id="codeInput" inputmode="text" autocapitalize="characters" spellcheck="false" maxlength="9" placeholder="XXXX-XXXX" aria-label="Pairing code">
+        <button class="btn primary" id="pairBtn" type="submit">Pair</button>
+      </form>
+      <div id="pairStatus" class="pairStatus" hidden></div>
+    </section>
+
+    <section class="card" id="meCard">
+      <h2>This browser</h2>
+      <label class="field">Name
+        <input id="nameInput" maxlength="64" aria-label="This browser's name">
+      </label>
+      <div class="field">Fingerprint <code id="myFp">…</code></div>
+      <p class="muted small" id="persistWarn" hidden>Storage is unavailable here (private window?). Pairings will be lost when you close this page.</p>
+      <p class="muted small">Server: <code id="serverUrl"></code></p>
+    </section>
+  </main>
+</div>
+
+<div id="session" hidden>
+  <div class="toolbar" id="toolbar">
+    <span class="devname" id="sessDevice"></span>
+    <span class="badge" id="viewBadge" hidden>View only</span>
+    <select id="monitorSel" title="Monitor" hidden></select>
+    <select id="qualitySel" title="Quality">
+      <option value="low">Low</option><option value="med">Med</option><option value="high">High</option><option value="auto" selected>Auto</option>
+    </select>
+    <button class="tbtn" id="audioBtn" title="Audio from the PC" aria-pressed="false">&#128264; Audio</button>
+    <button class="tbtn" id="fileBtn" title="Send a file to the PC (or drop it on the screen)">&#128206; File</button>
+    <button class="tbtn" id="kbdBtn" title="On-screen keyboard">&#9000; Keys</button>
+    <button class="tbtn" id="padBtn" title="Touchpad mode (touch screens)" aria-pressed="false">&#9757; Touchpad</button>
+    <button class="tbtn" id="fsBtn" title="Fullscreen">&#9974;</button>
+    <button class="tbtn danger" id="endBtn">Disconnect</button>
+  </div>
+  <div class="osk" id="osk" hidden>
+    <button class="tbtn mod" data-mod="ControlLeft" aria-pressed="false">Ctrl</button>
+    <button class="tbtn mod" data-mod="AltLeft" aria-pressed="false">Alt</button>
+    <button class="tbtn mod" data-mod="MetaLeft" aria-pressed="false">Win</button>
+    <button class="tbtn" data-key="Escape">Esc</button>
+    <button class="tbtn" data-key="Tab">Tab</button>
+    <button class="tbtn" data-key="Backspace">&#9003;</button>
+    <button class="tbtn" data-key="Enter">Enter</button>
+    <button class="tbtn" data-key="ArrowLeft">&larr;</button>
+    <button class="tbtn" data-key="ArrowUp">&uarr;</button>
+    <button class="tbtn" data-key="ArrowDown">&darr;</button>
+    <button class="tbtn" data-key="ArrowRight">&rarr;</button>
+    <input id="textIn" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Type here…" aria-label="Type text to the PC">
+  </div>
+  <div class="stage" id="stage">
+    <canvas id="screen" tabindex="0" aria-label="Remote screen"></canvas>
+    <div class="vcursor" id="vcursor" hidden></div>
+    <div class="overlay" id="overlay"><div class="spinner"></div><div id="overlayText">Connecting…</div><button class="tbtn danger" id="cancelBtn">Cancel</button></div>
+    <div class="xfer" id="xfer" hidden><span id="xferText"></span><div class="bar"><i id="xferBar"></i></div><button class="tbtn" id="xferCancel">&times;</button></div>
+    <div class="dropHint" id="dropHint" hidden>Drop to send to the PC</div>
+  </div>
+  <input type="file" id="filePick" hidden>
+</div>
+
+<div id="modal" class="modal" hidden>
+  <div class="box">
+    <p id="modalText"></p>
+    <div class="row"><button class="btn" id="modalNo">Decline</button><button class="btn primary" id="modalYes">Accept</button></div>
+  </div>
+</div>
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

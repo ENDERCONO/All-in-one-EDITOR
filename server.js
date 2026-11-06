@@ -1503,6 +1503,9 @@ ensureYtdlp().then(updateYtdlp).catch(e => console.warn('[downloader] yt-dlp pre
 if (process.env.RENDER) ensureDlTools().catch(e => console.warn('[downloader] tool prefetch failed:', e.message));
 setInterval(() => { updateYtdlp(); }, 12 * 60 * 60 * 1000).unref();
 
+// GlobalRemoteControl signaling (WebSocket /remote/ws + /api/remote/*)
+require('./remote/server/remote-server').attach(app, server);
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Claude Arena running on http://localhost:${PORT}`);

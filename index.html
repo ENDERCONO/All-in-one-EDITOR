@@ -5817,6 +5817,13 @@
   body:has(main[data-mode="videoeditor"]:not([hidden])) #siteLogo { display:none; }
   #videoEditorFrame { flex:1; width:100%; height:100%; border:0; display:block; background:#0b0d10; }
 
+  /* ============ REMOTE (iframe, see remote/web/) ============ */
+  main[data-mode="remote"] { display:flex; position:fixed; top:0; left:60px; right:0; bottom:0; z-index:50; padding:0; margin:0; overflow:hidden; background:#0b0d10; }
+  body:has(main[data-mode="remote"]:not([hidden])) { overflow:hidden; }
+  body:has(main[data-mode="remote"]:not([hidden])) footer { display:none; }
+  body:has(main[data-mode="remote"]:not([hidden])) #siteLogo { display:none; }
+  #remoteFrame { flex:1; width:100%; height:100%; border:0; display:block; background:#0b0d10; }
+
   /* ============ BALATRO ============ */
   main[data-mode="balatro"] { display:flex; padding:0; background:#0a0a0f; overflow:hidden; }
   #balatroBg {
@@ -6040,6 +6047,12 @@
       <button class="sb-tab" data-tab="videoeditor" title="Video Editor — Filmora-style multi-track editor: timeline, transitions, filters, green screen, materials, export MP4 / WebM / WAV / MP3">
         <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="11" rx="2"/><path d="m10 7.5 4 2-4 2z" fill="currentColor"/><path d="M2 19h8M14 19h8"/><path d="M10 17v4M14 17v4"/></svg></span>
         <span class="sb-label">Video Editor</span>
+      </button>
+
+      <!-- ===== REMOTE (single) ===== -->
+      <button class="sb-tab" data-tab="remote" title="Remote — control your own PC from any browser">
+        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="m10 8 4 2.5-1.8.5-1 1.7z" fill="currentColor"/></svg></span>
+        <span class="sb-label">Remote</span>
       </button>
 
       <!-- ===== VERTICAL VIDEO (single) ===== -->
@@ -8901,6 +8914,20 @@
     })();
   </script>
 
+  <!-- ================= REMOTE ================= -->
+  <!-- GlobalRemoteControl browser client (remote/web/), loaded on first open. -->
+  <main data-mode="remote" hidden>
+    <iframe id="remoteFrame" title="Remote — control your own PC from any browser" allow="fullscreen; clipboard-read; clipboard-write; autoplay" allowfullscreen></iframe>
+  </main>
+  <script>
+    (function () {
+      const main = document.querySelector('main[data-mode="remote"]');
+      const frame = document.getElementById('remoteFrame');
+      const load = () => { if (!main.hidden && !frame.src) frame.src = 'remote/web/index.html'; if (!main.hidden) setTimeout(() => frame.contentWindow && frame.focus(), 50); };
+      new MutationObserver(load).observe(main, { attributes: true, attributeFilter: ['hidden'] });
+    })();
+  </script>
+
   <main data-mode="balatro" hidden>
     <div id="balatroBg">
       <div id="balatroContent">
@@ -9328,6 +9355,7 @@ document.getElementById('sidebarToggle').addEventListener('click', () => {
     seamless:   ['seamless tile', 'tileable', 'tiling', 'texture', 'pixel art', 'repeat', 'pattern', 'seams', 'wrap', 'offset'],
     gradblur:   ['gradient blur', 'blur', 'tilt shift', 'tilt-shift', 'fade blur', 'gaussian', 'box blur', 'motion blur', 'radial blur', 'zoom blur', 'spin blur', 'vignette', 'depth of field', 'soften'],
     audio:      ['audio tools', 'sound', 'music', 'wav', 'mp3', 'trim audio', 'volume', 'pitch', 'voice'],
+    remote:     ['remote', 'remote desktop', 'control pc', 'screen share', 'rdp', 'teamviewer', 'remote control', 'my computer'],
     videoeditor: ['video editor', 'timeline', 'audio timeline', 'audio editor', 'multitrack', 'multi track', 'mix audio', 'clips', 'tracks', 'sequence', 'cut video', 'arrange', 'filmora', 'keyframes', 'subtitles'],
     normalmix:  ['normal mix', 'normal map', 'normals', 'bump map', 'blend normals', 'material'],
     model3d:    ['3d model', 'displacement', 'height map', 'heightmap', 'plane', 'mesh', 'depth', 'relief'],
