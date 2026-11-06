@@ -55,6 +55,15 @@ public sealed class FakeSignal : ISignalSender
 {
     public List<JsonElement> Sent { get; } = new();
     public Task SendAsync(object message) { lock (Sent) Sent.Add(Msg.Of(message)); return Task.CompletedTask; }
+    /// <summary>Binary frames (encrypted relay) in send order.</summary>
+    public List<byte[]> Binary { get; } = new();
+    public Func<byte[], Task>? OnBinary;
+    public Task SendBinaryAsync(byte[] frame)
+    {
+        lock (Binary) Binary.Add(frame);
+        return OnBinary?.Invoke(frame) ?? Task.CompletedTask;
+    }
+    public byte[][] BinarySnapshot { get { lock (Binary) return Binary.ToArray(); } }
     public List<JsonElement> OfType(string type)
     {
         lock (Sent) return Sent.Where(s => s.GetProperty("type").GetString() == type).ToList();

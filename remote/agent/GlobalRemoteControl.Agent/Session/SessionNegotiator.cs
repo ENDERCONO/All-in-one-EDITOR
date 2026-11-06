@@ -14,6 +14,11 @@ public interface IRemotePeer : IDisposable
     /// <summary>Raised with (candidate, sdpMid, sdpMLineIndex) for trickle ICE.</summary>
     event Action<string, string?, ushort>? LocalCandidate;
     event Action<string>? Closed;
+    /// <summary>Relay fallback (section 7): drop WebRTC and send everything through <paramref name="relay"/>.
+    /// Must complete synchronously; frames that follow are delivered through <see cref="OnRelayMessage"/>.</summary>
+    void SwitchToRelay(ISessionTransport relay);
+    /// <summary>One decrypted, in-order relay message from the controller.</summary>
+    void OnRelayMessage(RelayChannel channel, byte[] payload);
 }
 
 /// <summary>
@@ -38,6 +43,11 @@ public sealed class SessionNegotiator
         public CancellationTokenSource Timeout = new();
         /// <summary>Cancelled when this request goes away, so an open approval dialog closes itself.</summary>
         public readonly CancellationTokenSource Cancel = new();
+        /// <summary>Our ephemeral ECDH key and the controller's (from the verified offer); they key the relay.</summary>
+        public EphemeralEcdh? Ecdh;
+        public string? PeerEcdh;
+        public RelayCodec? RelayCodec;
+        public RelayTransport? Relay;
     }
 
     private readonly ISignalSender _signal;
@@ -66,8 +76,82 @@ public sealed class SessionNegotiator
         "session-auth" => OnAuthAsync(m),
         "signal" => OnSignalAsync(m),
         "session-end" => OnEndAsync(m),
+        "relay-start" => OnRelayStart(m),
         _ => Task.CompletedTask,
     };
+
+    /// <summary>True while the active session runs over the encrypted relay.</summary>
+    public bool IsRelayed { get { lock (_lock) return _p?.Relay != null; } }
+
+    /// <summary>
+    /// relay-start from the controller (PROTOCOL.md section 7). Honoured only for the active, accepted session whose
+    /// signed offer/answer (and so the ECDH keys) went through. Fully synchronous: when this returns, the peer is
+    /// switched and binary frames read next from the WebSocket go to <see cref="OnRelayFrame"/>.
+    /// </summary>
+    private Task OnRelayStart(JsonElement m)
+    {
+        var sid = Json.Str(m, "sessionId", 22);
+        Pending? p;
+        IRemotePeer? peer;
+        lock (_lock)
+        {
+            p = _p;
+            if (p == null || p.SessionId != sid || p.Stage != Stage.Connected || p.Relay != null) return Task.CompletedTask;
+            peer = p.Peer;
+            if (peer == null || p.Ecdh == null || p.PeerEcdh == null) return Task.CompletedTask;
+        }
+        var info = _gate.Active;
+        if (info == null || info.Key != p.SessionId) return Task.CompletedTask;
+        RelayCodec codec;
+        try
+        {
+            var z = p.Ecdh.DeriveSharedSecret(p.PeerEcdh);
+            try { codec = RelayCodec.ForDevice(p.SessionId, z); }
+            finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(z); }
+        }
+        catch (Exception ex)
+        {
+            _audit.Write("session-failed", p.Controller.Name, p.Controller.Id, "relay keys: " + ex.Message);
+            EndLocal(p, "relay-failed", notifyPeer: true);
+            return Task.CompletedTask;
+        }
+        var transport = new RelayTransport(codec, _signal.SendBinaryAsync)
+        {
+            Log = msg => _audit.Write("relay-error", p.Controller.Name, p.Controller.Id, msg),
+        };
+        lock (_lock)
+        {
+            if (_p != p || p.Relay != null) { transport.Dispose(); codec.Dispose(); return Task.CompletedTask; }
+            p.RelayCodec = codec;
+            p.Relay = transport;
+        }
+        _audit.Write("session-relayed", p.Controller.Name, p.Controller.Id, "WebRTC failed; using the encrypted relay");
+        try { peer.SwitchToRelay(transport); }
+        catch (Exception ex)
+        {
+            _audit.Write("session-failed", p.Controller.Name, p.Controller.Id, "relay switch: " + ex.Message);
+            EndLocal(p, "relay-failed", notifyPeer: true);
+        }
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// A binary WebSocket frame (call in arrival order, on the receive loop). Dropped unless the active session is in
+    /// relay mode and it decrypts with a fresh counter; otherwise routed to the peer synchronously.
+    /// </summary>
+    public void OnRelayFrame(byte[] frame)
+    {
+        RelayCodec? codec;
+        IRemotePeer? peer;
+        lock (_lock) { codec = _p?.RelayCodec; peer = _p?.Peer; }
+        if (codec == null || peer == null) return;
+        bool ok;
+        byte channel; byte[] payload;
+        try { ok = codec.TryDecrypt(frame, out channel, out payload); }
+        catch (ObjectDisposedException) { return; }
+        if (!ok || channel > (byte)RelayChannel.File) return;
+        peer.OnRelayMessage((RelayChannel)channel, payload);
+    }
 
     private async Task OnRequestAsync(JsonElement m)
     {
@@ -171,11 +255,21 @@ public sealed class SessionNegotiator
             p.Stage = Stage.Connected;
         }
         p.Timeout.Cancel();
-        if (!IdentityUtil.Verify(p.Controller.PublicKey, IdentityUtil.OfferString(p.SessionId, sdp), Json.Str(m, "signature", 100)))
+        // the ecdh key is covered by the controller's signature, so the server can't swap it (relay MITM)
+        var peerEcdh = Json.Str(m, "ecdh", 200, 1);
+        if (peerEcdh == null || !EphemeralEcdh.IsValidPeerKey(peerEcdh) ||
+            !IdentityUtil.Verify(p.Controller.PublicKey, IdentityUtil.OfferString(p.SessionId, peerEcdh, sdp), Json.Str(m, "signature", 100)))
         {
-            _audit.Write("session-ended", p.Controller.Name, p.Controller.Id, "offer signature invalid");
+            _audit.Write("session-ended", p.Controller.Name, p.Controller.Id,
+                peerEcdh == null ? "offer without ecdh key" : "offer signature invalid");
             EndLocal(p, "bad-signature", notifyPeer: true);
             return;
+        }
+        var ecdh = new EphemeralEcdh();
+        lock (_lock)
+        {
+            if (_p != p) { ecdh.Dispose(); return; }
+            p.Ecdh = ecdh; p.PeerEcdh = peerEcdh;
         }
         var info = _gate.Active;
         if (info == null || info.Key != p.SessionId) { EndLocal(p, "ended", true); return; }
@@ -195,7 +289,8 @@ public sealed class SessionNegotiator
             {
                 type = "signal", sessionId = p.SessionId,
                 sdp = new { type = "answer", sdp = answer },
-                signature = _identity.Sign(IdentityUtil.AnswerString(p.SessionId, answer)),
+                ecdh = ecdh.SpkiBase64,
+                signature = _identity.Sign(IdentityUtil.AnswerString(p.SessionId, ecdh.SpkiBase64, answer)),
             });
         }
         catch (Exception ex)
@@ -261,6 +356,9 @@ public sealed class SessionNegotiator
         p.Timeout.Cancel();
         CancelQuietly(p.Cancel);
         try { p.Peer?.Dispose(); } catch (Exception) { }
+        p.Relay?.Dispose();
+        p.RelayCodec?.Dispose();
+        p.Ecdh?.Dispose();
         _gate.End(p.SessionId, reason); // no-op if already ended (kill path)
         if (notifyPeer) _ = _signal.SendAsync(new { type = "session-end", sessionId = p.SessionId, reason });
     }

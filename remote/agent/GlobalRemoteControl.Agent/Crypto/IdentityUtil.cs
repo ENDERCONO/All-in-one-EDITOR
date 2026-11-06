@@ -62,8 +62,9 @@ public static class IdentityUtil
     // Signed strings (PROTOCOL.md sections 1 and 4)
     public static string AuthString(string role, string nonce) => $"grc-auth:{role}:{nonce}";
     public static string SessionAuthString(string sessionId, string nonce, string deviceId) => $"grc-session:{sessionId}:{nonce}:{deviceId}";
-    public static string OfferString(string sessionId, string sdp) => $"grc-offer:{sessionId}:{sdp}";
-    public static string AnswerString(string sessionId, string sdp) => $"grc-answer:{sessionId}:{sdp}";
+    // ecdh = the sender's ephemeral ECDH P-256 public key (base64 SPKI); it keys the relay fallback (section 7)
+    public static string OfferString(string sessionId, string ecdh, string sdp) => $"grc-offer:{sessionId}:{ecdh}:{sdp}";
+    public static string AnswerString(string sessionId, string ecdh, string sdp) => $"grc-answer:{sessionId}:{ecdh}:{sdp}";
 
     public static string RandomNonce() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 }

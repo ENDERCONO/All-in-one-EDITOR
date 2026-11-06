@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using GlobalRemoteControl.Agent.Crypto;
 
 namespace GlobalRemoteControl.Agent.Tests;
@@ -139,8 +140,8 @@ public class CryptoTests
     {
         Assert.Equal("grc-auth:device:N", IdentityUtil.AuthString("device", "N"));
         Assert.Equal("grc-session:S:N:D", IdentityUtil.SessionAuthString("S", "N", "D"));
-        Assert.Equal("grc-offer:S:v=0", IdentityUtil.OfferString("S", "v=0"));
-        Assert.Equal("grc-answer:S:v=0", IdentityUtil.AnswerString("S", "v=0"));
+        Assert.Equal("grc-offer:S:E:v=0", IdentityUtil.OfferString("S", "E", "v=0"));
+        Assert.Equal("grc-answer:S:E:v=0", IdentityUtil.AnswerString("S", "E", "v=0"));
     }
 
     [Fact]
@@ -171,5 +172,55 @@ public class CryptoTests
         Assert.Equal(IdentityUtil.Fingerprint(a.PublicKeySpki), a.Fingerprint);
         Assert.True(IdentityUtil.Verify(a.PublicKeyBase64, "grc-answer:x", b.Sign("grc-answer:x")));
         Assert.False(File.Exists(file + ".tmp"));
+    }
+
+    /// <summary>In-memory test protector: reversible, never DPAPI.</summary>
+    private sealed class XorProtector : IKeyProtector
+    {
+        public int Protects, Unprotects;
+        public byte[] Protect(byte[] d) { Protects++; return d.Select(b => (byte)(b ^ 0x5A)).ToArray(); }
+        public byte[] Unprotect(byte[] d) { Unprotects++; return d.Select(b => (byte)(b ^ 0x5A)).ToArray(); }
+    }
+
+    [Fact]
+    public void DeviceIdentity_CustomProtector_Seam_RoundTrips()
+    {
+        using var d = new TempDir();
+        var file = d.File("key.bin");
+        var prot = new XorProtector();
+        using var a = DeviceIdentity.LoadOrCreate(file, prot);
+        using var b = DeviceIdentity.LoadOrCreate(file, prot);
+        Assert.Equal((1, 1), (prot.Protects, prot.Unprotects));
+        Assert.Equal(a.DeviceId, b.DeviceId);
+        // what's on disk is the protector's output, not a raw PKCS#8 key
+        using var ec = ECDsa.Create();
+        Assert.ThrowsAny<CryptographicException>(() => ec.ImportPkcs8PrivateKey(File.ReadAllBytes(file), out _));
+    }
+
+    [Fact]
+    public void DeviceIdentity_Ephemeral_And_FromKey()
+    {
+        using var a = DeviceIdentity.CreateEphemeral();
+        using var b = DeviceIdentity.CreateEphemeral();
+        Assert.NotEqual(a.DeviceId, b.DeviceId);
+        Assert.True(IdentityUtil.Verify(a.PublicKeyBase64, "x", a.Sign("x")));
+        Assert.Throws<ArgumentException>(() => DeviceIdentity.FromKey(ECDsa.Create(ECCurve.NamedCurves.nistP384)));
+        using var k = DeviceIdentity.FromKey(ECDsa.Create(ECCurve.NamedCurves.nistP256));
+        Assert.Equal(22, k.DeviceId.Length);
+    }
+
+    [WindowsFact]
+    public void DeviceIdentity_Default_IsDpapiCurrentUser()
+    {
+        using var d = new TempDir();
+        var file = d.File("key.bin");
+        using var a = DeviceIdentity.LoadOrCreate(file); // production path: no protector given
+        var onDisk = File.ReadAllBytes(file);
+        using var ec = ECDsa.Create();
+        Assert.ThrowsAny<CryptographicException>(() => ec.ImportPkcs8PrivateKey(onDisk, out _));
+        var pkcs8 = ProtectedData.Unprotect(onDisk, Encoding.UTF8.GetBytes("GlobalRemoteControl.DeviceKey.v1"), DataProtectionScope.CurrentUser);
+        ec.ImportPkcs8PrivateKey(pkcs8, out _);
+        Assert.Equal(a.PublicKeyBase64, Convert.ToBase64String(ec.ExportSubjectPublicKeyInfo()));
+        Assert.Throws<CryptographicException>(() => ProtectedData.Unprotect(onDisk, null, DataProtectionScope.CurrentUser)); // entropy required
     }
 }

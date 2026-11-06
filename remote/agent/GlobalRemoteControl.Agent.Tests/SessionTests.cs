@@ -82,19 +82,30 @@ public class SessionGateTests
 
 public class SessionNegotiatorTests
 {
-    private sealed class FakePeer : IRemotePeer
+    internal sealed class FakePeer : IRemotePeer
     {
         public bool Disposed;
+        public ISessionTransport? Relay;
+        public int SwitchCalls;
+        public bool ThrowOnSwitch;
+        public List<(RelayChannel Ch, byte[] Payload)> RelayMessages = new();
         public string? Offer;
         public List<string> Candidates = new();
         public event Action<string, string?, ushort>? LocalCandidate { add { } remove { } }
         public event Action<string>? Closed { add { } remove { } }
         public Task<string> AcceptOfferAsync(string offerSdp) { Offer = offerSdp; return Task.FromResult("v=0 answer"); }
         public void AddRemoteCandidate(string candidate, string? sdpMid, ushort idx) => Candidates.Add(candidate);
+        public void SwitchToRelay(ISessionTransport relay)
+        {
+            SwitchCalls++;
+            if (ThrowOnSwitch) throw new InvalidOperationException("boom");
+            Relay = relay;
+        }
+        public void OnRelayMessage(RelayChannel channel, byte[] payload) { lock (RelayMessages) RelayMessages.Add((channel, payload)); }
         public void Dispose() => Disposed = true;
     }
 
-    private sealed class Rig : IDisposable
+    internal sealed class Rig : IDisposable
     {
         public TempDir Dir = new();
         public FakeSignal Signal = new();
@@ -103,6 +114,8 @@ public class SessionNegotiatorTests
         public TrustedControllerStore Store;
         public DeviceIdentity Device;
         public TestKey Ctl = new();
+        /// <summary>The controller's ephemeral ECDH key (what the browser puts in its offer).</summary>
+        public EphemeralEcdh CtlEcdh = new();
         public FakePeer? Peer;
         public int PeerCreated;
         public SessionNegotiator Neg;
@@ -112,7 +125,7 @@ public class SessionNegotiatorTests
         {
             Store = new TrustedControllerStore(Dir.File("t.json"));
             if (paired) Store.Add(Ctl.Id, Ctl.Name, Ctl.PublicKeyB64);
-            Device = DeviceIdentity.LoadOrCreate(Dir.File("k.bin"));
+            Device = DeviceIdentity.CreateEphemeral(); // in-memory seam; DPAPI persistence has its own tests
             Neg = new SessionNegotiator(Signal, Device, Store, Gate, Prompts, new AuditLog(Dir.File("a.log")),
                 (info, fp) => { PeerCreated++; return Peer = new FakePeer(); });
         }
@@ -125,8 +138,34 @@ public class SessionNegotiatorTests
         public Task Auth(string? signature = null, string? sid = null) =>
             Neg.HandleAsync("session-auth", Msg.Of(new { type = "session-auth", sessionId = sid ?? Sid, signature = signature ?? Ctl.Sign(IdentityUtil.SessionAuthString(Sid, Nonce, Device.DeviceId)) }));
 
-        public Task Offer(string sdp, string? signature = null) =>
-            Neg.HandleAsync("signal", Msg.Of(new { type = "signal", sessionId = Sid, sdp = new { type = "offer", sdp }, signature = signature ?? Ctl.Sign(IdentityUtil.OfferString(Sid, sdp)) }));
+        public string SignOffer(string sdp, string? ecdh = null) => Ctl.Sign(IdentityUtil.OfferString(Sid, ecdh ?? CtlEcdh.SpkiBase64, sdp));
+
+        /// <summary>Sends a signed offer. <paramref name="ecdh"/> null = our key; "" = field omitted.</summary>
+        public Task Offer(string sdp, string? signature = null, string? ecdh = null, bool omitSignature = false)
+        {
+            var key = ecdh ?? CtlEcdh.SpkiBase64;
+            var sig = signature ?? SignOffer(sdp, key);
+            object msg = (key.Length == 0, omitSignature) switch
+            {
+                (true, true) => new { type = "signal", sessionId = Sid, sdp = new { type = "offer", sdp } },
+                (true, false) => new { type = "signal", sessionId = Sid, sdp = new { type = "offer", sdp }, signature = sig },
+                (false, true) => new { type = "signal", sessionId = Sid, sdp = new { type = "offer", sdp }, ecdh = key },
+                _ => new { type = "signal", sessionId = Sid, sdp = new { type = "offer", sdp }, ecdh = key, signature = sig },
+            };
+            return Neg.HandleAsync("signal", Msg.Of(msg));
+        }
+
+        public JsonElement Answer => Signal.OfType("signal").Single(s => s.TryGetProperty("sdp", out _));
+
+        public Task RelayStart(string? sid = null) =>
+            Neg.HandleAsync("relay-start", Msg.Of(new { type = "relay-start", sessionId = sid ?? Sid }));
+
+        /// <summary>The browser's relay codec, keyed from our ECDH key and the device's signed answer.</summary>
+        public RelayCodec ControllerCodec()
+        {
+            var z = CtlEcdh.DeriveSharedSecret(Answer.GetProperty("ecdh").GetString()!);
+            return RelayCodec.ForController(Sid, z);
+        }
 
         public async Task ApprovedSession(ApprovalResult res = ApprovalResult.Control)
         {
@@ -135,7 +174,7 @@ public class SessionNegotiatorTests
         }
 
         public string LastReason(string type = "session-reject") => Signal.OfType(type).Last().GetProperty("reason").GetString()!;
-        public void Dispose() { Device.Dispose(); Ctl.Dispose(); Dir.Dispose(); }
+        public void Dispose() { Neg.AbortPending("test-end"); Gate.Kill("test-end"); Device.Dispose(); Ctl.Dispose(); CtlEcdh.Dispose(); Dir.Dispose(); }
     }
 
     [Fact]
@@ -317,7 +356,7 @@ public class SessionNegotiatorTests
         using var r = new Rig();
         await r.ApprovedSession();
         using var attacker = new TestKey();
-        await r.Offer("v=0 offer", attacker.Sign(IdentityUtil.OfferString(r.Sid, "v=0 offer")));
+        await r.Offer("v=0 offer", attacker.Sign(IdentityUtil.OfferString(r.Sid, r.CtlEcdh.SpkiBase64, "v=0 offer")));
         Assert.Equal(0, r.PeerCreated);
         Assert.Equal("bad-signature", r.LastReason("session-end"));
         Assert.Null(r.Gate.Active);
@@ -329,7 +368,7 @@ public class SessionNegotiatorTests
     {
         using var r = new Rig();
         await r.ApprovedSession();
-        await r.Offer("v=0 evil", r.Ctl.Sign(IdentityUtil.OfferString(r.Sid, "v=0 good")));
+        await r.Offer("v=0 evil", r.SignOffer("v=0 good"));
         Assert.Equal(0, r.PeerCreated);
         Assert.Null(r.Gate.Active);
     }
@@ -353,7 +392,7 @@ public class SessionNegotiatorTests
         var sig = r.Signal.OfType("signal").Single();
         Assert.Equal("answer", sig.GetProperty("sdp").GetProperty("type").GetString());
         var answer = sig.GetProperty("sdp").GetProperty("sdp").GetString()!;
-        Assert.True(IdentityUtil.Verify(r.Device.PublicKeyBase64, IdentityUtil.AnswerString(r.Sid, answer), sig.GetProperty("signature").GetString()));
+        Assert.True(IdentityUtil.Verify(r.Device.PublicKeyBase64, IdentityUtil.AnswerString(r.Sid, sig.GetProperty("ecdh").GetString()!, answer), sig.GetProperty("signature").GetString()));
     }
 
     [Fact]

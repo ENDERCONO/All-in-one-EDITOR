@@ -46,6 +46,7 @@ public sealed class AgentHost : IDisposable
 
         Signaling.StateChanged += OnSignalingState;
         Signaling.MessageReceived += OnMessage;
+        Signaling.BinaryReceived += Negotiator.OnRelayFrame; // encrypted relay frames, in order, on the receive loop
         Gate.Ended += (info, reason) => Audit.Write("session-closed", info.ControllerName, info.ControllerId, reason);
     }
 
@@ -115,7 +116,8 @@ public sealed class AgentHost : IDisposable
         {
             "pairing-code" => Run(() => Pairing.OnPairingCode(m)),
             "pair-request" => Pairing.OnPairRequestAsync(m),
-            "session-request" or "session-auth" or "signal" or "session-end" => Negotiator.HandleAsync(type, m),
+            // relay-start completes synchronously here, before the receive loop reads the binary frames after it
+            "session-request" or "session-auth" or "signal" or "session-end" or "relay-start" => Negotiator.HandleAsync(type, m),
             "error" => Run(() => Audit.Write("server-error", details:
                 $"{Json.Str(m, "code", 64) ?? "?"} {Json.Str(m, "message", 256)}".Trim())),
             _ => Task.CompletedTask,

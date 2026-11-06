@@ -3,13 +3,28 @@ using System.Text;
 
 namespace GlobalRemoteControl.Agent.Crypto;
 
+/// <summary>Protects the device's private key at rest. Production always uses <see cref="DpapiKeyProtector"/>.</summary>
+public interface IKeyProtector
+{
+    byte[] Protect(byte[] data);
+    byte[] Unprotect(byte[] data);
+}
+
+/// <summary>DPAPI, CurrentUser scope: only this Windows user on this PC can unprotect the key (Windows only).</summary>
+public sealed class DpapiKeyProtector : IKeyProtector
+{
+    public static readonly DpapiKeyProtector Instance = new();
+    private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("GlobalRemoteControl.DeviceKey.v1");
+    public byte[] Protect(byte[] data) => ProtectedData.Protect(data, Entropy, DataProtectionScope.CurrentUser);
+    public byte[] Unprotect(byte[] data) => ProtectedData.Unprotect(data, Entropy, DataProtectionScope.CurrentUser);
+}
+
 /// <summary>
 /// The device's ECDSA P-256 key pair. Generated on first run; the PKCS#8 private key is stored DPAPI-protected
 /// (CurrentUser scope) so only this Windows user on this PC can use it.
 /// </summary>
 public sealed class DeviceIdentity : IDisposable
 {
-    private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("GlobalRemoteControl.DeviceKey.v1");
     private readonly ECDsa _key;
 
     private DeviceIdentity(ECDsa key)
@@ -26,11 +41,24 @@ public sealed class DeviceIdentity : IDisposable
     public string DeviceId { get; }
     public string Fingerprint { get; }
 
-    public static DeviceIdentity LoadOrCreate(string keyFile)
+    /// <summary>Wraps an existing P-256 key (takes ownership). Never persisted; used by tests.</summary>
+    public static DeviceIdentity FromKey(ECDsa key)
     {
+        if (key.KeySize != 256) throw new ArgumentException("P-256 key required", nameof(key));
+        return new DeviceIdentity(key);
+    }
+
+    /// <summary>A fresh in-memory identity that is never written anywhere (tests).</summary>
+    public static DeviceIdentity CreateEphemeral() => new(ECDsa.Create(ECCurve.NamedCurves.nistP256));
+
+    /// <summary>Loads the key from <paramref name="keyFile"/> or creates and stores a new one.
+    /// <paramref name="protector"/> defaults to DPAPI, which is what the app always uses.</summary>
+    public static DeviceIdentity LoadOrCreate(string keyFile, IKeyProtector? protector = null)
+    {
+        protector ??= DpapiKeyProtector.Instance;
         if (File.Exists(keyFile))
         {
-            var pkcs8 = ProtectedData.Unprotect(File.ReadAllBytes(keyFile), Entropy, DataProtectionScope.CurrentUser);
+            var pkcs8 = protector.Unprotect(File.ReadAllBytes(keyFile));
             try
             {
                 var ec = ECDsa.Create();
@@ -44,7 +72,7 @@ public sealed class DeviceIdentity : IDisposable
         try
         {
             var tmp = keyFile + ".tmp";
-            File.WriteAllBytes(tmp, ProtectedData.Protect(raw, Entropy, DataProtectionScope.CurrentUser));
+            File.WriteAllBytes(tmp, protector.Protect(raw));
             File.Move(tmp, keyFile, overwrite: true);
         }
         finally { CryptographicOperations.ZeroMemory(raw); }

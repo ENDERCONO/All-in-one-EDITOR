@@ -43,6 +43,16 @@ public sealed class RemoteSession : IRemotePeer
     private LoopbackAudio? _loopback;
     private int _monitorIndex;
     private int _disposed;
+    /// <summary>Where everything is sent: the data channels until <see cref="SwitchToRelay"/>, then the relay.</summary>
+    private volatile ISessionTransport _transport;
+    private volatile bool _relayed;
+    private System.Threading.Timer? _failGrace;
+
+    /// <summary>
+    /// If WebRTC fails before the channels ever opened, the controller is expected to fall back to the relay
+    /// (PROTOCOL.md section 7), so the session is only closed if no relay-start arrives within this time.
+    /// </summary>
+    public static TimeSpan RelayGrace { get; set; } = TimeSpan.FromSeconds(20);
 
     public event Action<string, string?, ushort>? LocalCandidate;
     public event Action<string>? Closed;
@@ -70,17 +80,28 @@ public sealed class RemoteSession : IRemotePeer
         };
         _pc.onconnectionstatechange += state =>
         {
-            if (state is RTCPeerConnectionState.failed or RTCPeerConnectionState.closed) Closed?.Invoke("connection-" + state);
+            if (_relayed || state is not (RTCPeerConnectionState.failed or RTCPeerConnectionState.closed)) return;
+            bool opened;
+            lock (_lock) opened = _streamer != null;
+            if (opened) { Closed?.Invoke("connection-" + state); return; }
+            // never connected: give the controller time to switch to the relay
+            lock (_lock) _failGrace ??= new System.Threading.Timer(_ =>
+            {
+                if (!_relayed && _disposed == 0) Closed?.Invoke("connection-" + state);
+            }, null, RelayGrace, Timeout.InfiniteTimeSpan);
         };
         _pc.ondatachannel += OnDataChannel;
+        _transport = new DataChannelTransport(this);
 
         _input = new InputController(svc.InputSink, () => _gate.IsInputAllowed(_key), CurrentMonitorBounds, svc.VirtualScreen)
         {
             Log = m => svc.Audit.Write("input-dropped", info.ControllerName, info.ControllerId, m),
         };
         _files = new FileTransferManager(info.ControllerName, info.ControllerId, fingerprint, info.Mode == SessionMode.View,
-            SendControl, d => SafeSend(_file, d), () => _file?.bufferedAmount ?? 0, svc.Prompts, svc.Audit);
+            SendControl, d => _transport.Send(RelayChannel.File, d), () => _transport.Buffered(RelayChannel.File), svc.Prompts, svc.Audit);
     }
+
+    public bool IsRelayed => _relayed;
 
     public SessionInfo Info => _info;
     public FileTransferManager Files => _files;
@@ -129,7 +150,7 @@ public sealed class RemoteSession : IRemotePeer
                     return;
             }
         }
-        dc.onclose += () => { if (dc.label is "control" or "video") Closed?.Invoke("channel-closed"); };
+        dc.onclose += () => { if (!_relayed && dc.label is "control" or "video") Closed?.Invoke("channel-closed"); };
         if (dc.readyState == RTCDataChannelState.open) OnChannelOpen();
         else dc.onopen += OnChannelOpen;
     }
@@ -141,8 +162,55 @@ public sealed class RemoteSession : IRemotePeer
     {
         lock (_lock)
         {
-            if (_disposed != 0 || _streamer != null) return;
+            if (_disposed != 0 || _streamer != null || _relayed) return;
             if (_control?.readyState != RTCDataChannelState.open || _video?.readyState != RTCDataChannelState.open) return;
+            StartStreamingLocked();
+        }
+        _svc.Audit.Write("session-connected", _info.ControllerName, _info.ControllerId, _info.ModeText);
+    }
+
+    /// <summary>
+    /// relay-start (PROTOCOL.md section 7): runs synchronously on the signaling receive loop, so binary frames that
+    /// follow are already routed here. Closes the peer connection (without raising <see cref="Closed"/>) and carries
+    /// all four channels over <paramref name="relay"/>; hello and video (re)start on the relay.
+    /// </summary>
+    public void SwitchToRelay(ISessionTransport relay)
+    {
+        VideoStreamer? old;
+        lock (_lock)
+        {
+            if (_disposed != 0 || _relayed) return;
+            _relayed = true;
+            _failGrace?.Dispose();
+            _transport = relay;
+            old = _streamer;
+            _streamer = null;
+        }
+        try { _pc.close(); } catch (Exception) { }
+        try { old?.Dispose(); } catch (Exception) { } // its ack window refers to frames sent on the dead channel
+        lock (_lock)
+        {
+            if (_disposed != 0) return;
+            StartStreamingLocked();
+        }
+        _svc.Audit.Write("session-connected", _info.ControllerName, _info.ControllerId, _info.ModeText + " (relayed)");
+    }
+
+    /// <summary>A decrypted relay message from the controller (same content as on the data channel).</summary>
+    public void OnRelayMessage(RelayChannel channel, byte[] payload)
+    {
+        if (_disposed != 0 || !_relayed) return;
+        switch (channel)
+        {
+            case RelayChannel.Control: OnControlMessage(DataChannelPayloadProtocols.WebRTC_String, payload); break;
+            case RelayChannel.File: _files.OnChunk(payload); break;
+            // the controller never sends video/audio
+        }
+    }
+
+    private void StartStreamingLocked()
+    {
+        {
             var monitors = _svc.Monitors();
             SendControl(new
             {
@@ -152,16 +220,15 @@ public sealed class RemoteSession : IRemotePeer
                 monitor = _monitorIndex,
                 audio = _svc.AudioAvailable(),
             });
-            _capturer = _svc.CreateCapturer();
-            var video = _video;
+            _capturer ??= _svc.CreateCapturer();
+            var transport = _transport; // a streamer lives on one transport (a relay switch makes a new one)
             _streamer = new VideoStreamer(_capturer, _svc.Monitors, _monitorIndex,
-                chunk => SafeSend(video, chunk), () => video.bufferedAmount, SendControl)
+                chunk => transport.Send(RelayChannel.Video, chunk), () => transport.Buffered(RelayChannel.Video), SendControl)
             {
                 Log = m => _svc.Audit.Write("video-error", _info.ControllerName, _info.ControllerId, m),
             };
             _streamer.Start();
         }
-        _svc.Audit.Write("session-connected", _info.ControllerName, _info.ControllerId, _info.ModeText);
     }
 
     private void OnControlMessage(DataChannelPayloadProtocols proto, byte[] data)
@@ -214,11 +281,14 @@ public sealed class RemoteSession : IRemotePeer
         {
             if (_disposed != 0) return;
             if (!enabled) { _loopback?.Stop(); return; }
-            if (!_svc.AudioAvailable() || _audio == null) return;
+            if (!_svc.AudioAvailable() || !_transport.HasChannel(RelayChannel.Audio)) return;
             try
             {
-                var ch = _audio;
-                _loopback ??= new LoopbackAudio(p => { if (ch.bufferedAmount < 64 * 1024) SafeSend(ch, p); });
+                _loopback ??= new LoopbackAudio(p =>
+                {
+                    var t = _transport;
+                    if (t.Buffered(RelayChannel.Audio) < 64 * 1024) t.Send(RelayChannel.Audio, p);
+                });
                 _loopback.Start();
                 _svc.Audit.Write("audio-enabled", _info.ControllerName, _info.ControllerId);
             }
@@ -229,22 +299,43 @@ public sealed class RemoteSession : IRemotePeer
         }
     }
 
-    public void SendControl(object message)
+    public void SendControl(object message) => _transport.SendControl(Json.Serialize(message));
+
+    private static bool SafeSend(RTCDataChannel? dc, byte[] data)
     {
-        var dc = _control;
-        if (dc == null || dc.readyState != RTCDataChannelState.open) return;
-        try { dc.send(Json.Serialize(message)); } catch (Exception) { }
+        if (dc == null || dc.readyState != RTCDataChannelState.open) return false;
+        try { dc.send(data, 0, data.Length); return true; } catch (Exception) { return false; }
     }
 
-    private static void SafeSend(RTCDataChannel? dc, byte[] data)
+    /// <summary>The WebRTC data channels as an <see cref="ISessionTransport"/> (control goes as text).</summary>
+    private sealed class DataChannelTransport : ISessionTransport
     {
-        if (dc == null || dc.readyState != RTCDataChannelState.open) return;
-        try { dc.send(data, 0, data.Length); } catch (Exception) { }
+        private readonly RemoteSession _s;
+        public DataChannelTransport(RemoteSession s) => _s = s;
+
+        private RTCDataChannel? Get(RelayChannel ch) => ch switch
+        {
+            RelayChannel.Control => _s._control,
+            RelayChannel.Video => _s._video,
+            RelayChannel.Audio => _s._audio,
+            _ => _s._file,
+        };
+
+        public bool Send(RelayChannel channel, byte[] payload) => SafeSend(Get(channel), payload);
+        public bool SendControl(string json)
+        {
+            var dc = _s._control;
+            if (dc == null || dc.readyState != RTCDataChannelState.open) return false;
+            try { dc.send(json); return true; } catch (Exception) { return false; }
+        }
+        public ulong Buffered(RelayChannel channel) => Get(channel)?.bufferedAmount ?? 0;
+        public bool HasChannel(RelayChannel channel) => Get(channel) != null;
     }
 
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        _failGrace?.Dispose();
         _input.ReleaseAll();
         try { _streamer?.Dispose(); } catch (Exception) { }
         try { _loopback?.Dispose(); } catch (Exception) { }

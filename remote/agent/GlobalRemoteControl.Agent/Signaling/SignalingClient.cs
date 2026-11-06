@@ -13,6 +13,10 @@ public interface ISignalSender
 {
     /// <summary>Sends a JSON message to the signaling server (dropped silently when disconnected).</summary>
     Task SendAsync(object message);
+
+    /// <summary>Sends one binary frame (encrypted relay, PROTOCOL.md section 7); dropped when disconnected.
+    /// Completes when the frame has been written to the socket, so callers can pace themselves.</summary>
+    Task SendBinaryAsync(byte[] frame);
 }
 
 /// <summary>
@@ -45,6 +49,13 @@ public sealed class SignalingClient : ISignalSender, IDisposable
 
     public event Action<SignalingState>? StateChanged;
     public event Action<string, JsonElement>? MessageReceived;
+
+    /// <summary>
+    /// Binary frames (encrypted relay) after authentication, raised synchronously on the receive loop in arrival
+    /// order, interleaved correctly with <see cref="MessageReceived"/>: the next message is not read until the
+    /// handler returns, so a relay-start handled synchronously is in effect before the frames that follow it.
+    /// </summary>
+    public event Action<byte[]>? BinaryReceived;
 
     public void Start(string url)
     {
@@ -107,23 +118,34 @@ public sealed class SignalingClient : ISignalSender, IDisposable
         return TimeSpan.FromSeconds(s * (1 + Random.Shared.NextDouble() * 0.2));
     }
 
-    private async Task ReceiveLoopAsync(ClientWebSocket ws, CancellationToken ct, Action onReady)
+    /// <summary>Messages (text or binary) larger than this are read to the end and dropped.</summary>
+    public const int MaxFrameBytes = Json.MaxMessageBytes;
+
+    /// <summary>Reads messages strictly one after another; each is fully handled before the next is read.</summary>
+    internal async Task ReceiveLoopAsync(WebSocket ws, CancellationToken ct, Action onReady)
     {
-        var buffer = new byte[Json.MaxMessageBytes + 1];
+        var buffer = new byte[MaxFrameBytes + 1];
         while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
         {
             int len = 0;
+            bool oversize = false;
             WebSocketReceiveResult r;
             do
             {
-                if (len >= buffer.Length) throw new InvalidDataException("message too large");
+                if (len >= buffer.Length) { oversize = true; len = 0; } // keep draining, drop it at the end
                 r = await ws.ReceiveAsync(new ArraySegment<byte>(buffer, len, buffer.Length - len), ct);
                 if (r.MessageType == WebSocketMessageType.Close) return;
                 len += r.Count;
             } while (!r.EndOfMessage);
-            if (len > Json.MaxMessageBytes) throw new InvalidDataException("message too large");
-            if (r.MessageType != WebSocketMessageType.Text) continue;
+            if (oversize || len > MaxFrameBytes) continue;
 
+            if (r.MessageType == WebSocketMessageType.Binary)
+            {
+                if (!_ready || len == 0) continue; // nothing before authentication
+                try { BinaryReceived?.Invoke(buffer.AsSpan(0, len).ToArray()); }
+                catch (Exception ex) { LastError = "binary handler: " + ex.Message; }
+                continue;
+            }
             var text = Encoding.UTF8.GetString(buffer, 0, len);
             if (!Json.TryParseObject(text, "type", out var msg, out var type)) continue;
             await HandleAsync(type, msg, onReady);
@@ -193,6 +215,16 @@ public sealed class SignalingClient : ISignalSender, IDisposable
         if (bytes.Length > Json.MaxMessageBytes) return;
         await _sendLock.WaitAsync();
         try { await ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None); }
+        catch (Exception ex) { LastError = ex.Message; }
+        finally { _sendLock.Release(); }
+    }
+
+    public async Task SendBinaryAsync(byte[] frame)
+    {
+        var ws = _ws;
+        if (!_ready || ws == null || ws.State != WebSocketState.Open || frame.Length == 0 || frame.Length > MaxFrameBytes) return;
+        await _sendLock.WaitAsync().ConfigureAwait(false);
+        try { await ws.SendAsync(frame, WebSocketMessageType.Binary, true, CancellationToken.None).ConfigureAwait(false); }
         catch (Exception ex) { LastError = ex.Message; }
         finally { _sendLock.Release(); }
     }
