@@ -20,27 +20,50 @@ In a session: monitor picker, quality, audio on/off, send files (the PC asks whe
 keyboard and touchpad mode for phones, fullscreen. From the PC's tray, **Send a file to the remote device…** pushes a
 file to the browser.
 
-## Claude / MCP
+## Claude / MCP (minimal, off by default)
 
-Not included in this build. The planned design (approval-gated MCP tools) is kept in `docs/PROTOCOL.md` section 6
-but is not implemented.
+The exe has a tiny MCP bridge so Claude can **open the app, check its status and make a pairing code** — nothing else.
+There is deliberately no tool that approves anything, sees the screen, moves the mouse, types or touches files:
+pairing and every session still need your click at the PC.
+
+1. In the app, turn on **Allow Claude (MCP)** (off by default) and click **Copy Claude setup**. It copies:
+   ```
+   claude mcp add globalremotecontrol -- "C:\path\to\GlobalRemoteControl.exe" --mcp
+   ```
+2. Run that once in a terminal. Claude now has three tools:
+
+| tool | what it does |
+|---|---|
+| `get_agent_status` | running?, connected to the server, device name + fingerprint, number of trusted browsers, session active, MCP allowed |
+| `open_agent` | starts the tray app (visible) if it isn't running |
+| `create_pairing_code` | only when **Allow Claude (MCP)** is on: same as clicking *Pair a new device* (the code window also shows on the PC) and returns the code + the Remote tab URL |
+
+`--mcp` runs as a short-lived process started by Claude; it talks to the running tray app over a named pipe that only
+your Windows user can open. Every request is written to the audit log. Details: `docs/PROTOCOL.md` section 6.
 
 ## How it works
 
 ```
-Browser (Remote tab) ──WSS──▶ Render server (/remote/ws, stateless relay) ◀──WSS── GlobalRemoteControl.exe (home PC)
-        ▲                                                                              │
-        └──────────── WebRTC data channels, DTLS-encrypted, peer-to-peer ──────────────┘
+Browser (Remote tab) ──WSS──▶ Render server (/remote/ws) ◀──WSS── GlobalRemoteControl.exe (home PC)
+        ▲                                                                │
+        └──────── WebRTC data channels, DTLS-encrypted, peer-to-peer ────┘
+                 (fallback: AES-256-GCM frames relayed over the two WebSockets)
 ```
 
-* The server only relays signaling. Your PC holds the list of trusted browsers; each browser and the PC have their own
-  P-256 keys, and the WebRTC offer/answer are signed, so even the server can't impersonate either side or read the stream.
-* Screen frames are JPEG over a WebRTC data channel (with back-pressure), audio is 24 kHz PCM, input is JSON.
+* The server relays signaling. Your PC holds the list of trusted browsers; each browser and the PC have their own
+  P-256 keys, and the WebRTC offer/answer (including an ephemeral ECDH key on each side) are signed, so even the server
+  can't impersonate either side or read the stream.
+* Screen frames are tile-delta JPEG (only changed 64×64 areas are sent, keyframe on demand / every 10 s) over a WebRTC
+  data channel with an ack window, audio is 24 kHz PCM, input is JSON.
 * Details: [`docs/PROTOCOL.md`](docs/PROTOCOL.md). Safety rules: [`CLAUDE.md`](CLAUDE.md).
 
-**NAT note**: most home networks connect directly (STUN). On strict networks (some mobile carriers, corporate
-Wi-Fi) a TURN relay is needed: set `REMOTE_TURN_URL` (e.g. `turn:turn.example.com:3478`) and `REMOTE_TURN_SECRET`
-(coturn `static-auth-secret`) on the Render service.
+**NAT / relay fallback (replaces TURN)**: most home networks connect directly (STUN). When WebRTC can't connect within
+6 s (strict NATs, phones on mobile data, corporate Wi-Fi) the browser switches the session to the **encrypted relay**:
+the same four channels travel as binary frames over the existing signaling WebSockets, end-to-end encrypted with
+AES-256-GCM (keys from the signed ECDH exchange via HKDF, per-direction counters against replay). The server only
+forwards ciphertext and never needs a TURN server; the browser shows a **Relayed** badge and starts at the Smooth
+quality preset. Your own TURN server still works if you want one (`REMOTE_TURN_URL` + `REMOTE_TURN_SECRET`, coturn
+`static-auth-secret`), but it's no longer needed.
 
 ## Develop
 
@@ -50,7 +73,7 @@ Wi-Fi) a TURN relay is needed: set `REMOTE_TURN_URL` (e.g. `turn:turn.example.co
 | Agent against the local server | `dotnet run --project remote/agent/GlobalRemoteControl.Agent -- --server ws://localhost:3000/remote/ws` |
 | Server tests | `node --test "remote/server/test/*.test.js"` |
 | Web logic tests | `node --test "remote/web/test/*.test.mjs"` |
-| Agent tests | `dotnet test remote/agent` |
+| Agent tests | `dotnet test remote/agent` (Windows) |
 | Build the single exe | `powershell remote/agent/publish.ps1` → `remote/agent/dist/GlobalRemoteControl.exe` |
 
 Releases: pushing changes under `remote/agent/` to `main` runs `.github/workflows/remote-agent.yml`, which tests,
