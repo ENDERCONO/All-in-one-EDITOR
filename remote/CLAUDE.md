@@ -13,6 +13,6 @@ Consent-based remote desktop for the user's OWN home PC. Contract between the pa
 - A pairing code alone never grants access; it is short-lived, single-use, rate-limited.
 - The person at the PC approves every new controller and every session (control or view-only), and every file transfer (with a chosen destination).
 - A visible on-screen session bar + tray state while any session (browser or MCP) is active; immediate kill switch (bar button, tray, Ctrl+Alt+Shift+F12).
-- MCP (PROTOCOL section 6) is NOT implemented. If ever added: off by default, never auto-approves, no shell / arbitrary file access, session-scoped tokens, logs everything.
+- MCP is only the minimal PROTOCOL section 6 bridge (`agent/.../Mcp/`, tests in `McpTests.cs`): `--mcp` stdio server with exactly three tools — `get_agent_status`, `open_agent`, `create_pairing_code` — talking to the tray app over the per-user, current-user-ACL pipe (`status` / `pairing-code` only). "Allow Claude (MCP)" is off by default and gates `create_pairing_code`; every pipe command is audited. It never approves anything and has no screen, input, file, shell or session tools; don't add any without changing PROTOCOL first and keeping: off by default, never auto-approves, no shell / arbitrary file access, session-scoped tokens, logs everything.
 - No stealth mode, hidden persistence, credential access, or network-control bypasses. "Start at login" is an opt-in visible checkbox.
 - Tests for every security-sensitive path.

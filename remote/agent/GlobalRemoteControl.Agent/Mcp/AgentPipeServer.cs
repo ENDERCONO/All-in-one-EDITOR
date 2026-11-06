@@ -20,9 +20,18 @@ public sealed class AgentPipeServer : IDisposable
     private readonly AuditLog _audit;
     private readonly CancellationTokenSource _cts = new();
 
+    private readonly Func<NamedPipeServerStream> _createPipe;
+
     public AgentPipeServer(string pipeName, AgentPipeCommands commands, AuditLog audit)
+        : this(pipeName, commands, audit, createPipe: null) { }
+
+    /// <param name="createPipe">Tests only (non-Windows has no pipe ACLs); production always uses the current-user ACL.</param>
+    internal AgentPipeServer(string pipeName, AgentPipeCommands commands, AuditLog audit, Func<NamedPipeServerStream>? createPipe)
     {
         _pipeName = pipeName; _commands = commands; _audit = audit;
+        _createPipe = createPipe ?? (() => NamedPipeServerStreamAcl.Create(_pipeName, PipeDirection.InOut, MaxInstances,
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous, AgentPipeProtocol.MaxMessageBytes, AgentPipeProtocol.MaxMessageBytes,
+            CurrentUserOnlySecurity()));
     }
 
     public string PipeName => _pipeName;
@@ -48,12 +57,7 @@ public sealed class AgentPipeServer : IDisposable
         while (!ct.IsCancellationRequested)
         {
             NamedPipeServerStream pipe;
-            try
-            {
-                pipe = NamedPipeServerStreamAcl.Create(_pipeName, PipeDirection.InOut, MaxInstances, PipeTransmissionMode.Byte,
-                    PipeOptions.Asynchronous, AgentPipeProtocol.MaxMessageBytes, AgentPipeProtocol.MaxMessageBytes,
-                    CurrentUserOnlySecurity());
-            }
+            try { pipe = _createPipe(); }
             catch (Exception ex)
             {
                 if (++failures == 1) _audit.Write("mcp-pipe-error", details: "create: " + ex.Message);
@@ -80,7 +84,7 @@ public sealed class AgentPipeServer : IDisposable
         if (line == null && !tooLarge) return; // client went away without a request
         JsonObject reply = await _commands.HandleAsync(line, tooLarge, ct).ConfigureAwait(false);
         await AgentPipeProtocol.WriteLineAsync(pipe, reply, ct).ConfigureAwait(false);
-        try { pipe.WaitForPipeDrain(); } catch (IOException) { }
+        try { pipe.WaitForPipeDrain(); } catch (IOException) { } catch (PlatformNotSupportedException) { }
     }
 
     public void Dispose()

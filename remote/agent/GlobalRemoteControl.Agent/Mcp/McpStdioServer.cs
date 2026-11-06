@@ -42,7 +42,14 @@ public sealed class McpStdioServer
         var utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         using var input = new StreamReader(Console.OpenStandardInput(), utf8);
         using var output = new StreamWriter(Console.OpenStandardOutput(), utf8) { AutoFlush = true, NewLine = "\n" };
-        server.RunAsync(input, output, CancellationToken.None).GetAwaiter().GetResult();
+        try { server.RunAsync(input, output, CancellationToken.None).GetAwaiter().GetResult(); }
+        catch (Exception ex)
+        {
+            // stdout carries only JSON-RPC; diagnostics go to stderr (the MCP client's log).
+            try { Console.Error.WriteLine("globalremotecontrol --mcp: " + ex.Message); } catch (Exception) { }
+            audit?.Write("mcp-error", "Claude (MCP)", null, ex.Message);
+            return 1;
+        }
         return 0;
     }
 
@@ -72,14 +79,17 @@ public sealed class McpStdioServer
         if (msg is not JsonObject obj) return ErrorResponse(null, -32600, "Invalid Request").ToJsonString();
 
         JsonNode? id = null;
-        bool hasId = obj.TryGetPropertyValue("id", out var rawId) && rawId != null;
+        // A notification is a message WITHOUT an "id" member; "id": null is an (invalid, for MCP) request, not a notification.
+        bool hasId = obj.TryGetPropertyValue("id", out var rawId);
         if (hasId)
         {
-            var kind = rawId!.GetValueKind();
+            var kind = rawId?.GetValueKind() ?? JsonValueKind.Null;
             if (kind != JsonValueKind.String && kind != JsonValueKind.Number)
                 return ErrorResponse(null, -32600, "Invalid Request").ToJsonString();
-            id = rawId.DeepClone();
+            id = rawId!.DeepClone();
         }
+        // We never send requests, so a response from the client (result/error, no method) is ignored, never answered.
+        if (!obj.ContainsKey("method") && (obj.ContainsKey("result") || obj.ContainsKey("error"))) return null;
         string? method = null;
         if (obj["method"] is JsonValue mv && mv.GetValueKind() == JsonValueKind.String) method = mv.GetValue<string>();
         var versionOk = obj["jsonrpc"] is JsonValue jv && jv.GetValueKind() == JsonValueKind.String && jv.GetValue<string>() == "2.0";
@@ -162,9 +172,12 @@ public sealed class McpStdioServer
         if (p?["name"] is not JsonValue nv || nv.GetValueKind() != JsonValueKind.String)
             throw new RpcException(-32602, "Invalid params: missing tool name");
         var name = nv.GetValue<string>();
+        // None of the tools take arguments; anything but an (ignored) object is malformed.
+        if (p.TryGetPropertyValue("arguments", out var args) && args != null && args is not JsonObject)
+            throw new RpcException(-32602, "Invalid params: arguments must be an object");
         return name switch
         {
-            "get_agent_status" => ToolResult(await StatusAsync(ct).ConfigureAwait(false), false),
+            "get_agent_status" => StatusResult(await StatusAsync(ct).ConfigureAwait(false)),
             "open_agent" => await OpenAgentAsync(ct).ConfigureAwait(false),
             "create_pairing_code" => await PairingCodeAsync(ct).ConfigureAwait(false),
             _ => throw new RpcException(-32602, "Unknown tool: " + name),
@@ -175,14 +188,32 @@ public sealed class McpStdioServer
     {
         var s = await _bridge.SendAsync(AgentPipeProtocol.CmdStatus, StatusTimeout, ct).ConfigureAwait(false);
         if (s == null) return new JsonObject { ["running"] = false };
+        if (s["ok"] is JsonValue okv && okv.GetValueKind() == JsonValueKind.False)
+        {
+            // The pipe answered, so the app IS running; it just couldn't give a status (timeout / bad reply).
+            s.Remove("ok");
+            s["running"] = true;
+            s["isError"] = true;
+            return s;
+        }
         s.Remove("ok");
+        if (s["running"] is not JsonValue rv || rv.GetValueKind() is not (JsonValueKind.True or JsonValueKind.False))
+            s["running"] = true; // whatever answered on our pipe is the running app
         return s;
     }
+
+    private static JsonObject StatusResult(JsonObject s)
+    {
+        var isError = s.Remove("isError");
+        return ToolResult(s, isError);
+    }
+
+    private static bool IsRunning(JsonObject s) => s["running"] is JsonValue v && v.GetValueKind() == JsonValueKind.True;
 
     private async Task<JsonObject> OpenAgentAsync(CancellationToken ct)
     {
         var s = await StatusAsync(ct).ConfigureAwait(false);
-        if (s["running"]?.GetValue<bool>() == true) return ToolResult(s, false);
+        if (IsRunning(s)) return StatusResult(s);
         _audit?.Write("mcp-open-agent", "Claude (MCP)", null, "starting the tray app");
         var err = _bridge.Launch();
         if (err != null) return ToolResult(new JsonObject { ["running"] = false, ["error"] = err }, true);
@@ -191,7 +222,7 @@ public sealed class McpStdioServer
         {
             await Task.Delay(300, ct).ConfigureAwait(false);
             s = await StatusAsync(ct).ConfigureAwait(false);
-            if (s["running"]?.GetValue<bool>() == true) return ToolResult(s, false);
+            if (IsRunning(s)) return StatusResult(s);
         }
         return ToolResult(new JsonObject
         {
@@ -205,18 +236,51 @@ public sealed class McpStdioServer
         var r = await _bridge.SendAsync(AgentPipeProtocol.CmdPairingCode, PairingTimeout, ct).ConfigureAwait(false);
         if (r == null)
             return ToolResult(new JsonObject { ["error"] = "not-running", ["message"] = "GlobalRemoteControl is not running on this PC. Call open_agent first." }, true);
-        if (r["ok"]?.GetValue<bool>() != true)
+        if (r["ok"] is not JsonValue okv || okv.GetValueKind() != JsonValueKind.True
+            || r["code"] is not JsonValue cv || cv.GetValueKind() != JsonValueKind.String)
         {
             r.Remove("ok");
+            if (r["error"] == null) { r["error"] = "bad-reply"; r["message"] = "The agent sent no pairing code."; }
             return ToolResult(r, true);
         }
         return ToolResult(new JsonObject
         {
-            ["code"] = r["code"]?.DeepClone(),
+            ["code"] = cv.DeepClone(),
             ["expiresAt"] = r["expiresAt"]?.DeepClone(),
-            ["webUrl"] = WebUrl,
+            ["webUrl"] = WebUrlFor(r["server"] is JsonValue sv && sv.GetValueKind() == JsonValueKind.String ? sv.GetValue<string>() : null),
         }, false);
     }
+
+    /// <summary>
+    /// The page to enter the code on, on the same server the agent is connected to:
+    /// <c>wss://host/remote/ws</c> → <c>https://host/remote/web/</c>. Falls back to the default site.
+    /// </summary>
+    internal static string WebUrlFor(string? serverWsUrl)
+    {
+        if (!AgentSettings.IsValidServerUrl(serverWsUrl) || !Uri.TryCreate(serverWsUrl, UriKind.Absolute, out var u)) return WebUrl;
+        var path = u.AbsolutePath.TrimEnd('/');
+        if (!path.EndsWith("/remote/ws", StringComparison.Ordinal)) return WebUrl;
+        var b = new UriBuilder(u)
+        {
+            Scheme = u.Scheme == "wss" ? "https" : "http",
+            Port = u.IsDefaultPort ? -1 : u.Port,
+            Path = path[..^"ws".Length] + "web/",
+            Query = "", Fragment = "",
+        };
+        return b.Uri.ToString();
+    }
+
+    /// <summary>"Copy Claude setup" (PROTOCOL section 6): the Claude Code command plus a Claude Desktop config snippet.</summary>
+    public static string ClaudeSetupText(string exe) =>
+        $"claude mcp add globalremotecontrol -- \"{exe}\" --mcp\r\n\r\n" +
+        "Claude Desktop (claude_desktop_config.json):\r\n" +
+        JsonSerializer.Serialize(new Dictionary<string, object>
+        {
+            ["mcpServers"] = new Dictionary<string, object>
+            {
+                ["globalremotecontrol"] = new { command = exe, args = new[] { "--mcp" } },
+            },
+        }, new JsonSerializerOptions { WriteIndented = true }).Replace("\r\n", "\n").Replace("\n", "\r\n");
 
     private static JsonObject ToolResult(JsonObject data, bool isError) => new()
     {

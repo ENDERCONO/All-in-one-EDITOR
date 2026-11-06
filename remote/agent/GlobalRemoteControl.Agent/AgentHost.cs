@@ -24,8 +24,7 @@ public sealed class AgentHost : IDisposable
     {
         Paths = paths;
         Audit = audit;
-        Settings = AgentSettings.Load(paths.SettingsFile);
-        Settings.McpEnabled = false; // the MCP bridge is not part of this build
+        Settings = AgentSettings.Load(paths.SettingsFile); // McpEnabled: persisted, off by default (PROTOCOL section 6)
         _serverOverride = serverOverride;
         Identity = DeviceIdentity.LoadOrCreate(paths.DeviceKeyFile);
         Store = new TrustedControllerStore(paths.TrustedControllersFile);

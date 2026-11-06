@@ -176,7 +176,10 @@ The agent never injects its own kill-switch hotkey (Ctrl+Alt+Shift+F12) from rem
 `notifications/initialized`, `ping`, `tools/list`, `tools/call`; protocolVersion `2025-06-18`). It runs as a separate
 short-lived process started by the MCP client and talks to the running tray app over a named pipe
 `\.\pipe\GlobalRemoteControl-<current user SID>` whose ACL allows only the current user. Pipe protocol: one JSON
-request line → one JSON response line: `{"cmd":"status"}`, `{"cmd":"pairing-code"}`.
+request line → one JSON response line (≤ 4 KB each): `{"cmd":"status"}`, `{"cmd":"pairing-code"}`. Replies carry
+`ok`; errors are `{ ok:false, error, message }` (`unknown-command`, `bad-request`, `too-large`, `mcp-disabled`, …). The
+pairing-code reply is `{ ok:true, code, expiresAt, server }`; `webUrl` is derived from `server` (`wss://host/remote/ws` →
+`https://host/remote/web/`).
 
 | tool | args | behaviour |
 |---|---|---|
