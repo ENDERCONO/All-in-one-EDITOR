@@ -77,3 +77,18 @@ input:focus, select:focus { outline: 1px solid var(--accent); border-color: var(
 .toast { background: var(--bg3); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; box-shadow: 0 4px 16px #0008; }
 .toast.err { border-color: var(--bad); } .toast.ok { border-color: var(--ok); }
 @media (max-width: 560px) { .devname { display: none; } #home { padding: 10px; } .brand small { display: block; margin: 0; } }
+
+/* ---- stream settings ---- */
+#screen.native { cursor: default; }
+#screen.pixelated { image-rendering: pixelated; }
+.pop { position: fixed; top: 44px; left: 8px; z-index: 30; width: min(320px, calc(100vw - 16px)); background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 10px; box-shadow: 0 8px 24px #000a; display: flex; flex-direction: column; gap: 8px; }
+.presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.presets .tbtn { padding: 6px 4px; text-align: center; }
+.presets .tbtn[aria-pressed="true"] { background: var(--accent-bg); border-color: var(--accent); }
+.prow { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 13px; }
+.prow input[type=range] { flex: 1; max-width: 170px; padding: 0; }
+.prow output { color: var(--text); min-width: 24px; text-align: right; margin-left: auto; }
+.prow.chk { justify-content: flex-start; } .prow.chk input { margin: 0; }
+.stats { position: absolute; top: 6px; right: 6px; background: #000a; color: #cfe3ff; font: 11px/1.4 ui-monospace, Consolas, monospace; padding: 4px 7px; border-radius: 6px; pointer-events: none; white-space: pre; }
+.rcursor { position: absolute; width: 0; height: 0; pointer-events: none; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 14px solid #fff; transform: translate(-6px, -1px) rotate(-30deg); transform-origin: 6px 1px; filter: drop-shadow(0 0 2px #000); }
+.badge.relay { background: #1f3a63; color: var(--accent); border-color: var(--accent); }

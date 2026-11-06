@@ -1,5 +1,3 @@
-using System.Drawing;
-
 namespace GlobalRemoteControl.Agent.Capture;
 
 /// <summary>
@@ -14,7 +12,7 @@ public sealed class ScreenCapturer : IScreenCapturer
 
     public string Backend { get; private set; } = "none";
 
-    public Bitmap? Capture(MonitorInfo monitor)
+    public bool Capture(MonitorInfo monitor, FrameBuffer target, bool drawCursor, DirtyRegion dirty)
     {
         if (DateTime.UtcNow >= _retryAfter)
         {
@@ -25,8 +23,7 @@ public sealed class ScreenCapturer : IScreenCapturer
                     _dup.Dispose(); _dup = null;
                 }
                 _dup ??= new DuplicationCapturer(monitor.DeviceName);
-                var bmp = _dup.Capture(monitor.Bounds);
-                if (bmp != null) { Backend = "duplication"; return bmp; }
+                if (_dup.Capture(monitor.Bounds, target, drawCursor, dirty)) { Backend = "duplication"; return true; }
             }
             catch (Exception)
             {
@@ -35,7 +32,7 @@ public sealed class ScreenCapturer : IScreenCapturer
             }
         }
         Backend = "gdi";
-        return _gdi.Capture(monitor);
+        return _gdi.Capture(monitor, target, drawCursor, dirty);
     }
 
     public void Dispose()

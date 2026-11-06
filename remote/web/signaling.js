@@ -28,7 +28,7 @@ export class Signaling extends Emitter {
     this._set('connecting');
     let ws;
     try { ws = new WebSocket(this.url); } catch (e) { this.lastError = String(e); return this._retry(); }
-    this.ws = ws;
+    this.ws = ws; ws.binaryType = 'arraybuffer';
     ws.onmessage = (ev) => this._onMessage(ws, ev.data);
     ws.onclose = () => {
       if (this.ws !== ws) return;
@@ -47,6 +47,7 @@ export class Signaling extends Emitter {
   }
 
   async _onMessage(ws, data) {
+    if (typeof data !== 'string') { this.emit('binary', data); return; } // encrypted relay frames (PROTOCOL.md section 7)
     let msg;
     try { msg = JSON.parse(data); } catch { return; }
     if (!msg || typeof msg.type !== 'string') return;
@@ -71,6 +72,15 @@ export class Signaling extends Emitter {
   send(obj) {
     if (!this.ws || this.ws.readyState !== 1 || this.state !== 'ready') return false;
     this.ws.send(JSON.stringify(obj));
+    return true;
+  }
+
+  /** Bytes queued on the socket (for self-throttling relay senders). */
+  get bufferedAmount() { return this.ws ? this.ws.bufferedAmount : 0; }
+  /** @returns {boolean} whether the binary frame was sent */
+  sendBinary(bytes) {
+    if (!this.ws || this.ws.readyState !== 1 || this.state !== 'ready') return false;
+    this.ws.send(bytes);
     return true;
   }
 

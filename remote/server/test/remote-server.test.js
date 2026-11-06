@@ -37,7 +37,9 @@ class Client {
   constructor(url) {
     this.queue = []; this.waiters = []; this.closed = false;
     this.ws = new WebSocket(url);
-    this.ws.on('message', (d) => {
+    this.bins = [];
+    this.ws.on('message', (d, isBinary) => {
+      if (isBinary) { this.bins.push(Buffer.from(d)); return; }
       const m = JSON.parse(d.toString());
       const i = this.waiters.findIndex((w) => w.pred(m));
       if (i >= 0) this.waiters.splice(i, 1)[0].resolve(m); else this.queue.push(m);
@@ -452,10 +454,15 @@ test('session relay end to end', async () => {
     assert.deepEqual(await dev.next('session-auth'), { type: 'session-auth', sessionId, signature });
     dev.send({ type: 'session-accept', sessionId, mode: 'view' });
     assert.equal((await ctl.next('session-accept')).mode, 'view');
-    ctl.send({ type: 'signal', sessionId, sdp: { type: 'offer', sdp: 'v=0' }, signature: sign(ctl.keys, `grc-offer:${sessionId}:v=0`) });
+    const ecdh = crypto.randomBytes(91).toString('base64');
+    ctl.send({ type: 'signal', sessionId, sdp: { type: 'offer', sdp: 'v=0' }, ecdh, signature: sign(ctl.keys, `grc-offer:${sessionId}:${ecdh}:v=0`) });
     const offer = await dev.next('signal');
     assert.equal(offer.sdp.sdp, 'v=0');
-    dev.send({ type: 'signal', sessionId, sdp: { type: 'answer', sdp: 'v=1' }, signature: sign(dev.keys, `grc-answer:${sessionId}:v=1`) });
+    assert.equal(offer.ecdh, ecdh);
+    // offer without ecdh is rejected
+    ctl.send({ type: 'signal', sessionId, sdp: { type: 'offer', sdp: 'v=0' }, signature: sign(ctl.keys, 'x') });
+    assert.equal((await ctl.next('error')).code, 'bad-message');
+    dev.send({ type: 'signal', sessionId, sdp: { type: 'answer', sdp: 'v=1' }, ecdh, signature: sign(dev.keys, `grc-answer:${sessionId}:${ecdh}:v=1`) });
     assert.equal((await ctl.next('signal')).sdp.type, 'answer');
     const candidate = { candidate: 'candidate:1 1 udp 1 1.2.3.4 5 typ host', sdpMid: '0', sdpMLineIndex: 0 };
     ctl.send({ type: 'signal', sessionId, candidate });
@@ -606,5 +613,66 @@ test('upgrades for other paths are left alone', async () => {
     await new Promise((r) => { c.on('error', r); c.on('close', r); });
     assert.equal(other, 1);
     assert.equal(srv.handle.wss.clients.size, 0);
+  } finally { await srv.stop(); }
+});
+
+
+// ----- encrypted relay fallback (PROTOCOL section 7) -----
+async function acceptedSession(srv) {
+  const o = await openSession(srv);
+  o.dev.send({ type: 'session-accept', sessionId: o.sessionId, mode: 'control' });
+  await o.ctl.next('session-accept');
+  return o;
+}
+const frame = (sid, n = 64) => Buffer.concat([Buffer.from(sid, 'latin1'), Buffer.alloc(8), crypto.randomBytes(n)]);
+const waitBins = async (c, n, ms = 1000) => { const t = Date.now(); while (c.bins.length < n && Date.now() - t < ms) await new Promise((r) => setTimeout(r, 10)); };
+
+test('relay: binary frames refused before relay-start, forwarded both ways after', async () => {
+  const srv = await startServer();
+  try {
+    const { dev, ctl, sessionId } = await acceptedSession(srv);
+    ctl.ws.send(frame(sessionId), { binary: true });
+    assert.equal((await ctl.next('error')).code, 'unknown-session');
+    dev.send({ type: 'relay-start', sessionId });              // device may not start relay
+    assert.equal((await dev.next('error')).code, 'bad-message');
+    ctl.send({ type: 'relay-start', sessionId });
+    assert.deepEqual(await dev.next('relay-start'), { type: 'relay-start', sessionId });
+    const a = frame(sessionId, 1000), b = frame(sessionId, 50);
+    ctl.ws.send(a, { binary: true });
+    dev.ws.send(b, { binary: true });
+    await waitBins(dev, 1); await waitBins(ctl, 1);
+    assert.ok(dev.bins[0].equals(a), 'controller→device bytes unchanged');
+    assert.ok(ctl.bins[0].equals(b), 'device→controller bytes unchanged');
+  } finally { await srv.stop(); }
+});
+
+test('relay: relay-start needs an accepted session; outsiders and short frames rejected', async () => {
+  const srv = await startServer();
+  try {
+    const { dev, ctl, sessionId } = await openSession(srv);
+    ctl.send({ type: 'relay-start', sessionId });              // not accepted yet
+    assert.equal((await ctl.next('error')).code, 'bad-message');
+    dev.send({ type: 'session-accept', sessionId, mode: 'control' });
+    await ctl.next('session-accept');
+    ctl.send({ type: 'relay-start', sessionId });
+    await dev.next('relay-start');
+    const evil = await connect(srv, 'controller');
+    evil.ws.send(frame(sessionId), { binary: true });
+    assert.equal((await evil.next('error')).code, 'unknown-session');
+    ctl.ws.send(Buffer.alloc(30), { binary: true });
+    assert.equal((await ctl.next('error')).code, 'bad-message');
+    await new Promise((r) => setTimeout(r, 100));
+    assert.equal(dev.bins.length, 0);
+  } finally { await srv.stop(); }
+});
+
+test('relay: unauthenticated binary is rejected', async () => {
+  const srv = await startServer();
+  try {
+    const c = new Client(srv.url);
+    await c.opened;
+    await c.next('challenge');
+    c.ws.send(Buffer.alloc(64), { binary: true });
+    assert.equal((await c.next('error')).code, 'bad-message');
   } finally { await srv.stop(); }
 });

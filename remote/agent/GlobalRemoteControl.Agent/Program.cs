@@ -9,17 +9,18 @@ static class Program
     private const string MutexName = @"Local\GlobalRemoteControl.Agent.SingleInstance";
     private const string ShowEventName = @"Local\GlobalRemoteControl.Agent.ShowWindow";
 
-    /// <summary>Command line: [--server ws(s)://host/remote/ws] [--tray]</summary>
-    internal sealed record Options(string? Server, bool StartHidden, string? Error);
+    /// <summary>Command line: [--server ws(s)://host/remote/ws] [--tray] [--mcp]</summary>
+    internal sealed record Options(string? Server, bool StartHidden, string? Error, bool Mcp = false);
 
     internal static Options ParseArgs(string[] args)
     {
         string? server = null, error = null;
-        bool hidden = false;
+        bool hidden = false, mcp = false;
         for (int i = 0; i < args.Length; i++)
         {
             var a = args[i];
             if (a == "--tray") hidden = true;
+            else if (a == "--mcp") mcp = true;
             else if (a == "--server" && i + 1 < args.Length) server = args[++i];
             else if (a.StartsWith("--server=", StringComparison.Ordinal)) server = a["--server=".Length..];
         }
@@ -28,12 +29,21 @@ static class Program
             error = $"Ignoring --server \"{server}\": it must be a ws:// or wss:// URL.";
             server = null;
         }
-        return new Options(server, hidden, error);
+        return new Options(server, hidden, error, mcp);
     }
 
     [STAThread]
     static void Main(string[] args)
     {
+        // MCP bridge (PROTOCOL section 6): a short-lived stdio process started by the MCP client. It runs before the
+        // single-instance mutex and before any UI; it only talks to the running tray app over the per-user pipe.
+        var early = ParseArgs(args);
+        if (early.Mcp)
+        {
+            Environment.ExitCode = Mcp.McpStdioServer.RunProcess(early.Server);
+            return;
+        }
+
         using var mutex = new Mutex(initiallyOwned: true, MutexName, out bool first);
         if (!first)
         {
@@ -59,7 +69,7 @@ static class Program
             e.SetObserved();
         };
 
-        var options = ParseArgs(args);
+        var options = early;
         if (options.Error != null) audit.Write("bad-argument", details: options.Error);
 
         using var ui = new UiDispatcher();

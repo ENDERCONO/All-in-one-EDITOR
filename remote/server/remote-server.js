@@ -9,7 +9,8 @@ const { WebSocketServer } = require('ws');
 const WS_PATH = '/remote/ws';
 const CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const DEFAULT_AGENT_URL = 'https://github.com/ENDERCONO/All-in-one-EDITOR/releases/download/remote-agent-latest/GlobalRemoteControl.exe';
-const RELAY_TYPES = ['session-challenge', 'session-auth', 'session-accept', 'session-reject', 'signal', 'session-end'];
+const RELAY_MAX_BUFFER = 8 * 1024 * 1024;
+const RELAY_TYPES = ['session-challenge', 'session-auth', 'session-accept', 'session-reject', 'signal', 'session-end', 'relay-start'];
 const MAX_SESSIONS_PER_CONTROLLER = 5;
 
 // ---------- pure helpers (exported for tests) ----------
@@ -291,7 +292,9 @@ function attach(app, httpServer, opts = {}) {
         if (m.sdp !== undefined) {
           const d = m.sdp;
           if (!d || d.type !== (isCtl ? 'offer' : 'answer') || typeof d.sdp !== 'string' || d.sdp.length > 60000 || !isBase64(m.signature, 100)) return bad();
+          if (!isBase64(m.ecdh, 200)) return bad();
           out.sdp = { type: d.type, sdp: d.sdp };
+          out.ecdh = m.ecdh;
           out.signature = m.signature;
         } else {
           const c = m.candidate;
@@ -301,12 +304,36 @@ function attach(app, httpServer, opts = {}) {
           out.candidate = { candidate: c.candidate, sdpMid: c.sdpMid ?? null, sdpMLineIndex: c.sdpMLineIndex ?? null };
         }
         break;
+      case 'relay-start':
+        if (!isCtl || !s.accepted) return bad();
+        s.relay = true; break;
       case 'session-end':
         if (m.reason !== undefined && (typeof m.reason !== 'string' || m.reason.length > 64)) return bad();
         out.reason = m.reason || 'ended'; break;
     }
     send(isCtl ? s.device : s.controller, out);
     if (m.type === 'session-end' || m.type === 'session-reject') sessions.delete(sid);
+  }
+
+  // Encrypted relay fallback (PROTOCOL section 7): forward opaque binary frames between the two ends of an
+  // accepted session in relay mode. Frame = sessionId (22 ASCII) | counter (8) | ciphertext (>= 16-byte tag).
+  function relayBinary(ws, data) {
+    if (!ws.ident) return sendError(ws, 'bad-message');
+    if (!ws.binLimiter.hit('b')) { sendError(ws, 'rate-limited'); return ws.close(); }
+    const buf = Buffer.isBuffer(data) ? data : Buffer.concat(Array.isArray(data) ? data : [Buffer.from(data)]);
+    if (buf.length < 22 + 8 + 17) return sendError(ws, 'bad-message');
+    const sid = buf.toString('latin1', 0, 22);
+    const s = sessions.get(sid);
+    const isCtl = ws.ident.role === 'controller';
+    if (!isId(sid) || !s || !s.relay || (isCtl ? s.controller : s.device) !== ws) return sendError(ws, 'unknown-session', isId(sid) ? sid : undefined);
+    const dest = isCtl ? s.device : s.controller;
+    if (dest.readyState !== 1) return;
+    if (dest.bufferedAmount > RELAY_MAX_BUFFER) {
+      sessions.delete(sid);
+      for (const end of [s.controller, s.device]) send(end, { type: 'session-end', sessionId: sid, reason: 'relay-overload' });
+      return;
+    }
+    dest.send(buf, { binary: true });
   }
 
   // ----- connection -----
@@ -321,12 +348,13 @@ function attach(app, httpServer, opts = {}) {
     ws.on('pong', () => { ws.isAlive = true; });
     ws.nonce = crypto.randomBytes(32).toString('base64');
     ws.msgLimiter = createRateLimiter(400, 5000);
+    ws.binLimiter = createRateLimiter(4000, 5000);
     ws.helloTimer = setTimeout(() => { sendError(ws, 'auth-failed'); ws.close(); }, cfg.helloTimeoutMs);
     ws.helloTimer.unref();
     send(ws, { type: 'challenge', nonce: ws.nonce });
 
     ws.on('message', (data, isBinary) => {
-      if (isBinary) return sendError(ws, 'bad-message');
+      if (isBinary) return relayBinary(ws, data);
       if (!ws.msgLimiter.hit('m')) { sendError(ws, 'rate-limited'); return ws.close(); }
       let m;
       try { m = JSON.parse(data.toString('utf8')); } catch { m = null; }

@@ -1,23 +1,29 @@
 namespace GlobalRemoteControl.Agent.Capture;
 
 /// <summary>
-/// Flow control for video (PROTOCOL.md section 5): at most <see cref="MaxUnacked"/> frames un-acked and the
-/// channel's buffered amount under 256 KB. If the controller stops acking for <see cref="StallTimeout"/>, the
-/// window is reset so a lost ack cannot freeze the stream forever.
+/// Flow control for video (PROTOCOL.md section 5): at most <see cref="MaxUnackedFrames"/> frames or
+/// <see cref="MaxUnackedBytes"/> un-acked, and the channel's buffered amount under <see cref="MaxBuffered"/>. A single
+/// frame larger than the byte budget may still go when nothing is outstanding. If the controller stops acking for
+/// <see cref="StallTimeout"/>, the window is reset so a lost ack cannot freeze the stream forever.
 /// </summary>
 public sealed class AckWindow
 {
-    public const int MaxUnacked = 2;
-    public const ulong MaxBuffered = 256 * 1024;
+    public const int MaxUnackedFrames = 6;
+    public const long MaxUnackedBytes = 1536 * 1024;
+    public const ulong MaxBuffered = 1024 * 1024;
     public static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(5);
 
     private readonly object _lock = new();
+    private readonly Queue<(uint Id, int Bytes)> _inFlight = new();
     private uint _lastSent;
     private uint _lastAcked;
+    private long _unackedBytes;
     private DateTime _lastProgress = DateTime.UtcNow;
 
     public uint LastSent { get { lock (_lock) return _lastSent; } }
     public uint LastAcked { get { lock (_lock) return _lastAcked; } }
+    public int UnackedFrames { get { lock (_lock) return _inFlight.Count; } }
+    public long UnackedBytes { get { lock (_lock) return _unackedBytes; } }
 
     public uint NextFrameId() { lock (_lock) return _lastSent + 1; }
 
@@ -26,22 +32,29 @@ public sealed class AckWindow
         if (bufferedAmount >= MaxBuffered) return false;
         lock (_lock)
         {
-            if (_lastSent - _lastAcked < MaxUnacked) return true;
-            if (now - _lastProgress > StallTimeout) { _lastAcked = _lastSent; _lastProgress = now; return true; }
+            if (_inFlight.Count == 0) return true;
+            if (_inFlight.Count < MaxUnackedFrames && _unackedBytes < MaxUnackedBytes) return true;
+            if (now - _lastProgress > StallTimeout)
+            {
+                _inFlight.Clear(); _unackedBytes = 0; _lastAcked = _lastSent; _lastProgress = now;
+                return true;
+            }
             return false;
         }
     }
 
-    public void OnSent(uint frameId, DateTime now)
+    public void OnSent(uint frameId, int bytes, DateTime now)
     {
         lock (_lock)
         {
-            if (_lastSent == _lastAcked) _lastProgress = now;
+            if (_inFlight.Count == 0) _lastProgress = now;
             _lastSent = frameId;
+            _inFlight.Enqueue((frameId, bytes));
+            _unackedBytes += bytes;
         }
     }
 
-    /// <summary>Accepts only acks for frames actually sent and newer than the last ack.</summary>
+    /// <summary>Accepts only acks for frames actually sent and newer than the last ack; acks everything up to it.</summary>
     public bool OnAck(uint frameId, DateTime now)
     {
         lock (_lock)
@@ -49,7 +62,36 @@ public sealed class AckWindow
             if (frameId <= _lastAcked || frameId > _lastSent) return false;
             _lastAcked = frameId;
             _lastProgress = now;
+            while (_inFlight.Count > 0 && _inFlight.Peek().Id <= frameId) _unackedBytes -= _inFlight.Dequeue().Bytes;
             return true;
         }
+    }
+}
+
+/// <summary>
+/// When to send a keyframe (PROTOCOL.md section 5): session start, picture size / monitor / scale change, a
+/// <c>{t:"keyframe"}</c> request, and every <see cref="Interval"/> as a safety refresh.
+/// </summary>
+public sealed class KeyframePolicy
+{
+    public static readonly TimeSpan Interval = TimeSpan.FromSeconds(10);
+
+    private int _requested = 1; // session start
+    private DateTime _lastKeyframe = DateTime.MinValue;
+    private (int Monitor, int W, int H, double Scale) _last = (-1, 0, 0, 0);
+
+    public void Request() => Interlocked.Exchange(ref _requested, 1);
+
+    public bool ShouldSend(DateTime now, int monitor, int width, int height, double scale)
+    {
+        bool changed = _last != (monitor, width, height, scale);
+        _last = (monitor, width, height, scale);
+        return changed | Volatile.Read(ref _requested) == 1 | now - _lastKeyframe >= Interval;
+    }
+
+    public void OnSent(DateTime now)
+    {
+        _lastKeyframe = now;
+        Interlocked.Exchange(ref _requested, 0);
     }
 }

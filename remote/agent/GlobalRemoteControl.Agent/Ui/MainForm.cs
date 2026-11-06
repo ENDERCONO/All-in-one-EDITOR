@@ -28,9 +28,15 @@ internal sealed class MainForm : Form
     private readonly TextBox _serverUrl = new() { Width = 470 };
     private readonly Label _serverNote = new() { AutoSize = true, ForeColor = SystemColors.GrayText, MaximumSize = new Size(640, 0) };
     private readonly CheckBox _startAtLogin = new() { Text = "Start at login (adds a visible entry for your Windows user only)", AutoSize = true };
+    private readonly CheckBox _allowMcp = new()
+    {
+        Text = "Allow Claude (MCP) to open this app, read its status and show a pairing code (approvals stay with you)", AutoSize = true,
+        MaximumSize = new Size(640, 0),
+    };
     private bool _updatingCheckbox;
 
     public event Action? PairRequested;
+    public event Action<bool>? McpAllowedChanged;
     public event Action? StopRequested;
     public event Action? OpenAuditLogRequested;
 
@@ -105,6 +111,13 @@ internal sealed class MainForm : Form
         root.Controls.Add(_serverNote);
         root.Controls.Add(_startAtLogin);
         _startAtLogin.CheckedChanged += (_, _) => ToggleStartAtLogin();
+        var mcpRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+        _allowMcp.CheckedChanged += (_, _) => { if (!_updatingCheckbox) McpAllowedChanged?.Invoke(_allowMcp.Checked); };
+        mcpRow.Controls.Add(_allowMcp);
+        root.Controls.Add(mcpRow);
+        var copySetup = new Button { Text = "Copy Claude setup", AutoSize = true, MinimumSize = new Size(150, 28) };
+        copySetup.Click += (_, _) => CopyClaudeSetup();
+        root.Controls.Add(copySetup);
         var audit = new LinkLabel { Text = "Open audit log", AutoSize = true, Margin = new Padding(0, 8, 0, 0) };
         audit.LinkClicked += (_, _) => OpenAuditLogRequested?.Invoke();
         root.Controls.Add(audit);
@@ -140,6 +153,7 @@ internal sealed class MainForm : Form
         _updatingCheckbox = true;
         try { _startAtLogin.Checked = StartupRegistration.IsEnabled(); } catch (Exception) { }
         finally { _updatingCheckbox = false; }
+        RefreshMcp();
         RefreshStatus();
         RefreshSession();
         RefreshControllers();
@@ -245,6 +259,40 @@ internal sealed class MainForm : Form
     }
 
     public event Action? StartAtLoginChanged;
+
+    public void RefreshMcp()
+    {
+        _updatingCheckbox = true;
+        try { _allowMcp.Checked = _host.Settings.McpEnabled; }
+        finally { _updatingCheckbox = false; }
+    }
+
+    /// <summary>The Claude Code command and a Claude Desktop config snippet for this exe (PROTOCOL section 6).</summary>
+    internal static string ClaudeSetupText(string exe) =>
+        $"claude mcp add globalremotecontrol -- \"{exe}\" --mcp\r\n\r\n" +
+        "Claude Desktop (claude_desktop_config.json):\r\n" +
+        System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+        {
+            ["mcpServers"] = new Dictionary<string, object>
+            {
+                ["globalremotecontrol"] = new { command = exe, args = new[] { "--mcp" } },
+            },
+        }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }).Replace("\n", "\r\n").Replace("\r\r\n", "\r\n");
+
+    private void CopyClaudeSetup()
+    {
+        try
+        {
+            Clipboard.SetText(ClaudeSetupText(Environment.ProcessPath ?? "GlobalRemoteControl.exe"));
+            MessageBox.Show(this, "Copied. Paste the first line into a terminal for Claude Code, or the JSON into Claude Desktop's config.\n\n" +
+                "Claude can only open this app, read its status and (when \"Allow Claude (MCP)\" is on) show a pairing code. " +
+                "Pairing and every session still need your approval here.", "Claude setup", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Could not copy: " + ex.Message, "Claude setup", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
 
     public void ShowAndActivate()
     {

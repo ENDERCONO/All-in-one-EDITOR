@@ -35,8 +35,8 @@ test('sign/verify P1363 round-trip and Node interop', async () => {
 
 test('signed strings follow the contract', () => {
   assert.equal(P.sessionAuthText('S', 'N', 'D'), 'grc-session:S:N:D');
-  assert.equal(P.offerText('S', 'v=0'), 'grc-offer:S:v=0');
-  assert.equal(P.answerText('S', 'v=0'), 'grc-answer:S:v=0');
+  assert.equal(P.offerText('S', 'KEY', 'v=0'), 'grc-offer:S:KEY:v=0');
+  assert.equal(P.answerText('S', 'KEY', 'v=0'), 'grc-answer:S:KEY:v=0');
   assert.equal(P.randomSessionId().length, 22);
 });
 

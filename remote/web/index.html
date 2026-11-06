@@ -9,7 +9,7 @@
 <body>
 <div id="home">
   <header class="top">
-    <div class="brand"><span class="logo">&#9638;</span> Remote <small>control your own PC from any browser</small></div>
+    <div class="brand"><span class="logo"><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M1 2h14v9H1zM2.5 3.5v6h11v-6zM5 13h6v1.5H5z"/></svg></span> Remote <small>control your own PC from any browser</small></div>
     <div class="conn" id="connState" title="Connection to the signaling server"><span class="dot"></span><span id="connText">Connecting…</span></div>
   </header>
 
@@ -22,7 +22,7 @@
 
     <section class="card" id="addCard">
       <h2>Add a device</h2>
-      <a class="btn primary big" id="downloadBtn" href="#" download>&#11015; Download the Windows app</a>
+      <a class="btn primary big" id="downloadBtn" href="#" download><svg class="ic" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8M4.5 7 8 10.5 11.5 7M2.5 13.5h11"/></svg> Download the Windows app</a>
       <ol class="steps">
         <li>Run the .exe on your PC (no install needed).</li>
         <li>Click <b>Pair a new device</b> to get a code.</li>
@@ -51,16 +51,35 @@
   <div class="toolbar" id="toolbar">
     <span class="devname" id="sessDevice"></span>
     <span class="badge" id="viewBadge" hidden>View only</span>
+    <span class="badge relay" id="relayBadge" title="Connected through the server (end-to-end encrypted) because a direct connection was not possible" hidden>Relayed</span>
     <select id="monitorSel" title="Monitor" hidden></select>
-    <select id="qualitySel" title="Quality">
-      <option value="low">Low</option><option value="med">Med</option><option value="high">High</option><option value="auto" selected>Auto</option>
-    </select>
-    <button class="tbtn" id="audioBtn" title="Audio from the PC" aria-pressed="false">&#128264; Audio</button>
-    <button class="tbtn" id="fileBtn" title="Send a file to the PC (or drop it on the screen)">&#128206; File</button>
-    <button class="tbtn" id="kbdBtn" title="On-screen keyboard">&#9000; Keys</button>
-    <button class="tbtn" id="padBtn" title="Touchpad mode (touch screens)" aria-pressed="false">&#9757; Touchpad</button>
-    <button class="tbtn" id="fsBtn" title="Fullscreen">&#9974;</button>
-    <button class="tbtn danger" id="endBtn">Disconnect</button>
+    <button class="tbtn" id="streamBtn" title="Resolution, quality and speed of the stream" aria-expanded="false" aria-controls="streamPop"><svg class="ic" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 4h7M12 4h2M2 8h2M7 8h7M2 12h9"/><circle cx="10.5" cy="4" r="1.5"/><circle cx="5.5" cy="8" r="1.5"/><circle cx="12.5" cy="12" r="1.5"/></svg><span class="lbl">Stream</span></button>
+    <button class="tbtn" id="audioBtn" title="Audio from the PC" aria-pressed="false"><svg class="ic" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 6v4h2.5L8.5 13V3L5 6z"/></svg><span class="aon"><svg class="ic" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5.5a3.5 3.5 0 0 1 0 5M12.8 3.5a6 6 0 0 1 0 9"/></svg></span><span class="lbl">Audio</span></button>
+    <button class="tbtn" id="fileBtn" title="Send a file to the PC (or drop it on the screen)"><svg class="ic" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 1.5H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5.5zM9 1.5v4h4"/></svg><span class="lbl">File</span></button>
+    <button class="tbtn" id="kbdBtn" title="On-screen keyboard"><svg class="ic" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.5" y="4" width="13" height="8" rx="1"/><path d="M4 7h1M7.5 7h1M11 7h1M5 9.5h6"/></svg><span class="lbl">Keys</span></button>
+    <button class="tbtn" id="padBtn" title="Touchpad mode (touch screens)" aria-pressed="false"><svg class="ic" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M2 10h12M8 10v3.5"/></svg><span class="lbl">Touchpad</span></button>
+    <button class="tbtn" id="fsBtn" title="Fullscreen"><svg class="ic" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg><span class="lbl">Fullscreen</span></button>
+    <button class="tbtn danger" id="endBtn"><svg class="ic" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M10 5l3 3-3 3M13 8H6"/></svg><span class="lbl">Disconnect</span></button>
+  </div>
+  <div class="pop" id="streamPop" role="dialog" aria-label="Stream settings" hidden>
+    <div class="pophead">Stream settings</div>
+    <div class="presets">
+      <button class="tbtn" data-preset="smooth" title="50%, quality 55, 60 fps">Smooth</button>
+      <button class="tbtn" data-preset="balanced" title="75%, quality 65, 30 fps">Balanced</button>
+      <button class="tbtn" data-preset="sharp" title="100%, quality 85, 30 fps">Sharp</button>
+      <button class="tbtn" data-preset="auto" title="Adapts resolution and quality to your connection">Auto</button>
+    </div>
+    <label class="prow">Resolution (pixel size)
+      <select id="scaleSel"><option value="1">100%</option><option value="0.75">75%</option><option value="0.5">50%</option><option value="0.33">33%</option><option value="0.25">25%</option></select>
+    </label>
+    <label class="prow">Quality <output id="qualityOut">65</output>
+      <input type="range" id="qualityRange" min="10" max="95" step="1" value="65">
+    </label>
+    <label class="prow">FPS
+      <select id="fpsSel"><option value="15">15</option><option value="30">30</option><option value="60">60</option></select>
+    </label>
+    <label class="prow chk"><input type="checkbox" id="sharpChk"> Sharp pixels (for low resolutions)</label>
+    <label class="prow chk"><input type="checkbox" id="statsChk"> Show stats</label>
   </div>
   <div class="osk" id="osk" hidden>
     <button class="tbtn mod" data-mod="ControlLeft" aria-pressed="false">Ctrl</button>
@@ -79,6 +98,8 @@
   <div class="stage" id="stage">
     <canvas id="screen" tabindex="0" aria-label="Remote screen"></canvas>
     <div class="vcursor" id="vcursor" hidden></div>
+    <div class="rcursor" id="rcursor" hidden></div>
+    <div class="stats" id="statsBox" hidden></div>
     <div class="overlay" id="overlay"><div class="spinner"></div><div id="overlayText">Connecting…</div><button class="tbtn danger" id="cancelBtn">Cancel</button></div>
     <div class="xfer" id="xfer" hidden><span id="xferText"></span><div class="bar"><i id="xferBar"></i></div><button class="tbtn" id="xferCancel">&times;</button></div>
     <div class="dropHint" id="dropHint" hidden>Drop to send to the PC</div>

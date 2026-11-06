@@ -91,8 +91,11 @@ C→D    { type:"session-auth", sessionId, signature: sign("grc-session:" + sess
        // device verifies with the publicKey IT stored at pairing, then shows the local approval dialog:
        // "Allow full control" | "View only" | "Deny" (auto-deny after 60 s)
 D→C    { type:"session-accept", sessionId, mode:"control"|"view" }  |  { type:"session-reject", sessionId, reason:"denied"|"timeout"|"bad-signature"|"busy" }
-C→D    { type:"signal", sessionId, sdp:{ type:"offer", sdp }, signature: sign("grc-offer:" + sessionId + ":" + sdp) }
-D→C    { type:"signal", sessionId, sdp:{ type:"answer", sdp }, signature: deviceSign("grc-answer:" + sessionId + ":" + sdp) }
+C→D    { type:"signal", sessionId, sdp:{ type:"offer", sdp }, ecdh:"<b64 spki, ephemeral ECDH P-256>",
+         signature: sign("grc-offer:" + sessionId + ":" + ecdh + ":" + sdp) }
+D→C    { type:"signal", sessionId, sdp:{ type:"answer", sdp }, ecdh:"<b64 spki, ephemeral ECDH P-256>",
+         signature: deviceSign("grc-answer:" + sessionId + ":" + ecdh + ":" + sdp) }
+       // ecdh keys are always exchanged; they key the encrypted relay fallback (section 7)
 both   { type:"signal", sessionId, candidate:{ candidate, sdpMid, sdpMLineIndex } }   // unsigned
 both   { type:"session-end", sessionId, reason }
 ```
@@ -109,10 +112,24 @@ The controller verifies the answer with the device publicKey it stored at pairin
 | `file` | ordered, reliable | binary file chunks |
 
 **Video chunk** (agent→controller): 8-byte little-endian header `u32 frameId, u16 chunkIndex, u16 chunkCount`, then
-≤ 16 000 bytes of JPEG. A frame is complete when all chunks arrived; a newer frameId discards an older partial one.
-The agent sends the next frame only when the channel's buffered amount is under 256 KB (back-pressure), adapting
-to the requested fps/quality. After each complete frame the controller sends `{t:"ack", frameId}`; the agent keeps at most
-2 frames un-acked.
+≤ 16 000 bytes of payload. A frame is complete when all chunks arrived; a newer frameId discards an older partial one
+(a dropped partial *delta* frame means the controller must request one with `{t:"keyframe"}`).
+
+**Frame payload (v2, tile-delta)** — the reassembled bytes, all little-endian:
+```
+u8  version = 2
+u8  flags            bit0 = keyframe (whole screen; the controller resets its canvas)
+u16 width, u16 height  size of the full encoded picture (after scaling)
+u16 rectCount
+rectCount × { u16 x, u16 y, u16 w, u16 h, u8 codec (0 = JPEG), u32 length, length bytes }
+```
+The agent compares each captured (scaled) frame with the previous one in tiles (64×64, merged into horizontal runs) and
+sends only changed areas; rectCount 0 = nothing changed (not sent at all, except as a heartbeat ≤ 1/s). A keyframe is
+sent at session start, on resolution/monitor/scale change, on `{t:"keyframe"}`, and every 10 s as a safety refresh.
+The controller paints each rect onto a persistent canvas at (x, y). Flow control: the agent keeps at most 6 frames or
+1.5 MB un-acked and the channel's buffered amount under 1 MB; it never waits on a frame it can drop — it captures the
+newest screen when the window opens (latest-wins, no queueing of stale frames). After each complete frame the
+controller sends `{t:"ack", frameId}`.
 
 **Audio** (agent→controller): PCM signed 16-bit LE, mono, 24 000 Hz, 20 ms per message (480 samples = 960 bytes),
 from WASAPI loopback. Sent only while audio is enabled.
@@ -127,7 +144,9 @@ from WASAPI loopback. Sent only while audio is enabled.
 { t:"key", code:"<KeyboardEvent.code>", down:bool }   // agent maps code → virtual key / scancode; unknown code ignored
 { t:"text", text }                             // ≤ 256 chars, typed as Unicode (mobile keyboard)
 { t:"select-monitor", index }
-{ t:"quality", fps:1..30, quality:10..95, scale:0.25..1 }
+{ t:"quality", fps:1..60, quality:10..95, scale:0.25..1, cursor:bool }   // cursor=false: don't draw the cursor into frames
+                                                                         // (the browser shows the user's own pointer)
+{ t:"keyframe" }                               // request a keyframe (after a dropped frame or decode error)
 { t:"audio", enabled:bool }
 { t:"ack", frameId }
 { t:"file-offer", id, name, size }             // upload to PC; size ≤ 2 GiB; agent asks the local user + Save dialog
@@ -141,7 +160,8 @@ The agent never injects its own kill-switch hotkey (Ctrl+Alt+Shift+F12) from rem
 ### control messages, agent → controller
 ```
 { t:"hello", mode:"control"|"view", monitors:[ { index, name, x, y, width, height, primary } ], monitor:<index>, audio:<bool available> }
-{ t:"monitor", index, width, height }          // after select-monitor / resolution change
+{ t:"monitor", index, width, height }          // after select-monitor / resolution change (native monitor pixels)
+{ t:"cursor", x, y, visible }                   // 0..1 on the current monitor, ≤ 60/s while it moves (for touch/view cursor)
 { t:"file-accept", id } | { t:"file-reject", id, reason }   // answers to a controller offer
 { t:"file-progress", id, received }
 { t:"file-done", id, ok:bool, reason? }
@@ -150,21 +170,46 @@ The agent never injects its own kill-switch hotkey (Ctrl+Alt+Shift+F12) from rem
 { t:"notice", text }                           // shown as a toast in the browser
 ```
 
-## 6. Local API for the MCP bridge (agent only) — DESIGN ONLY, NOT IMPLEMENTED
+## 6. MCP bridge (minimal: open the app, report status, make a pairing code)
 
-`GlobalRemoteControl.exe --mcp` speaks MCP (JSON-RPC 2.0, stdio, newline-delimited) and forwards to the running
-agent over `http://127.0.0.1:<port>` with a bearer token; port + token are in
-`%LOCALAPPDATA%\GlobalRemoteControl\mcp.json` (rewritten at every agent start). The local API refuses everything
-with 403 while **Allow Claude (MCP)** is off (default off). Tools:
+`GlobalRemoteControl.exe --mcp` speaks MCP over stdio (JSON-RPC 2.0, newline-delimited; `initialize`,
+`notifications/initialized`, `ping`, `tools/list`, `tools/call`; protocolVersion `2025-06-18`). It runs as a separate
+short-lived process started by the MCP client and talks to the running tray app over a named pipe
+`\.\pipe\GlobalRemoteControl-<current user SID>` whose ACL allows only the current user. Pipe protocol: one JSON
+request line → one JSON response line: `{"cmd":"status"}`, `{"cmd":"pairing-code"}`.
 
-| tool | args | notes |
+| tool | args | behaviour |
 |---|---|---|
-| `get_agent_status` | — | connected, paired controllers count, active session, MCP enabled |
-| `list_monitors` | — | index, name, bounds, primary |
-| `request_session_approval` | `reason` (1..200) , `mode` `"control"\|"view"` | blocks until the local user answers (≤ 120 s); returns `sessionToken` valid 15 min |
-| `capture_screen` | `sessionToken`, `monitor?`, `maxWidth?` 320..1920 | returns an MCP image (JPEG base64) |
-| `send_input` | `sessionToken`, `action`: `move`/`click`/`double_click`/`right_click`/`scroll`/`type`/`key`, `x?`,`y?` (pixels in the last captured image, bounds-checked), `text?` ≤ 256, `key?` (KeyboardEvent.code or combo like `Control+C`), `dy?` | only with a `control` token |
-| `request_file_transfer` | `sessionToken`, `fileName`, `contentBase64` (≤ 10 MB decoded) | local approval + Save dialog every time |
-| `end_session` | `sessionToken` | |
+| `get_agent_status` | — | `{ running, connectedToServer, server, deviceName, fingerprint, trustedDevices, sessionActive, mcpAllowed }`; `running:false` if the pipe isn't there |
+| `open_agent` | — | if not running, starts this same exe with `--tray` (visible tray app) and waits ≤ 15 s for the pipe; returns the status |
+| `create_pairing_code` | — | refused unless **Allow Claude (MCP)** is on in the app; otherwise same as clicking *Pair a new device* (the code window also appears on the PC screen) and returns `{ code, expiresAt, webUrl }` |
 
-MCP sessions show the same on-screen session bar and obey the same kill switch. Every call is appended to the audit log.
+There is deliberately no tool that approves anything, captures the screen, injects input or touches files: pairing and
+every session still need the approval dialogs on the PC. Every pipe command is written to the audit log.
+The app's MCP toggle defaults to off; "Copy Claude setup" copies `claude mcp add globalremotecontrol -- "<exe>" --mcp`.
+
+## 7. Relay fallback over the WebSocket (when WebRTC can't connect, e.g. phones on mobile data)
+
+No TURN server is needed. If the controller's `iceConnectionState` is not `connected`/`completed` within **6 s** of
+applying the answer (or becomes `failed`), it sends `{ type:"relay-start", sessionId }` (controller-only, relayed to the
+device like the other session messages; the server only accepts it for a session that was `session-accept`ed). From then
+on both ends close the RTCPeerConnection and carry the four channels over the signaling WebSocket as **binary** frames:
+
+```
+WS binary frame = sessionId (22 ASCII bytes) | counter (u64 big-endian) | AES-256-GCM ciphertext (+16-byte tag)
+plaintext       = u8 channel (0 control, 1 video, 2 audio, 3 file) | payload (exactly what the data channel would carry)
+```
+* Keys: `Z = ECDH(own ephemeral private, peer ecdh public)` (32 bytes, P-256 x-coordinate);
+  `key_c2d = HKDF-SHA256(Z, salt = UTF-8 sessionId, info = "grc-relay c2d", 32)`, `key_d2c` likewise with `"grc-relay d2c"`.
+* Nonce = 4 zero bytes | counter (u64 BE). Each direction starts its counter at 1 and increments per frame; the receiver
+  drops any frame whose counter is not greater than the last accepted one (replay protection) or that fails to decrypt.
+* Frame ≤ 64 KB (payloads stay ≤ 16 000 bytes as on the data channels). Control messages are JSON text inside the
+  plaintext exactly as on the `control` channel.
+* The server forwards binary frames unchanged, only between the two ends of a session that is accepted and in relay mode,
+  and only from a socket that is one of those ends; the 22-byte sessionId prefix selects the session. It never sees
+  plaintext. Binary frames have their own rate limit (≤ 4000 frames / 5 s per socket); if the receiver's socket has more
+  than 8 MB buffered the server ends the session with reason `relay-overload`.
+* Senders must self-throttle: video uses its ack window as before; file and other senders wait while their own
+  WebSocket's buffered amount is above 1 MB (browser `ws.bufferedAmount`; agent: bounded send queue).
+* Unordered/unreliable audio semantics don't exist on the relay; it's fine (ordered delivery).
+* The browser shows a "Relayed" badge; Auto quality starts at the Smooth preset in relay mode.

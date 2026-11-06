@@ -1,5 +1,8 @@
 using System.Diagnostics;
+using System.Text.Json.Nodes;
+using GlobalRemoteControl.Agent.Mcp;
 using GlobalRemoteControl.Agent.Session;
+using GlobalRemoteControl.Agent.Settings;
 using GlobalRemoteControl.Agent.Signaling;
 
 namespace GlobalRemoteControl.Agent.Ui;
@@ -17,8 +20,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly SessionBar _bar;
     private readonly HotKeyWindow _hotKey;
     private readonly Dictionary<TrayState, Icon> _icons = new();
-    private readonly ToolStripMenuItem _sendFile, _stop, _startAtLogin;
+    private readonly ToolStripMenuItem _sendFile, _stop, _startAtLogin, _allowMcp;
+    private readonly AgentPipeServer? _pipe;
     private PairingCodeForm? _pairing;
+    private string? _lastCode;
+    private DateTimeOffset _lastCodeExpiry;
     private int _pairedCountAtOpen;
     private bool _exiting;
 
@@ -26,6 +32,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         _host = host;
         _ui = ui;
+        // AgentHost still clears McpEnabled when it loads the settings; restore the persisted choice (default off).
+        _host.Settings.McpEnabled = AgentSettings.Load(_host.Paths.SettingsFile).McpEnabled;
         var size = SystemInformation.SmallIconSize.Width;
         foreach (var s in Enum.GetValues<TrayState>()) _icons[s] = AppIcons.Create(s, Math.Max(16, size));
 
@@ -34,6 +42,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _main.StopRequested += () => Kill("main window");
         _main.OpenAuditLogRequested += OpenAuditLog;
         _main.StartAtLoginChanged += () => _startAtLogin!.Checked = SafeStartAtLogin();
+        _main.McpAllowedChanged += SetMcpAllowed;
 
         _bar = new SessionBar();
         _bar.StopClicked += () => Kill("session bar");
@@ -49,6 +58,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _startAtLogin = new ToolStripMenuItem("Start at login") { CheckOnClick = true, Checked = SafeStartAtLogin() };
         _startAtLogin.Click += (_, _) => ToggleStartAtLogin(_startAtLogin.Checked);
         menu.Items.Add(_startAtLogin);
+        _allowMcp = new ToolStripMenuItem("Allow Claude (MCP)") { CheckOnClick = true, Checked = _host.Settings.McpEnabled };
+        _allowMcp.Click += (_, _) => SetMcpAllowed(_allowMcp.Checked);
+        menu.Items.Add(_allowMcp);
         menu.Items.Add("Open audit log", null, (_, _) => OpenAuditLog());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => ExitApp());
@@ -65,8 +77,21 @@ internal sealed class TrayApplicationContext : ApplicationContext
         // Events arrive on signaling / WebRTC threads: hop to the UI thread.
         _host.Signaling.StateChanged += _ => _ui.Post(RefreshState);
         _host.Gate.Changed += () => _ui.Post(RefreshState);
-        _host.Pairing.CodeReceived += (code, exp) => _ui.Post(() => _pairing?.SetCode(code, exp));
+        _host.Pairing.CodeReceived += (code, exp) => _ui.Post(() =>
+        {
+            _lastCode = code; _lastCodeExpiry = exp;
+            _pairing?.SetCode(code, exp);
+        });
         _host.Store.Changed += () => _ui.Post(OnStoreChanged);
+
+        // MCP bridge pipe (PROTOCOL section 6). Always listening so status works; pairing codes need the toggle.
+        try
+        {
+            var commands = new AgentPipeCommands(_host.Audit, () => _host.Settings.McpEnabled, McpStatus, McpPairingCodeAsync);
+            _pipe = new AgentPipeServer(AgentPipeProtocol.PipeNameForCurrentUser(), commands, _host.Audit);
+            _pipe.Start();
+        }
+        catch (Exception ex) { _host.Audit.Write("mcp-pipe-error", details: "start: " + ex.Message); }
 
         RefreshState();
         if (!startHidden) _main.ShowAndActivate();
@@ -100,6 +125,77 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _stop.Enabled = active != null || _host.Gate.IsBusy;
         _sendFile.Visible = active != null && _host.ActiveSession != null;
         _startAtLogin.Checked = SafeStartAtLogin();
+        _allowMcp.Checked = _host.Settings.McpEnabled;
+    }
+
+    private void SetMcpAllowed(bool allowed)
+    {
+        if (_host.Settings.McpEnabled != allowed)
+        {
+            _host.Settings.McpEnabled = allowed;
+            try { _host.Settings.Save(_host.Paths.SettingsFile); }
+            catch (Exception ex) { _host.Audit.Write("settings-error", details: ex.Message); }
+            _host.Audit.Write(allowed ? "mcp-enabled" : "mcp-disabled");
+        }
+        _allowMcp.Checked = allowed;
+        _main.RefreshMcp();
+    }
+
+    /// <summary>Pipe "status" (runs on a pipe thread; reads only).</summary>
+    private JsonObject McpStatus() => new()
+    {
+        ["ok"] = true,
+        ["running"] = true,
+        ["connectedToServer"] = _host.Signaling.State == SignalingState.Connected,
+        ["server"] = _host.EffectiveServerUrl,
+        ["deviceName"] = _host.Settings.DeviceName,
+        ["fingerprint"] = _host.Identity.Fingerprint,
+        ["trustedDevices"] = _host.Store.All.Count,
+        ["sessionActive"] = _host.Gate.Active != null,
+        ["mcpAllowed"] = _host.Settings.McpEnabled,
+    };
+
+    /// <summary>
+    /// Pipe "pairing-code" (only reached when MCP is allowed): exactly what "Pair a new device" does, so the code
+    /// window appears on screen too; then waits up to 10 s for the server's pairing-code reply.
+    /// </summary>
+    private async Task<JsonObject> McpPairingCodeAsync(CancellationToken ct)
+    {
+        if (_host.Signaling.State != SignalingState.Connected)
+            return AgentPipeProtocol.Error("not-connected", "GlobalRemoteControl is not connected to the server yet; try again shortly.");
+        var got = new TaskCompletionSource<(string Code, DateTimeOffset Expires)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Action<string, DateTimeOffset> onCode = (c, e) => got.TrySetResult((c, e));
+        _host.Pairing.CodeReceived += onCode;
+        try
+        {
+            await _ui.InvokeAsync(() =>
+            {
+                var open = _pairing != null && !_pairing.IsDisposed;
+                if (open && _pairing!.CurrentCode is { } current && current == _lastCode
+                    && _lastCodeExpiry - DateTimeOffset.UtcNow > TimeSpan.FromSeconds(30))
+                {
+                    _pairing.Activate(); // a valid code is already on screen: hand out that one
+                    got.TrySetResult((current, _lastCodeExpiry));
+                }
+                else
+                {
+                    if (open) _pairing!.Close(); // stale window (expired / paired / offline): reopen for a fresh code
+                    ShowPairing();
+                }
+                return Task.FromResult(true);
+            }).ConfigureAwait(false);
+            var (code, expires) = await got.Task.WaitAsync(TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+            return new JsonObject
+            {
+                ["ok"] = true, ["code"] = code,
+                ["expiresAt"] = expires.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture),
+            };
+        }
+        catch (TimeoutException)
+        {
+            return AgentPipeProtocol.Error("timeout", "The server did not send a pairing code within 10 s (it may be rate-limiting); try again in a minute.");
+        }
+        finally { _host.Pairing.CodeReceived -= onCode; }
     }
 
     private void Kill(string source)
@@ -118,14 +214,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         if (_pairing != null && !_pairing.IsDisposed) { _pairing.Activate(); return; }
         _pairedCountAtOpen = _host.Store.All.Count;
-        _pairing = new PairingCodeForm(async () =>
+        var form = new PairingCodeForm(async () =>
         {
             if (_host.Signaling.State != SignalingState.Connected) { _pairing?.SetNotConnected(); return; }
             await _host.Pairing.RequestCodeAsync();
         });
-        _pairing.FormClosed += (_, _) => _pairing = null;
-        _pairing.Show();
-        _pairing.Activate();
+        _pairing = form;
+        form.FormClosed += (_, _) => { if (_pairing == form) _pairing = null; };
+        form.Show();
+        form.Activate();
     }
 
     private void OnStoreChanged()
@@ -205,6 +302,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     protected override void ExitThreadCore()
     {
         _exiting = true;
+        _pipe?.Dispose();
         _tray.Visible = false;
         _hotKey.Dispose();
         _pairing?.Close();

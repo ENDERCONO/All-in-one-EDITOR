@@ -191,7 +191,10 @@ public sealed class RemoteSession : IRemotePeer
                 _streamer.SelectMonitor(s.Index);
                 break;
             case QualityMsg q:
-                _streamer?.SetQuality(q.Fps, q.Quality, q.Scale);
+                _streamer?.SetQuality(q.Fps, q.Quality, q.Scale, q.Cursor);
+                break;
+            case KeyframeMsg:
+                _streamer?.RequestKeyframe();
                 break;
             case AudioMsg a:
                 SetAudio(a.Enabled);

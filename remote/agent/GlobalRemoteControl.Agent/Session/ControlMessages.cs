@@ -13,7 +13,8 @@ public sealed record WheelMsg(int Dx, int Dy) : ControlMessage;
 public sealed record KeyMsg(string Code, bool Down) : ControlMessage;
 public sealed record TextMsg(string Text) : ControlMessage;
 public sealed record SelectMonitorMsg(int Index) : ControlMessage;
-public sealed record QualityMsg(int Fps, int Quality, double Scale) : ControlMessage;
+public sealed record QualityMsg(int Fps, int Quality, double Scale, bool Cursor = true) : ControlMessage;
+public sealed record KeyframeMsg : ControlMessage;
 public sealed record AudioMsg(bool Enabled) : ControlMessage;
 public sealed record AckMsg(uint FrameId) : ControlMessage;
 public sealed record FileOfferMsg(string Id, string Name, long Size) : ControlMessage;
@@ -99,8 +100,15 @@ public static partial class ControlMessageParser
             case "quality":
             {
                 var fps = Json.Int(m, "fps"); var q = Json.Int(m, "quality"); var s = Json.Num(m, "scale");
-                if (fps is not (>= 1 and <= 30) || q is not (>= 10 and <= 95) || s is not (>= 0.25 and <= 1)) return null;
-                return new QualityMsg((int)fps, (int)q, s.Value);
+                if (fps is not (>= 1 and <= 60) || q is not (>= 10 and <= 95) || s is not (>= 0.25 and <= 1)) return null;
+                // cursor is optional (older controllers omit it → drawn into frames); if present it must be a bool.
+                bool cursor = true;
+                if (Json.Has(m, "cursor")) { var c = Json.Bool(m, "cursor"); if (c == null) return null; cursor = c.Value; }
+                return new QualityMsg((int)fps, (int)q, s.Value, cursor);
+            }
+            case "keyframe":
+            {
+                return new KeyframeMsg();
             }
             case "audio":
             {

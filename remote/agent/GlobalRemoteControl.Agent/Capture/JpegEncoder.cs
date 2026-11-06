@@ -1,43 +1,71 @@
 using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using SkiaSharp;
 
 namespace GlobalRemoteControl.Agent.Capture;
 
+/// <summary>Encodes one rectangle of a BGRA frame buffer as a JPEG. Implementations are thread-safe.</summary>
+public interface IRectEncoder
+{
+    string Name { get; }
+    byte[] Encode(FrameBuffer src, Rectangle r, int quality);
+}
+
 public static class JpegEncoder
+{
+    private static readonly Lazy<IRectEncoder> _default = new(Create);
+
+    /// <summary>libjpeg-turbo through SkiaSharp when its native library loads, else System.Drawing (GDI+).</summary>
+    public static IRectEncoder Default => _default.Value;
+
+    private static IRectEncoder Create()
+    {
+        try
+        {
+            var skia = new SkiaJpegEncoder();
+            var probe = new FrameBuffer(16, 16);
+            if (skia.Encode(probe, new Rectangle(0, 0, 16, 16), 50).Length > 0) return skia;
+        }
+        catch (Exception) { /* native libSkiaSharp missing or failed to load */ }
+        return new GdiPlusJpegEncoder();
+    }
+}
+
+/// <summary>SkiaSharp (bundles libjpeg-turbo). Reads the pixels in place; no copy.</summary>
+public sealed class SkiaJpegEncoder : IRectEncoder
+{
+    public string Name => "skia";
+
+    public byte[] Encode(FrameBuffer src, Rectangle r, int quality)
+    {
+        quality = Math.Clamp(quality, 10, 95);
+        var info = new SKImageInfo(r.Width, r.Height, SKColorType.Bgra8888, SKAlphaType.Opaque);
+        var ptr = src.Pointer + r.Y * src.Stride + r.X * 4;
+        using var pixmap = new SKPixmap(info, ptr, src.Stride);
+        // 4:2:0 chroma is much smaller; at high quality keep full chroma so coloured text stays crisp.
+        var opts = new SKJpegEncoderOptions(quality,
+            quality >= 85 ? SKJpegEncoderDownsample.Downsample444 : SKJpegEncoderDownsample.Downsample420,
+            SKJpegEncoderAlphaOption.Ignore);
+        using var data = pixmap.Encode(opts) ?? throw new InvalidOperationException("Skia JPEG encode failed");
+        return data.ToArray();
+    }
+}
+
+/// <summary>Fallback: GDI+ JPEG over a Bitmap that wraps the buffer (no pixel copy).</summary>
+public sealed class GdiPlusJpegEncoder : IRectEncoder
 {
     private static readonly ImageCodecInfo Codec = ImageCodecInfo.GetImageEncoders().First(c => c.FormatID == ImageFormat.Jpeg.Guid);
 
-    /// <summary>Scales by <paramref name="scale"/> (0.25..1) and/or down to <paramref name="maxWidth"/>, then JPEG-encodes.</summary>
-    public static byte[] Encode(Bitmap source, int quality, double scale = 1, int? maxWidth = null)
+    public string Name => "gdiplus";
+
+    public byte[] Encode(FrameBuffer src, Rectangle r, int quality)
     {
-        var (w, h) = TargetSize(source.Width, source.Height, scale, maxWidth);
+        var ptr = src.Pointer + r.Y * src.Stride + r.X * 4;
+        using var bmp = new Bitmap(r.Width, r.Height, src.Stride, PixelFormat.Format32bppRgb, ptr);
         using var ms = new MemoryStream();
         using var p = new EncoderParameters(1);
-        p.Param[0] = new EncoderParameter(Encoder.Quality, (long)Math.Clamp(quality, 10, 95));
-        if (w == source.Width && h == source.Height)
-        {
-            source.Save(ms, Codec, p);
-        }
-        else
-        {
-            using var scaled = new Bitmap(w, h, PixelFormat.Format24bppRgb);
-            using (var g = Graphics.FromImage(scaled))
-            {
-                g.InterpolationMode = InterpolationMode.Bilinear;
-                g.PixelOffsetMode = PixelOffsetMode.HighSpeed;
-                g.CompositingMode = CompositingMode.SourceCopy;
-                g.DrawImage(source, new Rectangle(0, 0, w, h));
-            }
-            scaled.Save(ms, Codec, p);
-        }
+        p.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, (long)Math.Clamp(quality, 10, 95));
+        bmp.Save(ms, Codec, p);
         return ms.ToArray();
-    }
-
-    public static (int W, int H) TargetSize(int width, int height, double scale, int? maxWidth)
-    {
-        scale = Math.Clamp(scale, 0.05, 1);
-        if (maxWidth is > 0 && width * scale > maxWidth.Value) scale = maxWidth.Value / (double)width;
-        return (Math.Max(1, (int)Math.Round(width * scale)), Math.Max(1, (int)Math.Round(height * scale)));
     }
 }

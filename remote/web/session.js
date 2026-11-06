@@ -22,20 +22,23 @@ export class Session extends Emitter {
     this.sig = signaling; this.identity = identity; this.device = device;
     this.sessionId = P.randomSessionId();
     this.mode = null; this.pc = null; this.ch = {}; this.ended = false;
+    this.relay = null; this._relaying = false; this.ecdh = null; this.peerEcdh = null;
     this.assembler = new P.FrameAssembler();
     this.canvas = null; this.ctx2d = null; this.imgW = 0; this.imgH = 0;
-    this.frames = 0; this.decoding = false; this.pendingFrame = null; this.pendingBitmap = null;
+    this.frames = 0; this.seq = new P.FrameSequencer(500); this.queue = []; this.ready = []; this.draining = false;
+    this.bytesIn = 0; this.rectsIn = 0; this.statsPrev = { t: 0, frames: 0, bytes: 0, rects: 0 }; this.rtt = null;
     this.pendingCandidates = []; this.remoteSet = false; this.offerSent = false; this.localCandidates = [];
     this.up = null; this.down = null; this.audio = null; this.hello = null;
     this._offs = [];
   }
 
-  attachCanvas(canvas) { this.canvas = canvas; this.ctx2d = canvas.getContext('2d'); }
+  attachCanvas(canvas) { this.canvas = canvas; this.ctx2d = canvas.getContext('2d', { alpha: false, desynchronized: true }); }
 
   async start() {
     const sid = this.sessionId;
     this._offs.push(this.sig.on('message', (m) => this._onSignal(m)));
-    this._offs.push(this.sig.on('close', () => { if (!this.channelsOpen) this.end('Lost connection to the signaling server.', false); }));
+    this._offs.push(this.sig.on('binary', (b) => this._onRelayBinary(b)));
+    this._offs.push(this.sig.on('close', () => { if (!this.channelsOpen || this.relay) this.end('Lost connection to the signaling server.', false); }));
     const waitFor = (types, ms, what) => this.sig.waitFor((m) => m.sessionId === sid
       ? (types.includes(m.type) || m.type === 'session-reject' || m.type === 'session-end')
       : (m.type === 'error' && m.ref === sid), ms, what);
@@ -67,11 +70,12 @@ export class Session extends Emitter {
   async _connect() {
     const pc = this.pc = new RTCPeerConnection({ iceServers: this.sig.iceServers });
     const open = (label, opts) => { const c = pc.createDataChannel(label, opts); c.binaryType = 'arraybuffer'; this.ch[label] = c; return c; };
+    this.ecdh = await P.generateEcdh(); // keys the encrypted relay fallback (PROTOCOL.md section 7)
     const control = open('control', { ordered: true });
     const video = open('video', { ordered: true });
     const audio = open('audio', { ordered: false, maxRetransmits: 0 });
     const file = open('file', { ordered: true });
-    control.onopen = () => { this.channelsOpen = true; clearTimeout(this._connTimer); this.emit('open'); };
+    control.onopen = () => { this.channelsOpen = true; clearTimeout(this._connTimer); this._statsTimer = setInterval(() => this._stats(), 1000); this.emit('open'); };
     control.onclose = () => this.end('The connection to the PC closed.', false);
     control.onmessage = (ev) => this._onControl(ev.data);
     video.onmessage = (ev) => this._onVideo(ev.data);
@@ -84,19 +88,25 @@ export class Session extends Emitter {
       if (this.offerSent) this.sig.send({ type: 'signal', sessionId: this.sessionId, candidate: c });
       else this.localCandidates.push(c);
     };
+    pc.oniceconnectionstatechange = () => {
+      const s = pc.iceConnectionState;
+      if (s === 'connected' || s === 'completed') clearTimeout(this._iceTimer);
+      else if (s === 'failed' && !this.channelsOpen) this._startRelay();
+    };
     pc.onconnectionstatechange = () => {
       const s = pc.connectionState;
       clearTimeout(this._discTimer);
-      if (s === 'failed') this.end('The connection failed (ICE). A firewall may be blocking it; a TURN server might be needed.', false);
+      if (s === 'failed') { if (!this.channelsOpen) this._startRelay(); else this.end('The connection failed (ICE).', false); }
       else if (s === 'disconnected') this._discTimer = setTimeout(() => this.end('The connection to the PC was lost.', false), 8000);
     };
-    this._connTimer = setTimeout(() => { if (!this.channelsOpen) this.end('Could not establish the connection (timed out). A firewall may be blocking it.', false); }, 30000);
+    // WebRTC that never opens falls back to the encrypted relay; only a missing answer ends the attempt
+    this._connTimer = setTimeout(() => { if (!this.channelsOpen) { if (this.remoteSet) this._startRelay(); else this.end('Could not establish the connection (timed out).', false); } }, 30000);
 
     await pc.setLocalDescription(await pc.createOffer());
     const sdp = pc.localDescription.sdp;
-    const signature = await this.identity.sign(P.offerText(this.sessionId, sdp));
+    const signature = await this.identity.sign(P.offerText(this.sessionId, this.ecdh.spki, sdp));
     if (this.ended) return;
-    this.sig.send({ type: 'signal', sessionId: this.sessionId, sdp: { type: 'offer', sdp }, signature });
+    this.sig.send({ type: 'signal', sessionId: this.sessionId, sdp: { type: 'offer', sdp }, ecdh: this.ecdh.spki, signature });
     this.offerSent = true;
     for (const c of this.localCandidates) this.sig.send({ type: 'signal', sessionId: this.sessionId, candidate: c });
     this.localCandidates = [];
@@ -109,11 +119,15 @@ export class Session extends Emitter {
     if (m.sdp && m.sdp.type === 'answer') {
       if (this.remoteSet || this._answering) return; // only the first (verified) answer counts
       this._answering = true;
-      const ok = typeof m.signature === 'string' && await P.verifyText(await this._devKey(), P.answerText(this.sessionId, m.sdp.sdp), m.signature);
+      const ok = typeof m.signature === 'string' && typeof m.ecdh === 'string' && await P.verifyText(await this._devKey(), P.answerText(this.sessionId, m.ecdh, m.sdp.sdp), m.signature);
       if (!ok) return this.end('The PC\'s answer failed the signature check (possible tampering). Connection aborted.', false);
       try {
         await this.pc.setRemoteDescription({ type: 'answer', sdp: m.sdp.sdp });
-        this.remoteSet = true;
+        this.remoteSet = true; this.peerEcdh = m.ecdh;
+        this._iceTimer = setTimeout(() => {
+          const st = this.pc && this.pc.iceConnectionState;
+          if (!this.channelsOpen && st !== 'connected' && st !== 'completed') this._startRelay();
+        }, 6000);
         for (const c of this.pendingCandidates) await this.pc.addIceCandidate(c).catch(() => {});
         this.pendingCandidates = [];
       } catch (e) { this.end('Bad answer from the PC: ' + e.message, false); }
@@ -129,10 +143,61 @@ export class Session extends Emitter {
   }
 
   // ---------- control channel ----------
-  sendControl(obj) {
-    const c = this.ch.control;
-    if (c && c.readyState === 'open') { c.send(JSON.stringify(obj)); return true; }
+  sendControl(obj) { return this._tx('control', JSON.stringify(obj)); }
+  /** Transport abstraction: a WebRTC data channel, or the encrypted relay over the signaling WebSocket. */
+  _tx(label, data) {
+    if (this.relay) { this.relay.send(label, data); return true; }
+    const c = this.ch[label];
+    if (c && c.readyState === 'open') { c.send(data); return true; }
     return false;
+  }
+  /** Bytes still queued towards the PC on the given transport (for self-throttling senders). */
+  _buffered(label) {
+    if (this.relay) return this.sig.bufferedAmount + this.relay.pending;
+    const c = this.ch[label]; return c ? c.bufferedAmount : 0;
+  }
+
+  // ---------- encrypted relay fallback ----------
+  async _startRelay() {
+    if (this.relay || this._relaying || this.ended || this.channelsOpen) return;
+    this._relaying = true;
+    clearTimeout(this._iceTimer); clearTimeout(this._connTimer); clearTimeout(this._discTimer);
+    const sid = this.sessionId;
+    let keys;
+    try { keys = await P.deriveRelayKeys(this.ecdh.privateKey, this.peerEcdh, sid); }
+    catch { return this.end('Could not set up the encrypted relay connection.', false); }
+    if (this.ended) return;
+    const relay = { codec: new P.RelayCodec(sid, keys.send, keys.recv), pending: 0, chain: Promise.resolve() };
+    const te = new TextEncoder();
+    relay.send = (label, data) => {
+      const p = typeof data === 'string' ? te.encode(data) : data instanceof Uint8Array ? data : new Uint8Array(data);
+      relay.pending += p.length;
+      const frame = relay.codec.encrypt(P.RELAY_CHANNELS.indexOf(label), p); // counter assigned now, so order is kept
+      relay.chain = relay.chain.then(() => frame).then((f) => { if (!this.ended) this.sig.sendBinary(f); }).catch(() => {}).then(() => { relay.pending -= p.length; });
+    };
+    this.relay = relay;
+    if (!this.sig.send({ type: 'relay-start', sessionId: sid })) return this.end('Lost connection to the signaling server.', false);
+    for (const c of Object.values(this.ch)) c.onopen = c.onclose = c.onmessage = null;
+    const pc = this.pc;
+    pc.onicecandidate = pc.oniceconnectionstatechange = pc.onconnectionstatechange = null;
+    try { pc.close(); } catch { /* ignore */ }
+    this.ch = {};
+    this.channelsOpen = true;
+    this._statsTimer = setInterval(() => this._stats(), 1000);
+    this.emit('relay');
+    this.emit('open');
+  }
+  _onRelayBinary(buf) {
+    if (!this.relay || this.ended) return;
+    this.relay.codec.decrypt(buf).then((r) => {
+      if (!r || this.ended) return;
+      switch (r.channel) {
+        case 0: this._onControl(new TextDecoder().decode(r.payload)); break;
+        case 1: this._onVideo(r.payload); break;
+        case 2: this._onAudio(r.payload); break;
+        case 3: this._onFileData(r.payload); break;
+      }
+    });
   }
   /** Input messages are dropped in view mode (the agent ignores them anyway). */
   sendInput(obj) { return this.mode === 'control' && this.sendControl(obj); }
@@ -142,6 +207,7 @@ export class Session extends Emitter {
     switch (m.t) {
       case 'hello': this.hello = m; if (m.mode) this.mode = m.mode; this.emit('hello', m); break;
       case 'monitor': this.emit('monitor', m); break;
+      case 'cursor': this.emit('cursor', m); break;
       case 'notice': this.emit('notice', String(m.text || '')); break;
       case 'file-accept': case 'file-reject': if (this.up && this.up.id === m.id) this.up.onAnswer(m); break;
       case 'file-progress': if (this.up && this.up.id === m.id) this.emit('file-progress', { id: m.id, dir: 'up', done: m.received, total: this.up.size, name: this.up.name }); break;
@@ -152,41 +218,82 @@ export class Session extends Emitter {
     }
   }
 
-  // ---------- video ----------
+  // ---------- video (frame v2, tile-delta) ----------
+  requestKeyframe() {
+    if (this.seq.shouldRequest(performance.now())) this.sendControl({ t: 'keyframe' });
+  }
+  /** Quality/size request. */
+  setQuality(q) { return this.sendControl({ t: 'quality', fps: q.fps, quality: q.quality, scale: q.scale, cursor: !!q.cursor }); }
+
   _onVideo(data) {
     const f = this.assembler.push(data);
     if (!f) return;
-    this.sendControl({ t: 'ack', frameId: f.frameId });
-    this.frames++;
-    this.pendingFrame = f.data; // latest wins
-    if (!this.decoding) this._decodeNext();
-  }
-  async _decodeNext() {
-    this.decoding = true;
-    while (this.pendingFrame && !this.ended) {
-      const bytes = this.pendingFrame; this.pendingFrame = null;
-      try {
-        const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/jpeg' }));
-        if (this.ended) { bmp.close(); break; }
-        if (this.pendingBitmap) this.pendingBitmap.close();
-        this.pendingBitmap = bmp;
-        if (!this._raf) this._raf = requestAnimationFrame(() => this._paint());
-      } catch { /* corrupt frame, skip */ }
+    this.sendControl({ t: 'ack', frameId: f.frameId }); // every complete frame, immediately
+    this.frames++; this.bytesIn += f.data.length;
+    const droppedBefore = this.assembler.takeDropped() > 0;
+    let frame = null;
+    try { frame = P.parseFrameV2(f.data); } catch { /* corrupt: handled in order below */ }
+    const entry = { frame, droppedBefore, bitmaps: null };
+    if (frame) {
+      this.rectsIn += frame.rects.length;
+      // decode every rect of the frame in parallel; frames are still applied strictly in order
+      entry.bitmaps = Promise.all(frame.rects.map((r) =>
+        createImageBitmap(new Blob([r.data], { type: 'image/jpeg' })))).catch(() => null);
     }
-    this.decoding = false;
+    this.queue.push(entry);
+    if (!this.draining) this._drain();
+  }
+  async _drain() {
+    this.draining = true;
+    while (this.queue.length && !this.ended) {
+      const e = this.queue.shift();
+      const bitmaps = e.bitmaps ? await e.bitmaps : null;
+      if (this.ended) { (bitmaps || []).forEach((b) => b.close()); break; }
+      if (!e.frame || !bitmaps) { this.seq.fail(); this.requestKeyframe(); continue; }
+      if (this.seq.accept({ keyframe: e.frame.keyframe, droppedBefore: e.droppedBefore }) !== 'apply') {
+        bitmaps.forEach((b) => b.close()); this.requestKeyframe(); continue;
+      }
+      this.ready.push({ frame: e.frame, bitmaps });
+      if (!this._raf) this._raf = requestAnimationFrame(() => this._paint());
+    }
+    this.draining = false;
   }
   _paint() {
     this._raf = 0;
-    const bmp = this.pendingBitmap;
-    if (!bmp || !this.canvas) return;
-    this.pendingBitmap = null;
-    if (this.canvas.width !== bmp.width || this.canvas.height !== bmp.height) {
-      this.canvas.width = bmp.width; this.canvas.height = bmp.height;
-      this.imgW = bmp.width; this.imgH = bmp.height;
-      this.emit('frame-size', { w: bmp.width, h: bmp.height });
+    const list = this.ready; this.ready = [];
+    if (!this.canvas) return list.forEach((x) => x.bitmaps.forEach((b) => b.close()));
+    let start = 0; // a keyframe makes everything before it irrelevant
+    list.forEach((x, i) => { if (x.frame.keyframe) start = i; });
+    for (let i = 0; i < list.length; i++) {
+      const { frame, bitmaps } = list[i];
+      if (i >= start) {
+        if (frame.keyframe && (this.canvas.width !== frame.width || this.canvas.height !== frame.height)) {
+          this.canvas.width = frame.width; this.canvas.height = frame.height; // resizing clears the canvas
+          this.imgW = frame.width; this.imgH = frame.height;
+          this.emit('frame-size', { w: frame.width, h: frame.height });
+        }
+        frame.rects.forEach((r, k) => this.ctx2d.drawImage(bitmaps[k], r.x, r.y, r.w, r.h));
+      }
+      bitmaps.forEach((b) => b.close());
     }
-    this.ctx2d.drawImage(bmp, 0, 0);
-    bmp.close();
+  }
+
+  async _stats() {
+    const now = performance.now(), p = this.statsPrev, dt = (now - p.t) / 1000;
+    if (p.t && dt > 0) {
+      const s = {
+        fps: (this.frames - p.frames) / dt, kbps: ((this.bytesIn - p.bytes) * 8) / 1000 / dt,
+        rects: this.frames > p.frames ? (this.rectsIn - p.rects) / (this.frames - p.frames) : 0,
+        rtt: this.rtt, w: this.imgW, h: this.imgH,
+      };
+      this.emit('stats', s);
+    }
+    this.statsPrev = { t: now, frames: this.frames, bytes: this.bytesIn, rects: this.rectsIn };
+    if (!this.pc || this.relay) return;
+    try {
+      const rep = await this.pc.getStats();
+      rep.forEach((r) => { if (r.type === 'candidate-pair' && (r.nominated || r.selected) && typeof r.currentRoundTripTime === 'number') this.rtt = r.currentRoundTripTime * 1000; });
+    } catch { /* ignore */ }
   }
 
   // ---------- audio ----------
@@ -236,13 +343,12 @@ export class Session extends Emitter {
       this.emit('file-progress', { id, dir: 'up', done: 0, total: file.size, name: file.name, stage: 'Waiting for the PC to accept…' });
       const ans = await Promise.race([answer, new Promise((r) => setTimeout(() => r({ t: 'file-reject', reason: 'no answer' }), 120000))]);
       if (ans.t !== 'file-accept') return fail(ans.reason || 'rejected');
-      const ch = this.ch.file;
       for (let off = 0; off < bytes.length; off += P.CHUNK) {
         if (up.cancelled || this.ended) return fail('cancelled');
         // poll instead of waiting for 'bufferedamountlow': that event never fires if the channel closes, which hung the upload queue forever
-        while (ch.bufferedAmount > 1024 * 1024 && !up.cancelled && !this.ended) await new Promise((r) => setTimeout(r, 20));
+        while (this._buffered('file') > 1024 * 1024 && !up.cancelled && !this.ended) await new Promise((r) => setTimeout(r, 20));
         if (up.cancelled || this.ended) return fail('cancelled');
-        ch.send(bytes.subarray(off, Math.min(off + P.CHUNK, bytes.length)));
+        this._tx('file', bytes.subarray(off, Math.min(off + P.CHUNK, bytes.length)));
         if ((off / P.CHUNK) % 16 === 0) this.emit('file-progress', { id, dir: 'up', done: off, total: file.size, name: file.name });
       }
       this.sendControl({ t: 'file-end', id, sha256: hash });
@@ -291,15 +397,15 @@ export class Session extends Emitter {
   end(reason, fromPeer) {
     if (this.ended) return;
     this.ended = true;
-    clearTimeout(this._connTimer); clearTimeout(this._discTimer);
+    clearTimeout(this._connTimer); clearTimeout(this._discTimer); clearTimeout(this._iceTimer);
     if (!fromPeer) this.sig.send({ type: 'session-end', sessionId: this.sessionId, reason: 'ended' });
     for (const off of this._offs) off();
     if (this.up) this.up.cancelled = true;
     try { this.pc && this.pc.close(); } catch { /* ignore */ }
     if (this.audio) this.audio.ctx.close().catch(() => {});
+    clearInterval(this._statsTimer);
     if (this._raf) cancelAnimationFrame(this._raf);
-    this._raf = 0; this.pendingFrame = null;
-    if (this.pendingBitmap) { this.pendingBitmap.close(); this.pendingBitmap = null; }
+    this._raf = 0; this.queue = []; this.ready = [];
     this.emit('ended', reason);
   }
   /** Disconnect requested by the user. */

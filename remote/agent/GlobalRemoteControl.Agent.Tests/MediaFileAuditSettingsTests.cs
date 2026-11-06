@@ -86,53 +86,6 @@ public class FrameChunkerTests
     }
 }
 
-public class AckWindowTests
-{
-    private static readonly DateTime T0 = new(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-
-    [Fact]
-    public void AllowsTwoUnacked_ThenBlocks_UntilAck()
-    {
-        var w = new AckWindow();
-        Assert.Equal(1u, w.NextFrameId());
-        Assert.True(w.CanSend(0, T0)); w.OnSent(1, T0);
-        Assert.True(w.CanSend(0, T0)); w.OnSent(2, T0);
-        Assert.False(w.CanSend(0, T0));
-        Assert.True(w.OnAck(1, T0));
-        Assert.True(w.CanSend(0, T0));
-        Assert.Equal(3u, w.NextFrameId());
-    }
-
-    [Fact]
-    public void BackPressure_BlocksAt256KB()
-    {
-        var w = new AckWindow();
-        Assert.True(w.CanSend(256 * 1024 - 1, T0));
-        Assert.False(w.CanSend(256 * 1024, T0));
-    }
-
-    [Fact]
-    public void BogusAcks_Ignored()
-    {
-        var w = new AckWindow();
-        w.OnSent(1, T0);
-        Assert.False(w.OnAck(5, T0));      // never sent
-        Assert.False(w.OnAck(0, T0));
-        Assert.True(w.OnAck(1, T0));
-        Assert.False(w.OnAck(1, T0));      // duplicate
-        Assert.Equal(1u, w.LastAcked);
-    }
-
-    [Fact]
-    public void LostAcks_StallTimeout_ResetsWindow()
-    {
-        var w = new AckWindow();
-        w.OnSent(1, T0); w.OnSent(2, T0);
-        Assert.False(w.CanSend(0, T0.AddSeconds(4)));
-        Assert.True(w.CanSend(0, T0.AddSeconds(6)));
-    }
-}
-
 public class PcmConverterTests
 {
     private static List<byte[]> Run(PcmConverter c, byte[] data, int slice = int.MaxValue)

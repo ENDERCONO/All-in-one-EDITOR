@@ -8,7 +8,7 @@ public sealed class AgentSettings
 
     public string ServerUrl { get; set; } = DefaultServerUrl;
     public string DeviceName { get; set; } = Environment.MachineName;
-    /// <summary>Allow Claude (MCP). Off by default.</summary>
+    /// <summary>Allow Claude (MCP) to request pairing codes (PROTOCOL section 6). Persisted; off by default.</summary>
     public bool McpEnabled { get; set; }
 
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };

@@ -1,9 +1,14 @@
-using System.Drawing;
-
 namespace GlobalRemoteControl.Agent.Capture;
 
 public interface IScreenCapturer : IDisposable
 {
-    /// <summary>Captures the monitor into a new 32bpp bitmap (caller disposes), or null on failure.</summary>
-    Bitmap? Capture(MonitorInfo monitor);
+    /// <summary>Which backend produced the last frame ("duplication", "gdi", ...).</summary>
+    string Backend { get; }
+
+    /// <summary>
+    /// Brings <paramref name="target"/> (resized to the monitor, kept between calls) up to date with the screen, drawing
+    /// the cursor into it when <paramref name="drawCursor"/>. <paramref name="dirty"/> receives what may have changed
+    /// since the previous call (All when unknown). Returns false when nothing could be captured.
+    /// </summary>
+    bool Capture(MonitorInfo monitor, FrameBuffer target, bool drawCursor, DirtyRegion dirty);
 }

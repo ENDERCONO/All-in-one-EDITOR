@@ -141,25 +141,25 @@ $('pairForm').addEventListener('submit', async (e) => {
 
 // ---------- session ----------
 const canvas = $('screen');
-let heldKeys = new Set(), mods = new Set(), padMode = false, autoQ = null;
+let heldKeys = new Set(), mods = new Set(), padMode = false;
 
 function connect(dev) {
   if (cur) return;
   if (sig.state !== 'ready') return toast('Not connected to the server yet.', 'err');
-  lastFrames = 0; level = 1; okChecks = 0;
+  initStream(); rc.has = false;
   const s = cur = new Session({ signaling: sig, identity, device: dev });
   s.attachCanvas(canvas);
   $('home').hidden = true; $('session').hidden = false;
-  $('sessDevice').textContent = dev.name; $('viewBadge').hidden = true; $('monitorSel').hidden = true;
+  $('sessDevice').textContent = dev.name; $('viewBadge').hidden = true; $('relayBadge').hidden = true; $('monitorSel').hidden = true;
   $('overlay').hidden = false; $('overlayText').textContent = 'Connecting…';
   canvas.width = 16; canvas.height = 9; canvas.getContext('2d').clearRect(0, 0, 16, 9);
   setAudioUi(false); $('osk').hidden = true; $('xfer').hidden = true;
   setPad(matchMedia('(pointer: coarse)').matches);
 
   s.on('status', (t) => { $('overlayText').textContent = t; });
-  s.on('accepted', (mode) => { $('viewBadge').hidden = mode !== 'view'; });
+  s.on('accepted', (mode) => { $('viewBadge').hidden = mode !== 'view'; updateCursorUi(); });
   s.on('hello', (h) => {
-    $('viewBadge').hidden = h.mode !== 'view';
+    $('viewBadge').hidden = h.mode !== 'view'; updateCursorUi();
     const sel = $('monitorSel'); sel.textContent = '';
     (h.monitors || []).forEach((m) => {
       const o = document.createElement('option'); o.value = m.index;
@@ -171,7 +171,10 @@ function connect(dev) {
   });
   s.on('monitor', (m) => { $('monitorSel').value = m.index; });
   s.on('open', () => { sendQuality(); canvas.focus(); });
-  s.on('frame-size', () => { $('overlay').hidden = true; placeCursor(); });
+  s.on('frame-size', () => { $('overlay').hidden = true; placeCursor(); placeRCursor(); });
+  s.on('relay', onRelay);
+  s.on('cursor', onCursor);
+  s.on('stats', onStats);
   s.on('notice', (t) => toast(t));
   s.on('file-offer', async (o) => s.respondOffer(o.id, await ask(`Your PC wants to send you "${o.name}" (${fmtSize(o.size)}). Accept?`)));
   s.on('file-progress', showProgress);
@@ -186,39 +189,90 @@ function connect(dev) {
   });
   s.on('ended', (reason) => {
     if (cur !== s) return;
-    cur = null; releaseAllKeys(); clearInterval(autoQ);
+    cur = null; releaseAllKeys(); $('streamPop').hidden = true; $('streamBtn').setAttribute('aria-expanded', 'false');
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     $('session').hidden = true; $('home').hidden = false; $('modal').hidden = true;
     toast(reason, reason === 'Disconnected.' ? '' : 'err', 9000);
     renderDevices();
   });
-  clearInterval(autoQ); autoQ = setInterval(autoQuality, 4000);
   s.start();
 }
 
 $('endBtn').onclick = $('cancelBtn').onclick = () => cur && cur.disconnect();
 window.addEventListener('pagehide', () => cur && cur.disconnect());
 
-// ---- quality ----
-let level = 1; const LEVELS = ['low', 'med', 'high']; let okChecks = 0, lastFrames = 0;
+// ---- stream settings (resolution / quality / fps / auto) ----
+let stream = (() => { try { return P.sanitizeStream(JSON.parse(ls.get('grc-stream'))); } catch { return P.sanitizeStream(null); } })();
+let aq = new P.AutoQuality(), lastPtr = matchMedia('(pointer: coarse)').matches ? 'touch' : 'mouse';
+const rc = { x: 0, y: 0, visible: false, has: false };
+function saveStream() { ls.set('grc-stream', JSON.stringify(stream)); }
 function sendQuality() {
-  if (!cur) return;
-  const v = $('qualitySel').value;
-  const p = P.QUALITY_PRESETS[v === 'auto' ? LEVELS[level] : v];
-  cur.sendControl({ t: 'quality', ...p });
+  if (cur) cur.setQuality({ fps: stream.fps, quality: stream.quality, scale: stream.scale, cursor: false });
 }
-$('qualitySel').onchange = () => { level = 1; sendQuality(); };
-function autoQuality() {
-  if (!cur || $('qualitySel').value !== 'auto') return;
-  const fps = (cur.frames - lastFrames) / 4; lastFrames = cur.frames;
-  const target = P.QUALITY_PRESETS[LEVELS[level]].fps;
-  if (fps < target * 0.6 && level > 0) { level--; okChecks = 0; sendQuality(); }
-  else if (fps >= target * 0.9 && level < 2 && ++okChecks >= 2) { level++; okChecks = 0; sendQuality(); }
+function renderStream() {
+  $('scaleSel').value = String(stream.scale); $('qualityRange').value = stream.quality; $('qualityOut').textContent = stream.quality;
+  $('fpsSel').value = String(stream.fps); $('sharpChk').checked = stream.sharp; $('statsChk').checked = stream.stats;
+  document.querySelectorAll('#streamPop [data-preset]').forEach((b) => b.setAttribute('aria-pressed', String(stream.auto ? b.dataset.preset === 'auto' : b.dataset.preset === stream.preset)));
+  canvas.classList.toggle('pixelated', stream.sharp);
+  $('statsBox').hidden = !stream.stats || !cur;
+}
+function initStream() { aq = new P.AutoQuality(P.ladderIndexFor(stream.scale, stream.quality)); renderStream(); $('statsBox').textContent = ''; updateCursorUi(); }
+function manual(patch) { Object.assign(stream, patch, { auto: false, preset: null }); renderStream(); saveStream(); sendQuality(); }
+document.querySelectorAll('#streamPop [data-preset]').forEach((b) => {
+  b.onclick = () => {
+    const p = b.dataset.preset;
+    if (p === 'auto') { stream.auto = true; stream.preset = 'auto'; aq = new P.AutoQuality(P.ladderIndexFor(stream.scale, stream.quality)); }
+    else Object.assign(stream, P.QUALITY_PRESETS[p], { auto: false, preset: p });
+    renderStream(); saveStream(); sendQuality();
+  };
+});
+$('scaleSel').onchange = () => manual({ scale: Number($('scaleSel').value) });
+$('qualityRange').oninput = () => { $('qualityOut').textContent = $('qualityRange').value; };
+$('qualityRange').onchange = () => manual({ quality: Number($('qualityRange').value) });
+$('fpsSel').onchange = () => { Object.assign(stream, { fps: Number($('fpsSel').value) }); if (!stream.auto) stream.preset = null; renderStream(); saveStream(); sendQuality(); };
+$('sharpChk').onchange = () => { stream.sharp = $('sharpChk').checked; renderStream(); saveStream(); };
+$('statsChk').onchange = () => { stream.stats = $('statsChk').checked; renderStream(); saveStream(); };
+$('streamBtn').onclick = (e) => {
+  e.stopPropagation();
+  const open = $('streamPop').hidden; $('streamPop').hidden = !open; $('streamBtn').setAttribute('aria-expanded', String(open));
+};
+document.addEventListener('pointerdown', (e) => {
+  if (!$('streamPop').hidden && !e.target.closest('#streamPop, #streamBtn')) { $('streamPop').hidden = true; $('streamBtn').setAttribute('aria-expanded', 'false'); }
+});
+function onRelay() {
+  $('relayBadge').hidden = false;
+  toast('Direct connection not possible here; using the encrypted relay through the server.');
+  if (stream.auto) { // relay bandwidth is limited: Auto starts at the Smooth preset
+    stream.scale = P.QUALITY_PRESETS.smooth.scale; stream.quality = P.QUALITY_PRESETS.smooth.quality;
+    aq = new P.AutoQuality(P.ladderIndexFor(stream.scale, stream.quality)); renderStream(); sendQuality();
+  }
+}
+function onStats(s) {
+  if (stream.stats) {
+    $('statsBox').textContent = `${s.fps.toFixed(0)} fps  ${s.kbps >= 1000 ? (s.kbps / 1000).toFixed(1) + ' Mbps' : s.kbps.toFixed(0) + ' kbps'}\nRTT ${s.rtt == null ? '—' : s.rtt.toFixed(0) + ' ms'}\n${s.w}×${s.h}  ${s.rects.toFixed(1)} rects/frame`;
+  }
+  if (stream.auto) {
+    const r = aq.update({ fps: s.fps, targetFps: stream.fps, kbps: s.kbps, rtt: s.rtt }, performance.now());
+    if (r) { stream.scale = r.scale; stream.quality = r.quality; renderStream(); sendQuality(); }
+  }
+}
+
+// ---- cursor: native pointer for a mouse in control mode, overlay from agent `cursor` messages otherwise ----
+function useNative() { return !!cur && cur.mode === 'control' && lastPtr !== 'touch' && !padMode; }
+function updateCursorUi() { canvas.classList.toggle('native', useNative()); placeRCursor(); }
+function notePointer(t) { const k = t === 'touch' ? 'touch' : 'mouse'; if (k !== lastPtr) { lastPtr = k; updateCursorUi(); } }
+function onCursor(m) { rc.x = Number(m.x) || 0; rc.y = Number(m.y) || 0; rc.visible = m.visible !== false; rc.has = true; placeRCursor(); }
+function placeRCursor() {
+  const el = $('rcursor');
+  el.hidden = !(cur && rc.has && rc.visible && !useNative() && !padMode);
+  if (el.hidden) return;
+  const r = canvas.getBoundingClientRect(), f = P.fitRect(r.width, r.height, canvas.width, canvas.height);
+  el.style.left = (f.x + P.clamp(rc.x, 0, 1) * f.w) + 'px'; el.style.top = (f.y + P.clamp(rc.y, 0, 1) * f.h) + 'px';
 }
 $('monitorSel').onchange = () => cur && cur.sendControl({ t: 'select-monitor', index: Number($('monitorSel').value) });
 
 // ---- audio ----
-function setAudioUi(on) { $('audioBtn').setAttribute('aria-pressed', String(on)); $('audioBtn').textContent = (on ? '\u{1F50A}' : '\u{1F508}') + ' Audio'; }
+function setAudioUi(on) { $('audioBtn').setAttribute('aria-pressed', String(on)); } // icon swaps via CSS
 $('audioBtn').onclick = () => { // runs inside a click: allowed to start the AudioContext
   if (!cur) return;
   const on = $('audioBtn').getAttribute('aria-pressed') !== 'true';
@@ -264,29 +318,28 @@ function mapEvent(e, clamp = true) {
   const r = canvas.getBoundingClientRect();
   return P.mapPoint(e.clientX - r.left, e.clientY - r.top, r.width, r.height, canvas.width, canvas.height, clamp);
 }
-let moveQueued = null;
-function queueMove(pt) {
-  if (!moveQueued) requestAnimationFrame(() => { if (cur && moveQueued) cur.sendInput({ t: 'mouse-move', x: moveQueued.x, y: moveQueued.y }); moveQueued = null; });
-  moveQueued = pt;
-}
+const co = new P.InputCoalescer((m) => { if (cur) cur.sendInput(m); });
+let flushRaf = 0;
+function sched() { if (!flushRaf) flushRaf = requestAnimationFrame(() => { flushRaf = 0; co.flush(); }); }
+function queueMove(pt) { co.move(pt.x, pt.y); sched(); }
 const BTN = ['left', 'middle', 'right'];
 function sendButton(button, down, pt) {
   if (!cur) return;
   const m = { t: 'mouse-button', button, down };
   if (pt) { m.x = pt.x; m.y = pt.y; }
-  cur.sendInput(m);
+  co.push(m);
 }
 
 // ---- touchpad (virtual cursor) ----
 const pad = { ptrs: new Map(), cx: 0.5, cy: 0.5, moved: false, dragging: false, timer: 0, t0: 0, two: null };
-function setPad(on) { padMode = on; $('padBtn').setAttribute('aria-pressed', String(on)); $('vcursor').hidden = !on; placeCursor(); }
+function setPad(on) { padMode = on; updateCursorUi(); $('padBtn').setAttribute('aria-pressed', String(on)); $('vcursor').hidden = !on; placeCursor(); }
 $('padBtn').onclick = () => setPad(!padMode);
 function placeCursor() {
   const r = canvas.getBoundingClientRect(), f = P.fitRect(r.width, r.height, canvas.width, canvas.height);
   const v = $('vcursor');
   v.style.left = (f.x + pad.cx * f.w) + 'px'; v.style.top = (f.y + pad.cy * f.h) + 'px';
 }
-addEventListener('resize', placeCursor);
+addEventListener('resize', () => { placeCursor(); placeRCursor(); });
 function padDown(e) {
   pad.ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY });
   if (pad.ptrs.size === 1) {
@@ -312,7 +365,7 @@ function padMove(e) {
   } else if (pad.ptrs.size === 2 && pad.two) {
     // centroid movement of the pair = wheel (one pointer event moves one finger, so halve it)
     if (Math.abs(dx) + Math.abs(dy) > 0.5) pad.two.moved = pad.two.moved || Math.hypot(p.x - p.sx, p.y - p.sy) > 12;
-    cur && cur.sendInput({ t: 'wheel', dx: P.clamp(Math.round(dx * 1.5), -1200, 1200), dy: P.clamp(Math.round(dy * 1.5), -1200, 1200) });
+    co.wheel(Math.round(dx * 1.5), Math.round(dy * 1.5)); sched();
   }
 }
 function padUp(e) {
@@ -332,15 +385,17 @@ function padUp(e) {
 
 // ---- pointer events on the canvas ----
 canvas.addEventListener('pointerdown', (e) => {
+  notePointer(e.pointerType);
   canvas.focus(); e.preventDefault();
   canvas.setPointerCapture(e.pointerId);
   if (e.pointerType === 'touch' && padMode) return padDown(e);
   const pt = mapEvent(e);
-  if (e.pointerType === 'touch') { moveQueued = null; cur && cur.sendInput({ t: 'mouse-move', x: pt.x, y: pt.y }); sendButton('left', true, pt); return; }
+  if (e.pointerType === 'touch') { co.move(pt.x, pt.y); sendButton('left', true, pt); return; }
   if (e.button > 2) return; // back/forward buttons must not turn into left clicks
   sendButton(BTN[e.button], true, pt);
 });
 canvas.addEventListener('pointermove', (e) => {
+  notePointer(e.pointerType);
   if (e.pointerType === 'touch' && padMode) return padMove(e);
   if (e.pointerType === 'touch' && !e.buttons && e.pressure === 0) return;
   queueMove(mapEvent(e));
@@ -358,22 +413,22 @@ canvas.addEventListener('wheel', (e) => {
   const k = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 800 : 1;
   // Windows convention: positive dy = wheel up (away from the user), so invert the browser's deltaY
   const dx = P.clamp(Math.round(e.deltaX * k), -1200, 1200), dy = P.clamp(Math.round(-e.deltaY * k), -1200, 1200);
-  if (dx || dy) cur && cur.sendInput({ t: 'wheel', dx, dy });
+  if (dx || dy) { co.wheel(dx, dy); sched(); }
 }, { passive: false });
 
 // ---- keyboard (hardware) ----
 canvas.addEventListener('keydown', (e) => {
   e.preventDefault(); e.stopPropagation();
-  heldKeys.add(e.code); cur && cur.sendInput({ t: 'key', code: e.code, down: true });
+  heldKeys.add(e.code); co.push({ t: 'key', code: e.code, down: true });
 });
 canvas.addEventListener('keyup', (e) => {
   e.preventDefault(); e.stopPropagation();
-  heldKeys.delete(e.code); cur && cur.sendInput({ t: 'key', code: e.code, down: false });
+  heldKeys.delete(e.code); co.push({ t: 'key', code: e.code, down: false });
 });
 function releaseAllKeys() {
   if (cur) {
-    for (const code of heldKeys) cur.sendInput({ t: 'key', code, down: false });
-    for (const code of mods) cur.sendInput({ t: 'key', code, down: false });
+    for (const code of heldKeys) co.push({ t: 'key', code, down: false });
+    for (const code of mods) co.push({ t: 'key', code, down: false });
     sendButton('left', false); sendButton('right', false); sendButton('middle', false);
   }
   heldKeys.clear(); mods.clear(); pad.ptrs.clear(); pad.dragging = false; pad.two = null;
@@ -389,10 +444,10 @@ $('kbdBtn').onclick = () => {
 };
 function tap(code) {
   if (!cur) return;
-  cur.sendInput({ t: 'key', code, down: true }); cur.sendInput({ t: 'key', code, down: false });
+  co.push({ t: 'key', code, down: true }); co.push({ t: 'key', code, down: false });
 }
 function releaseMods() {
-  for (const m of mods) cur && cur.sendInput({ t: 'key', code: m, down: false });
+  for (const m of mods) co.push({ t: 'key', code: m, down: false });
   mods.clear(); document.querySelectorAll('.mod').forEach((b) => b.setAttribute('aria-pressed', 'false'));
 }
 document.querySelectorAll('#osk .mod').forEach((b) => {
@@ -400,7 +455,7 @@ document.querySelectorAll('#osk .mod').forEach((b) => {
     const code = b.dataset.mod, on = !mods.has(code);
     if (on) mods.add(code); else mods.delete(code);
     b.setAttribute('aria-pressed', String(on));
-    cur && cur.sendInput({ t: 'key', code, down: on });
+    co.push({ t: 'key', code, down: on });
   };
 });
 document.querySelectorAll('#osk [data-key]').forEach((b) => {
@@ -417,7 +472,7 @@ function sendTyped(text) {
   if (mods.size) { // Ctrl/Alt/Win + character = shortcut, not Unicode text
     for (const ch of text) { const c = charToCode(ch); if (c) tap(c); }
     releaseMods();
-  } else for (let i = 0; i < text.length; i += 256) cur.sendInput({ t: 'text', text: text.slice(i, i + 256) });
+  } else for (let i = 0; i < text.length; i += 256) co.push({ t: 'text', text: text.slice(i, i + 256) });
 }
 const textIn = $('textIn');
 let composing = false;
