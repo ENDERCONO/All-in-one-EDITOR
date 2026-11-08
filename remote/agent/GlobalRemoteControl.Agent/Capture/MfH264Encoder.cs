@@ -51,7 +51,7 @@ public sealed class MfH264EncoderFactory : IH264EncoderFactory
             {
                 for (int i = 0; i < candidates.Count; i++)
                 {
-                    var activate = candidates[i];
+                    var activate = candidates[i]!;
                     var name = (hardware ? "hardware: " : "software: ") + (SafeName(activate) ?? "H.264 MFT");
                     lock (_lock) if (_broken.Contains(name)) continue;
                     MfH264Encoder? enc = null;
@@ -62,7 +62,7 @@ public sealed class MfH264EncoderFactory : IH264EncoderFactory
                         if (enc.SelfTest()) return enc;
                         log?.Invoke(name + ": self-test produced no picture");
                     }
-                    catch (Exception ex) { log?.Invoke(name + ": " + ex.Message); }
+                    catch (Exception ex) { log?.Invoke(name + ": " + ex.GetType().Name + " " + ex.Message + " @ " + ex.StackTrace?.Split('\n')[0].Trim()); }
                     if (enc != null) enc.Dispose();
                     else { try { activate.ShutdownObject(); } catch (Exception) { } }
                     lock (_lock) _broken.Add(name);
@@ -142,14 +142,15 @@ public sealed class MfH264Encoder : IH264Encoder
         _activate = activate;
         Name = name; Width = width; Height = height; _fps = Math.Clamp(fps, 1, 120);
         _mft = activate.ActivateObject<IMFTransform>();
-        var attrs = _mft.Attributes;
-        _async = attrs.GetUInt32(TransformAttributeKeys.TransformAsync, out var isAsync).Success && isAsync != 0;
+        IMFAttributes? attrs = null;
+        try { attrs = _mft.Attributes; } catch (SharpGenException) { } // Microsoft's software encoder: E_NOTIMPL
+        _async = attrs != null && attrs.GetUInt32(TransformAttributeKeys.TransformAsync, out var isAsync).Success && isAsync != 0;
         if (_async)
         {
-            attrs.Set(TransformAttributeKeys.TransformAsyncUnlock, 1u).CheckError();
+            attrs!.Set(TransformAttributeKeys.TransformAsyncUnlock, 1u).CheckError();
             _events = _mft.QueryInterface<IMFMediaEventGenerator>();
         }
-        attrs.Set(LowLatency, 1u); // MF_LOW_LATENCY (same GUID as the codec property)
+        attrs?.Set(LowLatency, 1u); // MF_LOW_LATENCY (same GUID as the codec property)
 
         _codecApi = _mft.QueryInterfaceOrNull(CodecApiIid);
         SetCodec(RateControl, 0);              // eAVEncCommonRateControlMode_CBR
