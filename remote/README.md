@@ -23,6 +23,11 @@ keyboard, fullscreen (where the browser allows it; not iPhone Safari).
 motion, so games that read the mouse directly (first-person cameras etc.) can be aimed. **Esc** releases the mouse.
 Some games with anti-cheat block injected input.
 
+**GPU video** (Stream settings, on by default, needs the latest Windows app): the PC encodes the screen as H.264 on
+the graphics card (NVIDIA / AMD / Intel; Windows' software encoder if there is none) and sends it as a WebRTC
+video stream that the browser decodes in hardware, like a livestream: smoother at 30–60 fps with far less data than
+the JPEG picture. A **GPU** badge shows while it is on. If it can't start, the session simply stays on JPEG.
+
 On a phone or tablet: **pinch with two fingers to zoom** into the PC's screen and drag with two fingers to move
 around (the **1:1** button resets the zoom). **Touchpad** mode (default on touch screens) moves a cursor like a laptop
 touchpad: tap = click, hold then drag = drag, two-finger tap = right click, two-finger drag = scroll (or pan when

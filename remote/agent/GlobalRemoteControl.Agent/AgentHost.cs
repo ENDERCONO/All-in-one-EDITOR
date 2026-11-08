@@ -31,8 +31,12 @@ public sealed class AgentHost : IDisposable
         Gate = new SessionGate();
         Signaling = new SignalingClient(Identity, () => Settings.DeviceName);
         Pairing = new PairingHandler(Signaling, Store, prompts, audit);
+        // PROTOCOL 5.1: find a working H.264 encoder (GPU first) once, in the background; JPEG works meanwhile
+        H264 = new MfH264EncoderFactory();
+        H264.ProbeInBackground(m => audit.Write("video-encoder", "", "", m));
         var services = new SessionServices
         {
+            H264 = H264,
             Monitors = Monitors.Enumerate,
             CreateCapturer = () => new ScreenCapturer(),
             InputSink = new SendInputSink(),
@@ -50,6 +54,7 @@ public sealed class AgentHost : IDisposable
         Gate.Ended += (info, reason) => Audit.Write("session-closed", info.ControllerName, info.ControllerId, reason);
     }
 
+    public MfH264EncoderFactory H264 { get; }
     public AgentPaths Paths { get; }
     public AuditLog Audit { get; }
     public AgentSettings Settings { get; }

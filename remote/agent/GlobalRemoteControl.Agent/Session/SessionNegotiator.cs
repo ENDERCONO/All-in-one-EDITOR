@@ -19,6 +19,9 @@ public interface IRemotePeer : IDisposable
     void SwitchToRelay(ISessionTransport relay);
     /// <summary>One decrypted, in-order relay message from the controller.</summary>
     void OnRelayMessage(RelayChannel channel, byte[] payload);
+    /// <summary>Set by the negotiator: sends a signed re-offer (PROTOCOL 5.1) and returns the controller's verified
+    /// answer SDP, or null (no answer in time, relayed, or the session ended).</summary>
+    Func<string, Task<string?>>? Renegotiate { get => null; set { } }
 }
 
 /// <summary>
@@ -48,6 +51,10 @@ public sealed class SessionNegotiator
         public string? PeerEcdh;
         public RelayCodec? RelayCodec;
         public RelayTransport? Relay;
+        // PROTOCOL 5.1 renegotiation: one outstanding re-offer at a time, seq strictly increasing
+        public int ReSeq;
+        public int ReAnswerSeq;
+        public TaskCompletionSource<string?>? ReAnswer;
     }
 
     private readonly ISignalSender _signal;
@@ -247,6 +254,7 @@ public sealed class SessionNegotiator
         }
 
         var sdpObj = Json.Obj(m, "sdp");
+        if (Json.Bool(m, "renegotiate") == true) { OnReanswer(p, m, sdpObj); return; }
         if (sdpObj == null || Json.Str(sdpObj.Value, "type", 16) != "offer") return;
         var sdp = Json.Str(sdpObj.Value, "sdp", 60000, 1);
         lock (_lock)
@@ -281,6 +289,7 @@ public sealed class SessionNegotiator
                 type = "signal", sessionId = p.SessionId, candidate = new { candidate = c, sdpMid = mid, sdpMLineIndex = idx },
             });
             peer.Closed += reason => EndLocal(p, reason, notifyPeer: true);
+            peer.Renegotiate = offer => RenegotiateAsync(p, offer);
             List<(string, string?, ushort)> early;
             lock (_lock) { p.Peer = peer; early = p.EarlyCandidates.ToList(); p.EarlyCandidates.Clear(); }
             var answer = await peer.AcceptOfferAsync(sdp);
@@ -298,6 +307,55 @@ public sealed class SessionNegotiator
             _audit.Write("session-failed", p.Controller.Name, p.Controller.Id, ex.Message);
             EndLocal(p, "webrtc-failed", notifyPeer: true);
         }
+    }
+
+    public static TimeSpan RenegotiateTimeout { get; set; } = TimeSpan.FromSeconds(15);
+
+    /// <summary>PROTOCOL 5.1: signed re-offer from the agent; returns the controller's verified answer or null.</summary>
+    private async Task<string?> RenegotiateAsync(Pending p, string offerSdp)
+    {
+        TaskCompletionSource<string?> tcs;
+        int seq;
+        lock (_lock)
+        {
+            if (_p != p || p.Stage != Stage.Connected || p.Relay != null) return null;
+            seq = ++p.ReSeq;
+            p.ReAnswer?.TrySetResult(null);
+            tcs = p.ReAnswer = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            p.ReAnswerSeq = seq;
+        }
+        await _signal.SendAsync(new
+        {
+            type = "signal", sessionId = p.SessionId, renegotiate = true, seq,
+            sdp = new { type = "offer", sdp = offerSdp },
+            signature = _identity.Sign(IdentityUtil.ReofferString(p.SessionId, seq, offerSdp)),
+        });
+        var done = await Task.WhenAny(tcs.Task, Task.Delay(RenegotiateTimeout));
+        lock (_lock) { if (p.ReAnswer == tcs) p.ReAnswer = null; }
+        return done == tcs.Task ? tcs.Task.Result : null;
+    }
+
+    /// <summary>The controller's answer to a re-offer: only for the outstanding seq, and only with a valid signature
+    /// from the controller's stored key (a bad one ends the session, like a bad first offer).</summary>
+    private void OnReanswer(Pending p, JsonElement m, JsonElement? sdpObj)
+    {
+        var seq = Json.Int(m, "seq");
+        var sdp = sdpObj == null || Json.Str(sdpObj.Value, "type", 16) != "answer" ? null : Json.Str(sdpObj.Value, "sdp", 60000, 1);
+        TaskCompletionSource<string?>? tcs;
+        lock (_lock)
+        {
+            tcs = p.ReAnswer;
+            if (tcs == null || sdp == null || seq != p.ReAnswerSeq) return; // stale, replayed or unexpected: ignore
+            p.ReAnswer = null;
+        }
+        if (!IdentityUtil.Verify(p.Controller.PublicKey, IdentityUtil.ReanswerString(p.SessionId, (int)seq.GetValueOrDefault(), sdp), Json.Str(m, "signature", 100)))
+        {
+            _audit.Write("session-ended", p.Controller.Name, p.Controller.Id, "video renegotiation answer signature invalid");
+            tcs.TrySetResult(null);
+            EndLocal(p, "bad-signature", notifyPeer: true);
+            return;
+        }
+        tcs.TrySetResult(sdp);
     }
 
     private Task OnEndAsync(JsonElement m)

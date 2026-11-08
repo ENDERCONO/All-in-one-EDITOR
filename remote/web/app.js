@@ -169,6 +169,8 @@ function connect(dev) {
     $('audioBtn').hidden = h.audio === false;
     $('gameBtn').hidden = !(h.relMouse === true && h.mode !== 'view');
     sendQuality();
+    $('gpuRow').hidden = h.video !== 'h264';
+    if (h.video === 'h264' && stream.gpu) s.setVideoTrack(true); // PROTOCOL 5.1: ask for the GPU stream
   });
   s.on('track', (on) => { $('gpuBadge').hidden = !on; if (on) toast('GPU video stream on'); });
   s.on('monitor', (m) => { $('monitorSel').value = m.index; });
@@ -191,7 +193,7 @@ function connect(dev) {
   });
   s.on('ended', (reason) => {
     if (cur !== s) return;
-    cur = null; releaseAllKeys(); setGame(false); $('gpuBadge').hidden = true; $('gameBtn').hidden = true; view.reset(); applyView(); $('streamPop').hidden = true; $('streamBtn').setAttribute('aria-expanded', 'false');
+    cur = null; releaseAllKeys(); setGame(false); $('gpuBadge').hidden = true; $('gpuRow').hidden = true; $('gameBtn').hidden = true; view.reset(); applyView(); $('streamPop').hidden = true; $('streamBtn').setAttribute('aria-expanded', 'false');
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     $('session').hidden = true; $('home').hidden = false; $('modal').hidden = true;
     toast(reason, reason === 'Disconnected.' ? '' : 'err', 9000);
@@ -213,7 +215,7 @@ function sendQuality() {
 }
 function renderStream() {
   $('scaleSel').value = String(stream.scale); $('qualityRange').value = stream.quality; $('qualityOut').textContent = stream.quality;
-  $('fpsSel').value = String(stream.fps); $('sharpChk').checked = stream.sharp; $('statsChk').checked = stream.stats;
+  $('fpsSel').value = String(stream.fps); $('sharpChk').checked = stream.sharp; $('gpuChk').checked = stream.gpu; $('statsChk').checked = stream.stats;
   document.querySelectorAll('#streamPop [data-preset]').forEach((b) => b.setAttribute('aria-pressed', String(stream.auto ? b.dataset.preset === 'auto' : b.dataset.preset === stream.preset)));
   canvas.classList.toggle('pixelated', stream.sharp);
   $('statsBox').hidden = !stream.stats || !cur;
@@ -232,6 +234,7 @@ $('scaleSel').onchange = () => manual({ scale: Number($('scaleSel').value) });
 $('qualityRange').oninput = () => { $('qualityOut').textContent = $('qualityRange').value; };
 $('qualityRange').onchange = () => manual({ quality: Number($('qualityRange').value) });
 $('fpsSel').onchange = () => { Object.assign(stream, { fps: Number($('fpsSel').value) }); if (!stream.auto) stream.preset = null; renderStream(); saveStream(); sendQuality(); };
+$('gpuChk').onchange = () => { stream.gpu = $('gpuChk').checked; saveStream(); if (cur && cur.hello && cur.hello.video === 'h264') cur.setVideoTrack(stream.gpu); };
 $('sharpChk').onchange = () => { stream.sharp = $('sharpChk').checked; renderStream(); saveStream(); };
 $('statsChk').onchange = () => { stream.stats = $('statsChk').checked; renderStream(); saveStream(); };
 $('streamBtn').onclick = (e) => {

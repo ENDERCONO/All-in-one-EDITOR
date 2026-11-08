@@ -143,6 +143,7 @@ export function sanitizeStream(o) {
     quality: Number.isFinite(Number(x.quality)) ? clamp(Math.round(Number(x.quality)), 10, 95) : d.quality,
     fps: near(x.fps, FPS_CHOICES, d.fps),
     auto: x.auto === true, sharp: x.sharp === true, stats: x.stats === true,
+    gpu: x.gpu !== false, // GPU H.264 track (PROTOCOL 5.1) when the PC offers it; on unless turned off
     preset: typeof x.preset === 'string' ? x.preset : (o && typeof o === 'object' ? null : d.preset),
   };
 }

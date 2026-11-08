@@ -65,6 +65,9 @@ public static class IdentityUtil
     // ecdh = the sender's ephemeral ECDH P-256 public key (base64 SPKI); it keys the relay fallback (section 7)
     public static string OfferString(string sessionId, string ecdh, string sdp) => $"grc-offer:{sessionId}:{ecdh}:{sdp}";
     public static string AnswerString(string sessionId, string ecdh, string sdp) => $"grc-answer:{sessionId}:{ecdh}:{sdp}";
+    // PROTOCOL 5.1: GPU video track renegotiation (agent offers, controller answers)
+    public static string ReofferString(string sessionId, int seq, string sdp) => $"grc-reoffer:{sessionId}:{seq}:{sdp}";
+    public static string ReanswerString(string sessionId, int seq, string sdp) => $"grc-reanswer:{sessionId}:{seq}:{sdp}";
 
     public static string RandomNonce() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 }

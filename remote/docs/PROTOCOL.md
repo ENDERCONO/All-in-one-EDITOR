@@ -137,8 +137,10 @@ from WASAPI loopback. Sent only while audio is enabled.
 **File chunks**: raw bytes ≤ 16 000 per message, for the single active transfer in that direction.
 
 ### 5.1 GPU video track (H.264) — agent-initiated renegotiation (optional)
-The controller's first offer (above) never changes: data channels only. An agent that can hardware-encode H.264
-announces it in `hello` (`video:"h264"`) and then **renegotiates** to add a media track:
+The controller's first offer (above) never changes: data channels only. An agent that can encode H.264 (GPU
+encoder, or the Windows software one) announces it in `hello` (`video:"h264"`). A controller that supports this
+section asks for it with `{t:"video-track", enabled:true}`; only then does the agent **renegotiate** to add a media
+track (older controllers never ask, so they never see a re-offer):
 ```
 agent → controller  { type:"signal", sessionId, renegotiate:true, seq:<int 1..1e6>, sdp:{type:"offer", sdp}, signature }
 controller → agent  { type:"signal", sessionId, renegotiate:true, seq:<same>, sdp:{type:"answer", sdp}, signature }
@@ -152,9 +154,15 @@ controller → agent  { type:"signal", sessionId, renegotiate:true, seq:<same>, 
   `recvonly` and shows the track in a hardware-decoded `<video>`; the JPEG `video` channel goes quiet while the track
   plays and is used again if the track ends or fails (the agent switches back on its own; the controller can also
   send `{t:"keyframe"}` to ask for a JPEG keyframe).
-* Low-latency encoder settings (agent): GPU encoder (NVENC / AMF / QuickSync via Media Foundation) with software
-  OpenH264 fallback, CBR or capped VBR, long GOP with intra-refresh, IDR on `{t:"keyframe"}` and on monitor or
-  resolution change, max frame rate = the `quality` message's `fps` (≤ 60).
+* Low-latency encoder settings (agent): GPU encoder (NVENC / AMF / Quick Sync, the driver's Media Foundation
+  hardware MFT) with Microsoft's software H.264 MFT as fallback, each self-tested before use; low-latency mode, CBR,
+  baseline profile (no B-frames), SPS/PPS in-band before every IDR; IDR on `{t:"keyframe"}`, on monitor or
+  resolution change and at least every 5 s; frame rate = the `quality` message's `fps` (≤ 60); a static screen
+  sends only a refresh every 0.5 s.
+* `{t:"video-track", enabled:false}` switches back to the JPEG channel (the agent sends a JPEG keyframe); `true`
+  again reuses the already negotiated track. The agent also falls back to JPEG on its own if encoding fails, if the
+  renegotiation gets no valid answer within 15 s, or on the relay fallback (section 7 can't carry RTP).
+* RTCP picture-loss / FIR from the controller make the agent send an IDR.
 * An agent without H.264 never sends `video` in `hello` and never renegotiates: everything stays on the JPEG path.
 
 ### control messages, controller → agent (all validated; out-of-range → ignored + logged)
@@ -172,6 +180,7 @@ controller → agent  { type:"signal", sessionId, renegotiate:true, seq:<same>, 
 { t:"quality", fps:1..60, quality:10..95, scale:0.25..1, cursor:bool }   // cursor=false: don't draw the cursor into frames
                                                                          // (the browser shows the user's own pointer)
 { t:"keyframe" }                               // request a keyframe (after a dropped frame or decode error)
+{ t:"video-track", enabled:bool }              // 5.1: ask for (true) / leave (false) the H.264 media track
 { t:"audio", enabled:bool }
 { t:"ack", frameId }
 { t:"file-offer", id, name, size }             // upload to PC; size ≤ 2 GiB; agent asks the local user + Save dialog

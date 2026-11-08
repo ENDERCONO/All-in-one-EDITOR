@@ -102,6 +102,7 @@ public class SessionNegotiatorTests
             Relay = relay;
         }
         public void OnRelayMessage(RelayChannel channel, byte[] payload) { lock (RelayMessages) RelayMessages.Add((channel, payload)); }
+        public Func<string, Task<string?>>? Renegotiate { get; set; }
         public void Dispose() => Disposed = true;
     }
 
@@ -393,6 +394,128 @@ public class SessionNegotiatorTests
         Assert.Equal("answer", sig.GetProperty("sdp").GetProperty("type").GetString());
         var answer = sig.GetProperty("sdp").GetProperty("sdp").GetString()!;
         Assert.True(IdentityUtil.Verify(r.Device.PublicKeyBase64, IdentityUtil.AnswerString(r.Sid, sig.GetProperty("ecdh").GetString()!, answer), sig.GetProperty("signature").GetString()));
+    }
+
+    // ---- PROTOCOL 5.1: agent-initiated renegotiation for the H.264 track ----
+
+    private static async Task<(Rig R, Task<string?> Result, JsonElement ReOffer)> StartReoffer(string sdp = "v=0 reoffer")
+    {
+        var r = new Rig();
+        await r.ApprovedSession();
+        await r.Offer("v=0 offer");
+        var task = r.Peer!.Renegotiate!(sdp);
+        JsonElement re = default;
+        for (int i = 0; i < 100; i++)
+        {
+            var list = r.Signal.OfType("signal").Where(x => x.TryGetProperty("renegotiate", out _)).ToList();
+            if (list.Count > 0) { re = list[^1]; break; }
+            await Task.Delay(10);
+        }
+        return (r, task, re);
+    }
+
+    private static Task Reanswer(Rig r, int seq, string sdp, string? signature = null) =>
+        r.Neg.HandleAsync("signal", Msg.Of(new
+        {
+            type = "signal", sessionId = r.Sid, renegotiate = true, seq,
+            sdp = new { type = "answer", sdp },
+            signature = signature ?? r.Ctl.Sign(IdentityUtil.ReanswerString(r.Sid, seq, sdp)),
+        }));
+
+    [Fact]
+    public async Task Reoffer_IsSignedByDevice_WithIncreasingSeq()
+    {
+        var (r, task, re) = await StartReoffer();
+        using var rig = r;
+        Assert.True(re.GetProperty("renegotiate").GetBoolean());
+        Assert.Equal(1, re.GetProperty("seq").GetInt32());
+        Assert.Equal("offer", re.GetProperty("sdp").GetProperty("type").GetString());
+        Assert.False(re.TryGetProperty("ecdh", out _));
+        Assert.True(IdentityUtil.Verify(r.Device.PublicKeyBase64, IdentityUtil.ReofferString(r.Sid, 1, "v=0 reoffer"), re.GetProperty("signature").GetString()));
+        // a signature over the first-offer text (or another seq) must not verify: different domain prefix
+        Assert.False(IdentityUtil.Verify(r.Device.PublicKeyBase64, IdentityUtil.ReofferString(r.Sid, 2, "v=0 reoffer"), re.GetProperty("signature").GetString()));
+        await Reanswer(r, 1, "v=0 reanswer");
+        Assert.Equal("v=0 reanswer", await task);
+        var second = r.Peer!.Renegotiate!("v=0 again");
+        await Task.Delay(50);
+        Assert.Equal(2, r.Signal.OfType("signal").Last(x => x.TryGetProperty("renegotiate", out _)).GetProperty("seq").GetInt32());
+        await Reanswer(r, 2, "v=0 a2");
+        Assert.Equal("v=0 a2", await second);
+    }
+
+    [Fact]
+    public async Task Reanswer_BadSignature_EndsSession()
+    {
+        var (r, task, _) = await StartReoffer();
+        using var _r = r;
+        using var attacker = new TestKey();
+        await Reanswer(r, 1, "v=0 evil", attacker.Sign(IdentityUtil.ReanswerString(r.Sid, 1, "v=0 evil")));
+        Assert.Null(await task);
+        Assert.True(r.Peer!.Disposed);
+        Assert.Equal("bad-signature", r.Signal.OfType("session-end").Last().GetProperty("reason").GetString());
+    }
+
+    [Fact]
+    public async Task Reanswer_SignatureOverOtherSdp_EndsSession()
+    {
+        var (r, task, _) = await StartReoffer();
+        using var _r = r;
+        await Reanswer(r, 1, "v=0 swapped", r.Ctl.Sign(IdentityUtil.ReanswerString(r.Sid, 1, "v=0 original")));
+        Assert.Null(await task);
+        Assert.True(r.Peer!.Disposed);
+    }
+
+    [Fact]
+    public async Task Reanswer_WrongSeq_Ignored_ThenTimesOut()
+    {
+        var old = SessionNegotiator.RenegotiateTimeout;
+        SessionNegotiator.RenegotiateTimeout = TimeSpan.FromMilliseconds(300);
+        try
+        {
+            var (r, task, _) = await StartReoffer();
+            using var _r = r;
+            await Reanswer(r, 7, "v=0 stale"); // validly signed, but not the outstanding seq
+            Assert.False(task.IsCompleted);
+            Assert.Null(await task);           // no answer within the timeout → JPEG stays
+            Assert.False(r.Peer!.Disposed);    // a missing answer is not an attack
+            await Reanswer(r, 1, "v=0 late");  // after the timeout: nothing outstanding, ignored
+            Assert.False(r.Peer!.Disposed);
+        }
+        finally { SessionNegotiator.RenegotiateTimeout = old; }
+    }
+
+    [Fact]
+    public async Task UnsolicitedReanswer_Ignored()
+    {
+        using var r = new Rig();
+        await r.ApprovedSession();
+        await r.Offer("v=0 offer");
+        await Reanswer(r, 1, "v=0 x");
+        Assert.False(r.Peer!.Disposed);
+        Assert.Empty(r.Signal.OfType("session-end"));
+    }
+
+    [Fact]
+    public async Task Renegotiate_AfterRelayStart_ReturnsNull_NoSignal()
+    {
+        using var r = new Rig();
+        await r.ApprovedSession();
+        await r.Offer("v=0 offer");
+        await r.RelayStart();
+        Assert.Null(await r.Peer!.Renegotiate!("v=0 reoffer"));
+        Assert.DoesNotContain(r.Signal.OfType("signal"), x => x.TryGetProperty("renegotiate", out _));
+    }
+
+    [Fact]
+    public async Task Renegotiate_AfterSessionEnded_ReturnsNull()
+    {
+        using var r = new Rig();
+        await r.ApprovedSession();
+        await r.Offer("v=0 offer");
+        var reneg = r.Peer!.Renegotiate!;
+        r.Gate.Kill("test");
+        await Task.Delay(50);
+        Assert.Null(await reneg("v=0 reoffer"));
     }
 
     [Fact]

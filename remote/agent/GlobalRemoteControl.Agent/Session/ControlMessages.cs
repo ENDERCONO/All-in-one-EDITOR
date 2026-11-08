@@ -17,6 +17,8 @@ public sealed record TextMsg(string Text) : ControlMessage;
 public sealed record SelectMonitorMsg(int Index) : ControlMessage;
 public sealed record QualityMsg(int Fps, int Quality, double Scale, bool Cursor = true) : ControlMessage;
 public sealed record KeyframeMsg : ControlMessage;
+/// <summary>PROTOCOL 5.1: the controller asks for (true) or leaves (false) the H.264 media track.</summary>
+public sealed record VideoTrackMsg(bool Enabled) : ControlMessage;
 public sealed record AudioMsg(bool Enabled) : ControlMessage;
 public sealed record AckMsg(uint FrameId) : ControlMessage;
 public sealed record FileOfferMsg(string Id, string Name, long Size) : ControlMessage;
@@ -114,6 +116,11 @@ public static partial class ControlMessageParser
                 bool cursor = true;
                 if (Json.Has(m, "cursor")) { var c = Json.Bool(m, "cursor"); if (c == null) return null; cursor = c.Value; }
                 return new QualityMsg((int)fps, (int)q, s.Value, cursor);
+            }
+            case "video-track":
+            {
+                var on = Json.Bool(m, "enabled");
+                return on != null ? new VideoTrackMsg(on.Value) : null;
             }
             case "keyframe":
             {

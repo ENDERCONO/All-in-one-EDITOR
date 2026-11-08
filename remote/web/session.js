@@ -28,7 +28,7 @@ export class Session extends Emitter {
     this.frames = 0; this.seq = new P.FrameSequencer(500); this.queue = []; this.ready = []; this.draining = false;
     this.bytesIn = 0; this.rectsIn = 0; this.statsPrev = { t: 0, frames: 0, bytes: 0, rects: 0 }; this.rtt = null;
     this.pendingCandidates = []; this.remoteSet = false; this.offerSent = false; this.localCandidates = [];
-    this.up = null; this.down = null; this.audio = null; this.hello = null;
+    this.up = null; this.down = null; this.audio = null; this.hello = null; this.wantTrack = false;
     this.reSeq = 0; this._reChain = Promise.resolve(); this.track = null; this.trackActive = false; this._vid = null; this._rtpBytes = null;
     this._offs = [];
   }
@@ -167,19 +167,18 @@ export class Session extends Emitter {
     v.srcObject = ev.streams && ev.streams[0] ? ev.streams[0] : new MediaStream([ev.track]);
     this.track = ev.track;
     v.play().catch(() => {});
-    const stop = () => {
-      if (this.track !== ev.track) return;
-      this.track = null;
+    const pause = () => { // back to the JPEG picture (the agent resumes it with a keyframe)
       if (this.trackActive) { this.trackActive = false; this.emit('track', false); }
-      this.requestKeyframe(); // the JPEG stream repaints the whole picture
+      this.requestKeyframe();
     };
-    ev.track.onended = stop;
-    ev.track.onmute = () => { clearTimeout(this._muteT); this._muteT = setTimeout(() => { if (ev.track.muted) stop(); }, 1500); };
+    ev.track.onended = () => { if (this.track === ev.track) { this.track = null; pause(); } };
+    // the agent stops sending RTP when it falls back to JPEG: the track mutes but stays, and unmutes when it resumes
+    ev.track.onmute = () => { clearTimeout(this._muteT); this._muteT = setTimeout(() => { if (ev.track.muted && this.track === ev.track) pause(); }, 1500); };
     ev.track.onunmute = () => clearTimeout(this._muteT);
     const next = () => (v.requestVideoFrameCallback ? v.requestVideoFrameCallback(draw) : requestAnimationFrame(draw));
     const draw = () => {
       if (this.ended || this.track !== ev.track) return;
-      if (v.videoWidth && this.canvas) {
+      if (v.videoWidth && this.canvas && this.wantTrack && !ev.track.muted) {
         if (!this.trackActive) { this.trackActive = true; this.emit('track', true); }
         if (this.canvas.width !== v.videoWidth || this.canvas.height !== v.videoHeight) {
           this.canvas.width = v.videoWidth; this.canvas.height = v.videoHeight;
@@ -257,6 +256,13 @@ export class Session extends Emitter {
     });
   }
   /** Input messages are dropped in view mode (the agent ignores them anyway). */
+  /** PROTOCOL 5.1: ask the agent for (true) or leave (false) the GPU H.264 track. */
+  setVideoTrack(on) {
+    this.wantTrack = !!on;
+    if (!on && this.trackActive) { this.trackActive = false; this.emit('track', false); }
+    return this.sendControl({ t: 'video-track', enabled: !!on });
+  }
+
   sendInput(obj) { return this.mode === 'control' && this.sendControl(obj); }
 
   _onControl(data) {

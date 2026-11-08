@@ -70,10 +70,13 @@ const result = await page.evaluate(async () => {
         pc.ondatachannel = (ev) => {
           if (ev.channel.label !== 'control') return;
           this.control = ev.channel;
-          ev.channel.onmessage = (e) => log.controlMsgs.push(JSON.parse(e.data));
+          ev.channel.onmessage = (e) => {
+            const msg = JSON.parse(e.data); log.controlMsgs.push(msg);
+            // like the agent: renegotiate only when the controller asks (older controllers never see a re-offer)
+            if (msg.t === 'video-track' && msg.enabled === true && !this.reoffer) this.renegotiate();
+          };
           ev.channel.onopen = () => {
             ev.channel.send(JSON.stringify({ t: 'hello', mode: 'control', monitors: [], monitor: 0, audio: false, video: 'h264', relMouse: true }));
-            this.renegotiate();
           };
         };
         await pc.setRemoteDescription(m.sdp);
@@ -88,6 +91,7 @@ const result = await page.evaluate(async () => {
       } else if (m.type === 'session-end') log.agentGotEnd = true;
     },
     async renegotiate() {
+      this.reoffer = {}; // pending
       // a moving picture so frames keep coming (canvas.captureStream stands in for the GPU encoder)
       const c = Object.assign(document.createElement('canvas'), { width: 320, height: 180 });
       const g = c.getContext('2d'); let i = 0;
@@ -108,7 +112,7 @@ const result = await page.evaluate(async () => {
   s.attachCanvas(canvas);
   s.on('track', (on) => log.track.push(on));
   s.on('ended', (r) => { log.ended = r; });
-  let hello = null; s.on('hello', (h) => { hello = h; });
+  let hello = null; s.on('hello', (h) => { hello = h; if (h.video === 'h264') s.setVideoTrack(true); });
   s.start();
 
   for (let k = 0; k < 150 && !s.trackActive; k++) await sleep(100);
@@ -117,6 +121,14 @@ const result = await page.evaluate(async () => {
   const painted = { w: canvas.width, h: canvas.height, pixel: [px[0], px[1], px[2]] };
   await sleep(1200); // let one stats tick run
   const gpuStats = await new Promise((res) => { const off = s.on('stats', (st) => { off(); res(st); }); });
+
+  // leaving the GPU stream (settings toggle) goes back to JPEG; asking again reuses the negotiated track
+  s.setVideoTrack(false);
+  await sleep(300);
+  const offState = { active: s.trackActive, msg: log.controlMsgs.some((m) => m.t === 'video-track' && m.enabled === false) };
+  s.setVideoTrack(true);
+  for (let k = 0; k < 50 && !s.trackActive; k++) await sleep(100);
+  const backOn = s.trackActive;
 
   // game-mode message reaches the agent over the control channel
   s.sendInput({ t: 'mouse-move-rel', dx: 5, dy: -3 });
@@ -136,7 +148,8 @@ const result = await page.evaluate(async () => {
     initialOfferHasVideo: log.initialOfferHasVideo, helloCaps: hello && { video: hello.video, relMouse: hello.relMouse },
     track: log.track, painted, gpuStats: { gpu: gpuStats.gpu, fps: gpuStats.fps, w: gpuStats.w, h: gpuStats.h },
     answerSigOk: answersBefore, relMsg: log.controlMsgs.find((m) => m.t === 'mouse-move-rel') || null,
-    replayIgnored, endedOnForgery: log.ended,
+    replayIgnored, endedOnForgery: log.ended, offState, backOn,
+    askedFirst: log.controlMsgs.findIndex((m) => m.t === 'video-track' && m.enabled === true) >= 0,
   };
 });
 
@@ -147,6 +160,9 @@ const fails = [];
 const check = (ok, what) => { if (!ok) fails.push(what); };
 check(result.initialOfferHasVideo === false, 'first offer must stay data-channel only (compatible with current agents)');
 check(result.helloCaps && result.helloCaps.video === 'h264' && result.helloCaps.relMouse === true, 'hello capabilities reach the app');
+check(result.askedFirst === true, 'controller asks with {t:"video-track",enabled:true} before any re-offer');
+check(result.offState.active === false && result.offState.msg === true, 'video-track false goes back to JPEG');
+check(result.backOn === true, 'video-track true again resumes the GPU stream');
 check(result.track[0] === true, "'track' event fires when GPU frames arrive");
 check(result.painted.w === 320 && result.painted.h === 180, 'canvas resized to the video track');
 check(result.painted.pixel.some((v) => v > 30), 'video frames painted onto the canvas');

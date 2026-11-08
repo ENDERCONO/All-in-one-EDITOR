@@ -27,9 +27,11 @@ jobs:
         # GitHubActions logger: each failing test becomes an annotation (readable without opening the log)
         run: dotnet test remote/agent/GlobalRemoteControl.sln -c Release --logger GitHubActions
       - name: Publish single exe
+        if: github.ref == 'refs/heads/main' # manual runs on other branches only test
         shell: pwsh
         run: ./remote/agent/publish.ps1
       - name: Upload to release remote-agent-latest
+        if: github.ref == 'refs/heads/main'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

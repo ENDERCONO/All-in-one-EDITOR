@@ -6,6 +6,7 @@ using GlobalRemoteControl.Agent.FileTransfer;
 using GlobalRemoteControl.Agent.Input;
 using GlobalRemoteControl.Agent.Signaling;
 using SIPSorcery.Net;
+using SIPSorceryMedia.Abstractions;
 
 namespace GlobalRemoteControl.Agent.Session;
 
@@ -19,6 +20,8 @@ public sealed class SessionServices
     public required Func<bool> AudioAvailable { get; init; }
     public required IUserPrompts Prompts { get; init; }
     public required AuditLog Audit { get; init; }
+    /// <summary>H.264 encoders for the GPU video track (PROTOCOL 5.1); null = JPEG only.</summary>
+    public IH264EncoderFactory? H264 { get; init; }
 }
 
 /// <summary>
@@ -47,6 +50,15 @@ public sealed class RemoteSession : IRemotePeer
     private volatile ISessionTransport _transport;
     private volatile bool _relayed;
     private System.Threading.Timer? _failGrace;
+    // PROTOCOL 5.1 GPU video track
+    private readonly SemaphoreSlim _videoSwitch = new(1, 1);
+    private MediaStreamTrack? _videoTrack;
+    private bool _videoTrackFailed;
+    private H264Streamer? _h264;
+    private (int Fps, int Quality, double Scale, bool Cursor) _quality = (30, 70, 1, true);
+
+    /// <summary>H.264 offer: packetization-mode=1 must be explicit or browsers answer mode 0, which SIPSorcery can't send.</summary>
+    public const string H264Fmtp = "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f";
 
     /// <summary>
     /// If WebRTC fails before the channels ever opened, the controller is expected to fall back to the relay
@@ -91,6 +103,13 @@ public sealed class RemoteSession : IRemotePeer
             }, null, RelayGrace, Timeout.InfiniteTimeSpan);
         };
         _pc.ondatachannel += OnDataChannel;
+        _pc.OnReceiveReport += (_, media, report) =>
+        {
+            // RTCP picture loss / full intra request from the browser's decoder → send an IDR
+            if (media != SDPMediaTypesEnum.video || report?.Feedback == null) return;
+            if (report.Feedback.Header.PayloadFeedbackMessageType is PSFBFeedbackTypesEnum.PLI or PSFBFeedbackTypesEnum.FIR)
+                _h264?.RequestKeyframe();
+        };
         _transport = new DataChannelTransport(this);
 
         _input = new InputController(svc.InputSink, () => _gate.IsInputAllowed(_key), CurrentMonitorBounds, svc.VirtualScreen)
@@ -102,6 +121,14 @@ public sealed class RemoteSession : IRemotePeer
     }
 
     public bool IsRelayed => _relayed;
+
+    /// <summary>Set by the negotiator: sends a signed re-offer and returns the verified answer (null = none / refused).</summary>
+    public Func<string, Task<string?>>? Renegotiate { get; set; }
+
+    /// <summary>True while the picture goes over the H.264 track instead of the JPEG channel.</summary>
+    public bool H264Active { get { lock (_lock) return _h264 != null; } }
+    public H264Streamer? H264Streamer { get { lock (_lock) return _h264; } }
+    private bool H264Possible => _svc.H264?.Available == true && !_relayed && !_videoTrackFailed;
 
     public SessionInfo Info => _info;
     public FileTransferManager Files => _files;
@@ -177,6 +204,7 @@ public sealed class RemoteSession : IRemotePeer
     public void SwitchToRelay(ISessionTransport relay)
     {
         VideoStreamer? old;
+        H264Streamer? oldH264;
         lock (_lock)
         {
             if (_disposed != 0 || _relayed) return;
@@ -185,7 +213,10 @@ public sealed class RemoteSession : IRemotePeer
             _transport = relay;
             old = _streamer;
             _streamer = null;
+            oldH264 = _h264; // the relay can't carry RTP: back to JPEG
+            _h264 = null;
         }
+        try { oldH264?.Dispose(); } catch (Exception) { }
         try { _pc.close(); } catch (Exception) { }
         try { old?.Dispose(); } catch (Exception) { } // its ack window refers to frames sent on the dead channel
         lock (_lock)
@@ -212,15 +243,17 @@ public sealed class RemoteSession : IRemotePeer
     {
         {
             var monitors = _svc.Monitors();
-            SendControl(new
+            var hello = new Dictionary<string, object>
             {
-                t = "hello",
-                mode = _info.Mode == SessionMode.Control ? "control" : "view",
-                monitors = monitors.Select(m => m.ToJson()).ToArray(),
-                monitor = _monitorIndex,
-                audio = _svc.AudioAvailable(),
-                relMouse = true, // game mode: mouse-move-rel is supported (PROTOCOL 5)
-            });
+                ["t"] = "hello",
+                ["mode"] = _info.Mode == SessionMode.Control ? "control" : "view",
+                ["monitors"] = monitors.Select(m => m.ToJson()).ToArray(),
+                ["monitor"] = _monitorIndex,
+                ["audio"] = _svc.AudioAvailable(),
+                ["relMouse"] = true, // game mode: mouse-move-rel is supported (PROTOCOL 5)
+            };
+            if (H264Possible) hello["video"] = "h264"; // PROTOCOL 5.1
+            SendControl(hello);
             _capturer ??= _svc.CreateCapturer();
             var transport = _transport; // a streamer lives on one transport (a relay switch makes a new one)
             _streamer = new VideoStreamer(_capturer, _svc.Monitors, _monitorIndex,
@@ -257,12 +290,19 @@ public sealed class RemoteSession : IRemotePeer
                 if (s.Index >= monitors.Count || _streamer == null) break;
                 _monitorIndex = s.Index;
                 _streamer.SelectMonitor(s.Index);
+                H264Streamer?.SelectMonitor(s.Index);
                 break;
             case QualityMsg q:
+                _quality = (q.Fps, q.Quality, q.Scale, q.Cursor);
                 _streamer?.SetQuality(q.Fps, q.Quality, q.Scale, q.Cursor);
+                H264Streamer?.SetQuality(q.Fps, q.Quality, q.Scale, q.Cursor);
                 break;
             case KeyframeMsg:
                 _streamer?.RequestKeyframe();
+                H264Streamer?.RequestKeyframe();
+                break;
+            case VideoTrackMsg v:
+                _ = SetVideoTrackAsync(v.Enabled);
                 break;
             case AudioMsg a:
                 SetAudio(a.Enabled);
@@ -274,6 +314,78 @@ public sealed class RemoteSession : IRemotePeer
                 _ = _files.Handle(msg);
                 break;
         }
+    }
+
+    /// <summary>
+    /// PROTOCOL 5.1: switches the picture to the H.264 track (negotiating it the first time) or back to JPEG.
+    /// Any failure leaves (or puts) the session on the JPEG channel, which never stopped existing.
+    /// </summary>
+    internal async Task SetVideoTrackAsync(bool enabled)
+    {
+        await _videoSwitch.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (!enabled) { StopH264("controller asked"); return; }
+            lock (_lock) if (_disposed != 0 || _streamer == null || _h264 != null || !H264Possible) return;
+
+            if (_videoTrack == null)
+            {
+                var renegotiate = Renegotiate;
+                if (renegotiate == null) { _videoTrackFailed = true; return; }
+                var track = new MediaStreamTrack(new VideoFormat(VideoCodecsEnum.H264, 96, 90000, H264Fmtp), MediaStreamStatusEnum.SendOnly);
+                _pc.addTrack(track);
+                var offer = _pc.createOffer(null);
+                await _pc.setLocalDescription(offer).ConfigureAwait(false);
+                var answer = await renegotiate(offer.sdp).ConfigureAwait(false);
+                if (answer == null) { VideoTrackFailed("no valid answer to the re-offer"); return; }
+                var res = _pc.setRemoteDescription(new RTCSessionDescriptionInit { type = RTCSdpType.answer, sdp = answer });
+                if (res != SetDescriptionResultEnum.OK) { VideoTrackFailed("answer rejected: " + res); return; }
+                _videoTrack = track;
+            }
+
+            lock (_lock)
+            {
+                if (_disposed != 0 || _relayed || _streamer == null || _capturer == null || _h264 != null) return;
+                var q = _quality;
+                _streamer.SetPaused(true); // waits for a JPEG frame in progress, so the capturer is free
+                var h = new H264Streamer(_capturer, _svc.Monitors, _monitorIndex, _svc.H264!,
+                    (duration, au) => { try { _pc.SendVideo(duration, au); } catch (Exception) { } }, SendControl)
+                {
+                    Log = m => _svc.Audit.Write("video-error", _info.ControllerName, _info.ControllerId, m),
+                };
+                h.SetQuality(q.Fps, q.Quality, q.Scale, q.Cursor);
+                h.Failed += reason => Task.Run(() =>
+                {
+                    _videoTrackFailed = true; // don't try again in this session
+                    StopH264("encoder failed: " + reason);
+                });
+                _h264 = h;
+                h.Start();
+            }
+            _svc.Audit.Write("video-h264", _info.ControllerName, _info.ControllerId, "GPU video track on");
+        }
+        catch (Exception ex) { VideoTrackFailed(ex.Message); }
+        finally { _videoSwitch.Release(); }
+    }
+
+    private void VideoTrackFailed(string why)
+    {
+        _videoTrackFailed = true;
+        _svc.Audit.Write("video-error", _info.ControllerName, _info.ControllerId, "H.264 track unavailable: " + why);
+        StopH264(why);
+    }
+
+    /// <summary>Back to the JPEG channel (keyframe first).</summary>
+    private void StopH264(string why)
+    {
+        H264Streamer? h;
+        lock (_lock) { h = _h264; _h264 = null; }
+        if (h != null)
+        {
+            try { h.Dispose(); } catch (Exception) { }
+            _svc.Audit.Write("video-h264", _info.ControllerName, _info.ControllerId, "GPU video track off: " + why);
+        }
+        lock (_lock) { if (_disposed == 0) _streamer?.SetPaused(false); }
     }
 
     private void SetAudio(bool enabled)
@@ -338,6 +450,9 @@ public sealed class RemoteSession : IRemotePeer
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _failGrace?.Dispose();
         _input.ReleaseAll();
+        H264Streamer? h;
+        lock (_lock) { h = _h264; _h264 = null; }
+        try { h?.Dispose(); } catch (Exception) { }
         try { _streamer?.Dispose(); } catch (Exception) { }
         try { _loopback?.Dispose(); } catch (Exception) { }
         _files.Dispose();

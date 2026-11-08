@@ -42,6 +42,8 @@ public sealed class VideoStreamer : IDisposable
     private volatile bool _drawCursor = true;
     private volatile int _monitorIndex;
     private volatile int _cursorMonitorDirty;
+    private volatile bool _paused;
+    private readonly object _produceLock = new();
     private (int Index, int W, int H) _reported = (-1, 0, 0);
     private DateTime _lastFrameSent = DateTime.MinValue;
 
@@ -94,6 +96,19 @@ public sealed class VideoStreamer : IDisposable
 
     public void RequestKeyframe() { _keyframes.Request(); _wake.Set(); }
 
+    /// <summary>
+    /// While the H.264 track carries the picture (PROTOCOL 5.1) the JPEG path stops capturing (the cursor thread keeps
+    /// running). Pausing waits for a frame in progress, so the capturer is free afterwards; resuming sends a keyframe.
+    /// </summary>
+    public void SetPaused(bool paused)
+    {
+        _paused = paused;
+        if (paused) { lock (_produceLock) { } }
+        else _keyframes.Request();
+        _wake.Set();
+    }
+    public bool Paused => _paused;
+
     public bool SelectMonitor(int index)
     {
         if (index < 0 || index >= _monitors().Count) return false;
@@ -120,13 +135,13 @@ public sealed class VideoStreamer : IDisposable
             {
                 if (!timer.Wait(next - sw.Elapsed, ct)) break;
                 // Flow control: wait (without capturing) until the sender is idle and the window is open.
-                while (!CanProduce())
+                while (_paused || !CanProduce())
                 {
-                    if (WaitHandle.WaitAny(new[] { _wake, ct.WaitHandle }, 5) == 1) return;
+                    if (WaitHandle.WaitAny(new[] { _wake, ct.WaitHandle }, _paused ? 100 : 5) == 1) return;
                 }
                 var start = sw.Elapsed;
                 next = start + TimeSpan.FromSeconds(1.0 / _fps);
-                ProduceFrame();
+                lock (_produceLock) { if (!_paused) ProduceFrame(); }
             }
             catch (Exception ex)
             {

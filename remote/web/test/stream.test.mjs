@@ -120,7 +120,7 @@ test('auto quality: steps up after sustained headroom, not on idle-but-fine, not
 });
 
 test('stream settings are sanitized', () => {
-  assert.deepEqual(P.sanitizeStream(null), { scale: 0.75, quality: 65, fps: 30, auto: false, sharp: false, stats: false, preset: 'balanced' });
+  assert.deepEqual(P.sanitizeStream(null), { scale: 0.75, quality: 65, fps: 30, auto: false, sharp: false, stats: false, gpu: true, preset: 'balanced' });
   const s = P.sanitizeStream({ scale: 0.33, quality: 500, fps: 7, auto: true, sharp: true });
   assert.equal(s.scale, 0.33); assert.equal(s.quality, 95); assert.equal(s.fps, 30); assert.equal(s.auto, true); assert.equal(s.sharp, true);
   assert.equal(P.sanitizeStream({ scale: 'x' }).scale, 0.75);

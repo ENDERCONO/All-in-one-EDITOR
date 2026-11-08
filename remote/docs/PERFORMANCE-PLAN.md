@@ -80,6 +80,19 @@ Done, tested:
   the kill switch — covered by the existing security tests), injected with `SendInput` `MOUSEEVENTF_MOVE` (no
   ABSOLUTE); `hello` sends `relMouse:true`. Tests in `ControlAndInputTests.cs`.
 
-Still to do (needs a Windows + GPU session): the agent's H.264 encoder (Media Foundation hardware MFT, OpenH264
-fallback) and sending the track via the 5.1 renegotiation. Until then the browser side stays idle and the stream
-keeps using the JPEG path.
+- Agent GPU video (5.1): `Capture/MfH264Encoder.cs` (Media Foundation: hardware MFT first, async event pump,
+  then the software MFT; ICodecAPI low latency / CBR / bitrate / forced IDR; self-test before use, probed once in
+  the background at startup), `Capture/H264Streamer.cs` (paced capture → box scale → BGRA→NV12 → encode →
+  `RTCPeerConnection.SendVideo`, bitrate from quality × size × fps, idle refresh, IDR on request / RTCP PLI·FIR /
+  every 5 s, falls back after 3 failures). `RemoteSession` announces `video:"h264"` only when an encoder works,
+  renegotiates on `{t:"video-track",enabled:true}` (signed re-offer, 15 s answer timeout), pauses the JPEG streamer
+  while the track plays and resumes it with a keyframe on disable / failure / relay switch.
+  Tests: `SessionTests.cs` (re-offer signature + seq, bad / swapped answer ends the session, stale seq ignored,
+  timeout, relay, ended session), `H264Tests.cs` (NV12 colours, Annex-B parsing, sizes / bitrate, streamer with a
+  fake encoder, fallback, JPEG pause, a real SIPSorcery WebRTC loopback where the H.264 RTP reaches the "browser"
+  and switching back to JPEG works, plus the real Media Foundation encoder on Windows CI).
+- Web: asks for the track when `hello.video` is `h264` and the new Stream setting **GPU video (H.264)** is on
+  (default); turning it off goes back to JPEG.
+
+Not verified here: a real GPU encoder (the CI runner has no GPU, so it exercises the software MFT); real-network
+latency and bitrate tuning. If the GPU encoder misbehaves on a PC, turn off **GPU video** in Stream settings.
