@@ -84,10 +84,21 @@ public sealed class MfH264EncoderFactory : IH264EncoderFactory
         try
         {
             uint flags = (uint)((hardware ? EnumFlag.EnumFlagHardware : EnumFlag.EnumFlagSyncmft) | EnumFlag.EnumFlagSortandfilter);
-            using var col = MediaFactory.MFTEnumEx(TransformCategoryGuids.VideoEncoder, flags,
+            // the raw overload: each IMFActivate* in the CoTaskMem array carries a reference we own (the collection
+            // wrapper releases its items when disposed, which left null pointers behind)
+            MediaFactory.MFTEnumEx(TransformCategoryGuids.VideoEncoder, flags,
                 new RegisterTypeInfo { GuidMajorType = MediaTypeGuids.Video, GuidSubtype = VideoFormatGuids.NV12 },
-                new RegisterTypeInfo { GuidMajorType = MediaTypeGuids.Video, GuidSubtype = VideoFormatGuids.H264 });
-            foreach (var a in col) list.Add(a);
+                new RegisterTypeInfo { GuidMajorType = MediaTypeGuids.Video, GuidSubtype = VideoFormatGuids.H264 },
+                out IntPtr array, out uint count);
+            try
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    var ptr = Marshal.ReadIntPtr(array, i * IntPtr.Size);
+                    if (ptr != IntPtr.Zero) list.Add(new IMFActivate(ptr));
+                }
+            }
+            finally { if (array != IntPtr.Zero) Marshal.FreeCoTaskMem(array); }
         }
         catch (Exception) { /* none of this kind */ }
         return list;
