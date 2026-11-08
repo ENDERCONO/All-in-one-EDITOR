@@ -676,3 +676,43 @@ test('relay: unauthenticated binary is rejected', async () => {
     assert.equal((await c.next('error')).code, 'bad-message');
   } finally { await srv.stop(); }
 });
+
+test('renegotiation (GPU video track): agent offers, controller answers, only after accept', async () => {
+  const srv = await startServer();
+  try {
+    const { dev, ctl, sessionId } = await openSession(srv);
+    const sig = (k, t) => sign(k, t);
+    // before session-accept: refused
+    dev.send({ type: 'signal', sessionId, renegotiate: true, seq: 1, sdp: { type: 'offer', sdp: 'v=r' }, signature: sig(dev.keys, `grc-reoffer:${sessionId}:1:v=r`) });
+    assert.equal((await dev.next('error')).code, 'bad-message');
+    const nonce = crypto.randomBytes(32).toString('base64');
+    dev.send({ type: 'session-challenge', sessionId, nonce });
+    await ctl.next('session-challenge');
+    ctl.send({ type: 'session-auth', sessionId, signature: sig(ctl.keys, `grc-session:${sessionId}:${nonce}:${dev.id}`) });
+    await dev.next('session-auth');
+    dev.send({ type: 'session-accept', sessionId, mode: 'control' });
+    await ctl.next('session-accept');
+    // agent re-offer relayed (no ecdh needed)
+    const signature = sig(dev.keys, `grc-reoffer:${sessionId}:1:v=r`);
+    dev.send({ type: 'signal', sessionId, renegotiate: true, seq: 1, sdp: { type: 'offer', sdp: 'v=r' }, signature });
+    assert.deepEqual(await ctl.next('signal'), { type: 'signal', sessionId, renegotiate: true, seq: 1, sdp: { type: 'offer', sdp: 'v=r' }, signature });
+    // controller answers
+    const asig = sig(ctl.keys, `grc-reanswer:${sessionId}:1:v=a`);
+    ctl.send({ type: 'signal', sessionId, renegotiate: true, seq: 1, sdp: { type: 'answer', sdp: 'v=a' }, signature: asig });
+    assert.equal((await dev.next('signal')).sdp.type, 'answer');
+    // wrong directions / bad seq are refused
+    ctl.send({ type: 'signal', sessionId, renegotiate: true, seq: 2, sdp: { type: 'offer', sdp: 'x' }, signature: asig });
+    assert.equal((await ctl.next('error')).code, 'bad-message');
+    dev.send({ type: 'signal', sessionId, renegotiate: true, seq: 2, sdp: { type: 'answer', sdp: 'x' }, signature });
+    assert.equal((await dev.next('error')).code, 'bad-message');
+    dev.send({ type: 'signal', sessionId, renegotiate: true, seq: 0, sdp: { type: 'offer', sdp: 'x' }, signature });
+    assert.equal((await dev.next('error')).code, 'bad-message');
+    dev.send({ type: 'signal', sessionId, renegotiate: true, sdp: { type: 'offer', sdp: 'x' }, signature });
+    assert.equal((await dev.next('error')).code, 'bad-message');
+    // not over the relay fallback
+    ctl.send({ type: 'relay-start', sessionId });
+    await dev.next('relay-start');
+    dev.send({ type: 'signal', sessionId, renegotiate: true, seq: 3, sdp: { type: 'offer', sdp: 'x' }, signature });
+    assert.equal((await dev.next('error')).code, 'bad-message');
+  } finally { await srv.stop(); }
+});

@@ -219,6 +219,7 @@ public sealed class RemoteSession : IRemotePeer
                 monitors = monitors.Select(m => m.ToJson()).ToArray(),
                 monitor = _monitorIndex,
                 audio = _svc.AudioAvailable(),
+                relMouse = true, // game mode: mouse-move-rel is supported (PROTOCOL 5)
             });
             _capturer ??= _svc.CreateCapturer();
             var transport = _transport; // a streamer lives on one transport (a relay switch makes a new one)
@@ -248,7 +249,7 @@ public sealed class RemoteSession : IRemotePeer
     {
         switch (msg)
         {
-            case MouseMoveMsg or MouseButtonMsg or WheelMsg or KeyMsg or TextMsg:
+            case MouseMoveMsg or MouseMoveRelMsg or MouseButtonMsg or WheelMsg or KeyMsg or TextMsg:
                 _input.Handle(msg); // gate + view-mode check inside
                 break;
             case SelectMonitorMsg s:

@@ -176,6 +176,7 @@ input[type=range]:focus { box-shadow: none; }
 .badge { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: 3px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; background: var(--warn-bg); color: var(--warn); border: 1px solid #6b5517; }
 .badge::before { content: ""; width: 5px; height: 5px; border-radius: 1px; background: currentColor; }
 .badge.relay { background: var(--accent-bg); color: #8cc4ff; border-color: #1b4f8a; cursor: help; }
+.badge.gpu { background: #10301f; color: #7ee2a8; border-color: #1f6b43; cursor: help; }
 
 /* stream settings popover (editor details panel) */
 .pop { position: fixed; top: calc(var(--tb-h) + 4px); left: 6px; z-index: 30; width: min(300px, calc(100vw - 12px)); max-height: calc(100% - var(--tb-h) - 12px); overflow-y: auto; background: var(--bg2); border: 1px solid var(--line2); border-radius: var(--r); box-shadow: 0 0 0 1px var(--edge), 0 12px 32px #000c; display: flex; flex-direction: column; padding-bottom: 6px; }

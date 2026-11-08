@@ -42,6 +42,11 @@ public sealed class InputController
                 case MouseMoveMsg m:
                     MoveTo(m.X, m.Y);
                     return true;
+                case MouseMoveRelMsg r:
+                    if (r.Dx == 0 && r.Dy == 0) return false;
+                    _sink.MoveRelative(Math.Clamp(r.Dx, -ControlMessageParser.RelMoveLimit, ControlMessageParser.RelMoveLimit),
+                        Math.Clamp(r.Dy, -ControlMessageParser.RelMoveLimit, ControlMessageParser.RelMoveLimit));
+                    return true;
                 case MouseButtonMsg b:
                     if (b.X != null && b.Y != null) MoveTo(b.X.Value, b.Y.Value);
                     if (b.Down == _heldButtons.Contains(b.Button) && b.Down) return false; // already down

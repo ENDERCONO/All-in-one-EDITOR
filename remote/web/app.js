@@ -167,8 +167,10 @@ function connect(dev) {
     });
     sel.value = h.monitor; sel.hidden = (h.monitors || []).length < 2;
     $('audioBtn').hidden = h.audio === false;
+    $('gameBtn').hidden = !(h.relMouse === true && h.mode !== 'view');
     sendQuality();
   });
+  s.on('track', (on) => { $('gpuBadge').hidden = !on; if (on) toast('GPU video stream on'); });
   s.on('monitor', (m) => { $('monitorSel').value = m.index; });
   s.on('open', () => { sendQuality(); canvas.focus(); });
   s.on('frame-size', () => { $('overlay').hidden = true; applyView(); });
@@ -189,7 +191,7 @@ function connect(dev) {
   });
   s.on('ended', (reason) => {
     if (cur !== s) return;
-    cur = null; releaseAllKeys(); view.reset(); applyView(); $('streamPop').hidden = true; $('streamBtn').setAttribute('aria-expanded', 'false');
+    cur = null; releaseAllKeys(); setGame(false); $('gpuBadge').hidden = true; $('gameBtn').hidden = true; view.reset(); applyView(); $('streamPop').hidden = true; $('streamBtn').setAttribute('aria-expanded', 'false');
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     $('session').hidden = true; $('home').hidden = false; $('modal').hidden = true;
     toast(reason, reason === 'Disconnected.' ? '' : 'err', 9000);
@@ -249,7 +251,7 @@ function onRelay() {
 }
 function onStats(s) {
   if (stream.stats) {
-    $('statsBox').textContent = `${s.fps.toFixed(0)} fps  ${s.kbps >= 1000 ? (s.kbps / 1000).toFixed(1) + ' Mbps' : s.kbps.toFixed(0) + ' kbps'}\nRTT ${s.rtt == null ? '—' : s.rtt.toFixed(0) + ' ms'}\n${s.w}×${s.h}  ${s.rects.toFixed(1)} rects/frame`;
+    $('statsBox').textContent = `${s.fps.toFixed(0)} fps  ${s.kbps >= 1000 ? (s.kbps / 1000).toFixed(1) + ' Mbps' : s.kbps.toFixed(0) + ' kbps'}\nRTT ${s.rtt == null ? '—' : s.rtt.toFixed(0) + ' ms'}\n${s.w}×${s.h}  ${s.gpu ? 'GPU H.264' : s.rects.toFixed(1) + ' rects/frame'}`;
   }
   if (stream.auto) {
     const r = aq.update({ fps: s.fps, targetFps: stream.fps, kbps: s.kbps, rtt: s.rtt }, performance.now());
@@ -366,10 +368,29 @@ const co = new P.InputCoalescer((m) => { if (cur) cur.sendInput(m); });
 let flushRaf = 0;
 function sched() { if (!flushRaf) flushRaf = requestAnimationFrame(() => { flushRaf = 0; co.flush(); }); }
 function queueMove(pt) { co.move(pt.x, pt.y); sched(); }
+// ---- game mode: Pointer Lock + relative motion (PROTOCOL mouse-move-rel) ----
+const rel = new P.RelMouse((m) => { if (cur) cur.sendInput(m); });
+let gameOn = false, relRaf = 0;
+function schedRel() { if (!relRaf) relRaf = requestAnimationFrame(() => { relRaf = 0; rel.flush(); }); }
+function setGame(on) {
+  if (!on) { rel.reset(); if (document.pointerLockElement === canvas) document.exitPointerLock(); return; }
+  const lock = (opts) => { try { return canvas.requestPointerLock(opts); } catch (e) { return Promise.reject(e); } };
+  // unadjustedMovement = raw, un-accelerated deltas (what games expect); not every browser supports it
+  Promise.resolve(lock({ unadjustedMovement: true })).catch(() => lock()).catch(() => toast('This browser could not lock the mouse.', 'err'));
+}
+$('gameBtn').onclick = () => setGame(!gameOn);
+document.addEventListener('pointerlockchange', () => {
+  gameOn = document.pointerLockElement === canvas;
+  $('gameBtn').setAttribute('aria-pressed', String(gameOn));
+  if (!gameOn) rel.reset();
+  else { canvas.focus(); toast('Game mode: mouse locked to the stream. Press Esc to release.'); }
+});
+
 const BTN = ['left', 'middle', 'right'];
 function sendButton(button, down, pt) {
   if (!cur) return;
   const m = { t: 'mouse-button', button, down };
+  if (gameOn) { rel.flush(); pt = null; }
   if (pt) { m.x = pt.x; m.y = pt.y; }
   co.push(m);
 }
@@ -444,6 +465,7 @@ canvas.addEventListener('pointermove', (e) => {
   notePointer(e.pointerType);
   if (e.pointerType === 'touch' && padMode) return padMove(e);
   if (e.pointerType === 'touch') return touch.move(e.pointerId, e.clientX, e.clientY);
+  if (gameOn) { rel.add(e.movementX, e.movementY); return schedRel(); }
   queueMove(mapEvent(e));
 });
 const pointerUp = (e) => {

@@ -63,3 +63,23 @@ session (`dotnet test remote/agent`, then `remote/agent/publish.ps1`), not pushe
 blind. The browser halves (ontrack `<video>`, Pointer-Lock game mode, protocol.js)
 can be built and unit-tested in a cloud session and are forward-compatible (the
 agent ignores unknown control messages and simply never offers a video track yet).
+
+## Status (2026-11-08)
+Done, tested:
+- PROTOCOL: 5.1 GPU video track via agent-initiated, signed renegotiation (`grc-reoffer` / `grc-reanswer`,
+  increasing `seq`); `mouse-move-rel`; `hello.video` / `hello.relMouse` capabilities.
+- Server: relays renegotiation only after `session-accept`, never during the relay fallback, only agent-offer /
+  controller-answer, `seq` 1..1e6. Test in `server/test/remote-server.test.js` (34/34 pass).
+- Web: verifies the re-offer (bad signature ends the session; replayed / older `seq` ignored), answers, paints the
+  hardware-decoded track onto the existing canvas (zoom / touch / input mapping unchanged), JPEG painting pauses
+  while the track plays and resumes with a keyframe if it stops; GPU badge + stats. Game mode button (only when the
+  PC sends `relMouse`): Pointer Lock with raw (`unadjustedMovement`) deltas → `mouse-move-rel`, coalesced per frame,
+  buttons sent without absolute coordinates. Unit tests in `web/test/protocol.test.mjs`; browser end-to-end test
+  `web/test/gpu-track.e2e.mjs` (real Chromium, fake agent that signs like the real one).
+- Agent: `mouse-move-rel` parsed (clamped ±2000), gated like all input (refused with no session / view mode / after
+  the kill switch — covered by the existing security tests), injected with `SendInput` `MOUSEEVENTF_MOVE` (no
+  ABSOLUTE); `hello` sends `relMouse:true`. Tests in `ControlAndInputTests.cs`.
+
+Still to do (needs a Windows + GPU session): the agent's H.264 encoder (Media Foundation hardware MFT, OpenH264
+fallback) and sending the track via the 5.1 renegotiation. Until then the browser side stays idle and the stream
+keeps using the JPEG path.

@@ -29,6 +29,7 @@ export class Session extends Emitter {
     this.bytesIn = 0; this.rectsIn = 0; this.statsPrev = { t: 0, frames: 0, bytes: 0, rects: 0 }; this.rtt = null;
     this.pendingCandidates = []; this.remoteSet = false; this.offerSent = false; this.localCandidates = [];
     this.up = null; this.down = null; this.audio = null; this.hello = null;
+    this.reSeq = 0; this._reChain = Promise.resolve(); this.track = null; this.trackActive = false; this._vid = null; this._rtpBytes = null;
     this._offs = [];
   }
 
@@ -82,6 +83,7 @@ export class Session extends Emitter {
     audio.onmessage = (ev) => this._onAudio(ev.data);
     file.onmessage = (ev) => this._onFileData(ev.data);
     file.bufferedAmountLowThreshold = 256 * 1024;
+    pc.ontrack = (ev) => this._onTrack(ev); // GPU video track, added later by the agent (PROTOCOL 5.1)
     pc.onicecandidate = (ev) => {
       if (!ev.candidate) return;
       const c = { candidate: ev.candidate.candidate, sdpMid: ev.candidate.sdpMid, sdpMLineIndex: ev.candidate.sdpMLineIndex };
@@ -116,6 +118,7 @@ export class Session extends Emitter {
     if (this.ended || m.sessionId !== this.sessionId) return;
     if (m.type === 'session-end') return this.end(reasonText(m.reason), true);
     if (m.type !== 'signal' || !this.pc) return;
+    if (m.renegotiate === true) { this._reChain = this._reChain.then(() => this._onReoffer(m)).catch(() => {}); return; }
     if (m.sdp && m.sdp.type === 'answer') {
       if (this.remoteSet || this._answering) return; // only the first (verified) answer counts
       this._answering = true;
@@ -135,6 +138,60 @@ export class Session extends Emitter {
       const c = { candidate: m.candidate.candidate, sdpMid: m.candidate.sdpMid, sdpMLineIndex: m.candidate.sdpMLineIndex };
       if (this.remoteSet) this.pc.addIceCandidate(c).catch(() => {}); else this.pendingCandidates.push(c);
     }
+  }
+
+  /** The agent adds its hardware H.264 track by renegotiating (PROTOCOL 5.1). Verified like the first answer. */
+  async _onReoffer(m) {
+    if (this.ended || this.relay || !this.pc || !this.remoteSet) return;
+    if (!m.sdp || m.sdp.type !== 'offer' || typeof m.sdp.sdp !== 'string' || !Number.isInteger(m.seq) || m.seq <= this.reSeq) return;
+    const ok = typeof m.signature === 'string' && await P.verifyText(await this._devKey(), P.reofferText(this.sessionId, m.seq, m.sdp.sdp), m.signature);
+    if (!ok) return this.end('The PC\'s video renegotiation failed the signature check (possible tampering). Connection aborted.', false);
+    this.reSeq = m.seq;
+    try {
+      await this.pc.setRemoteDescription({ type: 'offer', sdp: m.sdp.sdp });
+      await this.pc.setLocalDescription(await this.pc.createAnswer());
+      const sdp = this.pc.localDescription.sdp;
+      const signature = await this.identity.sign(P.reanswerText(this.sessionId, m.seq, sdp));
+      if (this.ended) return;
+      this.sig.send({ type: 'signal', sessionId: this.sessionId, renegotiate: true, seq: m.seq, sdp: { type: 'answer', sdp }, signature });
+    } catch {
+      try { await this.pc.setLocalDescription({ type: 'rollback' }); } catch { /* not in have-remote-offer */ }
+      this.emit('notice', 'GPU video could not start; staying on the standard stream.');
+    }
+  }
+
+  /** Hardware-decoded H.264 track → painted onto the same canvas, so zoom / touch / input mapping stay unchanged. */
+  _onTrack(ev) {
+    if (ev.track.kind !== 'video') return;
+    const v = this._vid || (this._vid = Object.assign(document.createElement('video'), { muted: true, playsInline: true, autoplay: true }));
+    v.srcObject = ev.streams && ev.streams[0] ? ev.streams[0] : new MediaStream([ev.track]);
+    this.track = ev.track;
+    v.play().catch(() => {});
+    const stop = () => {
+      if (this.track !== ev.track) return;
+      this.track = null;
+      if (this.trackActive) { this.trackActive = false; this.emit('track', false); }
+      this.requestKeyframe(); // the JPEG stream repaints the whole picture
+    };
+    ev.track.onended = stop;
+    ev.track.onmute = () => { clearTimeout(this._muteT); this._muteT = setTimeout(() => { if (ev.track.muted) stop(); }, 1500); };
+    ev.track.onunmute = () => clearTimeout(this._muteT);
+    const next = () => (v.requestVideoFrameCallback ? v.requestVideoFrameCallback(draw) : requestAnimationFrame(draw));
+    const draw = () => {
+      if (this.ended || this.track !== ev.track) return;
+      if (v.videoWidth && this.canvas) {
+        if (!this.trackActive) { this.trackActive = true; this.emit('track', true); }
+        if (this.canvas.width !== v.videoWidth || this.canvas.height !== v.videoHeight) {
+          this.canvas.width = v.videoWidth; this.canvas.height = v.videoHeight;
+          this.imgW = v.videoWidth; this.imgH = v.videoHeight;
+          this.emit('frame-size', { w: v.videoWidth, h: v.videoHeight });
+        }
+        this.ctx2d.drawImage(v, 0, 0);
+        this.frames++;
+      }
+      next();
+    };
+    next();
   }
 
   async _devKey() {
@@ -261,7 +318,7 @@ export class Session extends Emitter {
   _paint() {
     this._raf = 0;
     const list = this.ready; this.ready = [];
-    if (!this.canvas) return list.forEach((x) => x.bitmaps.forEach((b) => b.close()));
+    if (!this.canvas || this.trackActive) return list.forEach((x) => x.bitmaps.forEach((b) => b.close()));
     let start = 0; // a keyframe makes everything before it irrelevant
     list.forEach((x, i) => { if (x.frame.keyframe) start = i; });
     for (let i = 0; i < list.length; i++) {
@@ -284,7 +341,7 @@ export class Session extends Emitter {
       const s = {
         fps: (this.frames - p.frames) / dt, kbps: ((this.bytesIn - p.bytes) * 8) / 1000 / dt,
         rects: this.frames > p.frames ? (this.rectsIn - p.rects) / (this.frames - p.frames) : 0,
-        rtt: this.rtt, w: this.imgW, h: this.imgH,
+        rtt: this.rtt, w: this.imgW, h: this.imgH, gpu: this.trackActive,
       };
       this.emit('stats', s);
     }
@@ -292,7 +349,13 @@ export class Session extends Emitter {
     if (!this.pc || this.relay) return;
     try {
       const rep = await this.pc.getStats();
-      rep.forEach((r) => { if (r.type === 'candidate-pair' && (r.nominated || r.selected) && typeof r.currentRoundTripTime === 'number') this.rtt = r.currentRoundTripTime * 1000; });
+      rep.forEach((r) => {
+        if (r.type === 'candidate-pair' && (r.nominated || r.selected) && typeof r.currentRoundTripTime === 'number') this.rtt = r.currentRoundTripTime * 1000;
+        if (r.type === 'inbound-rtp' && r.kind === 'video' && typeof r.bytesReceived === 'number') {
+          if (this._rtpBytes != null) this.bytesIn += Math.max(0, r.bytesReceived - this._rtpBytes);
+          this._rtpBytes = r.bytesReceived;
+        }
+      });
     } catch { /* ignore */ }
   }
 
@@ -403,6 +466,8 @@ export class Session extends Emitter {
     if (this.up) this.up.cancelled = true;
     try { this.pc && this.pc.close(); } catch { /* ignore */ }
     if (this.audio) this.audio.ctx.close().catch(() => {});
+    clearTimeout(this._muteT); this.track = null; this.trackActive = false;
+    if (this._vid) { this._vid.srcObject = null; this._vid = null; }
     clearInterval(this._statsTimer);
     if (this._raf) cancelAnimationFrame(this._raf);
     this._raf = 0; this.queue = []; this.ready = [];

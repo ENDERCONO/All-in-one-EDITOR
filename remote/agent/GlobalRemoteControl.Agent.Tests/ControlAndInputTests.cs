@@ -10,6 +10,13 @@ public class ControlMessageParserTests
     private static ControlMessage? P(string json) => ControlMessageParser.Parse(json, out _);
 
     [Fact] public void MouseMove_Valid() => Assert.Equal(new MouseMoveMsg(0.25, 1), P("{\"t\":\"mouse-move\",\"x\":0.25,\"y\":1}"));
+    [Fact] public void MouseMoveRel_Valid() => Assert.Equal(new MouseMoveRelMsg(5, -3), P("{\"t\":\"mouse-move-rel\",\"dx\":5,\"dy\":-3}"));
+    [Fact] public void MouseMoveRel_Clamped() => Assert.Equal(new MouseMoveRelMsg(2000, -2000), P("{\"t\":\"mouse-move-rel\",\"dx\":99999,\"dy\":-99999}"));
+    [Theory]
+    [InlineData("{\"t\":\"mouse-move-rel\",\"dx\":1}")]
+    [InlineData("{\"t\":\"mouse-move-rel\",\"dx\":1.5,\"dy\":0}")]
+    [InlineData("{\"t\":\"mouse-move-rel\",\"dx\":\"1\",\"dy\":0}")]
+    public void MouseMoveRel_Invalid(string json) => Assert.Null(P(json));
 
     [Theory]
     [InlineData("{\"t\":\"mouse-move\",\"x\":1.0001,\"y\":0}")]
@@ -256,6 +263,7 @@ public class InputControllerTests
     {
         public List<string> Calls = new();
         public void MoveAbsolute(int nx, int ny) => Calls.Add($"move {nx},{ny}");
+        public void MoveRelative(int dx, int dy) => Calls.Add($"rel {dx},{dy}");
         public void Button(MouseButton b, bool down) => Calls.Add($"btn {b} {(down ? "down" : "up")}");
         public void Wheel(int dx, int dy) => Calls.Add($"wheel {dx},{dy}");
         public void Key(KeyInfo k, bool down) => Calls.Add($"key {k.Vk:X2} {(down ? "down" : "up")}");
@@ -276,6 +284,7 @@ public class InputControllerTests
     {
         new MouseMoveMsg(0.5, 0.5), new MouseButtonMsg(MouseButton.Left, true, 0.1, 0.1), new MouseButtonMsg(MouseButton.Left, false, null, null),
         new WheelMsg(0, 120), new KeyMsg("KeyA", true), new KeyMsg("KeyA", false), new TextMsg("hi"),
+        new MouseMoveRelMsg(10, -4),
     };
 
     [Fact]
@@ -305,6 +314,16 @@ public class InputControllerTests
         s.Calls.Clear();
         foreach (var m in AllInput) Assert.False(c.Handle(m));
         Assert.Empty(s.Calls);
+    }
+
+    [Fact]
+    public void ControlMode_RelativeMove_InjectedRaw()
+    {
+        var (c, s, _) = Make();
+        Assert.True(c.Handle(new MouseMoveRelMsg(10, -4)));
+        Assert.False(c.Handle(new MouseMoveRelMsg(0, 0)));      // nothing to do
+        Assert.True(c.Handle(new MouseMoveRelMsg(5000, -5000))); // defensive clamp even if a caller skipped the parser
+        Assert.Equal(new[] { "rel 10,-4", "rel 2000,-2000" }, s.Calls);
     }
 
     [Fact]

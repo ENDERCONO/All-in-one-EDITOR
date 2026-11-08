@@ -136,9 +136,34 @@ from WASAPI loopback. Sent only while audio is enabled.
 
 **File chunks**: raw bytes ≤ 16 000 per message, for the single active transfer in that direction.
 
+### 5.1 GPU video track (H.264) — agent-initiated renegotiation (optional)
+The controller's first offer (above) never changes: data channels only. An agent that can hardware-encode H.264
+announces it in `hello` (`video:"h264"`) and then **renegotiates** to add a media track:
+```
+agent → controller  { type:"signal", sessionId, renegotiate:true, seq:<int 1..1e6>, sdp:{type:"offer", sdp}, signature }
+controller → agent  { type:"signal", sessionId, renegotiate:true, seq:<same>, sdp:{type:"answer", sdp}, signature }
+```
+* Agent signs `grc-reoffer:<sessionId>:<seq>:<sdp>` with its device key; controller signs
+  `grc-reanswer:<sessionId>:<seq>:<sdp>` with its controller key. Each side verifies before applying.
+  `seq` strictly increases per session (an older or repeated seq is ignored: no replay / downgrade).
+* The server relays these only after `session-accept`, never during the relay fallback (section 7), and only in
+  this direction (agent offers, controller answers). No `ecdh` field (the relay keys come from the first exchange).
+* The offer adds one `sendonly` video m-line (H.264, packetization-mode=1, no B-frames). The controller answers
+  `recvonly` and shows the track in a hardware-decoded `<video>`; the JPEG `video` channel goes quiet while the track
+  plays and is used again if the track ends or fails (the agent switches back on its own; the controller can also
+  send `{t:"keyframe"}` to ask for a JPEG keyframe).
+* Low-latency encoder settings (agent): GPU encoder (NVENC / AMF / QuickSync via Media Foundation) with software
+  OpenH264 fallback, CBR or capped VBR, long GOP with intra-refresh, IDR on `{t:"keyframe"}` and on monitor or
+  resolution change, max frame rate = the `quality` message's `fps` (≤ 60).
+* An agent without H.264 never sends `video` in `hello` and never renegotiates: everything stays on the JPEG path.
+
 ### control messages, controller → agent (all validated; out-of-range → ignored + logged)
 ```
 { t:"mouse-move", x, y }                       // 0..1 floats, relative to the current monitor
+{ t:"mouse-move-rel", dx, dy }                  // game mode (Pointer Lock): ints, clamped to ±2000 per message;
+                                               // the agent injects RELATIVE motion (SendInput MOUSEEVENTF_MOVE, no ABSOLUTE)
+                                               // so games that read raw mouse input can turn the camera.
+                                               // An agent that doesn't know it ignores it (unknown t → ignored).
 { t:"mouse-button", button:"left"|"right"|"middle", down:bool, x?, y? }
 { t:"wheel", dx, dy }                          // ints, clamped to ±1200 (120 = one notch); Windows sign: dy > 0 = scroll up, dx > 0 = right
 { t:"key", code:"<KeyboardEvent.code>", down:bool }   // agent maps code → virtual key / scancode; unknown code ignored
@@ -159,7 +184,8 @@ The agent never injects its own kill-switch hotkey (Ctrl+Alt+Shift+F12) from rem
 
 ### control messages, agent → controller
 ```
-{ t:"hello", mode:"control"|"view", monitors:[ { index, name, x, y, width, height, primary } ], monitor:<index>, audio:<bool available> }
+{ t:"hello", mode:"control"|"view", monitors:[ { index, name, x, y, width, height, primary } ], monitor:<index>, audio:<bool available>,
+  video?:"h264", relMouse?:true }                // optional capabilities: GPU video track (5.1) / mouse-move-rel
 { t:"monitor", index, width, height }          // after select-monitor / resolution change (native monitor pixels)
 { t:"cursor", x, y, visible }                   // 0..1 on the current monitor, ≤ 60/s while it moves (for touch/view cursor)
 { t:"file-accept", id } | { t:"file-reject", id, reason }   // answers to a controller offer

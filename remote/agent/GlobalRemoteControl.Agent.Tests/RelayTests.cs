@@ -768,6 +768,7 @@ public class RemoteSessionRelayTests
     {
         public int Moves;
         public void MoveAbsolute(int nx, int ny) => Interlocked.Increment(ref Moves);
+        public void MoveRelative(int dx, int dy) => Interlocked.Increment(ref Moves);
         public void Button(MouseButton button, bool down) { }
         public void Wheel(int dx, int dy) { }
         public void Key(KeyInfo key, bool down) { }

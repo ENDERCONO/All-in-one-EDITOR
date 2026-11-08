@@ -19,6 +19,10 @@ session approved by you at the PC.
 In a session: monitor picker, quality, audio on/off, send files (the PC asks where to save each one), on-screen
 keyboard, fullscreen (where the browser allows it; not iPhone Safari).
 
+**Game mode** (toolbar **Game**, needs the latest Windows app): locks the mouse to the stream and sends raw relative
+motion, so games that read the mouse directly (first-person cameras etc.) can be aimed. **Esc** releases the mouse.
+Some games with anti-cheat block injected input.
+
 On a phone or tablet: **pinch with two fingers to zoom** into the PC's screen and drag with two fingers to move
 around (the **1:1** button resets the zoom). **Touchpad** mode (default on touch screens) moves a cursor like a laptop
 touchpad: tap = click, hold then drag = drag, two-finger tap = right click, two-finger drag = scroll (or pan when

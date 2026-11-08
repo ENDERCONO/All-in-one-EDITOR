@@ -8,6 +8,8 @@ public enum MouseButton { Left, Right, Middle }
 
 public abstract record ControlMessage;
 public sealed record MouseMoveMsg(double X, double Y) : ControlMessage;
+/// <summary>Game mode (PROTOCOL 5): relative mouse motion in pixels, clamped to ±<see cref="ControlMessageParser.RelMoveLimit"/>.</summary>
+public sealed record MouseMoveRelMsg(int Dx, int Dy) : ControlMessage;
 public sealed record MouseButtonMsg(MouseButton Button, bool Down, double? X, double? Y) : ControlMessage;
 public sealed record WheelMsg(int Dx, int Dy) : ControlMessage;
 public sealed record KeyMsg(string Code, bool Down) : ControlMessage;
@@ -31,6 +33,7 @@ public sealed record FileRejectMsg(string Id, string Reason) : ControlMessage;
 public static partial class ControlMessageParser
 {
     public const int WheelLimit = 1200;
+    public const int RelMoveLimit = 2000;
     public const int MaxText = 256;
     public const long MaxFileSize = 2L * 1024 * 1024 * 1024;
 
@@ -55,6 +58,12 @@ public static partial class ControlMessageParser
             {
                 var x = Unit(m, "x"); var y = Unit(m, "y");
                 return x != null && y != null ? new MouseMoveMsg(x.Value, y.Value) : null;
+            }
+            case "mouse-move-rel":
+            {
+                var dx = Json.Int(m, "dx"); var dy = Json.Int(m, "dy");
+                if (dx == null || dy == null) return null;
+                return new MouseMoveRelMsg((int)Math.Clamp(dx.Value, -RelMoveLimit, RelMoveLimit), (int)Math.Clamp(dy.Value, -RelMoveLimit, RelMoveLimit));
             }
             case "mouse-button":
             {

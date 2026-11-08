@@ -291,11 +291,23 @@ function attach(app, httpServer, opts = {}) {
       case 'signal':
         if (m.sdp !== undefined) {
           const d = m.sdp;
-          if (!d || d.type !== (isCtl ? 'offer' : 'answer') || typeof d.sdp !== 'string' || d.sdp.length > 60000 || !isBase64(m.signature, 100)) return bad();
-          if (!isBase64(m.ecdh, 200)) return bad();
-          out.sdp = { type: d.type, sdp: d.sdp };
-          out.ecdh = m.ecdh;
-          out.signature = m.signature;
+          // First exchange: controller offers, agent answers. Renegotiation (PROTOCOL 5.1, GPU video track):
+          // agent offers, controller answers; only after session-accept and never over the relay fallback.
+          const re = m.renegotiate === true;
+          const want = re ? (isCtl ? 'answer' : 'offer') : (isCtl ? 'offer' : 'answer');
+          if (!d || d.type !== want || typeof d.sdp !== 'string' || d.sdp.length > 60000 || !isBase64(m.signature, 100)) return bad();
+          if (re) {
+            if (!s.accepted || s.relay || !Number.isInteger(m.seq) || m.seq < 1 || m.seq > 1e6) return bad();
+            out.renegotiate = true;
+            out.seq = m.seq;
+            out.sdp = { type: d.type, sdp: d.sdp };
+            out.signature = m.signature;
+          } else {
+            if (!isBase64(m.ecdh, 200)) return bad();
+            out.sdp = { type: d.type, sdp: d.sdp };
+            out.ecdh = m.ecdh;
+            out.signature = m.signature;
+          }
         } else {
           const c = m.candidate;
           if (!c || typeof c.candidate !== 'string' || c.candidate.length > 4096) return bad();

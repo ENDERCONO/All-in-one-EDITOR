@@ -12,6 +12,9 @@ public sealed class SendInputSink : IInputSink
     public void MoveAbsolute(int nx, int ny) =>
         SendMouse(nx, ny, 0, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK);
 
+    // No MOUSEEVENTF_ABSOLUTE: games reading raw input (WM_INPUT / DirectInput) see these as real mouse motion.
+    public void MoveRelative(int dx, int dy) => SendMouse(dx, dy, 0, MOUSEEVENTF_MOVE);
+
     public void Button(MouseButton button, bool down)
     {
         uint flag = button switch

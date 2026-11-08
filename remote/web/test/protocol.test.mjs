@@ -105,3 +105,25 @@ test('pcm, names, server base', () => {
   assert.equal(P.resolveServerBase({ protocol: 'https:', hostname: 'x.github.io', origin: 'https://x.github.io' }, 'http://a:1/'), 'http://a:1');
   assert.equal(P.wsUrl('https://h'), 'wss://h/remote/ws');
 });
+
+// ---------- game mode: relative mouse (PROTOCOL mouse-move-rel) ----------
+test('RelMouse: whole pixels sent, sub-pixel remainder kept', () => {
+  const out = []; const r = new P.RelMouse((m) => out.push(m));
+  r.add(0.4, -0.4); r.flush();
+  assert.deepEqual(out, []); // nothing whole yet
+  r.add(0.7, -0.7); r.flush(); // 1.1, -1.1 -> 1, -1 (0.1 / -0.1 kept)
+  assert.deepEqual(out, [{ t: 'mouse-move-rel', dx: 1, dy: -1 }]);
+  r.add(0.9, -0.9); r.flush(); // 1.0, -1.0
+  assert.deepEqual(out.at(-1), { t: 'mouse-move-rel', dx: 1, dy: -1 });
+});
+test('RelMouse: big jumps split at ±2000, NaN ignored, reset clears', () => {
+  const out = []; const r = new P.RelMouse((m) => out.push(m));
+  r.add(4500, -2500); r.add(NaN, Infinity); r.flush();
+  assert.deepEqual(out, [{ t: 'mouse-move-rel', dx: 2000, dy: -2000 }, { t: 'mouse-move-rel', dx: 2000, dy: -500 }, { t: 'mouse-move-rel', dx: 500, dy: 0 }]);
+  r.add(3.9, 0); r.reset(); r.flush();
+  assert.equal(out.length, 3);
+});
+test('renegotiation signing texts', () => {
+  assert.equal(P.reofferText('s1', 2, 'v=0'), 'grc-reoffer:s1:2:v=0');
+  assert.equal(P.reanswerText('s1', 2, 'v=1'), 'grc-reanswer:s1:2:v=1');
+});

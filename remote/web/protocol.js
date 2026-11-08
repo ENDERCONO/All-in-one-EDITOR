@@ -59,6 +59,9 @@ export const authText = (role, nonce) => `grc-auth:${role}:${nonce}`;
 export const sessionAuthText = (sessionId, nonce, deviceId) => `grc-session:${sessionId}:${nonce}:${deviceId}`;
 export const offerText = (sessionId, ecdh, sdp) => `grc-offer:${sessionId}:${ecdh}:${sdp}`;
 export const answerText = (sessionId, ecdh, sdp) => `grc-answer:${sessionId}:${ecdh}:${sdp}`;
+// GPU video track renegotiation (PROTOCOL 5.1): the agent signs the re-offer, the controller signs its answer
+export const reofferText = (sessionId, seq, sdp) => `grc-reoffer:${sessionId}:${seq}:${sdp}`;
+export const reanswerText = (sessionId, seq, sdp) => `grc-reanswer:${sessionId}:${seq}:${sdp}`;
 
 export function randomSessionId() {
   return b64url(crypto.getRandomValues(new Uint8Array(16))).slice(0, 22);
@@ -211,6 +214,23 @@ export class InputCoalescer {
       this.send({ t: 'wheel', dx, dy }); wx -= dx; wy -= dy;
     }
   }
+}
+
+/** Game mode (Pointer Lock): accumulates raw mouse deltas and sends whole-pixel `mouse-move-rel` messages
+ *  (clamped to ±2000 each), keeping the sub-pixel remainder so slow, precise aiming isn't lost to rounding. */
+export class RelMouse {
+  constructor(send) { this.send = send; this.x = 0; this.y = 0; }
+  get pending() { return Math.trunc(this.x) !== 0 || Math.trunc(this.y) !== 0; }
+  add(dx, dy) { if (Number.isFinite(dx)) this.x += dx; if (Number.isFinite(dy)) this.y += dy; }
+  flush() {
+    let dx = Math.trunc(this.x) || 0, dy = Math.trunc(this.y) || 0;
+    this.x -= dx; this.y -= dy;
+    while (dx || dy) {
+      const a = clamp(dx, -2000, 2000), b = clamp(dy, -2000, 2000);
+      this.send({ t: 'mouse-move-rel', dx: a, dy: b }); dx -= a; dy -= b;
+    }
+  }
+  reset() { this.x = 0; this.y = 0; }
 }
 
 /** Quality ladder used by Auto (fps stays the user's choice). */
