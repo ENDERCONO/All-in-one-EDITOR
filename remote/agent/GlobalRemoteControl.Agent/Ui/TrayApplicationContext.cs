@@ -81,6 +81,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _pairing?.SetCode(code, exp);
         });
         _host.Store.Changed += () => _ui.Post(OnStoreChanged);
+        // a my-device asked for a code (PROTOCOL section 8): open a fresh code window, which requests one code
+        _host.Pairing.RemoteCodeRequested += () => _ui.Post(() =>
+        {
+            if (_pairing != null && !_pairing.IsDisposed) _pairing.Close();
+            ShowPairing();
+        });
 
         // MCP bridge pipe (PROTOCOL section 6). Always listening so status works; pairing codes need the toggle.
         try

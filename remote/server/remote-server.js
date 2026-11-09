@@ -31,6 +31,8 @@ function normalizeCode(input) {
 function isBase64(s, maxLen) {
   return typeof s === 'string' && s.length > 0 && s.length <= maxLen && s.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(s);
 }
+const APPROVAL_DECISIONS = ['once', 'trust', 'deny', 'control', 'view'];
+const isFingerprint = (s) => typeof s === 'string' && /^[0-9A-F]{4}(-[0-9A-F]{4}){3}$/.test(s);
 const isId = (s) => typeof s === 'string' && /^[A-Za-z0-9_-]{22}$/.test(s);
 const isName = (s) => typeof s === 'string' && s.length >= 1 && s.length <= 64 && !/[\u0000-\u001f\u007f]/.test(s);
 const b64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -101,6 +103,9 @@ function attach(app, httpServer, opts = {}) {
   const pending = new Map();        // requestId -> { controllerWs, deviceId, timer }
   const sessions = new Map();       // sessionId -> { controller, device, deviceId }
   const watchers = new Set();       // controller sockets with a watch list
+  const controllers = new Map();    // controllerId -> Set<ws> (a browser may have several tabs open)
+  const approvals = new Map();      // approvalId -> { deviceId, to, at }   (PROTOCOL section 8)
+  const codeRequests = new Map();   // requestId -> { controllerWs, deviceId, at }
   const pairLimiter = createRateLimiter(cfg.pairMax, 60000);
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
@@ -142,13 +147,14 @@ function attach(app, httpServer, opts = {}) {
     }
   }
 
-  function resolvePair(requestId, approved, deviceWs) {
+  function resolvePair(requestId, approved, deviceWs, temporary) {
     const p = pending.get(requestId);
     if (!p) return;
     pending.delete(requestId);
     clearTimeout(p.timer);
     const msg = { type: 'pair-result', requestId, approved };
     if (approved && deviceWs) msg.device = info(deviceWs);
+    if (approved && temporary === true) msg.temporary = true;
     send(p.controllerWs, msg);
   }
 
@@ -156,6 +162,11 @@ function attach(app, httpServer, opts = {}) {
     clearTimeout(ws.helloTimer);
     watchers.delete(ws);
     if (!ws.ident) return;
+    if (ws.ident.role === 'controller') {
+      const set = controllers.get(ws.ident.id);
+      if (set) { set.delete(ws); if (!set.size) controllers.delete(ws.ident.id); }
+      for (const [rid, r] of codeRequests) if (r.controllerWs === ws) codeRequests.delete(rid);
+    }
     if (ws.ident.role === 'device') {
       if (devices.get(ws.ident.id) === ws) {
         devices.delete(ws.ident.id);
@@ -185,6 +196,9 @@ function attach(app, httpServer, opts = {}) {
       const old = devices.get(pk.id);
       devices.set(pk.id, ws);
       if (old && old !== ws) { sendError(old, 'replaced'); old.close(); cleanup(old); devices.set(pk.id, ws); }
+    } else {
+      if (!controllers.has(pk.id)) controllers.set(pk.id, new Set());
+      controllers.get(pk.id).add(ws);
     }
     const iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
     const turnUrl = opts.turnUrl ?? env().REMOTE_TURN_URL;
@@ -211,7 +225,39 @@ function attach(app, httpServer, opts = {}) {
         if (typeof m.requestId !== 'string' || typeof m.approved !== 'boolean') return sendError(ws, 'bad-message');
         const p = pending.get(m.requestId);
         if (!p || p.deviceId !== id) return sendError(ws, 'unknown-request', m.requestId);
-        return resolvePair(m.requestId, m.approved, ws);
+        if (m.temporary !== undefined && typeof m.temporary !== 'boolean') return sendError(ws, 'bad-message');
+        return resolvePair(m.requestId, m.approved, ws, m.temporary);
+      }
+      case 'approval-request': {
+        const sub = m.subject;
+        if (!isId(m.to) || !isId(m.approvalId) || (m.kind !== 'pair' && m.kind !== 'session') || !sub || typeof sub !== 'object'
+          || !isId(sub.id) || !isName(sub.name) || !isFingerprint(sub.fingerprint) || !Number.isSafeInteger(m.expiresAt)
+          || !isBase64(m.signature, 100)) return sendError(ws, 'bad-message');
+        if (!ws.approvalLimiter.hit('a')) return sendError(ws, 'rate-limited', m.approvalId);
+        if (approvals.has(m.approvalId)) return sendError(ws, 'bad-message', m.approvalId);
+        approvals.set(m.approvalId, { deviceId: id, to: m.to, at: Date.now() });
+        const out = { type: 'approval-request', deviceId: id, approvalId: m.approvalId, kind: m.kind,
+          subject: { id: sub.id, name: sub.name, fingerprint: sub.fingerprint }, expiresAt: m.expiresAt, signature: m.signature };
+        for (const c of controllers.get(m.to) || []) send(c, out);
+        return;
+      }
+      case 'approval-cancel': {
+        if (!isId(m.approvalId)) return sendError(ws, 'bad-message');
+        const a = approvals.get(m.approvalId);
+        if (!a || a.deviceId !== id) return;
+        approvals.delete(m.approvalId);
+        for (const c of controllers.get(a.to) || []) send(c, { type: 'approval-cancel', deviceId: id, approvalId: m.approvalId });
+        return;
+      }
+      case 'code-reply': {
+        if (!isId(m.requestId)) return sendError(ws, 'bad-message');
+        const r = codeRequests.get(m.requestId);
+        if (!r || r.deviceId !== id) return sendError(ws, 'unknown-request', m.requestId);
+        codeRequests.delete(m.requestId);
+        const out = { type: 'code-reply', deviceId: id, requestId: m.requestId };
+        if (typeof m.code === 'string' && /^[0-9A-Z]{4}-[0-9A-Z]{4}$/.test(m.code) && Number.isSafeInteger(m.expiresAt)) { out.code = m.code; out.expiresAt = m.expiresAt; }
+        else out.error = typeof m.error === 'string' && /^[a-z-]{1,32}$/.test(m.error) ? m.error : 'failed';
+        return send(r.controllerWs, out);
       }
       default:
         if (RELAY_TYPES.includes(m.type)) return relay(ws, m);
@@ -248,6 +294,28 @@ function attach(app, httpServer, opts = {}) {
         pending.set(requestId, { controllerWs: ws, deviceId: entry.deviceId, timer });
         send(ws, { type: 'pair-pending', requestId, device: info(dev) });
         return send(dev, { type: 'pair-request', requestId, controller: info(ws) });
+      }
+      case 'approval-result': {
+        if (!isId(m.deviceId) || !isId(m.approvalId) || !APPROVAL_DECISIONS.includes(m.decision) || !isBase64(m.signature, 100)) return sendError(ws, 'bad-message');
+        const a = approvals.get(m.approvalId);
+        if (!a || a.to !== ws.ident.id || a.deviceId !== m.deviceId) return sendError(ws, 'unknown-request', m.approvalId);
+        approvals.delete(m.approvalId);
+        const dev = devices.get(m.deviceId);
+        if (!dev) return sendError(ws, 'device-offline', m.approvalId);
+        // the owner's other open tabs: this request is answered
+        for (const c of controllers.get(ws.ident.id) || []) if (c !== ws) send(c, { type: 'approval-cancel', deviceId: m.deviceId, approvalId: m.approvalId });
+        return send(dev, { type: 'approval-result', controllerId: ws.ident.id, approvalId: m.approvalId, decision: m.decision, signature: m.signature });
+      }
+      case 'code-request': {
+        if (!isId(m.deviceId) || !isId(m.requestId) || !Number.isSafeInteger(m.ts) || !isBase64(m.signature, 100)) return sendError(ws, 'bad-message');
+        const okId = pairLimiter.hit('k:' + ws.ident.id);
+        const okIp = pairLimiter.hit('j:' + ip);
+        if (!okId || !okIp) return sendError(ws, 'rate-limited', m.requestId);
+        if (codeRequests.has(m.requestId)) return sendError(ws, 'bad-message', m.requestId);
+        const dev = devices.get(m.deviceId);
+        if (!dev) return sendError(ws, 'device-offline', m.requestId);
+        codeRequests.set(m.requestId, { controllerWs: ws, deviceId: m.deviceId, at: Date.now() });
+        return send(dev, { type: 'code-request', controllerId: ws.ident.id, requestId: m.requestId, ts: m.ts, signature: m.signature });
       }
       case 'session-request': {
         if (!isId(m.sessionId) || !isId(m.deviceId)) return sendError(ws, 'bad-message', m.sessionId);
@@ -361,6 +429,7 @@ function attach(app, httpServer, opts = {}) {
     ws.nonce = crypto.randomBytes(32).toString('base64');
     ws.msgLimiter = createRateLimiter(400, 5000);
     ws.binLimiter = createRateLimiter(4000, 5000);
+    ws.approvalLimiter = createRateLimiter(20, 60000);
     ws.helloTimer = setTimeout(() => { sendError(ws, 'auth-failed'); ws.close(); }, cfg.helloTimeoutMs);
     ws.helloTimer.unref();
     send(ws, { type: 'challenge', nonce: ws.nonce });
@@ -400,6 +469,8 @@ function attach(app, httpServer, opts = {}) {
     const now = Date.now();
     for (const [c, e] of codes) if (e.expiresAt <= now) { codes.delete(c); codeByDevice.delete(e.deviceId); }
     pairLimiter.sweep(now);
+    for (const [k, a] of approvals) if (now - a.at > 120000) approvals.delete(k);
+    for (const [k, r] of codeRequests) if (now - r.at > 120000) codeRequests.delete(k);
     // A session the PC never answered (approval auto-denies at 60 s) must not linger.
     for (const [sid, s] of sessions) {
       if (!s.accepted && now - s.createdAt > 120000) {
@@ -429,7 +500,7 @@ function attach(app, httpServer, opts = {}) {
     wss.close();
   }
 
-  return { wss, close, state: { devices, codes, pending, sessions } };
+  return { wss, close, state: { devices, codes, pending, sessions, controllers, approvals, codeRequests } };
 }
 
 module.exports = {

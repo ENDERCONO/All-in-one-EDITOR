@@ -71,7 +71,7 @@ code { font-family: var(--mono); background: var(--bg0); border: 1px solid var(-
 /* device list (outliner rows) */
 .devices { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg0); overflow: hidden; }
 .devices:empty { display: none; }
-.devices li { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto auto auto; align-items: center; gap: 6px 10px; padding: 8px 10px; border-top: 1px solid var(--line); background: var(--bg2); }
+.devices li { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto auto auto auto; align-items: center; gap: 6px 10px; padding: 8px 10px; border-top: 1px solid var(--line); background: var(--bg2); }
 .devices li:first-child { border-top: 0; }
 .devices li:nth-child(even) { background: #1d1d1d; }
 .devices li:hover { background: var(--bg3); }
@@ -81,11 +81,12 @@ code { font-family: var(--mono); background: var(--bg0); border: 1px solid var(-
 .devices .dot.on ~ .state { color: var(--ok); border-color: #2c5a2c; background: var(--ok-bg); }
 .devices .btn { padding: 4px 10px; }
 @media (max-width: 480px) {
-  .devices li { grid-template-columns: 8px minmax(0, 1fr) auto auto; }
-  .devices li > .name { grid-column: 2 / 4; }
-  .devices li > .state { grid-column: 4; grid-row: 1; }
+  .devices li { grid-template-columns: 8px minmax(0, 1fr) auto auto auto; }
+  .devices li > .name { grid-column: 2 / 5; }
+  .devices li > .state { grid-column: 5; grid-row: 1; }
   .devices li > .btn.primary { grid-column: 3; grid-row: 2; }
-  .devices li > .btn.danger { grid-column: 4; grid-row: 2; }
+  .devices li > .btn:not(.primary):not(.danger) { grid-column: 4; grid-row: 2; }
+  .devices li > .btn.danger { grid-column: 5; grid-row: 2; }
 }
 .empty { margin: 0; padding: 18px 12px; text-align: center; border: 1px dashed var(--line2); border-radius: var(--r); background: var(--bg0); font-size: 12px; }
 
@@ -233,8 +234,8 @@ input[type=range]:focus { box-shadow: none; }
 .modal .box { background: var(--bg2); border: 1px solid var(--line2); border-radius: var(--r); max-width: 420px; width: 100%; box-shadow: 0 0 0 1px var(--edge), 0 18px 48px #000e; overflow: hidden; }
 .boxhead { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; background: linear-gradient(#222, #1c1c1c); border-bottom: 1px solid var(--edge); font-size: 11px; font-weight: 600; color: var(--text-hi); text-transform: uppercase; letter-spacing: .09em; }
 .boxhead::before { content: ""; width: 3px; height: 12px; border-radius: 1px; background: var(--warn); }
-.modal #modalText { margin: 0; padding: 14px 14px 4px; color: var(--text-hi); overflow-wrap: anywhere; }
-.modal .row { display: flex; gap: 6px; justify-content: flex-end; padding: 12px 14px 14px; }
+.modal #modalText { margin: 0; padding: 14px 14px 4px; color: var(--text-hi); overflow-wrap: anywhere; white-space: pre-line; }
+.modal .row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; padding: 12px 14px 14px; }
 .modal .row .btn { min-width: 84px; }
 
 /* ================= toasts (editor notifications) ================= */

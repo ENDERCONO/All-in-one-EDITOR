@@ -67,6 +67,35 @@ export function randomSessionId() {
   return b64url(crypto.getRandomValues(new Uint8Array(16))).slice(0, 22);
 }
 
+// Section 8 (my devices): approvals answered from this browser, pairing codes asked from here.
+export const approvalRequestText = (approvalId, kind, subjectId, subjectFp, expiresAt, subjectName) =>
+  `grc-approval:${approvalId}:${kind}:${subjectId}:${subjectFp}:${expiresAt}:${subjectName}`;
+export const approveText = (deviceId, approvalId, kind, decision) => `grc-approve:${deviceId}:${approvalId}:${kind}:${decision}`;
+export const codeRequestText = (deviceId, requestId, ts) => `grc-code-request:${deviceId}:${requestId}:${ts}`;
+/** The buttons for an approval prompt, safest first. */
+export const APPROVAL_CHOICES = {
+  pair: [{ value: 'deny', label: 'Deny' }, { value: 'once', label: 'Allow once' }, { value: 'trust', label: 'Trust' }],
+  session: [{ value: 'deny', label: 'Deny' }, { value: 'view', label: 'View only' }, { value: 'control', label: 'Allow control' }],
+};
+const ID_RE = /^[A-Za-z0-9_-]{22}$/;
+const FP_RE = /^[0-9A-F]{4}(-[0-9A-F]{4}){3}$/;
+
+/**
+ * Checks an approval-request from the server against the paired device it claims to come from. The device signs the
+ * request, so a server can't change who is asking. Returns the device or null (show nothing).
+ */
+export async function checkApprovalRequest(m, devices, now = Date.now()) {
+  if (!m || !ID_RE.test(m.deviceId) || !ID_RE.test(m.approvalId) || !APPROVAL_CHOICES[m.kind]) return null;
+  const s = m.subject;
+  if (!s || !ID_RE.test(s.id) || typeof s.name !== 'string' || !s.name || s.name.length > 64 || !FP_RE.test(s.fingerprint)) return null;
+  if (!Number.isSafeInteger(m.expiresAt) || m.expiresAt <= now || m.expiresAt > now + 5 * 60000) return null;
+  const dev = devices.find((d) => d.id === m.deviceId && !d.temporary);
+  if (!dev || typeof m.signature !== 'string') return null;
+  const key = await importPublicKey(b64ToBytes(dev.publicKey));
+  const ok = await verifyText(key, approvalRequestText(m.approvalId, m.kind, s.id, s.fingerprint, m.expiresAt, s.name), m.signature);
+  return ok ? dev : null;
+}
+
 /** Pairing code: uppercase, strip '-'/spaces, I->1, L->1, O->0. Returns null unless 8 Crockford chars. */
 export function normalizeCode(input) {
   const c = String(input || '').toUpperCase().replace(/[-\s]/g, '').replace(/[IL]/g, '1').replace(/O/g, '0');

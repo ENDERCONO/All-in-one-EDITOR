@@ -64,14 +64,15 @@ public sealed class SessionNegotiator
     private readonly IUserPrompts _prompts;
     private readonly AuditLog _audit;
     private readonly Func<SessionInfo, string, IRemotePeer> _peerFactory;
+    private readonly OwnerApprovals? _approvals;
     private readonly object _lock = new();
     private Pending? _p;
 
     public SessionNegotiator(ISignalSender signal, DeviceIdentity identity, TrustedControllerStore store, SessionGate gate,
-        IUserPrompts prompts, AuditLog audit, Func<SessionInfo, string, IRemotePeer> peerFactory)
+        IUserPrompts prompts, AuditLog audit, Func<SessionInfo, string, IRemotePeer> peerFactory, OwnerApprovals? approvals = null)
     {
         _signal = signal; _identity = identity; _store = store; _gate = gate;
-        _prompts = prompts; _audit = audit; _peerFactory = peerFactory;
+        _prompts = prompts; _audit = audit; _peerFactory = peerFactory; _approvals = approvals;
         _gate.Ended += OnGateEnded;
     }
 
@@ -207,8 +208,41 @@ public sealed class SessionNegotiator
         }
 
         ApprovalResult decision;
-        try { decision = await _prompts.ApproveSessionAsync(p.Controller.Name, p.Controller.Fingerprint, null, true, ApprovalTimeout, p.Cancel.Token); }
-        catch (Exception) { decision = ApprovalResult.Deny; }
+        string how = "approved at the PC";
+        var c = p.Controller;
+        if (c.Owner && _store.Get(c.Id)?.Owner == true)
+        {
+            decision = ApprovalResult.Control; // "my device" (PROTOCOL section 8): no dialog
+            how = "my device: no approval needed";
+        }
+        else if (c.Temporary && _store.TryUseOnce(c.Id))
+        {
+            decision = ApprovalResult.Control; // the single session of an "Allow once"
+            how = "allowed once from a my-device";
+        }
+        else
+        {
+            try
+            {
+                if (_approvals == null)
+                    decision = await _prompts.ApproveSessionAsync(c.Name, c.Fingerprint, null, true, ApprovalTimeout, p.Cancel.Token);
+                else
+                {
+                    var (local, remote) = await _approvals.RaceAsync(
+                        t => _prompts.ApproveSessionAsync(c.Name, c.Fingerprint, null, true, ApprovalTimeout, t),
+                        "session", c.Id, c.Name, c.Fingerprint, ApprovalTimeout, p.Cancel.Token);
+                    decision = remote switch
+                    {
+                        null => local,
+                        "control" => ApprovalResult.Control,
+                        "view" => ApprovalResult.View,
+                        _ => ApprovalResult.Deny,
+                    };
+                    if (remote != null) how = "approved from a my-device";
+                }
+            }
+            catch (Exception) { decision = ApprovalResult.Deny; }
+        }
 
         lock (_lock) if (_p != p) return; // ended meanwhile (peer disconnected / kill)
         if (decision is ApprovalResult.Deny or ApprovalResult.Timeout)
@@ -219,7 +253,7 @@ public sealed class SessionNegotiator
             return;
         }
         var mode = decision == ApprovalResult.Control ? SessionMode.Control : SessionMode.View;
-        if (!_gate.Activate(p.SessionId, SessionKind.Browser, p.Controller.Name, p.Controller.Id, mode))
+        if (!_gate.Activate(p.SessionId, SessionKind.Browser, p.Controller.Name, p.Controller.Id, mode, owner: c.Owner))
         {
             await RejectAsync(p, "denied"); // kill switch pressed while the dialog was open
             return;
@@ -227,7 +261,8 @@ public sealed class SessionNegotiator
         lock (_lock) p.Stage = Stage.AwaitOffer;
         p.Timeout = new CancellationTokenSource();
         ArmTimeout(p, StepTimeout, "no-offer");
-        _audit.Write("session-approved", p.Controller.Name, p.Controller.Id, mode == SessionMode.Control ? "full control" : "view only");
+        _audit.Write(how.StartsWith("approved", StringComparison.Ordinal) ? "session-approved" : "session-auto-approved",
+            p.Controller.Name, p.Controller.Id, (mode == SessionMode.Control ? "full control" : "view only") + ", " + how);
         await _signal.SendAsync(new { type = "session-accept", sessionId = p.SessionId, mode = mode == SessionMode.Control ? "control" : "view" });
     }
 

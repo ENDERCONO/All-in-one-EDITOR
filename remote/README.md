@@ -36,6 +36,28 @@ click, two-finger drag = scroll (or pan when zoomed). On mobile data, where a di
 session switches to the encrypted relay automatically. From the PC's tray, **Send a file to the remote device…** pushes a
 file to the browser.
 
+## Away from home: "My device" (off by default)
+
+Normally someone at the PC has to click Approve. To use the PC when nobody is home, mark your own phone (or laptop)
+as **My device**, once, while you're at the PC: open the app → **Trusted devices** → select the phone → **Mark as my
+device…** → Yes. From then on that phone:
+
+* **connects without approval**: tap Connect and you're in (full control);
+* **sends files without asking**: they land in `Downloads\GlobalRemoteControl` (never overwriting anything);
+* **approves other devices for you**: when another browser (e.g. a school computer) pairs or asks for a session,
+  the phone pops up *Allow once / Trust / Deny* (or *Allow control / View only / Deny*) at the same time as the PC
+  dialog, and the first answer wins. **Allow once** = one session, nothing saved, gone afterwards. Keep the Remote page
+  open on the phone to get these (it can also show a notification while the tab is in the background). Since
+  2026-11-09 every **trusted** device gets these popups too, not only "My device" ones;
+* **gets pairing codes**: the **Pairing code** button next to the PC asks it for a fresh code to type on the other browser.
+
+Example, at school: tap **Pairing code** on your phone → type the code on the school PC → tap **Allow once** on your
+phone → press Connect on the school PC. When you disconnect, the school PC has no access left.
+
+The session bar, tray icon and kill switch (Ctrl+Alt+Shift+F12) still work, everything is in the audit log, and
+**Not my device** (or Revoke) undoes it. Only the PC can mark a device; Claude/MCP can't. Details: `docs/PROTOCOL.md`
+section 8.
+
 ## Claude / MCP (minimal, off by default)
 
 The exe has a tiny MCP bridge so Claude can **open the app, check its status and make a pairing code** — nothing else.
@@ -89,7 +111,7 @@ quality preset. Your own TURN server still works if you want one (`REMOTE_TURN_U
 | Agent against the local server | `dotnet run --project remote/agent/GlobalRemoteControl.Agent -- --server ws://localhost:3000/remote/ws` |
 | Server tests | `node --test "remote/server/test/*.test.js"` |
 | Web logic tests | `node --test "remote/web/test/*.test.mjs"` |
-| Agent tests | `dotnet test remote/agent` (Windows; with `node` on PATH it also cross-checks relay frames and video frames against `web/protocol.js`) |
+| Agent tests | `dotnet test remote/agent` (Windows; with `node` on PATH it also cross-checks relay frames and video frames against `web/protocol.js`, and runs the "My device" flow end to end against the real signaling server) |
 | Regenerate the relay test vector (after changing `RelayCodec` in `web/protocol.js`) | `node remote/agent/GlobalRemoteControl.Agent.Tests/Fixtures/make-relay-vector.mjs` |
 | Build the single exe | `powershell remote/agent/publish.ps1` → `remote/agent/dist/GlobalRemoteControl.exe` |
 

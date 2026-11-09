@@ -69,5 +69,14 @@ public static class IdentityUtil
     public static string ReofferString(string sessionId, int seq, string sdp) => $"grc-reoffer:{sessionId}:{seq}:{sdp}";
     public static string ReanswerString(string sessionId, int seq, string sdp) => $"grc-reanswer:{sessionId}:{seq}:{sdp}";
 
+    // section 8 (my devices)
+    public static string ApprovalRequestString(string approvalId, string kind, string subjectId, string subjectFingerprint, long expiresAt, string subjectName) =>
+        $"grc-approval:{approvalId}:{kind}:{subjectId}:{subjectFingerprint}:{expiresAt}:{subjectName}";
+    public static string ApproveString(string deviceId, string approvalId, string kind, string decision) => $"grc-approve:{deviceId}:{approvalId}:{kind}:{decision}";
+    public static string CodeRequestString(string deviceId, string requestId, long ts) => $"grc-code-request:{deviceId}:{requestId}:{ts}";
+
+    /// <summary>22-char base64url random id (session / approval ids).</summary>
+    public static string RandomId() => Base64Url(RandomNumberGenerator.GetBytes(16))[..22];
+
     public static string RandomNonce() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 }

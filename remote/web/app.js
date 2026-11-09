@@ -23,13 +23,35 @@ function toast(text, kind = '', ms = 5000) {
   $('toasts').appendChild(el);
   setTimeout(() => el.remove(), ms);
 }
-function ask(text, yes = 'Accept', no = 'Decline') {
-  return new Promise((resolve) => {
-    $('modalText').textContent = text; $('modalYes').textContent = yes; $('modalNo').textContent = no;
-    $('modal').hidden = false;
-    const done = (v) => { $('modal').hidden = true; $('modalYes').onclick = $('modalNo').onclick = null; resolve(v); };
-    $('modalYes').onclick = () => done(true); $('modalNo').onclick = () => done(false);
+// One modal at a time; later ones wait their turn. choose() returns { promise, close(value) } so a prompt can be
+// withdrawn (e.g. an approval answered elsewhere); close() on a waiting one removes it from the queue.
+let modalChain = Promise.resolve();
+function choose(text, choices, head = 'Confirm') {
+  let close, settled = false;
+  const promise = new Promise((resolve) => {
+    const finish = (v) => { if (!settled) { settled = true; resolve(v); } };
+    close = finish;
+    modalChain = modalChain.then(() => new Promise((next) => {
+      if (settled) return next();
+      $('modalHead').textContent = head;
+      $('modalText').textContent = text;
+      const row = $('modalRow'); row.textContent = '';
+      choices.forEach((c, i) => {
+        const b = document.createElement('button');
+        b.className = 'btn' + (i === choices.length - 1 ? ' primary' : '');
+        b.textContent = c.label; b.dataset.value = c.value;
+        b.onclick = () => finish(c.value);
+        row.appendChild(b);
+      });
+      $('modal').hidden = false;
+      close = (v) => { finish(v); };
+      promise.finally(() => { $('modal').hidden = true; row.textContent = ''; next(); });
+    }));
   });
+  return { promise, close: (v) => close(v) };
+}
+function ask(text, yes = 'Accept', no = 'Decline') {
+  return choose(text, [{ value: false, label: no }, { value: true, label: yes }]).promise;
 }
 const fmtSize = (n) => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : n < 1073741824 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1073741824).toFixed(2) + ' GB';
 
@@ -55,6 +77,8 @@ async function boot() {
   sig.on('ready', () => { watch(); });
   sig.on('message', (m) => {
     if (m.type === 'presence') { Object.assign(presence, m.devices || {}); renderDevices(); }
+    else if (m.type === 'approval-request') onApprovalRequest(m).catch((e) => console.error(e));
+    else if (m.type === 'approval-cancel') onApprovalCancel(m);
     else if (m.type === 'error' && m.code === 'auth-failed') toast('The server rejected this browser\'s identity (auth-failed).', 'err');
   });
   sig.on('close', () => { for (const k in presence) presence[k] = { online: false }; renderDevices(); });
@@ -87,16 +111,79 @@ function renderDevices() {
     const fp = document.createElement('span'); fp.className = 'fp'; fp.textContent = d.fingerprint || '';
     nm.appendChild(fp);
     const st = document.createElement('span'); st.className = 'state'; st.textContent = online ? 'Online' : 'Offline';
+    if (d.temporary) st.textContent += ' · once';
     const c = document.createElement('button'); c.className = 'btn primary'; c.textContent = 'Connect'; c.disabled = !online || !!cur;
     c.onclick = () => connect(d);
+    const code = document.createElement('button'); code.className = 'btn'; code.textContent = 'Pairing code';
+    code.title = 'Get a pairing code from this PC for another browser (needs "My device")';
+    code.disabled = !online; code.hidden = !!d.temporary;
+    code.onclick = () => requestCode(d, code);
     const f = document.createElement('button'); f.className = 'btn danger'; f.textContent = 'Forget';
     f.onclick = async () => {
       if (!await ask(`Forget "${d.name}" in this browser? To fully revoke access, also remove this browser in the Windows app.`, 'Forget', 'Cancel')) return;
       await store.deleteDevice(d.id); devices = devices.filter((x) => x.id !== d.id); renderDevices();
     };
-    li.append(dot, nm, st, c, f);
+    li.append(dot, nm, st, c, code, f);
     ul.appendChild(li);
   }
+}
+
+// ---------- my device (PROTOCOL section 8) ----------
+async function requestCode(dev, btn) {
+  if (sig.state !== 'ready') return toast('Not connected to the server yet.', 'err');
+  btn.disabled = true;
+  try {
+    const requestId = P.randomSessionId(), ts = Date.now();
+    const signature = await identity.sign(P.codeRequestText(dev.id, requestId, ts));
+    const reply = sig.waitFor((m) => (m.type === 'code-reply' && m.requestId === requestId) || (m.type === 'error' && m.ref === requestId), 20000, dev.name);
+    sig.send({ type: 'code-request', deviceId: dev.id, requestId, ts, signature });
+    const r = await reply;
+    if (r.type === 'error' || r.error) {
+      const why = r.type === 'error' ? r.code : r.error;
+      const msg = {
+        'not-allowed': `"${dev.name}" doesn't treat this browser as "My device". On the PC, open GlobalRemoteControl, select this browser under Trusted devices and click "Mark as my device".`,
+        'rate-limited': 'Too many codes requested. Wait a few minutes.',
+        stale: "This device's clock is off by more than 2 minutes; fix the time and try again.",
+        'device-offline': 'That PC is offline.',
+      }[why] || `Couldn't get a code (${why}).`;
+      return toast(msg, 'err', 12000);
+    }
+    const mins = Math.max(1, Math.round((r.expiresAt - Date.now()) / 60000));
+    await choose(`Pairing code for ${dev.name}:\n\n${r.code}\n\nEnter it on the other browser within ${mins} min. ` +
+      `You'll be asked here (or on the PC) to allow it.`, [{ value: true, label: 'Done' }], 'Pairing code').promise;
+  } catch (e) { toast(e.message || String(e), 'err'); }
+  finally { btn.disabled = false; }
+}
+
+const approvals = new Map(); // approvalId -> modal handle
+async function onApprovalRequest(m) {
+  if (approvals.has(m.approvalId)) return;
+  const dev = await P.checkApprovalRequest(m, devices);
+  if (!dev) return; // not from a device we paired with, or tampered: show nothing
+  const who = `"${m.subject.name}" (fingerprint ${m.subject.fingerprint})`;
+  const text = m.kind === 'pair'
+    ? `${who} wants to pair with ${dev.name}.\n\nAllow once = one session, nothing saved. Trust = paired; it will still need approval for each session.\nOnly allow it if you are the one pairing it right now.`
+    : `${who} wants to connect to ${dev.name}.\n\nOnly allow it if this is you.`;
+  const modal = choose(text, P.APPROVAL_CHOICES[m.kind], m.kind === 'pair' ? 'New device' : 'Connection request');
+  approvals.set(m.approvalId, modal);
+  try { navigator.vibrate?.([200, 100, 200]); } catch { /* ignore */ }
+  let note;
+  try { if (document.hidden && window.Notification?.permission === 'granted') note = new Notification('GlobalRemoteControl', { body: `${m.subject.name} is asking for access to ${dev.name}`, tag: m.approvalId }); } catch { /* ignore */ }
+  const timer = setTimeout(() => modal.close(null), Math.max(0, m.expiresAt - Date.now()));
+  const decision = await modal.promise;
+  clearTimeout(timer); approvals.delete(m.approvalId); note?.close();
+  if (!decision) return; // withdrawn / expired
+  const signature = await identity.sign(P.approveText(dev.id, m.approvalId, m.kind, decision));
+  if (!sig.send({ type: 'approval-result', deviceId: dev.id, approvalId: m.approvalId, decision, signature })) toast('Not connected: your answer was not sent.', 'err');
+  else toast(decision === 'deny' ? 'Denied.' : 'Answer sent to your PC.', decision === 'deny' ? '' : 'ok');
+}
+function onApprovalCancel(m) {
+  const modal = approvals.get(m.approvalId);
+  if (modal) modal.close(null);
+}
+if (window.Notification && Notification.permission === 'default') {
+  $('notifyBtn').hidden = false;
+  $('notifyBtn').onclick = () => Notification.requestPermission().then(() => { $('notifyBtn').hidden = true; }).catch(() => {});
 }
 
 // ---------- pairing ----------
@@ -130,9 +217,16 @@ $('pairForm').addEventListener('submit', async (e) => {
     const spki = P.b64ToBytes(dev.publicKey);
     if (await P.idFromSpki(spki) !== dev.id) return show([text('The server sent inconsistent device data. Pairing aborted.')], 'bad');
     const entry = { id: dev.id, name: dev.name, publicKey: dev.publicKey, fingerprint: await P.fingerprintFromSpki(spki), addedAt: Date.now() };
-    await store.putDevice(entry);
-    devices = (await store.listDevices()); watch(); renderDevices();
     $('codeInput').value = '';
+    if (res.temporary === true) {
+      // "Allow once" (PROTOCOL section 8): one session, nothing saved in this browser
+      entry.temporary = true;
+      devices = devices.filter((x) => x.id !== entry.id).concat(entry); watch(); renderDevices();
+      show([text(`Allowed once on ${entry.name}. Connect now; this browser won't keep access afterwards.`)], 'ok');
+      return;
+    }
+    await store.putDevice(entry);
+    devices = (await store.listDevices()).concat(devices.filter((x) => x.temporary && x.id !== entry.id)); watch(); renderDevices();
     show([text(`Paired with ${entry.name}. You can connect now.`)], 'ok');
   } catch (err) {
     show([text(err.message || String(err))], 'bad');
@@ -180,7 +274,13 @@ function connect(dev) {
   s.on('cursor', onCursor);
   s.on('stats', onStats);
   s.on('notice', (t) => toast(t));
-  s.on('file-offer', async (o) => s.respondOffer(o.id, await ask(`Your PC wants to send you "${o.name}" (${fmtSize(o.size)}). Accept?`)));
+  const sessionModals = new Set();
+  s.on('file-offer', async (o) => {
+    const m = choose(`Your PC wants to send you "${o.name}" (${fmtSize(o.size)}). Accept?`, [{ value: false, label: 'Decline' }, { value: true, label: 'Accept' }]);
+    sessionModals.add(m);
+    const yes = await m.promise; sessionModals.delete(m);
+    if (cur === s) s.respondOffer(o.id, yes);
+  });
   s.on('file-progress', showProgress);
   s.on('file-received', ({ name, blob }) => {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
@@ -195,8 +295,10 @@ function connect(dev) {
     if (cur !== s) return;
     cur = null; releaseAllKeys(); setGame(false); $('gpuBadge').hidden = true; $('gpuRow').hidden = true; $('gameBtn').hidden = true; view.reset(); applyView(); $('streamPop').hidden = true; $('streamBtn').setAttribute('aria-expanded', 'false');
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-    $('session').hidden = true; $('home').hidden = false; $('modal').hidden = true;
+    $('session').hidden = true; $('home').hidden = false;
+    for (const m of sessionModals) m.close(false);
     toast(reason, reason === 'Disconnected.' ? '' : 'err', 9000);
+    if (dev.temporary) devices = devices.filter((x) => x.id !== dev.id); // "Allow once" is used up
     renderDevices();
   });
   s.start();
