@@ -23,6 +23,9 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+      - name: Install site packages (the end-to-end tests start remote/server with express + ws)
+        # --ignore-scripts: skip the site's postinstall (it downloads yt-dlp / ffmpeg tools the tests don't need)
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Test
         # GitHubActions logger: each failing test becomes an annotation (readable without opening the log)
         run: dotnet test remote/agent/GlobalRemoteControl.sln -c Release --logger GitHubActions
