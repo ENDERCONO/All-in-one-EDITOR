@@ -160,12 +160,21 @@ controller → agent  { type:"signal", sessionId, renegotiate:true, seq:<same>, 
 * Low-latency encoder settings (agent): GPU encoder (NVENC / AMF / Quick Sync, the driver's Media Foundation
   hardware MFT) with Microsoft's software H.264 MFT as fallback, each self-tested before use; low-latency mode, CBR,
   baseline profile (no B-frames), SPS/PPS in-band before every IDR; IDR on `{t:"keyframe"}`, on monitor or
-  resolution change and at least every 5 s; frame rate = the `quality` message's `fps` (≤ 60); a static screen
+  resolution change and at least every 20 s; frame rate = the `quality` message's `fps` (≤ 60); a static screen
   sends only a refresh every 0.5 s.
 * `{t:"video-track", enabled:false}` switches back to the JPEG channel (the agent sends a JPEG keyframe); `true`
   again reuses the already negotiated track. The agent also falls back to JPEG on its own if encoding fails, if the
   renegotiation gets no valid answer within 15 s, or on the relay fallback (section 7 can't carry RTP).
-* RTCP picture-loss / FIR from the controller make the agent send an IDR.
+* RTCP picture-loss / FIR from the controller make the agent send an IDR. The re-offer adds `a=rtcp-fb:<pt> nack`,
+  `nack pli` and `ccm fir` (SIPSorcery offers only transport-cc; without them the browser never reports loss).
+* Sending (agent): the agent packetizes RTP itself (RFC 6184 single NAL / FU-A, ≤ 1180-byte payloads, AUDs dropped)
+  and **paces** it at 2.5× the video bitrate (≥ 4 Mbit/s; whatever is queued leaves within 100 ms), so a keyframe
+  never leaves as one burst. It keeps the last 1024 packets and resends one (same sequence number, ahead of new video)
+  on an RTCP generic NACK, at most once per 20 ms. While the pacer still holds more than one frame time the next
+  capture waits (latest-wins); a queue over 400 ms is dropped and the stream restarts from an IDR. The encoder's VBV
+  is about 3 frames (CBR, max bitrate = target) to keep picture sizes even.
+* Receiving (controller): `RTCRtpReceiver.jitterBufferTarget = 0` (and `playoutDelayHint = 0`) — each picture is
+  shown as soon as it's decoded.
 * An agent without H.264 never sends `video` in `hello` and never renegotiates: everything stays on the JPEG path.
 
 ### control messages, controller → agent (all validated; out-of-range → ignored + logged)

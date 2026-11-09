@@ -293,7 +293,7 @@ function connect(dev) {
   });
   s.on('ended', (reason) => {
     if (cur !== s) return;
-    cur = null; releaseAllKeys(); setGame(false); $('gpuBadge').hidden = true; $('gpuRow').hidden = true; $('gameBtn').hidden = true; view.reset(); applyView(); $('streamPop').hidden = true; $('streamBtn').setAttribute('aria-expanded', 'false');
+    cur = null; releaseAllKeys(); immersive = false; unlockKeyboard(); setGame(false); $('gpuBadge').hidden = true; $('gpuRow').hidden = true; $('gameBtn').hidden = true; view.reset(); applyView(); $('streamPop').hidden = true; $('streamBtn').setAttribute('aria-expanded', 'false');
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     $('session').hidden = true; $('home').hidden = false;
     for (const m of sessionModals) m.close(false);
@@ -475,7 +475,7 @@ function sched() { if (!flushRaf) flushRaf = requestAnimationFrame(() => { flush
 function queueMove(pt) { co.move(pt.x, pt.y); sched(); }
 // ---- game mode: Pointer Lock + relative motion (PROTOCOL mouse-move-rel) ----
 const rel = new P.RelMouse((m) => { if (cur) cur.sendInput(m); });
-let gameOn = false, relRaf = 0;
+let gameOn = false, relRaf = 0, swallowUp = false;
 function schedRel() { if (!relRaf) relRaf = requestAnimationFrame(() => { relRaf = 0; rel.flush(); }); }
 function setGame(on) {
   if (!on) { rel.reset(); if (document.pointerLockElement === canvas) document.exitPointerLock(); return; }
@@ -483,13 +483,69 @@ function setGame(on) {
   // unadjustedMovement = raw, un-accelerated deltas (what games expect); not every browser supports it
   Promise.resolve(lock({ unadjustedMovement: true })).catch(() => lock()).catch(() => toast('This browser could not lock the mouse.', 'err'));
 }
-$('gameBtn').onclick = () => setGame(!gameOn);
+$('gameBtn').onclick = () => setImmersive(!immersive);
 document.addEventListener('pointerlockchange', () => {
+  const was = gameOn;
   gameOn = document.pointerLockElement === canvas;
-  $('gameBtn').setAttribute('aria-pressed', String(gameOn));
-  if (!gameOn) rel.reset();
-  else { canvas.focus(); toast('Game mode: mouse locked to the stream. Press Esc to release.'); }
+  $('gameBtn').setAttribute('aria-pressed', String(immersive || gameOn));
+  if (!gameOn) {
+    rel.reset();
+    if (was && immersive) toast('Mouse released. Click the stream to capture it again · F11 leaves game mode.', '', 4000);
+  } else canvas.focus();
 });
+
+// ---- game mode (F11 or the Game button): like a cloud-gaming app ----
+// Fullscreen + Pointer Lock (raw relative motion, so a game camera can turn forever) + Keyboard Lock (the Windows
+// key, Alt+Tab, Esc … all go to the PC). F11 is the only key kept here: it toggles game mode. The browser's own
+// "hold Esc" also gets you out. Keyboard Lock only works for the top-level page, so when the Remote tab is embedded
+// in the main site (same origin) the top page takes the lock; key events still arrive here, at the focused stream.
+let immersive = false, keyboardLocked = false;
+const canGame = () => !!cur && !$('gameBtn').hidden;
+function topKeyboard() {
+  try { if (window.top !== window && window.top.navigator.keyboard) return window.top.navigator.keyboard; } catch { /* other origin */ }
+  return navigator.keyboard || null;
+}
+function lockKeyboard() {
+  const kb = topKeyboard();
+  if (!kb || !kb.lock) { keyboardLocked = false; return Promise.resolve(false); }
+  return kb.lock().then(() => (keyboardLocked = true), () => (keyboardLocked = false));
+}
+function unlockKeyboard() {
+  try { const kb = topKeyboard(); if (kb && kb.unlock) kb.unlock(); } catch { /* not supported */ }
+  keyboardLocked = false;
+}
+function setImmersive(on) {
+  if (on && !canGame()) return;
+  if (on === immersive) return;
+  immersive = on;
+  $('gameBtn').setAttribute('aria-pressed', String(on));
+  if (on) {
+    setGame(true); // inside the key press / click: Pointer Lock wants a user gesture
+    const fs = document.fullscreenElement ? Promise.resolve() : $('session').requestFullscreen({ navigationUI: 'hide' });
+    fs.then(lockKeyboard).then((locked) => toast(locked
+      ? 'Game mode: mouse and every key go to the PC. F11 (or hold Esc) to exit.'
+      : 'Game mode: the mouse goes to the PC. This browser keeps the Windows key — use Chrome or Edge for that. F11 to exit.', '', 5000))
+      .catch(() => { toast('Fullscreen is not allowed here', 'err'); setImmersive(false); });
+  } else {
+    releaseAllKeys();
+    unlockKeyboard();
+    setGame(false);
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  }
+}
+document.addEventListener('fullscreenchange', () => {
+  if (document.fullscreenElement) { if (immersive && !gameOn) setGame(true); return; }
+  if (immersive) setImmersive(false); // left fullscreen some other way (hold Esc)
+});
+/** F11 is the one local key: it toggles game mode and never reaches the PC. True when handled here. */
+function localShortcut(e) {
+  if (e.code !== 'F11' || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return false;
+  e.preventDefault(); e.stopPropagation();
+  if (e.type === 'keydown' && !e.repeat) setImmersive(!immersive);
+  return true;
+}
+// F11 also works while the toolbar (not the stream) has focus
+document.addEventListener('keydown', (e) => { if (cur && e.target !== canvas && e.code === 'F11') localShortcut(e); });
 
 const BTN = ['left', 'middle', 'right'];
 function sendButton(button, down, pt) {
@@ -562,6 +618,7 @@ canvas.addEventListener('pointerdown', (e) => {
   try { canvas.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
   if (e.pointerType === 'touch' && padMode) return padDown(e);
   if (e.pointerType === 'touch') return touch.down(e.pointerId, e.clientX, e.clientY);
+  if (immersive && !gameOn && e.pointerType === 'mouse') { swallowUp = true; return setGame(true); } // re-lock; this click stays local
   const pt = mapEvent(e);
   if (e.button > 2) return; // back/forward buttons must not turn into left clicks
   sendButton(BTN[e.button], true, pt);
@@ -576,6 +633,7 @@ canvas.addEventListener('pointermove', (e) => {
 const pointerUp = (e) => {
   if (e.pointerType === 'touch' && padMode) return padUp(e);
   if (e.pointerType === 'touch') return e.type === 'pointercancel' ? touch.cancel() : touch.up(e.pointerId);
+  if (swallowUp) { swallowUp = false; return; } // the release of the click that re-locked the mouse
   if (e.button > 2) return;
   sendButton(BTN[e.button] || 'left', false, mapEvent(e));
 };
@@ -592,10 +650,12 @@ canvas.addEventListener('wheel', (e) => {
 
 // ---- keyboard (hardware) ----
 canvas.addEventListener('keydown', (e) => {
+  if (localShortcut(e)) return;
   e.preventDefault(); e.stopPropagation();
   heldKeys.add(e.code); co.push({ t: 'key', code: e.code, down: true });
 });
 canvas.addEventListener('keyup', (e) => {
+  if (localShortcut(e)) return;
   e.preventDefault(); e.stopPropagation();
   heldKeys.delete(e.code); co.push({ t: 'key', code: e.code, down: false });
 });

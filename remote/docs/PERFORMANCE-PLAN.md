@@ -94,5 +94,14 @@ Done, tested:
 - Web: asks for the track when `hello.video` is `h264` and the new Stream setting **GPU video (H.264)** is on
   (default); turning it off goes back to JPEG.
 
+Update (2026-11-09, measured on a GTX 1650 + 1920×1200): NVENC (the NVIDIA H.264 MFT) is picked; capture 2.6 ms,
+BGRA→NV12 2.9 ms, encode 4.8 ms per frame. The stream was still laggy because (1) the re-offer had no `nack` / `pli`
+RTCP feedback, so the browser never reported loss and a broken picture stayed until the next IDR (5 s), and (2)
+SIPSorcery's `SendVideo` sent each frame as one burst (IDRs up to ~420 KB ≈ 360 packets), which overflows Wi-Fi /
+router queues and causes exactly that loss. Fixed: `Capture/RtpVideoSender.cs` (own RFC 6184 packetizer, pacing at
+2.5× bitrate, NACK resends from a 1024-packet history, backlog → latest-wins capture, overflow → IDR), rtcp-fb lines
+in the re-offer, VBV ≈ 3 frames, safety IDR every 20 s, browser `jitterBufferTarget = 0`. Tests:
+`RtpVideoSenderTests.cs` + the SIPSorcery loopback now checks that whole frames reassemble.
+
 Not verified here: a real GPU encoder (the CI runner has no GPU, so it exercises the software MFT); real-network
 latency and bitrate tuning. If the GPU encoder misbehaves on a PC, turn off **GPU video** in Stream settings.

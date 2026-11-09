@@ -19,9 +19,12 @@ session approved by you at the PC.
 In a session: monitor picker, quality, audio on/off, send files (the PC asks where to save each one), on-screen
 keyboard, fullscreen (where the browser allows it; not iPhone Safari).
 
-**Game mode** (toolbar **Game**, needs the latest Windows app): locks the mouse to the stream and sends raw relative
-motion, so games that read the mouse directly (first-person cameras etc.) can be aimed. **Esc** releases the mouse.
-Some games with anti-cheat block injected input.
+**Game mode** (**F11** or toolbar **Game**, needs the latest Windows app), like a cloud-gaming app: the stream goes
+fullscreen, the mouse is locked to it and sends raw relative motion (a game camera can turn without limit), and every
+key — the Windows key, Alt+Tab, Esc — goes to the PC (Chrome / Edge Keyboard Lock; when the Remote tab is embedded,
+the main site's page takes the lock). **F11** is the only key kept local: it leaves game mode; holding **Esc** does too.
+If the mouse gets released (e.g. a dialog on this computer), click the stream to capture it again — that click isn't
+sent. Some games with anti-cheat block injected input.
 
 **GPU video** (Stream settings, on by default, needs the latest Windows app): the PC encodes the screen as H.264 on
 the graphics card (NVIDIA / AMD / Intel; Windows' software encoder if there is none) and sends it as a WebRTC

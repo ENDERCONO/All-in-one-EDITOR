@@ -236,7 +236,9 @@ public class H264Tests
         public RTCDataChannel Control = null!, Video = null!;
         public FakeH264Factory Factory = new();
         public ConcurrentQueue<string> FromAgent = new();
-        public int RtpVideo, JpegChunks, Reoffers;
+        public int RtpVideo, JpegChunks, Reoffers, VideoFrames;
+        public string? ReofferSdp;
+        public ConcurrentQueue<byte[]> Frames = new();
         public string? AuditText => File.Exists(Dir.File("a.log")) ? File.ReadAllText(Dir.File("a.log")) : null;
 
         public async Task Start(bool renegotiateWorks = true)
@@ -263,6 +265,7 @@ public class H264Tests
             Agent.Renegotiate = async sdp =>
             {
                 Interlocked.Increment(ref Reoffers);
+                ReofferSdp = sdp;
                 if (!renegotiateWorks) return null;
                 Browser.addTrack(new MediaStreamTrack(new VideoFormat(VideoCodecsEnum.H264, 96, 90000, RemoteSession.H264Fmtp), MediaStreamStatusEnum.RecvOnly));
                 var res = Browser.setRemoteDescription(new RTCSessionDescriptionInit { type = RTCSdpType.offer, sdp = sdp });
@@ -272,6 +275,7 @@ public class H264Tests
                 return ans.sdp;
             };
             Browser.OnRtpPacketReceived += (_, media, _) => { if (media == SDPMediaTypesEnum.video) Interlocked.Increment(ref RtpVideo); };
+            Browser.OnVideoFrameReceived += (_, _, frame, _) => { Interlocked.Increment(ref VideoFrames); if (Frames.Count < 50) Frames.Enqueue(frame); };
 
             Control = await Browser.createDataChannel("control", new RTCDataChannelInit { ordered = true });
             Video = await Browser.createDataChannel("video", new RTCDataChannelInit { ordered = true });
@@ -309,6 +313,11 @@ public class H264Tests
         Assert.True(await Until(() => l.Agent.H264Active, 20000), "H.264 streaming");
         Assert.True(await Until(() => l.RtpVideo > 5, 20000), "RTP video reaches the browser");
         Assert.Equal(1, l.Reoffers);
+        Assert.Contains("a=rtcp-fb:96 nack pli", l.ReofferSdp);   // the browser reports loss / asks for keyframes
+        Assert.Contains("a=rtcp-fb:96 nack", l.ReofferSdp!.Split((char)10).Select(x => x.TrimEnd((char)13)));
+        // the paced RTP sender's packets reassemble into the encoder's access units (IDR with SPS + PPS first)
+        Assert.True(await Until(() => l.VideoFrames > 2, 20000), "whole H.264 frames reach the browser");
+        Assert.Contains(l.Frames, f => AnnexB.HasIdr(f) && AnnexB.HasSps(f));
         await Task.Delay(200);
         int jpeg = l.JpegChunks;
         await Task.Delay(500);

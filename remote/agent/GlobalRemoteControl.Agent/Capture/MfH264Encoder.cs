@@ -129,7 +129,17 @@ public sealed class MfH264Encoder : IH264Encoder
     private static readonly Guid GopSize = new("95f31b26-95a4-41aa-9303-246a7fc6eef1");
     private static readonly Guid ForceKeyFrame = new("398c1b98-8353-475a-9ef2-8f265d260345");
     private static readonly Guid BFrames = new("8d390aac-dc5c-4200-b57f-814d04babab2");
+    private static readonly Guid BufferSize = new("0db96574-b6a4-4c8b-8106-3773de0310cd"); // VBV size, bits
+    private static readonly Guid MaxBitRate = new("9651eae4-39b9-4ebf-85ef-d7f444ec7465");
     private static readonly Guid CodecApiIid = new("901db4c7-31ce-41a2-85dc-8fa0bf41b8da");
+
+    /// <summary>
+    /// VBV size in frames: keeps picture sizes close to the per-frame budget so the bitrate stays even. Encoders may
+    /// still let an IDR go over it (NVENC: ~3x on a GTX 1650); <see cref="RtpVideoSender"/> paces those out.
+    /// </summary>
+    public const double VbvFrames = 3;
+
+    public static uint VbvBits(int bitrate, int fps) => (uint)Math.Max(64_000, bitrate / (double)Math.Clamp(fps, 1, 120) * VbvFrames);
 
     private readonly IMFActivate _activate;
     private readonly IMFTransform _mft;
@@ -167,6 +177,8 @@ public sealed class MfH264Encoder : IH264Encoder
         SetCodec(RateControl, 0);              // eAVEncCommonRateControlMode_CBR
         SetCodecBool(LowLatency, true);
         SetCodec(MeanBitRate, (uint)bitrate);
+        SetCodec(MaxBitRate, (uint)bitrate);
+        SetCodec(BufferSize, VbvBits(bitrate, _fps));
         SetCodec(GopSize, (uint)(_fps * 10));  // IDRs are forced when needed
         SetCodec(BFrames, 0);
 
@@ -218,7 +230,13 @@ public sealed class MfH264Encoder : IH264Encoder
         return false;
     }
 
-    public void SetBitrate(int bitsPerSecond) => SetCodec(MeanBitRate, (uint)Math.Clamp(bitsPerSecond, 100_000, 100_000_000));
+    public void SetBitrate(int bitsPerSecond)
+    {
+        uint b = (uint)Math.Clamp(bitsPerSecond, 100_000, 100_000_000);
+        SetCodec(MeanBitRate, b);
+        SetCodec(MaxBitRate, b);
+        SetCodec(BufferSize, VbvBits((int)b, _fps));
+    }
 
     public byte[]? Encode(byte[] nv12, bool keyframe, TimeSpan timestamp)
     {

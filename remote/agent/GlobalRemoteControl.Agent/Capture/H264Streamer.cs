@@ -10,7 +10,11 @@ namespace GlobalRemoteControl.Agent.Capture;
 /// </summary>
 public sealed class H264Streamer : IDisposable
 {
-    public static readonly TimeSpan KeyframeInterval = TimeSpan.FromSeconds(5);
+    /// <summary>
+    /// Safety IDR. Loss is repaired by NACK resends and, failing that, the browser's PLI asks for an IDR at once, so
+    /// this only needs to be rare: every IDR is a big frame, and a regular burst of them is a regular stutter.
+    /// </summary>
+    public static readonly TimeSpan KeyframeInterval = TimeSpan.FromSeconds(20);
     public static readonly TimeSpan IdleRefresh = TimeSpan.FromMilliseconds(500);
     public const int MaxFailures = 3;
 
@@ -54,6 +58,9 @@ public sealed class H264Streamer : IDisposable
     }
 
     public Action<string>? Log { get; set; }
+    /// <summary>How long the network sender still needs for what it holds; while it's over one frame time, the next
+    /// capture waits (latest-wins: a fresh picture later beats a stale one queued now).</summary>
+    public Func<TimeSpan>? Backlog { get; init; }
     /// <summary>Encoding broke for good (raised once, on the streaming thread).</summary>
     public event Action<string>? Failed;
     public string? EncoderName => _encoder?.Name;
@@ -115,7 +122,9 @@ public sealed class H264Streamer : IDisposable
         {
             if (!timer.Wait(next - sw.Elapsed, ct)) break;
             var now = sw.Elapsed;
-            next = now + TimeSpan.FromSeconds(1.0 / _fps);
+            var frameTime = TimeSpan.FromSeconds(1.0 / _fps);
+            next = now + frameTime;
+            if (Backlog != null && Backlog() > frameTime) { next = now + TimeSpan.FromMilliseconds(2); continue; }
             try
             {
                 var monitors = _monitors();

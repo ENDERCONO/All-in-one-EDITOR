@@ -57,6 +57,8 @@ public sealed class RemoteSession : IRemotePeer
     private MediaStreamTrack? _videoTrack;
     private bool _videoTrackFailed;
     private H264Streamer? _h264;
+    private RtpVideoSender? _rtp; // paced RTP + NACK resends for the track (one per track: keeps the sequence going)
+    public const int H264PayloadType = 96;
     private (int Fps, int Quality, double Scale, bool Cursor) _quality = (30, 70, 1, true);
 
     /// <summary>H.264 offer: packetization-mode=1 must be explicit or browsers answer mode 0, which SIPSorcery can't send.</summary>
@@ -109,7 +111,10 @@ public sealed class RemoteSession : IRemotePeer
         {
             // RTCP picture loss / full intra request from the browser's decoder → send an IDR
             if (media != SDPMediaTypesEnum.video || report?.Feedback == null) return;
-            if (report.Feedback.Header.PayloadFeedbackMessageType is PSFBFeedbackTypesEnum.PLI or PSFBFeedbackTypesEnum.FIR)
+            var fb = report.Feedback;
+            if (fb.Header.PacketType == RTCPReportTypesEnum.RTPFB && fb.Header.FeedbackMessageType == RTCPFeedbackTypesEnum.NACK)
+                _rtp?.OnNack(fb.PID, fb.BLP); // lost packets: resend them (ahead of new video)
+            else if (fb.Header.PayloadFeedbackMessageType is PSFBFeedbackTypesEnum.PLI or PSFBFeedbackTypesEnum.FIR)
                 _h264?.RequestKeyframe();
         };
         _transport = new DataChannelTransport(this);
@@ -335,9 +340,10 @@ public sealed class RemoteSession : IRemotePeer
             {
                 var renegotiate = Renegotiate;
                 if (renegotiate == null) { _videoTrackFailed = true; return; }
-                var track = new MediaStreamTrack(new VideoFormat(VideoCodecsEnum.H264, 96, 90000, H264Fmtp), MediaStreamStatusEnum.SendOnly);
+                var track = new MediaStreamTrack(new VideoFormat(VideoCodecsEnum.H264, H264PayloadType, 90000, H264Fmtp), MediaStreamStatusEnum.SendOnly);
                 _pc.addTrack(track);
                 var offer = _pc.createOffer(null);
+                offer.sdp = WithVideoFeedback(offer.sdp, H264PayloadType); // NACK + PLI/FIR, or the browser never reports loss
                 await _pc.setLocalDescription(offer).ConfigureAwait(false);
                 var answer = await renegotiate(offer.sdp).ConfigureAwait(false);
                 if (answer == null) { VideoTrackFailed("no valid answer to the re-offer"); return; }
@@ -351,12 +357,18 @@ public sealed class RemoteSession : IRemotePeer
                 if (_disposed != 0 || _relayed || _streamer == null || _capturer == null || _h264 != null) return;
                 var q = _quality;
                 _streamer.SetPaused(true); // waits for a JPEG frame in progress, so the capturer is free
+                var rtp = _rtp ??= new RtpVideoSender((payload, ts, marker, seq) =>
+                    _pc.SendRtpRaw(SDPMediaTypesEnum.video, payload, ts, marker ? 1 : 0, H264PayloadType, seq));
+                H264Streamer? self = null;
                 var h = new H264Streamer(_capturer, _svc.Monitors, _monitorIndex, _svc.H264!,
-                    (duration, au) => { try { _pc.SendVideo(duration, au); } catch (Exception) { } }, SendControl)
+                    (duration, au) => { rtp.SetBitrate(self?.Bitrate ?? 0); rtp.Send(duration, au); }, SendControl)
                 {
                     Log = m => _svc.Audit.Write("video-error", _info.ControllerName, _info.ControllerId, m),
+                    Backlog = () => rtp.Backlog,
                 };
+                self = h;
                 h.SetQuality(q.Fps, q.Quality, q.Scale, q.Cursor);
+                rtp.Overflow += () => { lock (_lock) _h264?.RequestKeyframe(); };
                 h.Failed += reason => Task.Run(() =>
                 {
                     _videoTrackFailed = true; // don't try again in this session
@@ -369,6 +381,25 @@ public sealed class RemoteSession : IRemotePeer
         }
         catch (Exception ex) { VideoTrackFailed(ex.Message); }
         finally { _videoSwitch.Release(); }
+    }
+
+    /// <summary>
+    /// Adds <c>nack</c>, <c>nack pli</c> and <c>ccm fir</c> RTCP feedback for <paramref name="pt"/> (SIPSorcery only
+    /// offers transport-cc). Without them the browser never reports lost packets or asks for a keyframe, and the
+    /// picture stays broken until the next periodic IDR.
+    /// </summary>
+    internal static string WithVideoFeedback(string sdp, int pt)
+    {
+        var nl = sdp.Contains('\r') ? "\r\n" : "\n";
+        var lines = sdp.Split(nl).ToList();
+        int at = lines.FindIndex(l => l.StartsWith($"a=rtpmap:{pt} ", StringComparison.Ordinal));
+        if (at < 0) return sdp;
+        foreach (var fb in new[] { "ccm fir", "nack pli", "nack" })
+        {
+            var line = $"a=rtcp-fb:{pt} {fb}";
+            if (!lines.Contains(line)) lines.Insert(at + 1, line);
+        }
+        return string.Join(nl, lines);
     }
 
     private void VideoTrackFailed(string why)
@@ -456,6 +487,7 @@ public sealed class RemoteSession : IRemotePeer
         H264Streamer? h;
         lock (_lock) { h = _h264; _h264 = null; }
         try { h?.Dispose(); } catch (Exception) { }
+        try { _rtp?.Dispose(); } catch (Exception) { }
         try { _streamer?.Dispose(); } catch (Exception) { }
         try { _loopback?.Dispose(); } catch (Exception) { }
         _files.Dispose();

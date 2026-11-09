@@ -163,6 +163,11 @@ export class Session extends Emitter {
   /** Hardware-decoded H.264 track → painted onto the same canvas, so zoom / touch / input mapping stay unchanged. */
   _onTrack(ev) {
     if (ev.track.kind !== 'video') return;
+    // show each picture as soon as it's decoded: no extra jitter buffer (cloud-gaming clients do the same)
+    if (ev.receiver) {
+      try { if ('jitterBufferTarget' in ev.receiver) ev.receiver.jitterBufferTarget = 0; } catch { /* older browser */ }
+      try { ev.receiver.playoutDelayHint = 0; } catch { /* Chrome-only, older */ }
+    }
     const v = this._vid || (this._vid = Object.assign(document.createElement('video'), { muted: true, playsInline: true, autoplay: true }));
     v.srcObject = ev.streams && ev.streams[0] ? ev.streams[0] : new MediaStream([ev.track]);
     this.track = ev.track;
