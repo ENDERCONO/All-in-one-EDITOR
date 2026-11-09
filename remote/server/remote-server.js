@@ -140,7 +140,15 @@ function attach(app, httpServer, opts = {}) {
   const sessions = new Map();       // sessionId -> { controller, device, deviceId }
   const watchers = new Set();       // controller sockets with a watch list
   const controllers = new Map();    // controllerId -> Set<ws> (a browser may have several tabs open)
-  const approvals = new Map();      // approvalId -> { deviceId, to, at }   (PROTOCOL section 8)
+  const approvals = new Map();      // approvalId -> { deviceId, to, at, out }   (PROTOCOL section 8)
+  // Re-delivers approval requests still waiting for this controller (a phone tab that was in the background, or
+  // offline, when the PC asked: iOS Safari suspends background tabs, 2026-11-09). The browser ignores ids it knows.
+  function resendApprovals(ws) {
+    const now = Date.now();
+    for (const a of approvals.values()) {
+      if (a.to === ws.ident.id && a.out && a.out.expiresAt > now && devices.has(a.deviceId)) send(ws, a.out);
+    }
+  }
   const codeRequests = new Map();   // requestId -> { controllerWs, deviceId, at }
   const pairLimiter = createRateLimiter(cfg.pairMax, 60000);
 
@@ -243,8 +251,13 @@ function attach(app, httpServer, opts = {}) {
     if (m.role === 'device') broadcastPresence(pk.id);
     // Cloudflare TURN only for browsers: the PC at home reaches the browser's relay address over plain UDP, and its
     // signaling socket lives for days (credentials would go stale there)
-    if (m.role !== 'controller' || !cfTurn) return send(ws, { type: 'ready', id: pk.id, iceServers });
-    cfTurn.get().then((extra) => send(ws, { type: 'ready', id: pk.id, iceServers: iceServers.concat(extra) }));
+    const isController = m.role === 'controller';
+    if (!isController || !cfTurn) {
+      send(ws, { type: 'ready', id: pk.id, iceServers });
+      if (isController) resendApprovals(ws);
+      return;
+    }
+    cfTurn.get().then((extra) => { send(ws, { type: 'ready', id: pk.id, iceServers: iceServers.concat(extra) }); resendApprovals(ws); });
   }
 
   // ----- authenticated messages -----
@@ -274,9 +287,9 @@ function attach(app, httpServer, opts = {}) {
           || !isBase64(m.signature, 100)) return sendError(ws, 'bad-message');
         if (!ws.approvalLimiter.hit('a')) return sendError(ws, 'rate-limited', m.approvalId);
         if (approvals.has(m.approvalId)) return sendError(ws, 'bad-message', m.approvalId);
-        approvals.set(m.approvalId, { deviceId: id, to: m.to, at: Date.now() });
         const out = { type: 'approval-request', deviceId: id, approvalId: m.approvalId, kind: m.kind,
           subject: { id: sub.id, name: sub.name, fingerprint: sub.fingerprint }, expiresAt: m.expiresAt, signature: m.signature };
+        approvals.set(m.approvalId, { deviceId: id, to: m.to, at: Date.now(), out });
         for (const c of controllers.get(m.to) || []) send(c, out);
         return;
       }

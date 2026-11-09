@@ -785,6 +785,27 @@ test('approval: bad requests, bad decisions, cancel, and a controller cannot sen
   } finally { await srv.stop(); }
 });
 
+test('approval-request waiting for an offline controller is delivered when it connects; not after it is answered or expired', async () => {
+  const srv = await startServer();
+  try {
+    const dev = await connect(srv, 'device');
+    const phoneKeys = makeKeys();
+    const req = approvalReq(phoneKeys.id);
+    dev.send(req);                                     // the phone tab is in the background: nobody gets it now
+    const phone = await connect(srv, 'controller', phoneKeys);
+    const got = await phone.next('approval-request');  // ...but it arrives as soon as the tab reconnects
+    assert.equal(got.approvalId, req.approvalId);
+    assert.equal(got.deviceId, dev.id);
+    phone.send({ type: 'approval-result', deviceId: dev.id, approvalId: req.approvalId, decision: 'trust', signature: 'B'.repeat(88) });
+    await dev.next('approval-result');
+    const again = await connect(srv, 'controller', phoneKeys);
+    await again.expectNone('approval-request');        // answered: not re-sent
+    dev.send(approvalReq(phoneKeys.id, { expiresAt: Date.now() - 1 }));
+    const third = await connect(srv, 'controller', phoneKeys);
+    await third.expectNone('approval-request');        // expired: not re-sent
+  } finally { await srv.stop(); }
+});
+
 test('approval-request is rate limited per device', async () => {
   const srv = await startServer();
   try {

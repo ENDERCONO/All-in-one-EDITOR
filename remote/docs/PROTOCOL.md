@@ -291,7 +291,7 @@ controller (`Owner: true` in the trusted controllers file). For a my-device cont
 D→S  { type:"approval-request", to:<controllerId>, approvalId, kind:"pair"|"session", subject:{ id, name, fingerprint },
        expiresAt:<ms epoch>, signature: deviceSign("grc-approval:" + approvalId + ":" + kind + ":" + subject.id + ":" +
        subject.fingerprint + ":" + expiresAt + ":" + subject.name) }
-S→C  { type:"approval-request", deviceId, approvalId, kind, subject, expiresAt, signature }   // to every socket of `to`; dropped if offline
+S→C  { type:"approval-request", deviceId, approvalId, kind, subject, expiresAt, signature }   // to every socket of `to`; if it is offline, kept and sent when it connects (until expiresAt or answered)
 C→S  { type:"approval-result", deviceId, approvalId, decision,
        signature: sign("grc-approve:" + deviceId + ":" + approvalId + ":" + kind + ":" + decision) }
 S→D  { type:"approval-result", controllerId, approvalId, decision, signature }   // controllerId = the sender's authenticated id
