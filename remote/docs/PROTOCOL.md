@@ -174,11 +174,20 @@ controller → agent  { type:"signal", sessionId, renegotiate:true, seq:<same>, 
 * Sending (agent): the agent packetizes RTP itself (RFC 6184 single NAL / FU-A, ≤ 1180-byte payloads, AUDs dropped)
   and **paces** it at 2.5× the video bitrate (≥ 4 Mbit/s; whatever is queued leaves within 100 ms), so a keyframe
   never leaves as one burst. It keeps the last 1024 packets and resends one (same sequence number, ahead of new video)
-  on an RTCP generic NACK, at most once per 20 ms. While the pacer still holds more than one frame time the next
+  on an RTCP generic NACK, at most once per 20 ms. A NACK for a packet no longer in that history, or for one already
+  resent 3 times, makes the agent send an IDR (≤ 1 per 500 ms): SIPSorcery keeps only one feedback message per RTCP
+  compound packet (a PLI sent next to a NACK is lost) and only the first NACK entry, so the browser's PLI alone is not
+  reliable. While the pacer still holds more than one frame time the next
   capture waits (latest-wins); a queue over 400 ms is dropped and the stream restarts from an IDR. The encoder's VBV
   is about 3 frames (CBR, max bitrate = target) to keep picture sizes even.
 * Receiving (controller): `RTCRtpReceiver.jitterBufferTarget = 0` (and `playoutDelayHint = 0`) — each picture is
   shown as soon as it's decoded.
+* Freeze watchdog (controller, from the video `inbound-rtp` stats every second): RTP packets arrive but
+  `framesDecoded` hasn't moved for 1.5 s → `{t:"keyframe"}` on the control channel (the agent answers with an IDR;
+  repeated at most every 1.5 s). No RTP for 2.5 s → the controller goes back to the JPEG picture and waits for (and
+  asks for) a JPEG keyframe. A JPEG keyframe that arrives while the track is shown (more than 1 s after it started)
+  means the agent fell back on its own: the controller shows the JPEG picture again. JPEG deltas dropped while the
+  track was shown make the controller wait for a JPEG keyframe afterwards (the canvas holds an H.264 picture).
 * An agent without H.264 never sends `video` in `hello` and never renegotiates: everything stays on the JPEG path.
 
 ### control messages, controller → agent (all validated; out-of-range → ignored + logged)

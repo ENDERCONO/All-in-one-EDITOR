@@ -109,7 +109,10 @@ public sealed class RemoteSession : IRemotePeer
         _pc.ondatachannel += OnDataChannel;
         _pc.OnReceiveReport += (_, media, report) =>
         {
-            // RTCP picture loss / full intra request from the browser's decoder → send an IDR
+            // RTCP picture loss / full intra request from the browser's decoder → send an IDR. SIPSorcery keeps only
+            // ONE feedback per compound packet (a PLI next to a NACK is dropped) and only the NACK's first entry, so
+            // unrepairable NACKs also ask for an IDR (RtpVideoSender.KeyframeNeeded) and the browser has a stats
+            // watchdog that sends {t:"keyframe"} over the control channel (PROTOCOL 5.1).
             if (media != SDPMediaTypesEnum.video || report?.Feedback == null) return;
             var fb = report.Feedback;
             if (fb.Header.PacketType == RTCPReportTypesEnum.RTPFB && fb.Header.FeedbackMessageType == RTCPFeedbackTypesEnum.NACK)
@@ -369,6 +372,7 @@ public sealed class RemoteSession : IRemotePeer
                 self = h;
                 h.SetQuality(q.Fps, q.Quality, q.Scale, q.Cursor);
                 rtp.Overflow += () => { lock (_lock) _h264?.RequestKeyframe(); };
+                rtp.KeyframeNeeded += () => { lock (_lock) _h264?.RequestKeyframe(); }; // NACK it can't repair
                 h.Failed += reason => Task.Run(() =>
                 {
                     _videoTrackFailed = true; // don't try again in this session

@@ -125,3 +125,31 @@ test('stream settings are sanitized', () => {
   assert.equal(s.scale, 0.33); assert.equal(s.quality, 95); assert.equal(s.fps, 30); assert.equal(s.auto, true); assert.equal(s.sharp, true);
   assert.equal(P.sanitizeStream({ scale: 'x' }).scale, 0.75);
 });
+
+test('TrackWatch: packets but no decoded frames -> keyframe request, rate-limited', () => {
+  // regression (frozen GPU picture): the browser's own PLI can be lost, so a stuck decoder asks over control
+  const w = new P.TrackWatch({ stallMs: 1500, silentMs: 2500 });
+  assert.equal(w.update(0, { packetsReceived: 100, framesDecoded: 10 }), 'ok');
+  assert.equal(w.update(1000, { packetsReceived: 200, framesDecoded: 40 }), 'ok');
+  assert.equal(w.update(2000, { packetsReceived: 300, framesDecoded: 40 }), 'ok');      // 1 s without a picture
+  assert.equal(w.update(2600, { packetsReceived: 400, framesDecoded: 40 }), 'keyframe'); // 1.6 s
+  assert.equal(w.update(3600, { packetsReceived: 500, framesDecoded: 40 }), 'ok');       // not again so soon
+  assert.equal(w.update(4200, { packetsReceived: 600, framesDecoded: 40 }), 'keyframe');
+  assert.equal(w.update(5000, { packetsReceived: 700, framesDecoded: 41 }), 'ok');       // decoding again
+  assert.equal(w.update(6000, { packetsReceived: 800, framesDecoded: 70 }), 'ok');
+});
+
+test('TrackWatch: no packets -> silent once (the agent went back to JPEG), again after packets resume', () => {
+  const w = new P.TrackWatch({ stallMs: 1500, silentMs: 2500 });
+  w.update(0, { packetsReceived: 100, framesDecoded: 10 });
+  assert.equal(w.update(1000, { packetsReceived: 150, framesDecoded: 20 }), 'ok');
+  assert.equal(w.update(2000, { packetsReceived: 150, framesDecoded: 20 }), 'ok');
+  assert.equal(w.update(3600, { packetsReceived: 150, framesDecoded: 20 }), 'silent');
+  assert.equal(w.update(4600, { packetsReceived: 150, framesDecoded: 20 }), 'ok');       // only once
+  assert.equal(w.update(5600, { packetsReceived: 160, framesDecoded: 21 }), 'ok');
+  assert.equal(w.update(8200, { packetsReceived: 160, framesDecoded: 21 }), 'silent');
+  // missing stats (older browsers) never trigger anything
+  assert.equal(new P.TrackWatch().update(0, {}), 'ok');
+  w.reset();
+  assert.equal(w.update(99999, { packetsReceived: 160, framesDecoded: 21 }), 'ok');      // reset: new baseline
+});

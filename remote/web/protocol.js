@@ -227,6 +227,33 @@ export class FrameSequencer {
 }
 
 /**
+ * GPU track watchdog (PROTOCOL 5.1), fed the video inbound-rtp stats about once a second. The agent sends at least
+ * a refresh every 0.5 s, so a healthy track always decodes frames:
+ * - packets arrive but no frame decodes for `stallMs` -> 'keyframe': the decoder is stuck on a loss nobody repaired
+ *   (the browser's own RTCP PLI can be lost: SIPSorcery drops a PLI that shares a packet with a NACK). The caller asks
+ *   for an IDR over the control channel; repeated at most once per `stallMs`.
+ * - no packets for `silentMs` -> 'silent' (once per silence): the agent stopped the track (it fell back to JPEG);
+ *   browsers don't always mute the track, so the caller goes back to the JPEG picture and asks for a JPEG keyframe.
+ */
+export class TrackWatch {
+  constructor({ stallMs = 1500, silentMs = 2500 } = {}) { this.stallMs = stallMs; this.silentMs = silentMs; this.reset(); }
+  reset() { this.packets = null; this.frames = null; this.lastPacketAt = 0; this.lastFrameAt = 0; this.lastReq = -Infinity; this.silent = false; }
+  /** @returns {'ok'|'keyframe'|'silent'} */
+  update(now, { packetsReceived, framesDecoded }) {
+    if (!Number.isFinite(packetsReceived) || !Number.isFinite(framesDecoded)) return 'ok';
+    if (this.packets === null) { this.packets = packetsReceived; this.frames = framesDecoded; this.lastPacketAt = this.lastFrameAt = now; return 'ok'; }
+    if (packetsReceived !== this.packets) { this.packets = packetsReceived; this.lastPacketAt = now; this.silent = false; }
+    if (framesDecoded !== this.frames) { this.frames = framesDecoded; this.lastFrameAt = now; }
+    if (now - this.lastPacketAt >= this.silentMs) {
+      if (this.silent) return 'ok';
+      this.silent = true; return 'silent';
+    }
+    if (now - this.lastFrameAt >= this.stallMs && now - this.lastReq >= this.stallMs) { this.lastReq = now; return 'keyframe'; }
+    return 'ok';
+  }
+}
+
+/**
  * Coalesces input: at most one mouse-move and one wheel per flush (call flush once per animation frame).
  * Anything else (button/key/text) goes through push(), which first flushes pending move/wheel so order is preserved.
  */

@@ -140,6 +140,52 @@ public class RtpVideoSenderTests
     }
 
     [Fact]
+    public void Nack_ForPacketGoneFromHistory_AsksForKeyframe_RateLimited()
+    {
+        // regression (frozen picture): SIPSorcery drops a PLI that shares an RTCP packet with a NACK, so a NACK the
+        // sender can't serve must itself ask for an IDR, or the browser's decoder waits for the 20 s safety keyframe
+        var (s, sent) = Make();
+        int keys = 0;
+        s.KeyframeNeeded += () => keys++;
+        s.SetBitrate(50_000_000);
+        var p = Au(Nal(0x41, 1000)); // one packet per access unit
+        for (int i = 0; i < RtpVideoSender.HistorySize + 10; i++) { s.Send(3000, p); DrainAll(s); }
+        ushort first = sent[0].Seq;
+        Assert.Equal(0, s.OnNack(first, 0));        // overwritten in the history: can't be resent...
+        Assert.Equal(1, keys);                      // ...so a keyframe is requested
+        Assert.Equal(0, s.OnNack(first, 0));
+        Assert.Equal(1, keys);                      // not again within KeyframeRequestGap
+        Assert.Equal(0, s.OnNack((ushort)(first + RtpVideoSender.HistorySize + 3000), 0)); // never sent: ignored
+        Thread.Sleep(RtpVideoSender.KeyframeRequestGap + TimeSpan.FromMilliseconds(20));
+        Assert.Equal(0, s.OnNack((ushort)(first + RtpVideoSender.HistorySize + 3000), 0));
+        Assert.Equal(1, keys);
+        s.OnNack(first, 0);
+        Assert.Equal(2, keys);
+    }
+
+    [Fact]
+    public void Nack_ThatResendsDontRepair_AsksForKeyframe()
+    {
+        var (s, sent) = Make();
+        int keys = 0;
+        s.KeyframeNeeded += () => keys++;
+        s.SetBitrate(50_000_000);
+        s.Send(3000, Au(Nal(0x41, 1000)));
+        DrainAll(s);
+        ushort seq = sent[0].Seq;
+        for (int i = 0; i < RtpVideoSender.MaxResends; i++)
+        {
+            Thread.Sleep(RtpVideoSender.MinResendGap + TimeSpan.FromMilliseconds(10));
+            Assert.Equal(1, s.OnNack(seq, 0));
+            DrainAll(s);
+        }
+        Assert.Equal(0, keys);
+        Thread.Sleep(RtpVideoSender.MinResendGap + TimeSpan.FromMilliseconds(10));
+        Assert.Equal(0, s.OnNack(seq, 0)); // still lost after MaxResends: stop resending, ask for an IDR
+        Assert.Equal(1, keys);
+    }
+
+    [Fact]
     public void StalledLink_DropsQueue_AsksForKeyframe_AndWaitsForOne()
     {
         var (s, sent) = Make();

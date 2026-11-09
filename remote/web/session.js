@@ -172,10 +172,8 @@ export class Session extends Emitter {
     v.srcObject = ev.streams && ev.streams[0] ? ev.streams[0] : new MediaStream([ev.track]);
     this.track = ev.track;
     v.play().catch(() => {});
-    const pause = () => { // back to the JPEG picture (the agent resumes it with a keyframe)
-      if (this.trackActive) { this.trackActive = false; this.emit('track', false); }
-      this.requestKeyframe();
-    };
+    const pause = () => this._leaveTrack(); // back to the JPEG picture
+    this._trackWatch = new P.TrackWatch();
     ev.track.onended = () => { if (this.track === ev.track) { this.track = null; pause(); } };
     // the agent stops sending RTP when it falls back to JPEG: the track mutes but stays, and unmutes when it resumes
     ev.track.onmute = () => { clearTimeout(this._muteT); this._muteT = setTimeout(() => { if (ev.track.muted && this.track === ev.track) pause(); }, 1500); };
@@ -184,7 +182,7 @@ export class Session extends Emitter {
     const draw = () => {
       if (this.ended || this.track !== ev.track) return;
       if (v.videoWidth && this.canvas && this.wantTrack && !ev.track.muted) {
-        if (!this.trackActive) { this.trackActive = true; this.emit('track', true); }
+        if (!this.trackActive) { this.trackActive = true; this._trackSince = performance.now(); this.emit('track', true); }
         if (this.canvas.width !== v.videoWidth || this.canvas.height !== v.videoHeight) {
           this.canvas.width = v.videoWidth; this.canvas.height = v.videoHeight;
           this.imgW = v.videoWidth; this.imgH = v.videoHeight;
@@ -196,6 +194,16 @@ export class Session extends Emitter {
       next();
     };
     next();
+  }
+
+  /**
+   * Back to the JPEG picture. The canvas still shows the last H.264 picture, which no JPEG delta matches, so wait for
+   * and ask for a JPEG keyframe even if the JPEG sequence looked fine before the track (requestKeyframe alone asks
+   * only while waiting: that left the picture frozen until the 10 s safety keyframe).
+   */
+  _leaveTrack() {
+    if (this.trackActive) { this.trackActive = false; this.emit('track', false); }
+    this.seq.fail(); this.requestKeyframe();
   }
 
   async _devKey() {
@@ -265,6 +273,7 @@ export class Session extends Emitter {
   setVideoTrack(on) {
     this.wantTrack = !!on;
     if (!on && this.trackActive) { this.trackActive = false; this.emit('track', false); }
+    if (this._trackWatch) this._trackWatch.reset(); // the packet gap while it was off is not a stall
     return this.sendControl({ t: 'video-track', enabled: !!on });
   }
 
@@ -321,6 +330,7 @@ export class Session extends Emitter {
       if (this.seq.accept({ keyframe: e.frame.keyframe, droppedBefore: e.droppedBefore }) !== 'apply') {
         bitmaps.forEach((b) => b.close()); this.requestKeyframe(); continue;
       }
+      if (e.frame.keyframe) { this.ready.forEach((x) => x.bitmaps.forEach((b) => b.close())); this.ready = []; } // hidden tab: don't pile up
       this.ready.push({ frame: e.frame, bitmaps });
       if (!this._raf) this._raf = requestAnimationFrame(() => this._paint());
     }
@@ -329,7 +339,16 @@ export class Session extends Emitter {
   _paint() {
     this._raf = 0;
     const list = this.ready; this.ready = [];
-    if (!this.canvas || this.trackActive) return list.forEach((x) => x.bitmaps.forEach((b) => b.close()));
+    // A JPEG keyframe while the track is shown: the agent went back to JPEG on its own (encoder failure, ...). Use it,
+    // or the picture stays frozen on the last H.264 frame (the track doesn't always mute). Ignored in the first second,
+    // when it can only be a stale frame from before the switch.
+    if (this.trackActive && list.some((x) => x.frame.keyframe) && performance.now() - (this._trackSince || 0) > 1000) {
+      this.trackActive = false; this.emit('track', false);
+    }
+    if (!this.canvas || this.trackActive) {
+      if (this.trackActive) this.seq.fail(); // these deltas are lost: after the track, start from a keyframe
+      return list.forEach((x) => x.bitmaps.forEach((b) => b.close()));
+    }
     let start = 0; // a keyframe makes everything before it irrelevant
     list.forEach((x, i) => { if (x.frame.keyframe) start = i; });
     for (let i = 0; i < list.length; i++) {
@@ -365,6 +384,12 @@ export class Session extends Emitter {
         if (r.type === 'inbound-rtp' && r.kind === 'video' && typeof r.bytesReceived === 'number') {
           if (this._rtpBytes != null) this.bytesIn += Math.max(0, r.bytesReceived - this._rtpBytes);
           this._rtpBytes = r.bytesReceived;
+          if (this.track && this.wantTrack && this._trackWatch && !this.ended) {
+            const a = this._trackWatch.update(now, r);
+            // packets but no pictures (also before the first one is shown): stuck decoder, ask for an IDR over control
+            if (a === 'keyframe') this.sendControl({ t: 'keyframe' });
+            else if (a === 'silent') this._leaveTrack();
+          }
         }
       });
     } catch { /* ignore */ }

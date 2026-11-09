@@ -12,6 +12,10 @@ namespace GlobalRemoteControl.Agent.Capture;
 /// <item><b>Backlog</b> tells the encoder loop to skip a capture while the link is still busy with the previous
 /// frame (latest-wins, no queue of stale frames). Whatever is queued drains within <see cref="DrainTarget"/>; a
 /// stalled link (more than <see cref="MaxBacklog"/> queued) drops the queue and asks for a keyframe.</item>
+/// <item><b>Unrepairable loss</b>: a NACK for a packet that already left the history, or for one resent
+/// <see cref="MaxResends"/> times, raises <see cref="KeyframeNeeded"/>. The browser's own PLI can't be relied on:
+/// SIPSorcery keeps one feedback message per RTCP compound packet (a PLI next to a NACK is lost) and only the first
+/// NACK entry (17 packets) of each, so without this the picture froze until the next safety IDR.</item>
 /// </list>
 /// Thread-safe: <see cref="Send"/> from the encoder thread, <see cref="OnNack"/> from the RTCP thread.
 /// </summary>
@@ -24,6 +28,8 @@ public sealed class RtpVideoSender : IDisposable
     public static readonly TimeSpan MaxBacklog = TimeSpan.FromMilliseconds(400);
     public static readonly TimeSpan DrainTarget = TimeSpan.FromMilliseconds(100);
     public static readonly TimeSpan MinResendGap = TimeSpan.FromMilliseconds(20);
+    public const int MaxResends = 3;
+    public static readonly TimeSpan KeyframeRequestGap = TimeSpan.FromMilliseconds(500);
 
     /// <summary>Sends one RTP payload: (payload, timestamp, marker, sequence number).</summary>
     private readonly Action<byte[], uint, bool, ushort> _send;
@@ -40,6 +46,7 @@ public sealed class RtpVideoSender : IDisposable
     private volatile int _rateBps = MinPacingBps;
     private bool _needKey;
     private double _drainBps; // set when something is queued: what's queued now leaves within DrainTarget
+    private long _lastKeyNeededTicks = long.MinValue;
 
     private long _packets, _resent;
 
@@ -51,6 +58,7 @@ public sealed class RtpVideoSender : IDisposable
         public ushort Seq;
         public long LastSentTicks = -1;
         public bool Resend;
+        public int Resends;
     }
 
     /// <param name="startThread">false for tests: call <see cref="Pump"/> by hand.</param>
@@ -68,6 +76,12 @@ public sealed class RtpVideoSender : IDisposable
 
     /// <summary>Raised (pacer thread) when the queue had to be dropped: the next frame must be a keyframe.</summary>
     public event Action? Overflow;
+
+    /// <summary>
+    /// Raised (RTCP thread, at most once per <see cref="KeyframeRequestGap"/>) when the browser reports a loss that
+    /// resending can't repair: the next frame must be an IDR.
+    /// </summary>
+    public event Action? KeyframeNeeded;
 
     public long PacketsSent => Interlocked.Read(ref _packets);
     public long PacketsResent => Interlocked.Read(ref _resent);
@@ -120,6 +134,7 @@ public sealed class RtpVideoSender : IDisposable
     public int OnNack(ushort pid, ushort blp)
     {
         int queued = 0;
+        bool unrepairable = false;
         long now = _clock.ElapsedTicks;
         long gap = (long)(MinResendGap.TotalSeconds * Stopwatch.Frequency);
         lock (_lock)
@@ -130,8 +145,16 @@ public sealed class RtpVideoSender : IDisposable
                 if (i >= 0 && (blp & (1 << i)) == 0) continue;
                 ushort seq = (ushort)(pid + i + 1);
                 var p = _history[seq % HistorySize];
-                if (p == null || p.Seq != seq || p.Resend) continue;          // too old, or already waiting to go again
+                if (p == null || p.Seq != seq)
+                {
+                    // gone from the history: only a keyframe repairs it (a seq we never sent is just ignored)
+                    if (WasSent(seq)) unrepairable = true;
+                    continue;
+                }
+                if (p.Resend) continue;                                           // already waiting to go again
                 if (p.LastSentTicks < 0 || now - p.LastSentTicks < gap) continue; // not sent yet / just resent
+                if (p.Resends >= MaxResends) { unrepairable = true; continue; }   // resends don't get through
+                p.Resends++;
                 p.Resend = true;
                 after = after == null ? _queue.AddFirst(p) : _queue.AddAfter(after, p); // repairs go before new video
                 _queuedBytes += p.Payload.Length;
@@ -139,7 +162,26 @@ public sealed class RtpVideoSender : IDisposable
             }
         }
         if (queued > 0) _wake.Set();
+        if (unrepairable && RequestKeyframeAllowed(now)) KeyframeNeeded?.Invoke();
         return queued;
+    }
+
+    /// <summary>True if <paramref name="seq"/> lies before the next sequence number (within half the range).</summary>
+    private bool WasSent(ushort seq)
+    {
+        int behind = (ushort)(_seq - seq);
+        return behind is > 0 and < 32768;
+    }
+
+    private bool RequestKeyframeAllowed(long now)
+    {
+        long gap = (long)(KeyframeRequestGap.TotalSeconds * Stopwatch.Frequency);
+        lock (_lock)
+        {
+            if (_lastKeyNeededTicks != long.MinValue && now - _lastKeyNeededTicks < gap) return false;
+            _lastKeyNeededTicks = now;
+            return true;
+        }
     }
 
     private void Loop()
