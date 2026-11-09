@@ -230,9 +230,13 @@ controller (`Owner: true` in the trusted controllers file). For a my-device cont
    `mode:"control"` (audit `session-auto-approved`). The session bar, tray state and kill switch work as always.
 2. **Uploads need no dialog.** A `file-offer` from it is accepted into `%USERPROFILE%\Downloads\GlobalRemoteControl\`
    (sanitized name, never overwrites: ` (2)`, ` (3)` …). Audited like any transfer.
-3. **It can approve for the PC.** Whenever the agent opens a pairing or session approval dialog, it also sends an
-   approval request to every my-device controller (except the one asking). The first valid answer — the PC dialog or
-   any my-device — wins; the others are closed.
+3. **It can approve for the PC** — and so can every other saved trusted controller (2026-11-09, the owner's call:
+   approving from a trusted phone or laptop must not need a remote session into the PC first). Whenever the agent
+   opens a pairing or session approval dialog, it also sends an approval request to every saved trusted controller
+   (except the one asking; "Allow once" controllers are never asked). The first valid answer — the PC dialog or any
+   trusted controller — wins; the others are closed. An answer counts only from a controller that is still saved as
+   trusted when it arrives, signed with the key stored at pairing. "My device" is still what gives unattended
+   sessions, uploads and pairing codes.
 4. **It can ask for a pairing code**, so a new browser (e.g. a school computer) can pair while nobody is home.
 
 ```

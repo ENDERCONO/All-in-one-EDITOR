@@ -38,7 +38,8 @@ device…** → Yes. From then on that phone:
 * **approves other devices for you**: when another browser (e.g. a school computer) pairs or asks for a session,
   the phone pops up *Allow once / Trust / Deny* (or *Allow control / View only / Deny*) at the same time as the PC
   dialog, and the first answer wins. **Allow once** = one session, nothing saved, gone afterwards. Keep the Remote page
-  open on the phone to get these (it can also show a notification while the tab is in the background);
+  open on the phone to get these (it can also show a notification while the tab is in the background). Since
+  2026-11-09 every **trusted** device gets these popups too, not only "My device" ones;
 * **gets pairing codes**: the **Pairing code** button next to the PC asks it for a fresh code to type on the other browser.
 
 Example, at school: tap **Pairing code** on your phone → type the code on the school PC → tap **Allow once** on your

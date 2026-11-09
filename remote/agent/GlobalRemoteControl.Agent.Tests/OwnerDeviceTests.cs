@@ -187,11 +187,37 @@ public class OwnerApprovalTests
     }
 
     [Fact]
-    public async Task NoOwners_NothingSent()
+    public async Task NoOtherTrustedDevice_NothingSent()
     {
-        using var r = new OwnerRig(phoneIsOwner: false);
+        using var r = new OwnerRig();
+        r.Store.Revoke(r.Phone.Id);
         Assert.False(r.Approvals.CanAsk(r.School.Id));
         Assert.Null(await r.Approvals.AskAsync("pair", r.School.Id, "x", "AAAA-BBBB-CCCC-DDDD", TimeSpan.FromSeconds(1), CancellationToken.None));
+        Assert.Empty(r.Signal.OfType("approval-request"));
+    }
+
+    [Fact]
+    public async Task OrdinaryTrustedDevice_IsAskedToo_AndItsAnswerCounts()
+    {
+        // 2026-11-09: any saved trusted device approves, not only a my-device
+        using var r = new OwnerRig(phoneIsOwner: false);
+        Assert.True(r.Approvals.CanAsk(r.School.Id));
+        var task = r.Approvals.AskAsync("pair", r.School.Id, "School PC", "AAAA-BBBB-CCCC-DDDD", TimeSpan.FromSeconds(5), CancellationToken.None);
+        await OwnerRig.Until(() => r.Signal.OfType("approval-request").Count == 1);
+        Assert.Equal(r.Phone.Id, r.LastRequest.GetProperty("to").GetString());
+        r.Answer(r.Phone, r.LastRequest, "trust");
+        Assert.Equal("trust", await task);
+    }
+
+    [Fact]
+    public async Task AllowOnceDevice_IsNeverAsked()
+    {
+        using var r = new OwnerRig();
+        r.Store.Revoke(r.Phone.Id);
+        using var guest = new TestKey("Guest");
+        r.Store.AddTemporary(guest.Id, guest.Name, guest.PublicKeyB64);
+        Assert.False(r.Approvals.CanAsk(r.School.Id));
+        Assert.Null(await r.Approvals.AskAsync("pair", r.School.Id, "x", "AAAA-BBBB-CCCC-DDDD", TimeSpan.FromMilliseconds(200), CancellationToken.None));
         Assert.Empty(r.Signal.OfType("approval-request"));
     }
 
@@ -199,17 +225,17 @@ public class OwnerApprovalTests
     [InlineData("bad-signature")]
     [InlineData("wrong-decision-signed")]
     [InlineData("decision-for-other-kind")]
-    [InlineData("not-owner-any-more")]
+    [InlineData("revoked-meanwhile")]
     [InlineData("answered-by-someone-else")]
     [InlineData("unknown-approval")]
     public async Task InvalidAnswers_AreIgnored(string attack)
     {
         using var r = new OwnerRig();
         using var mallory = new TestKey("Mallory");
-        r.Store.Add(mallory.Id, mallory.Name, mallory.PublicKeyB64); // paired, but not a my-device
+        r.Store.Add(mallory.Id, mallory.Name, mallory.PublicKeyB64); // trusted too, so it gets its own request
         var task = r.Approvals.AskAsync("pair", r.School.Id, "School PC", "AAAA-BBBB-CCCC-DDDD", TimeSpan.FromMilliseconds(400), CancellationToken.None);
-        await OwnerRig.Until(() => r.Signal.OfType("approval-request").Count == 1);
-        var req = r.LastRequest;
+        await OwnerRig.Until(() => r.Signal.OfType("approval-request").Count == 2);
+        var req = r.Signal.OfType("approval-request").Single(q => q.GetProperty("to").GetString() == r.Phone.Id);
         switch (attack)
         {
             case "bad-signature":
@@ -217,8 +243,8 @@ public class OwnerApprovalTests
                 break;
             case "wrong-decision-signed": r.Answer(r.Phone, req, "trust", signWith: "deny"); break;
             case "decision-for-other-kind": r.Answer(r.Phone, req, "control"); break;
-            case "not-owner-any-more": r.Store.SetOwner(r.Phone.Id, false); r.Answer(r.Phone, req, "trust"); break;
-            case "answered-by-someone-else": r.Answer(mallory, req, "trust"); break;
+            case "revoked-meanwhile": r.Store.Revoke(r.Phone.Id); r.Answer(r.Phone, req, "trust"); break;
+            case "answered-by-someone-else": r.Answer(mallory, req, "trust"); break; // the phone's request, mallory's key
             case "unknown-approval":
                 r.Approvals.OnResult(Msg.Of(new { type = "approval-result", controllerId = r.Phone.Id, approvalId = Msg.NewId(), decision = "trust",
                     signature = r.Phone.Sign(IdentityUtil.ApproveString(r.Device.DeviceId, Msg.NewId(), "pair", "trust")) }));
@@ -296,9 +322,10 @@ public class OwnerPairingTests
     }
 
     [Fact]
-    public async Task WithoutOwners_OnlyThePcDialog()
+    public async Task WithoutOtherTrustedDevices_OnlyThePcDialog()
     {
-        using var r = new OwnerRig(phoneIsOwner: false);
+        using var r = new OwnerRig();
+        r.Store.Revoke(r.Phone.Id);
         var t = r.PairRequest(r.School);
         await OwnerRig.Until(() => r.Prompts.PairCalls == 1);
         r.Prompts.Pair.SetResult(true);

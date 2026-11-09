@@ -8,8 +8,10 @@ namespace GlobalRemoteControl.Agent.Signaling;
 
 /// <summary>
 /// PROTOCOL section 8, device side: while a pairing or session dialog is open, the same question also goes to every
-/// "my device" controller. A reply counts only if it answers a request we sent to that controller, that controller is
-/// still a my-device now, and it is signed with the key stored at pairing.
+/// saved trusted controller (not only "my device" ones: the owner's call, 2026-11-09, so a trusted phone or laptop can
+/// let a new computer in without remoting into the PC first). "Allow once" controllers are never asked. A reply counts
+/// only if it answers a request we sent to that controller, that controller is still saved as trusted now, and it is
+/// signed with the key stored at pairing.
 /// </summary>
 public sealed class OwnerApprovals
 {
@@ -32,17 +34,20 @@ public sealed class OwnerApprovals
     /// <summary>Requests currently waiting for an answer (tests).</summary>
     public int Pending => _out.Count;
 
-    /// <summary>True if some my-device other than <paramref name="subjectId"/> could be asked.</summary>
-    public bool CanAsk(string subjectId) => _store.Owners.Any(o => o.Id != subjectId);
+    /// <summary>The controllers that may approve: every saved trusted one ("once" controllers are not saved).</summary>
+    private IEnumerable<TrustedController> Approvers => _store.All;
+
+    /// <summary>True if some trusted controller other than <paramref name="subjectId"/> could be asked.</summary>
+    public bool CanAsk(string subjectId) => Approvers.Any(o => o.Id != subjectId);
 
     /// <summary>
-    /// Asks every my-device (except the subject itself). Completes with the first valid decision, or null when
+    /// Asks every trusted controller (except the subject itself). Completes with the first valid decision, or null when
     /// <paramref name="cancel"/> fires or the time is up. Outstanding requests are withdrawn either way.
     /// </summary>
     public async Task<string?> AskAsync(string kind, string subjectId, string subjectName, string subjectFingerprint,
         TimeSpan timeout, CancellationToken cancel)
     {
-        var owners = _store.Owners.Where(o => o.Id != subjectId).ToList();
+        var owners = Approvers.Where(o => o.Id != subjectId).ToList();
         if (owners.Count == 0) return null;
         var result = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         var expiresAt = DateTimeOffset.UtcNow.Add(timeout).ToUnixTimeMilliseconds();
@@ -71,7 +76,7 @@ public sealed class OwnerApprovals
             foreach (var (approvalId, ownerId) in sent)
             {
                 _out.TryRemove(approvalId, out _);
-                // closes the prompt on the other my-devices (and on this one if it never answered)
+                // closes the prompt on the other trusted devices (and on this one if it never answered)
                 _ = _signal.SendAsync(new { type = "approval-cancel", to = ownerId, approvalId });
             }
         }
@@ -85,10 +90,10 @@ public sealed class OwnerApprovals
         var decision = Json.Str(m, "decision", 16, 1);
         var signature = Json.Str(m, "signature", 100, 1);
         if (approvalId == null || !_out.TryGetValue(approvalId, out var o)) return; // unknown, answered or withdrawn
-        var owner = _store.Get(controllerId);
+        var owner = Approvers.FirstOrDefault(c => c.Id == controllerId);
         string? why = null;
         if (controllerId != o.OwnerId) why = "answered by a device it was not sent to";
-        else if (owner == null || !owner.Owner) why = "no longer a my-device";
+        else if (owner == null) why = "no longer a trusted device";
         else if (decision == null || !(o.Kind == "pair" ? PairDecisions : SessionDecisions).Contains(decision)) why = "invalid decision";
         else if (!IdentityUtil.Verify(owner.PublicKey, IdentityUtil.ApproveString(_identity.DeviceId, approvalId, o.Kind, decision), signature))
             why = "bad signature";
@@ -102,7 +107,7 @@ public sealed class OwnerApprovals
     }
 
     /// <summary>
-    /// The PC dialog and the my-device question run side by side; whichever answers first wins and the other is
+    /// The PC dialog and the trusted-device question run side by side; whichever answers first wins and the other is
     /// closed. <paramref name="local"/> gets a token that is cancelled when the remote answer wins (the dialog then
     /// closes itself). Returns (decision text, answeredRemotely).
     /// </summary>
@@ -123,7 +128,7 @@ public sealed class OwnerApprovals
         }
         if (first == localTask)
         {
-            cts.Cancel(); // withdraw the my-device question
+            cts.Cancel(); // withdraw the trusted-device question
             try { await remoteTask.ConfigureAwait(false); } catch (Exception) { }
             return (await localTask.ConfigureAwait(false), null);
         }
