@@ -90,7 +90,7 @@ function turnCredentials(url, secret, id, now = Date.now()) {
 const CF_TTL_S = 24 * 3600;
 const CF_REFRESH_MS = 2 * 3600 * 1000;
 function createCloudflareTurn(keyId, token, fetchFn = globalThis.fetch, now = () => Date.now()) {
-  let cache = null, pending = null;
+  let cache = null, pending = null, warned = false;
   async function load() {
     const res = await fetchFn(`https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(keyId)}/credentials/generate-ice-servers`, {
       method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
@@ -111,8 +111,13 @@ function createCloudflareTurn(keyId, token, fetchFn = globalThis.fetch, now = ()
   return {
     async get() {
       if (cache && now() - cache.at < CF_REFRESH_MS) return cache.servers;
-      if (!pending) pending = load().then((servers) => { cache = { at: now(), servers }; return servers; }).finally(() => { pending = null; });
-      try { return await pending; } catch { return cache ? cache.servers : []; }
+      if (!pending) pending = load().then((servers) => { cache = { at: now(), servers }; warned = false; return servers; }).finally(() => { pending = null; });
+      try { return await pending; } catch (e) {
+        // say why once per failure streak (status / timeout only, never the token): it used to fail silently,
+        // so a wrong key and a missing deploy looked the same from outside (2026-11-09)
+        if (!warned) { warned = true; console.warn('[remote] Cloudflare TURN unavailable:', e && e.message); }
+        return cache ? cache.servers : [];
+      }
     },
   };
 }
