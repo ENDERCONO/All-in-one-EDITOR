@@ -8,7 +8,8 @@ namespace GlobalRemoteControl.Agent.Capture;
 /// </summary>
 public sealed class AckWindow
 {
-    public const int MaxUnackedFrames = 6;
+    // 12 so a slow round trip (the WebSocket relay: ~0.4 s) still allows ~30 fps; the byte cap keeps queues small
+    public const int MaxUnackedFrames = 12;
     public const long MaxUnackedBytes = 1536 * 1024;
     public const ulong MaxBuffered = 1024 * 1024;
     public static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(5);

@@ -84,6 +84,39 @@ function turnCredentials(url, secret, id, now = Date.now()) {
   return { urls: url, username, credential };
 }
 
+// Cloudflare Realtime TURN (free tier): short-lived credentials from its API, with TURN over UDP, TCP and TLS on
+// port 443 — the last one gets through school / office networks that block UDP. One credential set is shared by
+// every controller and refreshed well before it expires; any failure just means STUN only (the relay still works).
+const CF_TTL_S = 24 * 3600;
+const CF_REFRESH_MS = 2 * 3600 * 1000;
+function createCloudflareTurn(keyId, token, fetchFn = globalThis.fetch, now = () => Date.now()) {
+  let cache = null, pending = null;
+  async function load() {
+    const res = await fetchFn(`https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(keyId)}/credentials/generate-ice-servers`, {
+      method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ ttl: CF_TTL_S }), signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) throw new Error('cloudflare turn ' + res.status);
+    const body = await res.json();
+    const list = Array.isArray(body.iceServers) ? body.iceServers : body.iceServers ? [body.iceServers] : [];
+    // keep only TURN entries with credentials (we already send our own STUN); urls as an array of turn:/turns: strings
+    const out = [];
+    for (const s of list) {
+      const urls = (Array.isArray(s.urls) ? s.urls : [s.urls]).filter((u) => typeof u === 'string' && /^turns?:/.test(u));
+      if (urls.length && typeof s.username === 'string' && typeof s.credential === 'string') out.push({ urls, username: s.username, credential: s.credential });
+    }
+    if (!out.length) throw new Error('cloudflare turn: no servers');
+    return out;
+  }
+  return {
+    async get() {
+      if (cache && now() - cache.at < CF_REFRESH_MS) return cache.servers;
+      if (!pending) pending = load().then((servers) => { cache = { at: now(), servers }; return servers; }).finally(() => { pending = null; });
+      try { return await pending; } catch { return cache ? cache.servers : []; }
+    },
+  };
+}
+
 // ---------- server ----------
 
 function attach(app, httpServer, opts = {}) {
@@ -96,6 +129,9 @@ function attach(app, httpServer, opts = {}) {
     pairMax: 5,
     ...opts,
   };
+  const cfKeyId = opts.cfTurnKeyId ?? env().REMOTE_CF_TURN_KEY_ID;
+  const cfToken = opts.cfTurnToken ?? env().REMOTE_CF_TURN_TOKEN;
+  const cfTurn = cfKeyId && cfToken ? createCloudflareTurn(cfKeyId, cfToken, opts.fetch) : null;
 
   const devices = new Map();        // deviceId -> ws
   const codes = new Map();          // normalized code -> { deviceId, expiresAt }
@@ -204,8 +240,11 @@ function attach(app, httpServer, opts = {}) {
     const turnUrl = opts.turnUrl ?? env().REMOTE_TURN_URL;
     const turnSecret = opts.turnSecret ?? env().REMOTE_TURN_SECRET;
     if (turnUrl && turnSecret) iceServers.push(turnCredentials(turnUrl, turnSecret, pk.id));
-    send(ws, { type: 'ready', id: pk.id, iceServers });
     if (m.role === 'device') broadcastPresence(pk.id);
+    // Cloudflare TURN only for browsers: the PC at home reaches the browser's relay address over plain UDP, and its
+    // signaling socket lives for days (credentials would go stale there)
+    if (m.role !== 'controller' || !cfTurn) return send(ws, { type: 'ready', id: pk.id, iceServers });
+    cfTurn.get().then((extra) => send(ws, { type: 'ready', id: pk.id, iceServers: iceServers.concat(extra) }));
   }
 
   // ----- authenticated messages -----
@@ -504,6 +543,6 @@ function attach(app, httpServer, opts = {}) {
 }
 
 module.exports = {
-  attach, generateCode, normalizeCode, createRateLimiter, verifySignature, parsePublicKey,
+  attach, generateCode, normalizeCode, createRateLimiter, verifySignature, parsePublicKey, createCloudflareTurn,
   idFromSpki, turnCredentials, CODE_ALPHABET,
 };

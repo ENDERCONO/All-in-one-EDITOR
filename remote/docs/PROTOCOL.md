@@ -43,7 +43,11 @@ S→C  { type:"ready", id:"<deviceId|controllerId>", iceServers:[ { urls, userna
 Bad signature / bad schema / no hello within 10 s → `{type:"error", code:"auth-failed"}` and close.
 `iceServers` always contains `stun:stun.l.google.com:19302`; if env `REMOTE_TURN_URL` and `REMOTE_TURN_SECRET`
 are set, add a TURN entry with coturn REST credentials (username `"<expiryUnix>:<id>"`, credential
-`base64(HMAC-SHA1(secret, username))`, 1 h). Only one socket per device id: a new device login replaces the old.
+`base64(HMAC-SHA1(secret, username))`, 1 h). If env `REMOTE_CF_TURN_KEY_ID` and `REMOTE_CF_TURN_TOKEN` are set
+(Cloudflare Realtime TURN), **controllers** also get Cloudflare's `turn:` / `turns:` entries (UDP, TCP and TLS on 443)
+from its `generate-ice-servers` API (24 h credentials, shared, refreshed every 2 h; on any API error: STUN only).
+Devices never get them: the PC reaches the browser's relayed address over plain UDP, and its socket lives for days.
+Only one socket per device id: a new device login replaces the old.
 
 Errors anywhere: `{ type:"error", code:"<kebab-code>", message?, ref? }` (`ref` echoes a `requestId`/`sessionId`).
 
@@ -129,7 +133,7 @@ rectCount × { u16 x, u16 y, u16 w, u16 h, u8 codec (0 = JPEG), u32 length, leng
 The agent compares each captured (scaled) frame with the previous one in tiles (64×64, merged into horizontal runs) and
 sends only changed areas; rectCount 0 = nothing changed (not sent at all, except as a heartbeat ≤ 1/s). A keyframe is
 sent at session start, on resolution/monitor/scale change, on `{t:"keyframe"}`, and every 10 s as a safety refresh.
-The controller paints each rect onto a persistent canvas at (x, y). Flow control: the agent keeps at most 6 frames or
+The controller paints each rect onto a persistent canvas at (x, y). Flow control: the agent keeps at most 12 frames or
 1.5 MB un-acked and the channel's buffered amount under 1 MB; it never waits on a frame it can drop — it captures the
 newest screen when the window opens (latest-wins, no queueing of stale frames). After each complete frame the
 controller sends `{t:"ack", frameId}`.

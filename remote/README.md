@@ -103,8 +103,13 @@ Browser (Remote tab) ──WSS──▶ Render server (/remote/ws) ◀──WSS�
 the same four channels travel as binary frames over the existing signaling WebSockets, end-to-end encrypted with
 AES-256-GCM (keys from the signed ECDH exchange via HKDF, per-direction counters against replay). The server only
 forwards ciphertext and never needs a TURN server; the browser shows a **Relayed** badge and starts at the Smooth
-quality preset. Your own TURN server still works if you want one (`REMOTE_TURN_URL` + `REMOTE_TURN_SECRET`, coturn
-`static-auth-secret`), but it's no longer needed.
+quality preset. The relay can only carry the JPEG stream (≈ 10–15 fps); the GPU H.264 stream needs WebRTC.
+
+**TURN for networks that block UDP (school / office Wi-Fi)** — gets the GPU stream there instead of the relay:
+1. Cloudflare dashboard → **Realtime** → **TURN Server** → create a TURN key (free tier: 1,000 GB / month).
+2. On Render, set the environment variables `REMOTE_CF_TURN_KEY_ID` (the key's ID) and `REMOTE_CF_TURN_TOKEN` (its
+   API token), then redeploy. Browsers then get `turns:…:443` servers; the PC needs nothing new.
+Your own coturn server works too (`REMOTE_TURN_URL` + `REMOTE_TURN_SECRET`, coturn `static-auth-secret`).
 
 ## Develop
 

@@ -857,3 +857,43 @@ test('pair-result forwards temporary:true only when approved', async () => {
     assert.equal(r2.temporary, undefined);
   } finally { await srv.stop(); }
 });
+
+// ---------- Cloudflare TURN ----------
+function fakeCloudflare(calls, { fail = false } = {}) {
+  return async (url, init) => {
+    calls.push({ url, init });
+    if (fail) return { ok: false, status: 503, json: async () => ({}) };
+    return { ok: true, status: 201, json: async () => ({ iceServers: [
+      { urls: ['stun:stun.cloudflare.com:3478'] },
+      { urls: ['turn:turn.cloudflare.com:3478?transport=udp', 'turns:turn.cloudflare.com:443?transport=tcp', 'https://nope'], username: 'u1', credential: 'c1' },
+    ] }) };
+  };
+}
+
+test('Cloudflare TURN: browsers get turn/turns entries (TLS 443), the PC does not, credentials are cached', async () => {
+  const calls = [];
+  const srv = await startServer({ cfTurnKeyId: 'KEY', cfTurnToken: 'TOKEN', fetch: fakeCloudflare(calls) });
+  try {
+    const c1 = await connect(srv, 'controller');
+    assert.deepEqual(c1.ready.iceServers[0], { urls: 'stun:stun.l.google.com:19302' });
+    assert.deepEqual(c1.ready.iceServers[1], { urls: ['turn:turn.cloudflare.com:3478?transport=udp', 'turns:turn.cloudflare.com:443?transport=tcp'], username: 'u1', credential: 'c1' });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, 'https://rtc.live.cloudflare.com/v1/turn/keys/KEY/credentials/generate-ice-servers');
+    assert.equal(calls[0].init.headers.authorization, 'Bearer TOKEN');
+    const c2 = await connect(srv, 'controller');
+    assert.equal(c2.ready.iceServers.length, 2);
+    assert.equal(calls.length, 1, 'second browser reuses the cached credentials');
+    const d = await connect(srv, 'device');
+    assert.equal(d.ready.iceServers.length, 1, 'the PC gets STUN only');
+  } finally { await srv.stop(); }
+});
+
+test('Cloudflare TURN failure: browsers still get ready with STUN only', async () => {
+  const calls = [];
+  const srv = await startServer({ cfTurnKeyId: 'KEY', cfTurnToken: 'TOKEN', fetch: fakeCloudflare(calls, { fail: true }) });
+  try {
+    const c = await connect(srv, 'controller');
+    assert.equal(c.ready.iceServers.length, 1);
+    assert.equal(calls.length, 1);
+  } finally { await srv.stop(); }
+});

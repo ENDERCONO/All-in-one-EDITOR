@@ -617,20 +617,20 @@ public class VideoPipelineAckWindowTests
     private static readonly DateTime T0 = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
     [Fact]
-    public void LimitsTo6Frames()
+    public void LimitsToMaxUnackedFrames()
     {
         var w = new AckWindow();
-        for (uint i = 1; i <= 6; i++)
+        for (uint i = 1; i <= AckWindow.MaxUnackedFrames; i++)
         {
             Assert.True(w.CanSend(0, T0));
             Assert.Equal(i, w.NextFrameId());
             w.OnSent(i, 1000, T0);
         }
         Assert.False(w.CanSend(0, T0));
-        Assert.Equal(6, w.UnackedFrames);
+        Assert.Equal(AckWindow.MaxUnackedFrames, w.UnackedFrames);
         Assert.True(w.OnAck(1, T0));
         Assert.True(w.CanSend(0, T0));
-        Assert.Equal(5, w.UnackedFrames);
+        Assert.Equal(AckWindow.MaxUnackedFrames - 1, w.UnackedFrames);
     }
 
     [Fact]
@@ -679,21 +679,21 @@ public class VideoPipelineAckWindowTests
     public void StalledAcks_ResetTheWindowAfter5s()
     {
         var w = new AckWindow();
-        for (uint i = 1; i <= 6; i++) w.OnSent(i, 10, T0);
+        for (uint i = 1; i <= AckWindow.MaxUnackedFrames; i++) w.OnSent(i, 10, T0);
         Assert.False(w.CanSend(0, T0 + TimeSpan.FromSeconds(4.9)));
         Assert.True(w.CanSend(0, T0 + TimeSpan.FromSeconds(5.1)));
         Assert.Equal(0, w.UnackedFrames);
         Assert.False(w.OnAck(3, T0 + TimeSpan.FromSeconds(6)));   // late ack for a forgotten frame: ignored
-        Assert.Equal(7u, w.NextFrameId());                         // ids keep increasing
+        Assert.Equal((uint)AckWindow.MaxUnackedFrames + 1, w.NextFrameId());                         // ids keep increasing
     }
 
     [Fact]
     public void AckProgress_PostponesTheStallReset()
     {
         var w = new AckWindow();
-        for (uint i = 1; i <= 6; i++) w.OnSent(i, 10, T0);
+        for (uint i = 1; i <= AckWindow.MaxUnackedFrames; i++) w.OnSent(i, 10, T0);
         Assert.True(w.OnAck(1, T0 + TimeSpan.FromSeconds(4)));
-        w.OnSent(7, 10, T0 + TimeSpan.FromSeconds(4));
+        w.OnSent((uint)AckWindow.MaxUnackedFrames + 1, 10, T0 + TimeSpan.FromSeconds(4));
         Assert.False(w.CanSend(0, T0 + TimeSpan.FromSeconds(8)));   // only 4 s since the last ack
         Assert.True(w.CanSend(0, T0 + TimeSpan.FromSeconds(9.5)));
     }
@@ -966,24 +966,24 @@ public class VideoPipelineStreamerTests
         Assert.False(rig.S.SendPending());
         Assert.True(rig.S.CanProduce());
 
-        for (int i = 2; i <= 6; i++)
+        for (int i = 2; i <= AckWindow.MaxUnackedFrames; i++)
         {
             Px.Set(screen, i * 10, 0, (byte)i, 0, 0);
             Assert.NotNull(rig.Tick(16));
         }
-        Assert.Equal(6, rig.S.Window.UnackedFrames);
+        Assert.Equal(AckWindow.MaxUnackedFrames, rig.S.Window.UnackedFrames);
         int captures = rig.Capturer.Calls;
         Px.Set(screen, 200, 100, 1, 1, 1);
         Assert.Null(rig.Tick(16));                 // window full: no capture at all
         Assert.Equal(captures, rig.Capturer.Calls);
 
-        rig.S.Ack(6);
+        rig.S.Ack((uint)AckWindow.MaxUnackedFrames);
         rig.Buffered = 1024 * 1024;
         Assert.Null(rig.Tick(16));                 // channel buffer full
         rig.Buffered = 0;
         Px.Set(screen, 300, 150, 2, 2, 2);         // newest screen, captured only now
         var f = rig.Tick(16)!.Value;
-        Assert.Equal(7u, f.Id);
+        Assert.Equal((uint)AckWindow.MaxUnackedFrames + 1, f.Id);
         Assert.Equal(new[] { new Rectangle(192, 64, 64, 64), new Rectangle(256, 128, 64, 64) }, f.Frame.Rects.Select(r => r.Rect).ToArray());
     }
 
