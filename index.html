@@ -6050,7 +6050,7 @@
       </button>
 
       <!-- ===== REMOTE (single) ===== -->
-      <button class="sb-tab" data-tab="remote" title="Remote — control your own PC from any browser">
+      <button class="sb-tab" data-tab="remote" title="Remote — control your own PC from anywhere (RustDesk)">
         <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="m10 8 4 2.5-1.8.5-1 1.7z" fill="currentColor"/></svg></span>
         <span class="sb-label">Remote</span>
       </button>
@@ -8923,7 +8923,7 @@
     (function () {
       const main = document.querySelector('main[data-mode="remote"]');
       const frame = document.getElementById('remoteFrame');
-      const load = () => { if (!main.hidden && !frame.src) frame.src = 'remote/web/index.html'; if (!main.hidden) setTimeout(() => frame.contentWindow && frame.focus(), 50); };
+      const load = () => { if (!main.hidden && !frame.src) frame.src = 'remote/rustdesk/index.html'; if (!main.hidden) setTimeout(() => frame.contentWindow && frame.focus(), 50); };
       new MutationObserver(load).observe(main, { attributes: true, attributeFilter: ['hidden'] });
     })();
   </script>

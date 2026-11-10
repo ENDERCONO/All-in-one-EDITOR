@@ -1,6 +1,12 @@
 # GlobalRemoteControl — control your own PC from any browser
 
-Part of the All-in-one EDITOR site: open the **Remote** tab (or `/remote/web/`) on your phone or another computer
+> **The site's Remote tab now opens `remote/rustdesk/`**: a static page (works on GitHub Pages, no server) that links
+> RustDesk's official downloads (latest release looked up from the GitHub API), explains the one-time home-PC setup
+> (install + permanent password), and keeps a "My PCs" list (name + ID only, in localStorage) with `rustdesk://connection/new/<id>`
+> launch links. RustDesk runs on its own free public servers, so it doesn't use Render's bandwidth.
+> The browser remote below is still at `/remote/web/` (linked from that page's footer) but needs the Render server.
+
+Part of the All-in-one EDITOR site: open `/remote/web/` on your phone or another computer
 and control your home PC: live screen, mouse, keyboard, multiple monitors, PC audio and file transfer — every
 session approved by you at the PC.
 
