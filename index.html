@@ -8923,7 +8923,12 @@
     (function () {
       const main = document.querySelector('main[data-mode="remote"]');
       const frame = document.getElementById('remoteFrame');
-      const load = () => { if (!main.hidden && !frame.src) frame.src = 'remote/rustdesk/index.html'; if (!main.hidden) setTimeout(() => frame.contentWindow && frame.focus(), 50); };
+      const load = () => { if (!main.hidden && !frame.src) {
+        // Pass a home-server topic from the site link (?remote-topic=…) into the page, then drop it from the address bar.
+        const topic = new URLSearchParams(location.search).get('remote-topic');
+        frame.src = 'remote/rustdesk/index.html' + (topic ? '?topic=' + encodeURIComponent(topic) : '');
+        if (topic) { const u = new URL(location.href); u.searchParams.delete('remote-topic'); history.replaceState(null, '', u); }
+      } if (!main.hidden) setTimeout(() => frame.contentWindow && frame.focus(), 50); };
       new MutationObserver(load).observe(main, { attributes: true, attributeFilter: ['hidden'] });
     })();
   </script>
@@ -9186,6 +9191,8 @@ document.querySelectorAll('.sb-tab').forEach(tab => {
 document.addEventListener('DOMContentLoaded', () => {
   let last = null;
   try { last = localStorage.getItem('lastTab'); } catch (e) {}
+  // A home-server link (?remote-topic=… or #remote) opens the Remote tab.
+  if (new URLSearchParams(location.search).has('remote-topic') || location.hash === '#remote') last = 'remote';
   if (last === 'timeline') last = 'videoeditor'; // audio Timeline retired → Video Editor
   if (!last || last === currentMode || last === 'brainrot' || last === 'codes') return;
   const btn = document.querySelector(`.sb-tab[data-tab="${last}"]`);

@@ -52,6 +52,13 @@
   ul.plain { margin:0; padding-left:18px } ul.plain li { margin-bottom:6px }
   .err { color:#ff8a8a; font-size:12px; min-height:16px; margin-top:6px }
   footer { margin-top:22px; padding-top:14px; border-top:1px solid var(--line); color:var(--dim); font-size:12px; display:flex; flex-wrap:wrap; gap:6px 16px; justify-content:space-between }
+  #viewer { position:fixed; inset:0; z-index:20; background:#000; display:flex; flex-direction:column }
+  #viewer[hidden] { display:none }
+  #viewer .bar { display:flex; align-items:center; gap:8px; padding:4px 8px; background:var(--panel2); border-bottom:1px solid var(--line); font-size:12px }
+  #viewer .bar .grow { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--dim) }
+  #viewer iframe { flex:1; width:100%; border:0; background:#000 }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; background:var(--dim) }
+  .dot.ok { background:var(--ok) } .dot.bad { background:var(--bad) } .dot.wait { background:var(--warn) }
   #toast { position:fixed; right:16px; bottom:16px; background:var(--raised); border:1px solid var(--line); border-left:3px solid var(--accent); padding:8px 12px; border-radius:3px; opacity:0; transform:translateY(8px); transition:.2s; pointer-events:none }
   #toast.show { opacity:1; transform:none }
   @media (prefers-reduced-motion: reduce) { #toast { transition:none } }
@@ -68,6 +75,33 @@
   </header>
 
   <div class="grid">
+    <section class="panel full" id="homePanel">
+      <div class="head"><span>My home server · control in this browser</span><span id="homeState" class="muted"></span></div>
+      <div class="body">
+        <div id="homeSetup">
+          <ol class="steps">
+            <li>On the home PC, download and double-click <a id="setupLink" href="https://github.com/ENDERCONO/All-in-one-EDITOR/raw/main/remote/home-server/Setup-HomeServer.bat">Setup-HomeServer.bat</a> (asks for admin once). It installs RustDesk with its own private server and a secure tunnel, all starting with Windows.</li>
+            <li>At the end it opens a link to this page that fills in your home server automatically — or paste the <b>home server code</b> it shows here:</li>
+          </ol>
+          <form id="topicForm" class="row" autocomplete="off" style="margin-top:8px">
+            <input id="topicIn" placeholder="Home server code (aio-remote-…)" maxlength="60" aria-label="Home server code">
+            <button class="btn" type="submit">Save</button>
+          </form>
+          <div class="err" id="topicErr"></div>
+        </div>
+        <div id="homeReady" hidden>
+          <div class="dl-main">
+            <button id="homeConnect" class="btn primary" type="button">Connect here</button>
+            <a id="homeNewTab" class="btn" target="_blank" rel="noopener" href="#">Open in new tab</a>
+            <button id="homeRefresh" class="btn small" type="button">Refresh</button>
+            <button id="homeForget" class="btn small danger" type="button">Forget</button>
+          </div>
+          <p class="muted small" id="homeInfo" style="margin:0"></p>
+          <div class="tip">Then type your home PC's RustDesk ID and permanent password in the window that opens. The address changes when the PC restarts; this page finds the new one automatically.</div>
+        </div>
+      </div>
+    </section>
+
     <section class="panel full">
       <div class="head"><span>Download RustDesk</span><span id="ver" class="muted"></span></div>
       <div class="body">
@@ -123,6 +157,14 @@
     <span>RustDesk is a separate open-source project (AGPL-3.0); this page only links to its official downloads.</span>
     <a href="../web/index.html">Browser remote (beta, needs the site server) →</a>
   </footer>
+</div>
+<div id="viewer" hidden>
+  <div class="bar">
+    <span class="grow" id="viewerUrl"></span>
+    <button class="btn small" type="button" id="viewerFull">Fullscreen</button>
+    <button class="btn small danger" type="button" id="viewerClose">Close</button>
+  </div>
+  <iframe id="viewerFrame" title="RustDesk web client on your home PC" allow="fullscreen; clipboard-read; clipboard-write; autoplay; keyboard-map" allowfullscreen></iframe>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
 
@@ -244,8 +286,77 @@
     save(pcs); render(); $('pcId').value = ''; $('pcName').value = ''; toast('Saved');
   });
 
+  // ----- Home server: the home PC posts its current tunnel address to a private ntfy.sh topic -----
+  const TOPIC_KEY = 'aio-remote-topic';
+  const TOPIC_RE = /^aio-remote-[a-z2-7]{24}$/;
+  const TUNNEL_RE = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com\/?$/;
+  const getTopic = () => { try { return localStorage.getItem(TOPIC_KEY) || ''; } catch { return ''; } };
+  const setTopic = (t) => { try { t ? localStorage.setItem(TOPIC_KEY, t) : localStorage.removeItem(TOPIC_KEY); } catch {} };
+  let homeUrl = '';
+
+  function homeStatus(cls, text) {
+    const s = $('homeState'); s.textContent = '';
+    const d = document.createElement('span'); d.className = 'dot ' + cls; s.append(d, text);
+  }
+
+  async function latestAddress(topic) {
+    const r = await fetch('https://ntfy.sh/' + topic + '/json?poll=1&since=12h', { cache: 'no-store' });
+    if (!r.ok) throw new Error('ntfy HTTP ' + r.status);
+    let best = null;
+    for (const line of (await r.text()).split('\n')) {
+      if (!line.trim()) continue;
+      let m; try { m = JSON.parse(line); } catch { continue; }
+      const url = String(m.message || '').trim();
+      if (m.event === 'message' && TUNNEL_RE.test(url) && (!best || m.time >= best.time)) best = { url: url.replace(/\/$/, ''), time: m.time };
+    }
+    return best;
+  }
+
+  async function refreshHome() {
+    const topic = getTopic();
+    $('homeSetup').hidden = !!topic; $('homeReady').hidden = !topic;
+    if (!topic) { $('homeState').textContent = ''; return; }
+    homeStatus('wait', 'Looking for your PC…'); $('homeConnect').disabled = true;
+    let found;
+    try { found = await latestAddress(topic); } catch { homeStatus('bad', 'Can’t reach ntfy.sh'); return; }
+    if (!found) { homeStatus('bad', 'No address posted in the last 12 h — is the home PC on?'); $('homeInfo').textContent = 'Code: ' + topic; return; }
+    homeUrl = found.url;
+    const mins = Math.max(0, Math.round((Date.now() / 1000 - found.time) / 60));
+    $('homeInfo').textContent = homeUrl + ' · posted ' + (mins < 1 ? 'just now' : mins + ' min ago');
+    $('homeNewTab').href = homeUrl + '/';
+    try {
+      const r = await fetch(homeUrl + '/server-config.json', { cache: 'no-store' });
+      if (!r.ok) throw new Error();
+      homeStatus('ok', 'Home PC online'); $('homeConnect').disabled = false;
+    } catch {
+      homeStatus('bad', 'Home PC not reachable (off, asleep, or address changing — try Refresh in a minute)');
+      $('homeConnect').disabled = false; // still allow trying
+    }
+  }
+
+  $('topicForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const t = $('topicIn').value.trim().toLowerCase();
+    if (!TOPIC_RE.test(t)) { $('topicErr').textContent = 'That doesn’t look like a home server code (aio-remote-…).'; return; }
+    $('topicErr').textContent = ''; setTopic(t); $('topicIn').value = ''; refreshHome();
+  });
+  $('homeRefresh').onclick = refreshHome;
+  $('homeForget').onclick = () => { setTopic(''); homeUrl = ''; refreshHome(); };
+  $('homeConnect').onclick = () => {
+    if (!homeUrl) return;
+    $('viewerUrl').textContent = homeUrl; $('viewerFrame').src = homeUrl + '/'; $('viewer').hidden = false;
+    setTimeout(() => $('viewerFrame').focus(), 100);
+  };
+  $('viewerClose').onclick = () => { $('viewer').hidden = true; $('viewerFrame').src = 'about:blank'; };
+  $('viewerFull').onclick = () => { const v = $('viewer'); (v.requestFullscreen || v.webkitRequestFullscreen)?.call(v); };
+
+  // A topic passed from the setup link (?topic=…) is saved, then removed from the URL.
+  const qTopic = new URLSearchParams(location.search).get('topic');
+  if (qTopic && TOPIC_RE.test(qTopic)) { setTopic(qTopic); history.replaceState(null, '', location.pathname); toast('Home server saved'); }
+
   render();
   downloads();
+  refreshHome();
 })();
 </script>
 </body>
