@@ -56,6 +56,16 @@
       mix: 100
     };
   }
+  function defaultDenoise() {
+    return {
+      enabled: false,
+      mode: "speckle",
+      strength: 80,
+      radius: 2,
+      edge: 88,
+      mix: 100
+    };
+  }
   function defaultMask() {
     return { type: "none", x: 0, y: 0, w: 0.5, h: 0.5, angle: 0, feather: 0.15, invert: false };
   }
@@ -99,6 +109,7 @@
       blend: "normal",
       color: defaultColor(),
       colorReducer: defaultColorReducer(),
+      denoise: defaultDenoise(),
       filters: [],
       chroma: { enabled: false, color: "#00ff00", similarity: 0.35, smoothness: 0.08, spill: 0.5, edgeFeather: 0 },
       hueMatch: defaultHueMatch(),
@@ -7439,6 +7450,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       transition: makeProgram(FS_TRANSITION),
       hue: makeProgram(FS_HUE),
       reducer: makeProgram(FS_REDUCER),
+      denoise: makeProgram(FS_DENOISE),
       mask: makeProgram(FS_MASK),
       gradblur: makeProgram(FS_GRADBLUR),
       filter2: makeProgram(FS_FILTER2),
@@ -7853,6 +7865,8 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       const colorOn = !colorNeutral(col);
       const reducer = clip.colorReducer || {};
       const reducerOn = !!reducer.enabled;
+      const denoise = clip.denoise || {};
+      const denoiseOn = !!denoise.enabled;
       const hm = clip.hueMatch;
       const hueOn = !!(hm && hm.enabled && clip.type !== "material" && (hm.colorize || (Number(hm.range) || 0) > 0));
       const mk = clip.mask;
@@ -7869,7 +7883,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       } else if (clip.materialId && !materialsMod) loadMaterials();
       if (clip.type === "material" && !mat) return null;
       const pzRect = panZoomRect(clip, t);
-      if (!pzRect && !chroma && !hueOn && !colorOn && !reducerOn && !filters.length && !gbOn && !maskOn && !mat) return { tex: srcTex, rt: null, sw, sh };
+      if (!pzRect && !chroma && !hueOn && !colorOn && !reducerOn && !denoiseOn && !filters.length && !gbOn && !maskOn && !mat) return { tex: srcTex, rt: null, sw, sh };
       const [bw, bh] = baseSize(clip, sw, sh);
       const tr = clip.transform || {};
       const sc = Math.abs(tr.scale ?? 1);
@@ -8014,6 +8028,17 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
             u1f(pr, "u_sigma", sigmaPx / lh);
           }, bw2, bh2);
         }
+      }
+      if (denoiseOn) {
+        const mode = denoise.mode === "speckle" ? 2 : denoise.mode === "bilateral" ? 1 : 0;
+        step(P3.denoise, (pr) => {
+          u2f(pr, "u_texel", 1 / lw, 1 / lh);
+          u1i(pr, "u_mode", mode);
+          u1f(pr, "u_strength", Math.max(0, Math.min(100, num(denoise.strength, 80))) / 100);
+          u1f(pr, "u_radius", Math.max(1, Math.min(4, num(denoise.radius, 2))));
+          u1f(pr, "u_edge", Math.max(0, Math.min(100, num(denoise.edge, 88))) / 100);
+          u1f(pr, "u_mix", Math.max(0, Math.min(100, num(denoise.mix, 100))) / 100);
+        });
       }
       if (reducerOn) {
         const mode = reducer.mode === "channel" ? 1 : 0;
@@ -8252,7 +8277,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
     });
     return { render, setSize, getClipQuad, dispose, gl };
   }
-  var materialsMod, materialsPromise, ident, DEFINES, FILTER_INDEX, TRANSITION_INDEX, BLEND_INDEX, FILTER_V2, FILTER_V3, TRANSITION_V2, COLOR_KEYS, VS, HEAD, FS_COPY, FS_PANZOOM, FS_FILL, FS_CHROMA, FS_COLOR, FS_HUE, FS_REDUCER, FS_BLUR, FS_FILTER, FS_FILTER2, FS_FILTER3, FS_MASK, FS_GRADBLUR, FS_COMPOSITE, TR_COMMON, FS_TRANSITION, FS_TRANSITION2, VISUAL3, FULLFRAME;
+  var materialsMod, materialsPromise, ident, DEFINES, FILTER_INDEX, TRANSITION_INDEX, BLEND_INDEX, FILTER_V2, FILTER_V3, TRANSITION_V2, COLOR_KEYS, VS, HEAD, FS_COPY, FS_PANZOOM, FS_FILL, FS_CHROMA, FS_COLOR, FS_HUE, FS_REDUCER, FS_DENOISE, FS_BLUR, FS_FILTER, FS_FILTER2, FS_FILTER3, FS_MASK, FS_GRADBLUR, FS_COMPOSITE, TR_COMMON, FS_TRANSITION, FS_TRANSITION2, VISUAL3, FULLFRAME;
   var init_renderer = __esm({
     "js/renderer.js"() {
       init_keyframes();
@@ -8479,6 +8504,111 @@ void main() {
   c = clamp(c + vec3(threshold * 0.25 * dither), 0.0, 1.0);
   vec3 reduced = reducePalette(c);
   outColor = vec4(mix(s.rgb, reduced, clamp(u_mix, 0.0, 1.0)), s.a);
+}`;
+      FS_DENOISE = HEAD + `
+uniform sampler2D u_tex; uniform vec2 u_texel;
+uniform int u_mode;
+uniform float u_strength, u_radius, u_edge, u_mix;
+vec3 medianSample(vec2 px) {
+  vec3 samples[9];
+  float values[9];
+  int k = 0;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec3 c = texture(u_tex, v_uv + vec2(float(x), float(y)) * px).rgb;
+      samples[k] = c;
+      values[k] = luma(c);
+      k++;
+    }
+  }
+  for (int i = 0; i < 9; i++) {
+    for (int j = i + 1; j < 9; j++) {
+      if (values[j] < values[i]) {
+        float t = values[i]; values[i] = values[j]; values[j] = t;
+      }
+    }
+  }
+  float mid = values[4];
+  float best = 1e20;
+  vec3 result = samples[4];
+  for (int i = 0; i < 9; i++) {
+    float d = abs(luma(samples[i]) - mid);
+    if (d < best) { best = d; result = samples[i]; }
+  }
+  return result;
+}
+vec3 bilateralSample(vec2 px) {
+  vec3 center = texture(u_tex, v_uv).rgb;
+  vec3 sum = vec3(0.0);
+  float weightSum = 0.0;
+  float rangeSigma = mix(0.30, 0.105, clamp(u_edge, 0.0, 1.0));
+  float invRange = 1.0 / max(2.0 * rangeSigma * rangeSigma, 1e-5);
+  for (int y = -2; y <= 2; y++) {
+    for (int x = -2; x <= 2; x++) {
+      vec2 offset = vec2(float(x), float(y));
+      vec3 c = texture(u_tex, v_uv + offset * px).rgb;
+      float spatial = exp(-dot(offset, offset) * 0.22);
+      vec3 diff = c - center;
+      float rangeWeight = exp(-dot(diff, diff) * invRange);
+      float w = spatial * rangeWeight;
+      sum += c * w;
+      weightSum += w;
+    }
+  }
+  return sum / max(weightSum, 1e-5);
+}
+vec3 materialSpeckleSample(vec2 px) {
+  vec3 guide = medianSample(px);
+  vec3 sum = guide * 1.5;
+  float weightSum = 1.5;
+  float rangeSigma = mix(0.58, 0.38, clamp(u_edge, 0.0, 1.0));
+  float invRange = 1.0 / max(2.0 * rangeSigma * rangeSigma, 1e-5);
+  for (int y = -2; y <= 2; y++) {
+    for (int x = -2; x <= 2; x++) {
+      vec2 offset = vec2(float(x), float(y));
+      vec3 c = texture(u_tex, v_uv + offset * px).rgb;
+      vec3 diff = c - guide;
+      float spatial = exp(-dot(offset, offset) * 0.12);
+      float rangeWeight = exp(-dot(diff, diff) * invRange);
+      float w = spatial * rangeWeight;
+      sum += c * w;
+      weightSum += w;
+    }
+  }
+  return sum / max(weightSum, 1e-5);
+}
+float patchLuma(vec2 uv, vec2 spacing) {
+  float total = 0.0;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      total += luma(texture(u_tex, uv + vec2(float(x), float(y)) * spacing).rgb);
+    }
+  }
+  return total / 9.0;
+}
+float edgeStrength(vec2 px) {
+  vec2 spacing = px * 1.25;
+  vec2 delta = px * 2.0;
+  float lL = patchLuma(v_uv - vec2(delta.x, 0.0), spacing);
+  float lR = patchLuma(v_uv + vec2(delta.x, 0.0), spacing);
+  float lD = patchLuma(v_uv - vec2(0.0, delta.y), spacing);
+  float lU = patchLuma(v_uv + vec2(0.0, delta.y), spacing);
+  float lA = patchLuma(v_uv + vec2(-delta.x, -delta.y), spacing);
+  float lB = patchLuma(v_uv + vec2(delta.x, delta.y), spacing);
+  float lC = patchLuma(v_uv + vec2(-delta.x, delta.y), spacing);
+  float lE = patchLuma(v_uv + vec2(delta.x, -delta.y), spacing);
+  float g = max(abs(lR - lL), max(abs(lU - lD), max(abs(lB - lA), abs(lE - lC))));
+  return smoothstep(0.035, 0.20, g);
+}
+void main() {
+  vec4 center = texture(u_tex, v_uv);
+  vec2 px = u_texel * clamp(u_radius, 1.0, 4.0);
+  vec3 filtered = u_mode == 2 ? materialSpeckleSample(px) :
+                  (u_mode == 1 ? bilateralSample(px * 0.5) : medianSample(px));
+  float edge = edgeStrength(px);
+  float protect = 1.0 - edge * clamp(u_edge, 0.0, 1.0);
+  float amount = clamp(u_strength, 0.0, 1.0) * clamp(u_mix, 0.0, 1.0) * protect;
+  outColor = vec4(mix(center.rgb, filtered, amount), center.a);
 }`;
       FS_BLUR = HEAD + `
 uniform sampler2D u_tex; uniform vec2 u_dir; uniform float u_sigma; // sigma in uv units along u_dir
@@ -19329,6 +19459,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
           if (path.startsWith("mask.") && !x.mask) x.mask = defaultMask();
           if (path.startsWith("gradBlur.") && !x.gradBlur) x.gradBlur = defaultGradBlur();
           if (path.startsWith("colorReducer.")) x.colorReducer = { ...defaultColorReducer(), ...x.colorReducer || {} };
+          if (path.startsWith("denoise.")) x.denoise = { ...defaultDenoise(), ...x.denoise || {} };
           const fm = /^filters\.(\d+)\.amount$/.exec(path);
           const kp = fm && x.filters?.[+fm[1]] ? `filters.${x.filters[+fm[1]].id}.amount` : path;
           if (isAnimPath(kp) && hasAnim(x, kp)) setValue(x, kp, v, store2.playhead - x.start);
@@ -19590,7 +19721,18 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
       ` : slider2("Channel levels", "colorReducer.levels", { min: 2, max: 16, step: 1, def: 3, hardMin: 2, hardMax: 16 })}
       ${slider2("Dither", "colorReducer.dither", { min: 0, max: 100, step: 1, def: 0, unit: "%" })}
       ${slider2("Mix", "colorReducer.mix", { min: 0, max: 100, step: 1, def: 100, unit: "%" })}
-    `, { toggleOf: "colorReducer.enabled" }) + section("detail", "Detail", `${s2("Sharpen", "sharpen", 0, 100)}${s2("Clarity", "clarity")}${s2("Noise / grain", "noise", 0, 100)}${s2("Blur", "blur", 0, 100, { hardMin: 0 })}${s2("Vignette", "vignette", 0, 100)}
+    `, { toggleOf: "colorReducer.enabled" }) + section("denoise", "Denoise & De-dither", `
+      ${select("Method", "denoise.mode", [
+        { id: "speckle", label: "Material Speckle (Robust)" },
+        { id: "median", label: "Isolated Speckles (Median)" },
+        { id: "bilateral", label: "Fine Grain (Bilateral)" }
+      ])}
+      <div class="dim" style="font-size:11px;line-height:1.45;margin:0 0 8px">Material Speckle is tuned for persistent procedural texture: it smooths small flecks inside regions and protects broad edges. It does not blend neighboring video frames.</div>
+      ${slider2("Strength", "denoise.strength", { min: 0, max: 100, step: 1, def: 80, unit: "%" })}
+      ${slider2("Radius", "denoise.radius", { min: 1, max: 4, step: 0.5, def: 2, unit: " px", hardMin: 1, hardMax: 4 })}
+      ${slider2("Edge preservation", "denoise.edge", { min: 0, max: 100, step: 1, def: 88, unit: "%" })}
+      ${slider2("Mix", "denoise.mix", { min: 0, max: 100, step: 1, def: 100, unit: "%" })}
+    `, { toggleOf: "denoise.enabled" }) + section("detail", "Detail", `${s2("Sharpen", "sharpen", 0, 100)}${s2("Clarity", "clarity")}${s2("Noise / grain", "noise", 0, 100)}${s2("Blur", "blur", 0, 100, { hardMin: 0 })}${s2("Vignette", "vignette", 0, 100)}
       <div class="btn-row"><button class="btn" data-do="resetColor">Reset color</button></div>`);
     }
     function speedTab(c) {

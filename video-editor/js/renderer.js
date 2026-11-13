@@ -234,6 +234,119 @@ void main() {
   outColor = vec4(mix(s.rgb, reduced, clamp(u_mix, 0.0, 1.0)), s.a);
 }`;
 
+// A compact edge-aware denoiser. Median mode is robust against isolated bright/dark
+// speckles; bilateral mode averages similar nearby colors without crossing strong edges.
+const FS_DENOISE = HEAD + `
+uniform sampler2D u_tex; uniform vec2 u_texel;
+uniform int u_mode;
+uniform float u_strength, u_radius, u_edge, u_mix;
+vec3 medianSample(vec2 px) {
+  vec3 samples[9];
+  float values[9];
+  int k = 0;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec3 c = texture(u_tex, v_uv + vec2(float(x), float(y)) * px).rgb;
+      samples[k] = c;
+      values[k] = luma(c);
+      k++;
+    }
+  }
+  for (int i = 0; i < 9; i++) {
+    for (int j = i + 1; j < 9; j++) {
+      if (values[j] < values[i]) {
+        float t = values[i]; values[i] = values[j]; values[j] = t;
+      }
+    }
+  }
+  float mid = values[4];
+  float best = 1e20;
+  vec3 result = samples[4];
+  for (int i = 0; i < 9; i++) {
+    float d = abs(luma(samples[i]) - mid);
+    if (d < best) { best = d; result = samples[i]; }
+  }
+  return result;
+}
+vec3 bilateralSample(vec2 px) {
+  vec3 center = texture(u_tex, v_uv).rgb;
+  vec3 sum = vec3(0.0);
+  float weightSum = 0.0;
+  float rangeSigma = mix(0.30, 0.105, clamp(u_edge, 0.0, 1.0));
+  float invRange = 1.0 / max(2.0 * rangeSigma * rangeSigma, 1e-5);
+  for (int y = -2; y <= 2; y++) {
+    for (int x = -2; x <= 2; x++) {
+      vec2 offset = vec2(float(x), float(y));
+      vec3 c = texture(u_tex, v_uv + offset * px).rgb;
+      float spatial = exp(-dot(offset, offset) * 0.22);
+      vec3 diff = c - center;
+      float rangeWeight = exp(-dot(diff, diff) * invRange);
+      float w = spatial * rangeWeight;
+      sum += c * w;
+      weightSum += w;
+    }
+  }
+  return sum / max(weightSum, 1e-5);
+}
+// Robust smoother for dense, persistent speckling baked into procedural materials.
+// A 3x3 median estimates the local material color; a 5x5 guided neighborhood then
+// averages nearby samples around that robust guide, rejecting isolated color flecks.
+vec3 materialSpeckleSample(vec2 px) {
+  vec3 guide = medianSample(px);
+  vec3 sum = guide * 1.5;
+  float weightSum = 1.5;
+  float rangeSigma = mix(0.58, 0.38, clamp(u_edge, 0.0, 1.0));
+  float invRange = 1.0 / max(2.0 * rangeSigma * rangeSigma, 1e-5);
+  for (int y = -2; y <= 2; y++) {
+    for (int x = -2; x <= 2; x++) {
+      vec2 offset = vec2(float(x), float(y));
+      vec3 c = texture(u_tex, v_uv + offset * px).rgb;
+      vec3 diff = c - guide;
+      float spatial = exp(-dot(offset, offset) * 0.12);
+      float rangeWeight = exp(-dot(diff, diff) * invRange);
+      float w = spatial * rangeWeight;
+      sum += c * w;
+      weightSum += w;
+    }
+  }
+  return sum / max(weightSum, 1e-5);
+}
+// Measure boundaries after a small local box average. This deliberately ignores
+// pixel-scale speckle so the noise itself is not mistaken for an edge to preserve.
+float patchLuma(vec2 uv, vec2 spacing) {
+  float total = 0.0;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      total += luma(texture(u_tex, uv + vec2(float(x), float(y)) * spacing).rgb);
+    }
+  }
+  return total / 9.0;
+}
+float edgeStrength(vec2 px) {
+  vec2 spacing = px * 1.25;
+  vec2 delta = px * 2.0;
+  float lL = patchLuma(v_uv - vec2(delta.x, 0.0), spacing);
+  float lR = patchLuma(v_uv + vec2(delta.x, 0.0), spacing);
+  float lD = patchLuma(v_uv - vec2(0.0, delta.y), spacing);
+  float lU = patchLuma(v_uv + vec2(0.0, delta.y), spacing);
+  float lA = patchLuma(v_uv + vec2(-delta.x, -delta.y), spacing);
+  float lB = patchLuma(v_uv + vec2(delta.x, delta.y), spacing);
+  float lC = patchLuma(v_uv + vec2(-delta.x, delta.y), spacing);
+  float lE = patchLuma(v_uv + vec2(delta.x, -delta.y), spacing);
+  float g = max(abs(lR - lL), max(abs(lU - lD), max(abs(lB - lA), abs(lE - lC))));
+  return smoothstep(0.035, 0.20, g);
+}
+void main() {
+  vec4 center = texture(u_tex, v_uv);
+  vec2 px = u_texel * clamp(u_radius, 1.0, 4.0);
+  vec3 filtered = u_mode == 2 ? materialSpeckleSample(px) :
+                  (u_mode == 1 ? bilateralSample(px * 0.5) : medianSample(px));
+  float edge = edgeStrength(px);
+  float protect = 1.0 - edge * clamp(u_edge, 0.0, 1.0);
+  float amount = clamp(u_strength, 0.0, 1.0) * clamp(u_mix, 0.0, 1.0) * protect;
+  outColor = vec4(mix(center.rgb, filtered, amount), center.a);
+}`;
+
 const FS_BLUR = HEAD + `
 uniform sampler2D u_tex; uniform vec2 u_dir; uniform float u_sigma; // sigma in uv units along u_dir
 void main() {
@@ -1161,7 +1274,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     copy: makeProgram(FS_COPY), fill: makeProgram(FS_FILL), chroma: makeProgram(FS_CHROMA),
     color: makeProgram(FS_COLOR), blur: makeProgram(FS_BLUR), filter: makeProgram(FS_FILTER),
     composite: makeProgram(FS_COMPOSITE), transition: makeProgram(FS_TRANSITION),
-    hue: makeProgram(FS_HUE), reducer: makeProgram(FS_REDUCER), mask: makeProgram(FS_MASK), gradblur: makeProgram(FS_GRADBLUR), filter2: makeProgram(FS_FILTER2), filter3: makeProgram(FS_FILTER3), panzoom: makeProgram(FS_PANZOOM), transition2: makeProgram(FS_TRANSITION2),
+    hue: makeProgram(FS_HUE), reducer: makeProgram(FS_REDUCER), denoise: makeProgram(FS_DENOISE), mask: makeProgram(FS_MASK), gradblur: makeProgram(FS_GRADBLUR), filter2: makeProgram(FS_FILTER2), filter3: makeProgram(FS_FILTER3), panzoom: makeProgram(FS_PANZOOM), transition2: makeProgram(FS_TRANSITION2),
   };
 
   // ---------- geometry ----------
@@ -1514,6 +1627,8 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     const colorOn = !colorNeutral(col);
     const reducer = clip.colorReducer || {};
     const reducerOn = !!reducer.enabled;
+    const denoise = clip.denoise || {};
+    const denoiseOn = !!denoise.enabled;
     const hm = clip.hueMatch;
     const hueOn = !!(hm && hm.enabled && clip.type !== 'material' && (hm.colorize || (Number(hm.range) || 0) > 0));
     const mk = clip.mask;
@@ -1531,7 +1646,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     if (clip.type === 'material' && !mat) return null;
 
     const pzRect = panZoomRect(clip, t);
-    if (!pzRect && !chroma && !hueOn && !colorOn && !reducerOn && !filters.length && !gbOn && !maskOn && !mat) return { tex: srcTex, rt: null, sw, sh };
+    if (!pzRect && !chroma && !hueOn && !colorOn && !reducerOn && !denoiseOn && !filters.length && !gbOn && !maskOn && !mat) return { tex: srcTex, rt: null, sw, sh };
 
     // Layer resolution: about the displayed size, never above the source size.
     const [bw, bh] = baseSize(clip, sw, sh);
@@ -1656,7 +1771,21 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
       }
     }
 
-    // Quantize after base color adjustments but before stylized filters,
+    // Clean up fine noise after color adjustments and before color reduction,
+    // so the quantizer does not amplify grain or isolated speckles.
+    if (denoiseOn) {
+      const mode = denoise.mode === 'speckle' ? 2 : denoise.mode === 'bilateral' ? 1 : 0;
+      step(P.denoise, pr => {
+        u2f(pr, 'u_texel', 1 / lw, 1 / lh);
+        u1i(pr, 'u_mode', mode);
+        u1f(pr, 'u_strength', Math.max(0, Math.min(100, num(denoise.strength, 75))) / 100);
+        u1f(pr, 'u_radius', Math.max(1, Math.min(4, num(denoise.radius, 2))));
+        u1f(pr, 'u_edge', Math.max(0, Math.min(100, num(denoise.edge, 85))) / 100);
+        u1f(pr, 'u_mix', Math.max(0, Math.min(100, num(denoise.mix, 100))) / 100);
+      });
+    }
+
+    // Quantize after denoising and base color adjustments but before stylized filters,
     // gradient blur, materials and masks so those later stages stay intact.
     if (reducerOn) {
       const mode = reducer.mode === 'channel' ? 1 : 0;

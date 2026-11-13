@@ -1,7 +1,7 @@
 // Right-hand property panel. Tabs depend on the selected clip's type:
 // Video (transform, crop, compositing, green screen, material, transitions),
 // Titles, Audio, Color, Speed, Effects. With nothing selected: Project Info.
-import { mediaRuntime, uid, defaultColor, defaultColorReducer, defaultHueMatch, defaultAudioFx, defaultMask, defaultGradBlur } from './state.js';
+import { mediaRuntime, uid, defaultColor, defaultColorReducer, defaultDenoise, defaultHueMatch, defaultAudioFx, defaultMask, defaultGradBlur } from './state.js';
 import { BLEND_MODES, FILTERS, TRANSITIONS, FONTS, MASK_TYPES, CROP_ASPECTS, TITLE_PRESETS } from './catalog.js';
 import { icon } from './icons.js';
 import { numField } from './numfield.js';
@@ -37,6 +37,7 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
         if (path.startsWith('mask.') && !x.mask) x.mask = defaultMask();
         if (path.startsWith('gradBlur.') && !x.gradBlur) x.gradBlur = defaultGradBlur();
         if (path.startsWith('colorReducer.')) x.colorReducer = { ...defaultColorReducer(), ...(x.colorReducer || {}) };
+        if (path.startsWith('denoise.')) x.denoise = { ...defaultDenoise(), ...(x.denoise || {}) };
         const fm = /^filters\.(\d+)\.amount$/.exec(path);
         const kp = fm && x.filters?.[+fm[1]] ? `filters.${x.filters[+fm[1]].id}.amount` : path;
         if (isAnimPath(kp) && hasAnim(x, kp)) setValue(x, kp, v, store.playhead - x.start); // auto-key
@@ -313,7 +314,18 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
       ` : slider('Channel levels', 'colorReducer.levels', { min: 2, max: 16, step: 1, def: 3, hardMin: 2, hardMax: 16 })}
       ${slider('Dither', 'colorReducer.dither', { min: 0, max: 100, step: 1, def: 0, unit: '%' })}
       ${slider('Mix', 'colorReducer.mix', { min: 0, max: 100, step: 1, def: 100, unit: '%' })}
-    `, { toggleOf: 'colorReducer.enabled' }) + section('detail', 'Detail', `${s('Sharpen', 'sharpen', 0, 100)}${s('Clarity', 'clarity')}${s('Noise / grain', 'noise', 0, 100)}${s('Blur', 'blur', 0, 100, { hardMin: 0 })}${s('Vignette', 'vignette', 0, 100)}
+    `, { toggleOf: 'colorReducer.enabled' }) + section('denoise', 'Denoise & De-dither', `
+      ${select('Method', 'denoise.mode', [
+        { id: 'speckle', label: 'Material Speckle (Robust)' },
+        { id: 'median', label: 'Isolated Speckles (Median)' },
+        { id: 'bilateral', label: 'Fine Grain (Bilateral)' },
+      ])}
+      <div class="dim" style="font-size:11px;line-height:1.45;margin:0 0 8px">Material Speckle is tuned for persistent procedural texture: it smooths small flecks inside regions and protects broad edges. It does not blend neighboring video frames.</div>
+      ${slider('Strength', 'denoise.strength', { min: 0, max: 100, step: 1, def: 80, unit: '%' })}
+      ${slider('Radius', 'denoise.radius', { min: 1, max: 4, step: 0.5, def: 2, unit: ' px', hardMin: 1, hardMax: 4 })}
+      ${slider('Edge preservation', 'denoise.edge', { min: 0, max: 100, step: 1, def: 88, unit: '%' })}
+      ${slider('Mix', 'denoise.mix', { min: 0, max: 100, step: 1, def: 100, unit: '%' })}
+    `, { toggleOf: 'denoise.enabled' }) + section('detail', 'Detail', `${s('Sharpen', 'sharpen', 0, 100)}${s('Clarity', 'clarity')}${s('Noise / grain', 'noise', 0, 100)}${s('Blur', 'blur', 0, 100, { hardMin: 0 })}${s('Vignette', 'vignette', 0, 100)}
       <div class="btn-row"><button class="btn" data-do="resetColor">Reset color</button></div>`);
   }
 

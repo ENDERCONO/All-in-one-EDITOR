@@ -36,6 +36,18 @@ export function defaultColorReducer() {
     mix: 100,
   };
 }
+// Edge-preserving noise cleanup for fine grain, speckles and dithering patterns.
+export function defaultDenoise() {
+  return {
+    enabled: false,
+    // 'speckle' is tuned for persistent procedural/material grain, not temporal noise.
+    mode: 'speckle',
+    strength: 80,
+    radius: 2,
+    edge: 88,
+    mix: 100,
+  };
+}
 // Mask (Filmora "Mask" tab / the site's Gradient Editor): clip-local, x/y = center offset (-0.5..0.5 of the clip), w/h fraction of the clip
 export function defaultMask() { return { type: 'none', x: 0, y: 0, w: 0.5, h: 0.5, angle: 0, feather: 0.15, invert: false }; }
 // Gradient blur (the site's Gradient Blur tool): full blur at `start`, sharp again by `end` (0..1 along the direction)
@@ -55,6 +67,7 @@ export function makeClip(over = {}) {
     blend: 'normal',
     color: defaultColor(),
     colorReducer: defaultColorReducer(),
+    denoise: defaultDenoise(),
     filters: [],
     chroma: { enabled: false, color: '#00ff00', similarity: 0.35, smoothness: 0.08, spill: 0.5, edgeFeather: 0 },
     hueMatch: defaultHueMatch(),
