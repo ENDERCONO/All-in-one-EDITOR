@@ -21,6 +21,21 @@ export function defaultColor() {
     gamma: 0, vibrance: 0, noise: 0, fade: 0, clarity: 0, blacks: 0, whites: 0,
     red: 0, green: 0, blue: 0, posterize: 0, invert: false, grayscale: false };
 }
+// Per-clip color reduction. Palette colors are deliberately explicit so a new
+// clip starts with a useful three-color look, while the remaining slots are
+// ready to use when the palette count is increased.
+export function defaultColorReducer() {
+  return {
+    enabled: false,
+    mode: 'palette',
+    count: 3,
+    levels: 3,
+    c1: '#0f172a', c2: '#ef4444', c3: '#f8fafc', c4: '#f59e0b',
+    c5: '#10b981', c6: '#3b82f6', c7: '#a855f7', c8: '#f472b6',
+    dither: 0,
+    mix: 100,
+  };
+}
 // Mask (Filmora "Mask" tab / the site's Gradient Editor): clip-local, x/y = center offset (-0.5..0.5 of the clip), w/h fraction of the clip
 export function defaultMask() { return { type: 'none', x: 0, y: 0, w: 0.5, h: 0.5, angle: 0, feather: 0.15, invert: false }; }
 // Gradient blur (the site's Gradient Blur tool): full blur at `start`, sharp again by `end` (0..1 along the direction)
@@ -39,6 +54,7 @@ export function makeClip(over = {}) {
     crop: { l: 0, t: 0, r: 0, b: 0 },
     blend: 'normal',
     color: defaultColor(),
+    colorReducer: defaultColorReducer(),
     filters: [],
     chroma: { enabled: false, color: '#00ff00', similarity: 0.35, smoothness: 0.08, spill: 0.5, edgeFeather: 0 },
     hueMatch: defaultHueMatch(),

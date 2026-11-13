@@ -1,7 +1,7 @@
 // Right-hand property panel. Tabs depend on the selected clip's type:
 // Video (transform, crop, compositing, green screen, material, transitions),
 // Titles, Audio, Color, Speed, Effects. With nothing selected: Project Info.
-import { mediaRuntime, uid, defaultColor, defaultHueMatch, defaultAudioFx, defaultMask, defaultGradBlur } from './state.js';
+import { mediaRuntime, uid, defaultColor, defaultColorReducer, defaultHueMatch, defaultAudioFx, defaultMask, defaultGradBlur } from './state.js';
 import { BLEND_MODES, FILTERS, TRANSITIONS, FONTS, MASK_TYPES, CROP_ASPECTS, TITLE_PRESETS } from './catalog.js';
 import { icon } from './icons.js';
 import { numField } from './numfield.js';
@@ -36,6 +36,7 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
         if (path.startsWith('audio.fx.')) x.audio.fx = { ...defaultAudioFx(), ...(x.audio.fx || {}) };
         if (path.startsWith('mask.') && !x.mask) x.mask = defaultMask();
         if (path.startsWith('gradBlur.') && !x.gradBlur) x.gradBlur = defaultGradBlur();
+        if (path.startsWith('colorReducer.')) x.colorReducer = { ...defaultColorReducer(), ...(x.colorReducer || {}) };
         const fm = /^filters\.(\d+)\.amount$/.exec(path);
         const kp = fm && x.filters?.[+fm[1]] ? `filters.${x.filters[+fm[1]].id}.amount` : path;
         if (isAnimPath(kp) && hasAnim(x, kp)) setValue(x, kp, v, store.playhead - x.start); // auto-key
@@ -66,6 +67,62 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
   function color(label, path, { pick } = {}) {
     const id = ctl({ kind: 'color', path });
     return `<div class="prop wide"><label>${label}</label><div style="display:flex;gap:6px;align-items:center"><input type="color" id="${id}"><input type="text" id="${id}t" style="width:84px;font:11.5px var(--mono)">${pick ? `<button class="btn" id="${id}p" title="Pick a color from the player">${icon('select', 13)}</button>` : ''}</div></div>`;
+  }
+  function reducerPaletteHtml(reducer) {
+    const count = Math.max(2, Math.min(8, Math.round(Number(reducer?.count) || 3)));
+    const rows = Array.from({ length: count }, (_, i) => {
+      const key = `c${i + 1}`;
+      const fallback = defaultColorReducer()[key];
+      const value = /^#[0-9a-f]{6}$/i.test(reducer?.[key] || '') ? reducer[key] : fallback;
+      return `<div class="prop wide"><label>Color ${i + 1}</label><div style="display:flex;gap:6px;align-items:center"><input type="color" data-cr-color="${key}" value="${value}"><input type="text" data-cr-text="${key}" value="${value}" style="width:84px;font:11.5px var(--mono)"><button class="btn" data-cr-pick="${key}" title="Pick a color from the player">${icon('select', 13)}</button></div></div>`;
+    }).join('');
+    return `<div id="insReducerPalette" data-count="${count}">${rows}</div>`;
+  }
+  function wireReducerPalette(box) {
+    box.querySelectorAll('[data-cr-color]').forEach(input => {
+      const key = input.dataset.crColor;
+      const text = box.querySelector(`[data-cr-text="${key}"]`);
+      input.addEventListener('input', () => {
+        if (text) text.value = input.value;
+        edit(`colorReducer.${key}`, input.value, `Color ${key.slice(1)}`);
+      });
+      text?.addEventListener('change', () => {
+        if (/^#[0-9a-f]{6}$/i.test(text.value)) {
+          input.value = text.value;
+          edit(`colorReducer.${key}`, text.value, `Color ${key.slice(1)}`);
+        }
+      });
+      box.querySelector(`[data-cr-pick="${key}"]`)?.addEventListener('click', async () => {
+        const hex = await pickColor?.();
+        if (!hex || !/^#[0-9a-f]{6}$/i.test(hex)) return;
+        input.value = text.value = hex;
+        edit(`colorReducer.${key}`, hex, `Pick Color ${key.slice(1)}`);
+      });
+    });
+  }
+  function syncReducerPalette(c) {
+    const box = root.querySelector('#insReducerPalette');
+    if (!box) return;
+    const reducer = c.colorReducer || defaultColorReducer();
+    const count = Math.max(2, Math.min(8, Math.round(Number(reducer.count) || 3)));
+    if (+box.dataset.count !== count) {
+      box.dataset.count = String(count);
+      box.innerHTML = reducerPaletteHtml(reducer).replace(/^<div[^>]*>|<\/div>$/g, '');
+      wireReducerPalette(box);
+      box.dataset.wired = '1';
+    } else if (box.dataset.wired !== '1') {
+      wireReducerPalette(box);
+      box.dataset.wired = '1';
+    }
+    for (let i = 1; i <= count; i++) {
+      const key = `c${i}`;
+      const fallback = defaultColorReducer()[key];
+      const value = /^#[0-9a-f]{6}$/i.test(reducer[key] || '') ? reducer[key] : fallback;
+      const input = box.querySelector(`[data-cr-color="${key}"]`);
+      const text = box.querySelector(`[data-cr-text="${key}"]`);
+      if (input && document.activeElement !== input) input.value = value;
+      if (text && document.activeElement !== text) text.value = value;
+    }
   }
   function section(key, title, body, { toggleOf } = {}) {
     const tid = toggleOf ? ctl({ kind: 'toggle', path: toggleOf }) : null;
@@ -230,6 +287,7 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
 
   function colorTab() {
     const s = (l, k, min = -100, max = 100, o = {}) => slider(l, 'color.' + k, { min, max, ...o });
+    const reducer = clip()?.colorReducer || defaultColorReducer();
     return section('basic', 'Color', `
       ${s('Exposure', 'exposure')}${s('Brightness', 'brightness')}${s('Contrast', 'contrast')}${s('Saturation', 'saturation')}
       ${s('Hue', 'hue', -180, 180, { unit: '°' })}${s('Temperature', 'temperature')}${s('Tint', 'tint')}${s('Highlights', 'highlights')}${s('Shadows', 'shadows')}
@@ -244,7 +302,18 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
       ${color('To', 'hueMatch.to', { pick: true })}
       ${slider('Range', 'hueMatch.range', { min: 1, max: 180, def: 30, unit: '°', hardMin: 0 })}
       ${toggle('Colorize', 'hueMatch.colorize', { onLabel: 'force every pixel to the To color' })}
-    `, { toggleOf: 'hueMatch.enabled' }) + section('detail', 'Detail', `${s('Sharpen', 'sharpen', 0, 100)}${s('Clarity', 'clarity')}${s('Noise / grain', 'noise', 0, 100)}${s('Blur', 'blur', 0, 100, { hardMin: 0 })}${s('Vignette', 'vignette', 0, 100)}
+    `, { toggleOf: 'hueMatch.enabled' }) + section('color-reducer', 'Color Channel Reducer', `
+      ${select('Mode', 'colorReducer.mode', [
+        { id: 'palette', label: 'Exact Palette (2–8 colors)' },
+        { id: 'channel', label: 'Per-Channel Levels (R/G/B)' },
+      ])}
+      ${reducer.mode === 'palette' ? `
+        ${slider('Color count', 'colorReducer.count', { min: 2, max: 8, step: 1, def: 3, hardMin: 2, hardMax: 8 })}
+        ${reducerPaletteHtml(reducer)}
+      ` : slider('Channel levels', 'colorReducer.levels', { min: 2, max: 16, step: 1, def: 3, hardMin: 2, hardMax: 16 })}
+      ${slider('Dither', 'colorReducer.dither', { min: 0, max: 100, step: 1, def: 0, unit: '%' })}
+      ${slider('Mix', 'colorReducer.mix', { min: 0, max: 100, step: 1, def: 100, unit: '%' })}
+    `, { toggleOf: 'colorReducer.enabled' }) + section('detail', 'Detail', `${s('Sharpen', 'sharpen', 0, 100)}${s('Clarity', 'clarity')}${s('Noise / grain', 'noise', 0, 100)}${s('Blur', 'blur', 0, 100, { hardMin: 0 })}${s('Vignette', 'vignette', 0, 100)}
       <div class="btn-row"><button class="btn" data-do="resetColor">Reset color</button></div>`);
   }
 
@@ -507,6 +576,7 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
 
   function sync() {
     const c = clip(); if (!c) return;
+    syncReducerPalette(c);
     root.querySelectorAll('[data-voice]').forEach(b => b.classList.toggle('primary', (c.audio.voice || 'none') === b.dataset.voice));
     root.querySelectorAll('[data-famt]').forEach(nf => { const f = c.filters[+nf.dataset.famt]; nf.setValue?.((f ? vget(c, `filters.${f.id}.amount`) ?? 1 : 1) * 100); });
     if (root.querySelector('[data-crop]')) { const a = cropAspectOf(c); root.querySelectorAll('[data-crop]').forEach(b => b.classList.toggle('primary', b.dataset.crop === a)); }
@@ -534,7 +604,8 @@ export function createInspector({ root, store, ops, materialsApi, audioApi, pick
     const c = clip();
     if (!c) return 'none:' + store.project.clips.length + ':' + store.project.media.length + ':' + store.project.settings.width + 'x' + store.project.settings.height + store.project.name + store.duration().toFixed(2);
     return [store.selection.clipIds.join(','), c.type, tab, c.filters.length, c.filters.map(f => f.type).join(), c.materialId, store.project.materials.length,
-      c.audio.detached, store.getMedia(c.mediaId)?.hasAudio, tab === 'speed' ? c.duration.toFixed(3) : '', c.mask?.type, c.gradBlur?.mode].join('|');
+      c.audio.detached, store.getMedia(c.mediaId)?.hasAudio, tab === 'speed' ? c.duration.toFixed(3) : '', c.mask?.type, c.gradBlur?.mode,
+      tab === 'color' ? (c.colorReducer?.mode || 'palette') : ''].join('|');
   }
   function refresh() { const k = keyOf(); if (k !== structKey) { structKey = k; build(); } else sync(); }
 

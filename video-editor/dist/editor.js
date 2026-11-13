@@ -44,6 +44,18 @@
       grayscale: false
     };
   }
+  function defaultColorReducer() {
+    return {
+      enabled: false,
+      mode: "palette",
+      count: 3,
+      levels: 3,
+      c1: "#0f172a", c2: "#ef4444", c3: "#f8fafc", c4: "#f59e0b",
+      c5: "#10b981", c6: "#3b82f6", c7: "#a855f7", c8: "#f472b6",
+      dither: 0,
+      mix: 100
+    };
+  }
   function defaultMask() {
     return { type: "none", x: 0, y: 0, w: 0.5, h: 0.5, angle: 0, feather: 0.15, invert: false };
   }
@@ -86,6 +98,7 @@
       crop: { l: 0, t: 0, r: 0, b: 0 },
       blend: "normal",
       color: defaultColor(),
+      colorReducer: defaultColorReducer(),
       filters: [],
       chroma: { enabled: false, color: "#00ff00", similarity: 0.35, smoothness: 0.08, spill: 0.5, edgeFeather: 0 },
       hueMatch: defaultHueMatch(),
@@ -7425,6 +7438,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       composite: makeProgram(FS_COMPOSITE),
       transition: makeProgram(FS_TRANSITION),
       hue: makeProgram(FS_HUE),
+      reducer: makeProgram(FS_REDUCER),
       mask: makeProgram(FS_MASK),
       gradblur: makeProgram(FS_GRADBLUR),
       filter2: makeProgram(FS_FILTER2),
@@ -7837,6 +7851,8 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       const chroma = clip.chroma && clip.chroma.enabled && !FULLFRAME.has(clip.type);
       const col = clip.color;
       const colorOn = !colorNeutral(col);
+      const reducer = clip.colorReducer || {};
+      const reducerOn = !!reducer.enabled;
       const hm = clip.hueMatch;
       const hueOn = !!(hm && hm.enabled && clip.type !== "material" && (hm.colorize || (Number(hm.range) || 0) > 0));
       const mk = clip.mask;
@@ -7853,7 +7869,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       } else if (clip.materialId && !materialsMod) loadMaterials();
       if (clip.type === "material" && !mat) return null;
       const pzRect = panZoomRect(clip, t);
-      if (!pzRect && !chroma && !hueOn && !colorOn && !filters.length && !gbOn && !maskOn && !mat) return { tex: srcTex, rt: null, sw, sh };
+      if (!pzRect && !chroma && !hueOn && !colorOn && !reducerOn && !filters.length && !gbOn && !maskOn && !mat) return { tex: srcTex, rt: null, sw, sh };
       const [bw, bh] = baseSize(clip, sw, sh);
       const tr = clip.transform || {};
       const sc = Math.abs(tr.scale ?? 1);
@@ -7998,6 +8014,26 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
             u1f(pr, "u_sigma", sigmaPx / lh);
           }, bw2, bh2);
         }
+      }
+      if (reducerOn) {
+        const mode = reducer.mode === "channel" ? 1 : 0;
+        const count = Math.max(2, Math.min(8, Math.round(num(reducer.count, 3))));
+        const levels = Math.max(2, Math.min(16, Math.round(num(reducer.levels, 3))));
+        const defaults = ["#0f172a", "#ef4444", "#f8fafc", "#f59e0b", "#10b981", "#3b82f6", "#a855f7", "#f472b6"];
+        const palette = new Float32Array(8 * 3);
+        for (let i = 0; i < 8; i++) {
+          const fallback = defaults[i];
+          const rgb = hexToRgb2(reducer[`c${i + 1}`] || fallback, hexToRgb2(fallback));
+          palette.set(rgb, i * 3);
+        }
+        step(P3.reducer, (pr) => {
+          u1i(pr, "u_mode", mode);
+          u1i(pr, "u_count", count);
+          u1i(pr, "u_levels", levels);
+          gl.uniform3fv(pr.loc("u_pal[0]"), palette);
+          u1f(pr, "u_dither", Math.max(0, Math.min(100, num(reducer.dither, 0))) / 100);
+          u1f(pr, "u_mix", Math.max(0, Math.min(100, num(reducer.mix, 100))) / 100);
+        });
       }
       for (const f of filters) {
         const fi = FILTER_INDEX.get(f.type);
@@ -8216,7 +8252,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
     });
     return { render, setSize, getClipQuad, dispose, gl };
   }
-  var materialsMod, materialsPromise, ident, DEFINES, FILTER_INDEX, TRANSITION_INDEX, BLEND_INDEX, FILTER_V2, FILTER_V3, TRANSITION_V2, COLOR_KEYS, VS, HEAD, FS_COPY, FS_PANZOOM, FS_FILL, FS_CHROMA, FS_COLOR, FS_HUE, FS_BLUR, FS_FILTER, FS_FILTER2, FS_FILTER3, FS_MASK, FS_GRADBLUR, FS_COMPOSITE, TR_COMMON, FS_TRANSITION, FS_TRANSITION2, VISUAL3, FULLFRAME;
+  var materialsMod, materialsPromise, ident, DEFINES, FILTER_INDEX, TRANSITION_INDEX, BLEND_INDEX, FILTER_V2, FILTER_V3, TRANSITION_V2, COLOR_KEYS, VS, HEAD, FS_COPY, FS_PANZOOM, FS_FILL, FS_CHROMA, FS_COLOR, FS_HUE, FS_REDUCER, FS_BLUR, FS_FILTER, FS_FILTER2, FS_FILTER3, FS_MASK, FS_GRADBLUR, FS_COMPOSITE, TR_COMMON, FS_TRANSITION, FS_TRANSITION2, VISUAL3, FULLFRAME;
   var init_renderer = __esm({
     "js/renderer.js"() {
       init_keyframes();
@@ -8395,6 +8431,54 @@ void main() {
     c = hsv2rgb(vec3(fract(hp.x + dh * w), ns, hp.z));
   }
   outColor = vec4(clamp(c, 0.0, 1.0), s.a);
+}`;
+      FS_REDUCER = HEAD + `
+uniform sampler2D u_tex;
+uniform int u_mode, u_count, u_levels;
+uniform vec3 u_pal[8];
+uniform float u_dither, u_mix;
+const int BAYER8[64] = int[64](
+  0, 48, 12, 60, 3, 51, 15, 63,
+  32, 16, 44, 28, 35, 19, 47, 31,
+  8, 56, 4, 52, 11, 59, 7, 55,
+  40, 24, 36, 20, 43, 27, 39, 23,
+  2, 50, 14, 62, 1, 49, 13, 61,
+  34, 18, 46, 30, 33, 17, 45, 29,
+  10, 58, 6, 54, 9, 57, 5, 53,
+  42, 26, 38, 22, 41, 25, 37, 21
+);
+float bayerThreshold() {
+  ivec2 p = ivec2(mod(floor(gl_FragCoord.xy), 8.0));
+  int index = p.y * 8 + p.x;
+  return (float(BAYER8[index]) + 0.5) / 64.0 - 0.5;
+}
+vec3 reducePalette(vec3 c) {
+  float best = 1e20;
+  vec3 result = u_pal[0];
+  for (int i = 0; i < 8; i++) {
+    if (i >= u_count) break;
+    vec3 d = c - u_pal[i];
+    float distanceSq = dot(d * d, vec3(0.30, 0.59, 0.11));
+    if (distanceSq < best) { best = distanceSq; result = u_pal[i]; }
+  }
+  return result;
+}
+void main() {
+  vec4 s = texture(u_tex, v_uv);
+  float threshold = bayerThreshold();
+  float dither = clamp(u_dither, 0.0, 1.0);
+  vec3 c = s.rgb;
+  if (u_mode == 1) {
+    float stepSize = 1.0 / max(1.0, float(u_levels - 1));
+    c = clamp(c + vec3(threshold * stepSize * dither), 0.0, 1.0);
+    float lv = max(2.0, float(u_levels));
+    vec3 reduced = floor(c * (lv - 1.0) + 0.5) / (lv - 1.0);
+    outColor = vec4(mix(s.rgb, reduced, clamp(u_mix, 0.0, 1.0)), s.a);
+    return;
+  }
+  c = clamp(c + vec3(threshold * 0.25 * dither), 0.0, 1.0);
+  vec3 reduced = reducePalette(c);
+  outColor = vec4(mix(s.rgb, reduced, clamp(u_mix, 0.0, 1.0)), s.a);
 }`;
       FS_BLUR = HEAD + `
 uniform sampler2D u_tex; uniform vec2 u_dir; uniform float u_sigma; // sigma in uv units along u_dir
@@ -19244,6 +19328,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
           if (path.startsWith("audio.fx.")) x.audio.fx = { ...defaultAudioFx(), ...x.audio.fx || {} };
           if (path.startsWith("mask.") && !x.mask) x.mask = defaultMask();
           if (path.startsWith("gradBlur.") && !x.gradBlur) x.gradBlur = defaultGradBlur();
+          if (path.startsWith("colorReducer.")) x.colorReducer = { ...defaultColorReducer(), ...x.colorReducer || {} };
           const fm = /^filters\.(\d+)\.amount$/.exec(path);
           const kp = fm && x.filters?.[+fm[1]] ? `filters.${x.filters[+fm[1]].id}.amount` : path;
           if (isAnimPath(kp) && hasAnim(x, kp)) setValue(x, kp, v, store2.playhead - x.start);
@@ -19273,6 +19358,62 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     function color(label, path, { pick } = {}) {
       const id = ctl({ kind: "color", path });
       return `<div class="prop wide"><label>${label}</label><div style="display:flex;gap:6px;align-items:center"><input type="color" id="${id}"><input type="text" id="${id}t" style="width:84px;font:11.5px var(--mono)">${pick ? `<button class="btn" id="${id}p" title="Pick a color from the player">${icon("select", 13)}</button>` : ""}</div></div>`;
+    }
+    function reducerPaletteHtml(reducer) {
+      const count = Math.max(2, Math.min(8, Math.round(Number(reducer?.count) || 3)));
+      const rows = Array.from({ length: count }, (_, i) => {
+        const key = `c${i + 1}`;
+        const fallback = defaultColorReducer()[key];
+        const value = /^#[0-9a-f]{6}$/i.test(reducer?.[key] || "") ? reducer[key] : fallback;
+        return `<div class="prop wide"><label>Color ${i + 1}</label><div style="display:flex;gap:6px;align-items:center"><input type="color" data-cr-color="${key}" value="${value}"><input type="text" data-cr-text="${key}" value="${value}" style="width:84px;font:11.5px var(--mono)"><button class="btn" data-cr-pick="${key}" title="Pick a color from the player">${icon("select", 13)}</button></div></div>`;
+      }).join("");
+      return `<div id="insReducerPalette" data-count="${count}">${rows}</div>`;
+    }
+    function wireReducerPalette(box) {
+      box.querySelectorAll("[data-cr-color]").forEach((input) => {
+        const key = input.dataset.crColor;
+        const text = box.querySelector(`[data-cr-text="${key}"]`);
+        input.addEventListener("input", () => {
+          if (text) text.value = input.value;
+          edit(`colorReducer.${key}`, input.value, `Color ${key.slice(1)}`);
+        });
+        text?.addEventListener("change", () => {
+          if (/^#[0-9a-f]{6}$/i.test(text.value)) {
+            input.value = text.value;
+            edit(`colorReducer.${key}`, text.value, `Color ${key.slice(1)}`);
+          }
+        });
+        box.querySelector(`[data-cr-pick="${key}"]`)?.addEventListener("click", async () => {
+          const hex = await pickColor?.();
+          if (!hex || !/^#[0-9a-f]{6}$/i.test(hex)) return;
+          input.value = text.value = hex;
+          edit(`colorReducer.${key}`, hex, `Pick Color ${key.slice(1)}`);
+        });
+      });
+    }
+    function syncReducerPalette(c) {
+      const box = root.querySelector("#insReducerPalette");
+      if (!box) return;
+      const reducer = c.colorReducer || defaultColorReducer();
+      const count = Math.max(2, Math.min(8, Math.round(Number(reducer.count) || 3)));
+      if (+box.dataset.count !== count) {
+        box.dataset.count = String(count);
+        box.innerHTML = reducerPaletteHtml(reducer).replace(/^<div[^>]*>|<\/div>$/g, "");
+        wireReducerPalette(box);
+        box.dataset.wired = "1";
+      } else if (box.dataset.wired !== "1") {
+        wireReducerPalette(box);
+        box.dataset.wired = "1";
+      }
+      for (let i = 1; i <= count; i++) {
+        const key = `c${i}`;
+        const fallback = defaultColorReducer()[key];
+        const value = /^#[0-9a-f]{6}$/i.test(reducer[key] || "") ? reducer[key] : fallback;
+        const input = box.querySelector(`[data-cr-color="${key}"]`);
+        const text = box.querySelector(`[data-cr-text="${key}"]`);
+        if (input && document.activeElement !== input) input.value = value;
+        if (text && document.activeElement !== text) text.value = value;
+      }
     }
     function section(key, title, body, { toggleOf } = {}) {
       const tid = toggleOf ? ctl({ kind: "toggle", path: toggleOf }) : null;
@@ -19422,22 +19563,34 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         <div class="btn-row"><button class="btn" data-do="resetAfx">Reset audio effects</button></div>`);
     }
     function colorTab() {
-      const s = (l, k, min = -100, max = 100, o = {}) => slider2(l, "color." + k, { min, max, ...o });
+      const s2 = (l, k, min = -100, max = 100, o = {}) => slider2(l, "color." + k, { min, max, ...o });
+      const reducer = clip()?.colorReducer || defaultColorReducer();
       return section("basic", "Color", `
-      ${s("Exposure", "exposure")}${s("Brightness", "brightness")}${s("Contrast", "contrast")}${s("Saturation", "saturation")}
-      ${s("Hue", "hue", -180, 180, { unit: "\xB0" })}${s("Temperature", "temperature")}${s("Tint", "tint")}${s("Highlights", "highlights")}${s("Shadows", "shadows")}
-      ${s("Vibrance", "vibrance")}${s("Gamma", "gamma")}
+      ${s2("Exposure", "exposure")}${s2("Brightness", "brightness")}${s2("Contrast", "contrast")}${s2("Saturation", "saturation")}
+      ${s2("Hue", "hue", -180, 180, { unit: "°" })}${s2("Temperature", "temperature")}${s2("Tint", "tint")}${s2("Highlights", "highlights")}${s2("Shadows", "shadows")}
+      ${s2("Vibrance", "vibrance")}${s2("Gamma", "gamma")}
     `) + section("levels", "Levels & Channels", `
-      ${s("Blacks", "blacks")}${s("Whites", "whites")}${s("Fade", "fade", 0, 100)}
-      ${s("Red", "red")}${s("Green", "green")}${s("Blue", "blue")}
-      ${s("Color levels", "posterize", 0, 64, { hardMin: 0 })}
+      ${s2("Blacks", "blacks")}${s2("Whites", "whites")}${s2("Fade", "fade", 0, 100)}
+      ${s2("Red", "red")}${s2("Green", "green")}${s2("Blue", "blue")}
+      ${s2("Color levels", "posterize", 0, 64, { hardMin: 0 })}
       <div class="prop wide"><label>Toggle</label><div class="btn-row">${toggleBtn("Invert", "color.invert")}${toggleBtn("Grayscale", "color.grayscale")}</div></div>
     `) + section("huematch", "Auto Hue Match", `
       ${color("From", "hueMatch.from", { pick: true })}
       ${color("To", "hueMatch.to", { pick: true })}
-      ${slider2("Range", "hueMatch.range", { min: 1, max: 180, def: 30, unit: "\xB0", hardMin: 0 })}
+      ${slider2("Range", "hueMatch.range", { min: 1, max: 180, def: 30, unit: "°", hardMin: 0 })}
       ${toggle("Colorize", "hueMatch.colorize", { onLabel: "force every pixel to the To color" })}
-    `, { toggleOf: "hueMatch.enabled" }) + section("detail", "Detail", `${s("Sharpen", "sharpen", 0, 100)}${s("Clarity", "clarity")}${s("Noise / grain", "noise", 0, 100)}${s("Blur", "blur", 0, 100, { hardMin: 0 })}${s("Vignette", "vignette", 0, 100)}
+    `, { toggleOf: "hueMatch.enabled" }) + section("color-reducer", "Color Channel Reducer", `
+      ${select("Mode", "colorReducer.mode", [
+        { id: "palette", label: "Exact Palette (2–8 colors)" },
+        { id: "channel", label: "Per-Channel Levels (R/G/B)" }
+      ])}
+      ${reducer.mode === "palette" ? `
+        ${slider2("Color count", "colorReducer.count", { min: 2, max: 8, step: 1, def: 3, hardMin: 2, hardMax: 8 })}
+        ${reducerPaletteHtml(reducer)}
+      ` : slider2("Channel levels", "colorReducer.levels", { min: 2, max: 16, step: 1, def: 3, hardMin: 2, hardMax: 16 })}
+      ${slider2("Dither", "colorReducer.dither", { min: 0, max: 100, step: 1, def: 0, unit: "%" })}
+      ${slider2("Mix", "colorReducer.mix", { min: 0, max: 100, step: 1, def: 100, unit: "%" })}
+    `, { toggleOf: "colorReducer.enabled" }) + section("detail", "Detail", `${s2("Sharpen", "sharpen", 0, 100)}${s2("Clarity", "clarity")}${s2("Noise / grain", "noise", 0, 100)}${s2("Blur", "blur", 0, 100, { hardMin: 0 })}${s2("Vignette", "vignette", 0, 100)}
       <div class="btn-row"><button class="btn" data-do="resetColor">Reset color</button></div>`);
     }
     function speedTab(c) {
@@ -19862,6 +20015,7 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
     function sync() {
       const c = clip();
       if (!c) return;
+      syncReducerPalette(c);
       root.querySelectorAll("[data-voice]").forEach((b) => b.classList.toggle("primary", (c.audio.voice || "none") === b.dataset.voice));
       root.querySelectorAll("[data-famt]").forEach((nf) => {
         const f = c.filters[+nf.dataset.famt];
@@ -19913,7 +20067,8 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
         store2.getMedia(c.mediaId)?.hasAudio,
         tab === "speed" ? c.duration.toFixed(3) : "",
         c.mask?.type,
-        c.gradBlur?.mode
+        c.gradBlur?.mode,
+        tab === "color" ? c.colorReducer?.mode || "palette" : ""
       ].join("|");
     }
     function refresh() {

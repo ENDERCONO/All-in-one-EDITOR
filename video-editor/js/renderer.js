@@ -182,6 +182,58 @@ void main() {
   outColor = vec4(clamp(c, 0.0, 1.0), s.a);
 }`;
 
+// Exact palette matching or independent RGB-channel quantization. Ordered
+// Bayer dithering is applied to the source color before the quantizer.
+const FS_REDUCER = HEAD + `
+uniform sampler2D u_tex;
+uniform int u_mode, u_count, u_levels;
+uniform vec3 u_pal[8];
+uniform float u_dither, u_mix;
+const int BAYER8[64] = int[64](
+  0, 48, 12, 60, 3, 51, 15, 63,
+  32, 16, 44, 28, 35, 19, 47, 31,
+  8, 56, 4, 52, 11, 59, 7, 55,
+  40, 24, 36, 20, 43, 27, 39, 23,
+  2, 50, 14, 62, 1, 49, 13, 61,
+  34, 18, 46, 30, 33, 17, 45, 29,
+  10, 58, 6, 54, 9, 57, 5, 53,
+  42, 26, 38, 22, 41, 25, 37, 21
+);
+float bayerThreshold() {
+  ivec2 p = ivec2(mod(floor(gl_FragCoord.xy), 8.0));
+  int index = p.y * 8 + p.x;
+  return (float(BAYER8[index]) + 0.5) / 64.0 - 0.5;
+}
+vec3 reducePalette(vec3 c) {
+  float best = 1e20;
+  vec3 result = u_pal[0];
+  for (int i = 0; i < 8; i++) {
+    if (i >= u_count) break;
+    vec3 d = c - u_pal[i];
+    // Weighted squared RGB distance favors luminance differences as the eye does.
+    float distanceSq = dot(d * d, vec3(0.30, 0.59, 0.11));
+    if (distanceSq < best) { best = distanceSq; result = u_pal[i]; }
+  }
+  return result;
+}
+void main() {
+  vec4 s = texture(u_tex, v_uv);
+  float threshold = bayerThreshold();
+  float dither = clamp(u_dither, 0.0, 1.0);
+  vec3 c = s.rgb;
+  if (u_mode == 1) {
+    float stepSize = 1.0 / max(1.0, float(u_levels - 1));
+    c = clamp(c + vec3(threshold * stepSize * dither), 0.0, 1.0);
+    float lv = max(2.0, float(u_levels));
+    vec3 reduced = floor(c * (lv - 1.0) + 0.5) / (lv - 1.0);
+    outColor = vec4(mix(s.rgb, reduced, clamp(u_mix, 0.0, 1.0)), s.a);
+    return;
+  }
+  c = clamp(c + vec3(threshold * 0.25 * dither), 0.0, 1.0);
+  vec3 reduced = reducePalette(c);
+  outColor = vec4(mix(s.rgb, reduced, clamp(u_mix, 0.0, 1.0)), s.a);
+}`;
+
 const FS_BLUR = HEAD + `
 uniform sampler2D u_tex; uniform vec2 u_dir; uniform float u_sigma; // sigma in uv units along u_dir
 void main() {
@@ -1109,7 +1161,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     copy: makeProgram(FS_COPY), fill: makeProgram(FS_FILL), chroma: makeProgram(FS_CHROMA),
     color: makeProgram(FS_COLOR), blur: makeProgram(FS_BLUR), filter: makeProgram(FS_FILTER),
     composite: makeProgram(FS_COMPOSITE), transition: makeProgram(FS_TRANSITION),
-    hue: makeProgram(FS_HUE), mask: makeProgram(FS_MASK), gradblur: makeProgram(FS_GRADBLUR), filter2: makeProgram(FS_FILTER2), filter3: makeProgram(FS_FILTER3), panzoom: makeProgram(FS_PANZOOM), transition2: makeProgram(FS_TRANSITION2),
+    hue: makeProgram(FS_HUE), reducer: makeProgram(FS_REDUCER), mask: makeProgram(FS_MASK), gradblur: makeProgram(FS_GRADBLUR), filter2: makeProgram(FS_FILTER2), filter3: makeProgram(FS_FILTER3), panzoom: makeProgram(FS_PANZOOM), transition2: makeProgram(FS_TRANSITION2),
   };
 
   // ---------- geometry ----------
@@ -1460,6 +1512,8 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     const chroma = clip.chroma && clip.chroma.enabled && !FULLFRAME.has(clip.type);
     const col = clip.color;
     const colorOn = !colorNeutral(col);
+    const reducer = clip.colorReducer || {};
+    const reducerOn = !!reducer.enabled;
     const hm = clip.hueMatch;
     const hueOn = !!(hm && hm.enabled && clip.type !== 'material' && (hm.colorize || (Number(hm.range) || 0) > 0));
     const mk = clip.mask;
@@ -1477,7 +1531,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     if (clip.type === 'material' && !mat) return null;
 
     const pzRect = panZoomRect(clip, t);
-    if (!pzRect && !chroma && !hueOn && !colorOn && !filters.length && !gbOn && !maskOn && !mat) return { tex: srcTex, rt: null, sw, sh };
+    if (!pzRect && !chroma && !hueOn && !colorOn && !reducerOn && !filters.length && !gbOn && !maskOn && !mat) return { tex: srcTex, rt: null, sw, sh };
 
     // Layer resolution: about the displayed size, never above the source size.
     const [bw, bh] = baseSize(clip, sw, sh);
@@ -1600,6 +1654,29 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
         step(P.blur, pr => { u2f(pr, 'u_dir', 1, 0); u1f(pr, 'u_sigma', sigmaPx / lw); }, bw2, bh2);
         step(P.blur, pr => { u2f(pr, 'u_dir', 0, 1); u1f(pr, 'u_sigma', sigmaPx / lh); }, bw2, bh2);
       }
+    }
+
+    // Quantize after base color adjustments but before stylized filters,
+    // gradient blur, materials and masks so those later stages stay intact.
+    if (reducerOn) {
+      const mode = reducer.mode === 'channel' ? 1 : 0;
+      const count = Math.max(2, Math.min(8, Math.round(num(reducer.count, 3))));
+      const levels = Math.max(2, Math.min(16, Math.round(num(reducer.levels, 3))));
+      const defaults = ['#0f172a', '#ef4444', '#f8fafc', '#f59e0b', '#10b981', '#3b82f6', '#a855f7', '#f472b6'];
+      const palette = new Float32Array(8 * 3);
+      for (let i = 0; i < 8; i++) {
+        const fallback = defaults[i];
+        const rgb = hexToRgb(reducer[`c${i + 1}`] || fallback, hexToRgb(fallback));
+        palette.set(rgb, i * 3);
+      }
+      step(P.reducer, pr => {
+        u1i(pr, 'u_mode', mode);
+        u1i(pr, 'u_count', count);
+        u1i(pr, 'u_levels', levels);
+        gl.uniform3fv(pr.loc('u_pal[0]'), palette);
+        u1f(pr, 'u_dither', Math.max(0, Math.min(100, num(reducer.dither, 0))) / 100);
+        u1f(pr, 'u_mix', Math.max(0, Math.min(100, num(reducer.mix, 100))) / 100);
+      });
     }
 
     for (const f of filters) {
