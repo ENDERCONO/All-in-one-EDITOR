@@ -552,6 +552,43 @@ async function boot() {
     el.querySelectorAll('[data-short]').forEach(b => b.onclick = () => { const sh = +b.dataset.short; if (ratio >= 1) { H.value = sh; W.value = Math.round(sh * ratio / 2) * 2; } else { W.value = sh; H.value = Math.round(sh / ratio / 2) * 2; } });
   }
 
+  // ---------- Match the project to the first video (Filmora-style prompt) ----------
+  // When the first video lands on the timeline and its size differs from the project's, ask
+  // whether to switch the project to that size. "Don't ask again" remembers the answer.
+  {
+    const even = v => Math.max(16, Math.round(v / 2) * 2);
+    let hadVideo = store.project.clips.some(c => c.type === 'video');
+    const matchTo = (w, h) => {
+      store.transact('Match project to media', p => {
+        const a = ASPECTS.find(x => x.w && Math.abs(x.w / x.h - w / h) < 0.01);
+        Object.assign(p.settings, { width: w, height: h, aspect: a ? a.id : 'custom' });
+      });
+      layoutPreview(); toast(`Project is now ${w} × ${h}`);
+    };
+    store.on('project', ev => {
+      const vids = store.project.clips.filter(c => c.type === 'video');
+      const was = hadVideo; hadVideo = vids.length > 0;
+      if (was || !hadVideo || /^(load|undo|redo)/.test(ev?.reason || '')) return;
+      if (document.querySelector('.match-modal')) return;
+      const m = store.getMedia(vids[0].mediaId), st = store.project.settings;
+      if (!m?.width || !m?.height) return;
+      const w = even(m.width), h = even(m.height);
+      if (w === st.width && h === st.height) return;
+      let pref = ''; try { pref = localStorage.getItem('ve.matchMedia') || ''; } catch (e) {}
+      if (pref === 'keep') return;
+      if (pref === 'match') return setTimeout(() => matchTo(w, h), 0);
+      const remember = (el, v) => { if (el.querySelector('#mmRemember').checked) { try { localStorage.setItem('ve.matchMedia', v); } catch (e) {} } };
+      setTimeout(() => {
+        const md = modal('Match project to this video?', `<p style="margin:0 0 10px">The video is <b>${w} × ${h}</b> and the project is <b>${st.width} × ${st.height}</b>.</p>
+          <p class="dim" style="margin:0 0 12px">Match to media changes the project size to the video's, so it fills the frame with no black bars. You can change it later in File › Project Settings.</p>
+          <label style="display:flex;gap:6px;align-items:center;color:var(--text-dim)"><input type="checkbox" id="mmRemember"> Don't ask again</label>`,
+          [{ label: 'Keep project settings', run: el => remember(el, 'keep') }, { label: 'Match to media', primary: true, run: el => { remember(el, 'match'); matchTo(w, h); } }], { width: 460 });
+        md.el.classList.add('match-modal');
+        md.el.querySelector('.btn.primary')?.focus();
+      }, 0);
+    });
+  }
+
   // ---------- Export ----------
   function openExport() {
     if (!exportMod.openExportDialog) return toast('Export module failed to load');

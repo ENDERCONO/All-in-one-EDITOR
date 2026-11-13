@@ -1794,7 +1794,8 @@ self.onmessage = e => { const { id, channels, sr, semis } = e.data;
       const fin2 = (v, d = 0) => Number.isFinite(+v) ? +v : d;
       const volAnim = hasAnim(clip, "audio.volume"), panAnim = hasAnim(clip, "audio.pan");
       const toGain = (db) => Math.max(0, Math.min(16, dbToGain(Math.max(-120, Math.min(24, fin2(db))))));
-      const base = volAnim ? 1 : toGain(a.volume);
+      const trackGain = toGain(store2.getTrack(clip.trackId)?.volume);
+      const base = (volAnim ? 1 : toGain(a.volume)) * trackGain;
       const fi = Math.max(0, fin2(a.fadeIn), fin2(span.xin)), fo = Math.max(0, fin2(a.fadeOut), fin2(span.xout));
       const cEnd = span.end;
       const env = (t) => base * Math.max(0, Math.min(1, fi > 0 ? (t - cs) / fi : 1, fo > 0 ? (cEnd - t) / fo : 1));
@@ -2633,7 +2634,9 @@ ${e.message}`);
       corner.querySelector('[data-act="link"]').classList.toggle("on", linked);
       placeBall();
     }
+    let volDragging = null;
     function renderHeads() {
+      if (volDragging) return;
       headsInner.innerHTML = layout.map((r) => {
         const t = r.track, v = t.kind === "video";
         const num = (t.name.match(/\d+$/) || [r.idxInKind + 1])[0];
@@ -2644,6 +2647,7 @@ ${e.message}`);
           <button class="tl-hbtn${t.muted ? " on" : ""}" data-hact="mute" title="${t.muted ? "Unmute" : "Mute"} track">${icon(t.muted ? "mute" : "volume", 14)}</button>
           ${v ? `<button class="tl-hbtn${t.hidden ? " on" : ""}" data-hact="hide" title="${t.hidden ? "Show" : "Hide"} track">${icon(t.hidden ? "eyeOff" : "eye", 14)}</button>` : ""}
         </div>
+        <input class="tl-tvol" type="range" min="-40" max="12" step="0.5" value="${Math.max(-40, Math.min(12, +t.volume || 0))}" data-tvol title="${trackVolTitle(t)}" aria-label="Track volume"${t.locked ? " disabled" : ""}>
       </div>`;
       }).join("") + (layout.length ? `<div class="tl-head-top" style="height:${topPad}px"></div>` : "");
     }
@@ -4066,6 +4070,38 @@ ${e.message}`);
       updatePlayhead();
       schedulePaint();
     }
+    const trackVolTitle = (t) => `Track volume ${(+t.volume || 0) <= -40 ? "-\u221E" : ((+t.volume || 0) > 0 ? "+" : "") + (+t.volume || 0).toFixed(1)} dB \xB7 double-click to reset`;
+    const setTrackVol = (id, db) => store2.update("Track volume", (pj) => {
+      const t = pj.tracks.find((x) => x.id === id);
+      if (!t) return;
+      if (db) t.volume = db <= -40 ? -120 : db;
+      else delete t.volume;
+    }, { coalesce: "trackvol:" + id });
+    headsInner.addEventListener("input", (ev) => {
+      const s = ev.target.closest("[data-tvol]");
+      if (!s) return;
+      const id = s.closest(".tl-head").dataset.track;
+      volDragging = id;
+      setTrackVol(id, +s.value);
+      const t = store2.getTrack(id);
+      if (t) s.title = trackVolTitle(t);
+    });
+    headsInner.addEventListener("change", (ev) => {
+      if (ev.target.closest("[data-tvol]")) {
+        volDragging = null;
+        renderHeads();
+      }
+    });
+    headsInner.addEventListener("dblclick", (ev) => {
+      const s = ev.target.closest("[data-tvol]");
+      if (!s) return;
+      ev.stopPropagation();
+      volDragging = null;
+      setTrackVol(s.closest(".tl-head").dataset.track, 0);
+    }, true);
+    headsInner.addEventListener("pointerdown", (ev) => {
+      if (ev.target.closest("[data-tvol]")) ev.stopPropagation();
+    }, true);
     headsInner.addEventListener("click", (ev) => {
       const b = ev.target.closest("[data-hact]");
       if (!b) return;
@@ -4710,7 +4746,7 @@ ${e.message}`);
     const outNode = outs[0];
     const linkTo = /* @__PURE__ */ new Map();
     for (const l of material.links || []) {
-      const a = nodes.get(l.from?.node), b = nodes.get(l.to?.node);
+      const a = nodes.get(l?.from?.node), b = nodes.get(l?.to?.node);
       if (!a || !b) continue;
       if (!NODE_TYPES[a.type].outputs.some((p) => p.name === l.from.pin)) continue;
       if (!NODE_TYPES[b.type].inputs.some((p) => p.name === l.to.pin)) continue;
@@ -6199,17 +6235,23 @@ void main() { outColor = aio_material(v_uv); }
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     };
     const srcTex = newTex();
+    const missingTex = newTex();
     const mediaTex = /* @__PURE__ */ new Map();
     function mediaTexture(mid) {
       if (mediaTex.has(mid)) return mediaTex.get(mid);
-      const tex = newTex();
-      mediaTex.set(mid, tex);
       const rt = mediaRuntime2?.get?.(mid);
       const img = rt?.image;
+      if (!(img && img.complete && img.naturalWidth) && !rt?.url) return missingTex;
+      const tex = newTex();
+      mediaTex.set(mid, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
       if (img && img.complete && img.naturalWidth) upload(tex, img);
-      else if (rt?.url) {
+      else {
         const im = new Image();
-        im.onload = () => upload(tex, im);
+        im.onload = () => {
+          if (!gl.isContextLost()) upload(tex, im);
+        };
         im.src = rt.url;
       }
       return tex;
@@ -6463,7 +6505,7 @@ vec3 aio_heightNormal(sampler2D tex, vec2 uv, float stepPx, float strength) {
           inputs: [uvIn()],
           outputs: [...channelOuts(), { name: "a", label: "A", type: "float" }, { name: "rgba", label: "RGBA", type: "vec4" }],
           params: [{ name: "texture", label: "Texture", type: "media", default: "" }],
-          desc: "Samples the clip's own frame (Source) or an image from the project.",
+          desc: "Samples the clip's own frame (Source; on a material clip that is everything below it) or an image from the project.",
           subtitle: (n, media) => n.params.texture ? media(n.params.texture)?.name || "Missing image" : "Source (clip frame)",
           glsl(c) {
             const tex = c.p("texture") ? c.texture(c.p("texture")) : "u_src";
@@ -6588,7 +6630,8 @@ vec3 aio_heightNormal(sampler2D tex, vec2 uv, float stepPx, float strength) {
           titleOf: (n) => n.params.name || "Color",
           subtitle: () => "Vector Param",
           glsl(c) {
-            const u = c.uniform("vec4", [...hexToRgb(c.p("color")), +c.p("alpha")], c.p("name") || "Color", 0, 1);
+            const alpha = Number(c.p("alpha"));
+            const u = c.uniform("vec4", [...hexToRgb(c.p("color")), isFinite(alpha) ? alpha : 1], c.p("name") || "Color", 0, 1);
             return { rgb: u + ".rgb", r: u + ".r", g: u + ".g", b: u + ".b", a: u + ".a", rgba: u };
           }
         },
@@ -7523,8 +7566,20 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       for (const v of matCache.values()) if (v.prog) gl.deleteProgram(v.prog.p);
       matCache.clear();
     }
-    const onMaterials = () => clearMaterials();
+    const onMaterials = () => {
+      clearMaterials();
+      preloadMaterialImages();
+    };
     store2.on && store2.on("materials", onMaterials);
+    const matErrors = /* @__PURE__ */ new Map();
+    function reportMaterialError(material, msg) {
+      console.warn('[renderer] material "' + (material.name || material.id) + '" failed:', msg);
+      if (matErrors.get(material.id) === msg) return;
+      matErrors.set(material.id, msg);
+      store2.emit && store2.emit("materialError", { id: material.id, error: msg });
+      if (typeof document === "undefined" || document.querySelector(".mat-editor")) return;
+      window.dispatchEvent(new CustomEvent("ve:toast", { detail: `Material "${material.name || "untitled"}" has an error, clips are shown without it: ${msg}` }));
+    }
     function getMaterialProgram(material) {
       if (!materialsMod) return null;
       const key = JSON.stringify(material);
@@ -7535,8 +7590,9 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
           if (!info || info.ok === false) throw new Error(info?.error || "compile failed");
           const prog = makeProgram(materialsMod.buildMaterialFragment(info.code));
           e = { prog, info };
+          matErrors.delete(material.id);
         } catch (err) {
-          console.warn('[renderer] material "' + (material.name || material.id) + '" failed:', err.message || err);
+          reportMaterialError(material, String(err.message || err));
           e = { failed: true };
         }
         matCache.set(key, e);
@@ -7548,6 +7604,26 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
         }
       }
       return e.failed ? null : e;
+    }
+    function materialImage(mediaId) {
+      const rt = mediaRuntime2 && mediaRuntime2.get(mediaId);
+      if (!rt) return null;
+      if (!rt.image && rt.url && typeof Image !== "undefined") {
+        rt.image = new Image();
+        rt.image.src = rt.url;
+      }
+      const img = rt.image;
+      if (img && img.complete === false && !img._aioMatWait) {
+        img._aioMatWait = true;
+        img.addEventListener("load", () => store2.emit && store2.emit("media", { id: mediaId, what: "image" }), { once: true });
+      }
+      return img || null;
+    }
+    function preloadMaterialImages() {
+      if (!materialsMod) return;
+      for (const m of store2.project.materials || []) {
+        for (const n of m.nodes || []) if (n.params && n.params.texture) materialImage(n.params.texture);
+      }
     }
     function materialImageTexture(img) {
       if (!img || !(img.naturalWidth || img.width)) return null;
@@ -7741,7 +7817,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
         sw = W2;
         sh = H;
       } else if (clip.type === "material") {
-        srcTex = transparentTex;
+        srcTex = frameTex || transparentTex;
         sw = W2;
         sh = H;
       } else {
@@ -7840,8 +7916,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
           for (const tx of info.textures || []) {
             const loc = pr.loc(tx.uniform);
             if (!loc) continue;
-            const img = mediaRuntime2 && mediaRuntime2.get(tx.mediaId)?.image;
-            bindTex(unit, materialImageTexture(img) || transparentTex);
+            bindTex(unit, materialImageTexture(materialImage(tx.mediaId)) || transparentTex);
             gl.uniform1i(loc, unit);
             unit++;
           }
@@ -8006,10 +8081,10 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       });
     }
     const clipOpacity = (clip) => Math.max(0, Math.min(1, clip.transform?.opacity ?? 1));
-    function layerToFrameRT(clip, t) {
+    function layerToFrameRT(clip, t, frameTex = null) {
       const out = acquire(canvasW, canvasH);
       let layer = null;
-      if (clip) layer = processLayer(clip, t);
+      if (clip) layer = processLayer(clip, t, clip.type === "material" ? frameTex : null);
       const inv = layer && inverseFor(clip, layer.sw, layer.sh);
       if (layer && inv) {
         composite(layer.tex, inv, glCrop(clip), clipOpacity(clip), -1, null, out);
@@ -8054,8 +8129,8 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
             composite(layer.tex, identityInv(), [0, 0, 1, 1], strength, mode, frameA.tex, frameB);
             release(layer.rt);
           } else if (tr && TRANSITION_INDEX.has(tr.type)) {
-            const rtB = layerToFrameRT(clip, t);
-            const rtA = layerToFrameRT(tr.other, t);
+            const rtB = layerToFrameRT(clip, t, frameA.tex);
+            const rtA = layerToFrameRT(tr.other, t, frameA.tex);
             const rtT = acquire(canvasW, canvasH);
             const ti = TRANSITION_INDEX.get(tr.type);
             pass(ti >= TRANSITION_V2 ? P3.transition2 : P3.transition, rtT, (pr) => {
@@ -8073,7 +8148,7 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
             composite(rtT.tex, identityInv(), [0, 0, 1, 1], 1, mode, frameA.tex, frameB);
             release(rtT);
           } else {
-            const layer = processLayer(clip, t);
+            const layer = processLayer(clip, t, clip.type === "material" ? frameA.tex : null);
             if (!layer) continue;
             const inv = inverseFor(clip, layer.sw, layer.sh);
             if (inv) composite(layer.tex, inv, glCrop(clip), clipOpacity(clip), mode, frameA.tex, frameB);
@@ -8128,10 +8203,15 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
       for (const k in P3) gl.deleteProgram(P3[k].p);
       gl.deleteBuffer(vbo);
       gl.deleteVertexArray(vao);
+      try {
+        gl.getExtension("WEBGL_lose_context")?.loseContext();
+      } catch (e) {
+      }
     }
     loadMaterials().then((m) => {
       if (!m || disposed) return;
       clearMaterials();
+      preloadMaterialImages();
       if (store2.project.clips.some((c) => c.materialId || c.type === "material")) render(lastT);
     });
     return { render, setSize, getClipQuad, dispose, gl };
@@ -9237,8 +9317,10 @@ void main() {
       const cr = canvas.getBoundingClientRect();
       const lr = layer.getBoundingClientRect();
       const { width: W2, height: H } = store2.project.settings;
-      const sx = cr.width / W2, sy = cr.height / H;
-      const ox = cr.left - lr.left + cr.width / 2, oy = cr.top - lr.top + cr.height / 2;
+      const kx = layer.offsetWidth ? lr.width / layer.offsetWidth || 1 : 1;
+      const ky = layer.offsetHeight ? lr.height / layer.offsetHeight || 1 : 1;
+      const sx = cr.width / kx / W2, sy = cr.height / ky / H;
+      const ox = (cr.left - lr.left + cr.width / 2) / kx, oy = (cr.top - lr.top + cr.height / 2) / ky;
       return {
         W: W2,
         H,
@@ -9246,8 +9328,10 @@ void main() {
         sy,
         lr,
         cr,
+        kx,
+        ky,
         toScreen: (p) => ({ x: ox + p.x * sx, y: oy + p.y * sy }),
-        toProject: (clientX, clientY) => ({ x: (clientX - lr.left - ox) / sx, y: (clientY - lr.top - oy) / sy })
+        toProject: (clientX, clientY) => ({ x: ((clientX - lr.left) / kx - ox) / sx, y: ((clientY - lr.top) / ky - oy) / sy })
       };
     }
     function visibleEntries() {
@@ -9266,8 +9350,8 @@ void main() {
     function refresh() {
       rafPending = false;
       const m = mapping();
-      svg3.setAttribute("width", Math.max(1, m.lr.width));
-      svg3.setAttribute("height", Math.max(1, m.lr.height));
+      svg3.setAttribute("width", Math.max(1, m.lr.width / m.kx));
+      svg3.setAttribute("height", Math.max(1, m.lr.height / m.ky));
       const clip = drag ? store2.getClip(drag.clipId) : selectedVisible();
       if (!clip || !renderer) {
         box2.style.display = "none";
@@ -15649,6 +15733,7 @@ ${c.text}
       <label>Ratio:</label><select class="cz-ratio">${RATIOS.map((r) => `<option value="${r.id}">${esc6(r.label || r.id)}</option>`).join("")}</select>
       <input type="number" class="cz-wi" min="1" step="1"><span>\xD7</span><input type="number" class="cz-hi" min="1" step="1">
       <label class="cz-pzon"><input type="checkbox" class="cz-enable"> Pan &amp; Zoom on</label>
+      <label class="cz-keep" title="After cropping, enlarge the clip so the cropped part fills the space the clip took before (like Filmora). Off = just hide the cropped edges."><input type="checkbox" class="cz-fill" checked> Enlarge to fill</label>
       <span class="cz-spacer"></span>
       <span class="cz-pzbtns">
         <button class="icon-btn" data-pz="zin" title="Zoom in (end closer)">${ic("zin")}</button>
@@ -15865,6 +15950,7 @@ ${c.text}
       $2(".cz-ratio").disabled = cur === "pan";
       $2(".cz-enable").checked = pzOn;
       $2(".cz-pzon").hidden = cur !== "pan";
+      $2(".cz-keep").hidden = cur !== "crop";
       $2(".cz-pzbtns").hidden = cur !== "pan";
       back.querySelectorAll(".cz-tab").forEach((x) => x.classList.toggle("active", x.dataset.t === cur));
       imgBox.classList.toggle("pz-off", cur === "pan" && !pzOn);
@@ -15988,9 +16074,28 @@ ${c.text}
         c[k] = r6(c[k]);
       });
       const pz = pzOn ? { enabled: true, start: { ...pzStart }, end: { ...pzEnd }, ease: clip0.panZoom?.ease || "smooth" } : null;
+      const fill = $2(".cz-fill").checked;
       store2.transact("Crop and Zoom", (p) => {
         const x = p.clips.find((y) => y.id === clipId);
         if (!x) return;
+        const o = { l: 0, t: 0, r: 0, b: 0, ...x.crop };
+        const ow = Math.max(1e-4, 1 - o.l - o.r), oh = Math.max(1e-4, 1 - o.t - o.b);
+        const nw = Math.max(1e-4, 1 - c.l - c.r), nh = Math.max(1e-4, 1 - c.t - c.b);
+        const changed = ["l", "t", "r", "b"].some((k) => Math.abs(o[k] - c[k]) > 1e-6);
+        if (fill && changed) {
+          const tr = x.transform = x.transform || {};
+          const s0 = tr.scale ?? 1, k = Math.min(ow / nw, oh / nh);
+          const f = Math.min(S.width / sw, S.height / sh);
+          const dw = sw * f * s0 * (tr.scaleX ?? 1), dh = sh * f * s0 * (tr.scaleY ?? 1);
+          let dx = (o.l + ow / 2 - 0.5) * dw - (c.l + nw / 2 - 0.5) * dw * k;
+          let dy = (o.t + oh / 2 - 0.5) * dh - (c.t + nh / 2 - 0.5) * dh * k;
+          if (tr.flipH) dx = -dx;
+          if (tr.flipV) dy = -dy;
+          const th = (tr.rotation || 0) * Math.PI / 180, co = Math.cos(th), si = Math.sin(th);
+          tr.scale = Math.round(s0 * k * 1e4) / 1e4;
+          tr.x = Math.round(((tr.x || 0) + dx * co - dy * si) * 100) / 100;
+          tr.y = Math.round(((tr.y || 0) + dx * si + dy * co) * 100) / 100;
+        }
         x.crop = c;
         if (pz) x.panZoom = pz;
         else delete x.panZoom;
@@ -18770,7 +18875,9 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
               const c = selClip();
               if (c && c.type !== "audio") {
                 store2.transact("Apply material", (p) => {
-                  p.clips.find((x) => x.id === c.id).materialId = m.id;
+                  const x = p.clips.find((y) => y.id === c.id);
+                  if (x.materialId !== m.id) x.materialParams = {};
+                  x.materialId = m.id;
                 });
                 toast3(`${m.name} applied to ${c.name}`);
               }
@@ -18782,7 +18889,9 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
               { label: "Apply to selected clip", run: () => {
                 const c = selClip();
                 if (c) store2.transact("Apply material", (p) => {
-                  p.clips.find((x) => x.id === c.id).materialId = m.id;
+                  const x = p.clips.find((y) => y.id === c.id);
+                  if (x.materialId !== m.id) x.materialParams = {};
+                  x.materialId = m.id;
                 });
               } },
               { label: "Add as a clip at playhead", run: () => ops2.addMaterialClip({ time: store2.playhead, materialId: m.id }) },
@@ -20723,6 +20832,59 @@ Double-click to edit \xB7 click with a clip selected to apply \xB7 drag to the t
           W2.value = sh;
           H.value = Math.round(sh / ratio / 2) * 2;
         }
+      });
+    }
+    {
+      const even2 = (v) => Math.max(16, Math.round(v / 2) * 2);
+      let hadVideo = store.project.clips.some((c) => c.type === "video");
+      const matchTo = (w, h2) => {
+        store.transact("Match project to media", (p) => {
+          const a = ASPECTS.find((x) => x.w && Math.abs(x.w / x.h - w / h2) < 0.01);
+          Object.assign(p.settings, { width: w, height: h2, aspect: a ? a.id : "custom" });
+        });
+        layoutPreview();
+        toast2(`Project is now ${w} \xD7 ${h2}`);
+      };
+      store.on("project", (ev) => {
+        const vids = store.project.clips.filter((c) => c.type === "video");
+        const was = hadVideo;
+        hadVideo = vids.length > 0;
+        if (was || !hadVideo || /^(load|undo|redo)/.test(ev?.reason || "")) return;
+        if (document.querySelector(".match-modal")) return;
+        const m = store.getMedia(vids[0].mediaId), st = store.project.settings;
+        if (!m?.width || !m?.height) return;
+        const w = even2(m.width), h2 = even2(m.height);
+        if (w === st.width && h2 === st.height) return;
+        let pref = "";
+        try {
+          pref = localStorage.getItem("ve.matchMedia") || "";
+        } catch (e) {
+        }
+        if (pref === "keep") return;
+        if (pref === "match") return setTimeout(() => matchTo(w, h2), 0);
+        const remember = (el2, v) => {
+          if (el2.querySelector("#mmRemember").checked) {
+            try {
+              localStorage.setItem("ve.matchMedia", v);
+            } catch (e) {
+            }
+          }
+        };
+        setTimeout(() => {
+          const md = modal(
+            "Match project to this video?",
+            `<p style="margin:0 0 10px">The video is <b>${w} \xD7 ${h2}</b> and the project is <b>${st.width} \xD7 ${st.height}</b>.</p>
+          <p class="dim" style="margin:0 0 12px">Match to media changes the project size to the video's, so it fills the frame with no black bars. You can change it later in File \u203A Project Settings.</p>
+          <label style="display:flex;gap:6px;align-items:center;color:var(--text-dim)"><input type="checkbox" id="mmRemember"> Don't ask again</label>`,
+            [{ label: "Keep project settings", run: (el2) => remember(el2, "keep") }, { label: "Match to media", primary: true, run: (el2) => {
+              remember(el2, "match");
+              matchTo(w, h2);
+            } }],
+            { width: 460 }
+          );
+          md.el.classList.add("match-modal");
+          md.el.querySelector(".btn.primary")?.focus();
+        }, 0);
       });
     }
     function openExport() {

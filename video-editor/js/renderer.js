@@ -1229,8 +1229,19 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     for (const v of matCache.values()) if (v.prog) gl.deleteProgram(v.prog.p);
     matCache.clear();
   }
-  const onMaterials = () => clearMaterials();
+  const onMaterials = () => { clearMaterials(); preloadMaterialImages(); };
   store.on && store.on('materials', onMaterials);
+  // A material that fails to compile leaves its clip unmodified; say so once per material + error.
+  const matErrors = new Map(); // material id -> last reported message
+  function reportMaterialError(material, msg) {
+    console.warn('[renderer] material "' + (material.name || material.id) + '" failed:', msg);
+    if (matErrors.get(material.id) === msg) return;
+    matErrors.set(material.id, msg);
+    store.emit && store.emit('materialError', { id: material.id, error: msg });
+    // the material editor shows compile errors itself while it is open
+    if (typeof document === 'undefined' || document.querySelector('.mat-editor')) return;
+    window.dispatchEvent(new CustomEvent('ve:toast', { detail: `Material "${material.name || 'untitled'}" has an error, clips are shown without it: ${msg}` }));
+  }
   function getMaterialProgram(material) {
     if (!materialsMod) return null;
     const key = JSON.stringify(material);
@@ -1241,8 +1252,9 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
         if (!info || info.ok === false) throw new Error(info?.error || 'compile failed');
         const prog = makeProgram(materialsMod.buildMaterialFragment(info.code));
         e = { prog, info };
+        matErrors.delete(material.id);
       } catch (err) {
-        console.warn('[renderer] material "' + (material.name || material.id) + '" failed:', err.message || err);
+        reportMaterialError(material, String(err.message || err));
         e = { failed: true };
       }
       matCache.set(key, e);
@@ -1252,6 +1264,27 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
       }
     }
     return e.failed ? null : e;
+  }
+  // Image of a project media for a Texture Sample node. After a project is opened the runtime only
+  // has { file, url } (the image is otherwise created the first time an image *clip* is drawn), so
+  // load it here and redraw when it arrives.
+  function materialImage(mediaId) {
+    const rt = mediaRuntime && mediaRuntime.get(mediaId);
+    if (!rt) return null;
+    if (!rt.image && rt.url && typeof Image !== 'undefined') { rt.image = new Image(); rt.image.src = rt.url; }
+    const img = rt.image;
+    if (img && img.complete === false && !img._aioMatWait) {
+      img._aioMatWait = true;
+      img.addEventListener('load', () => store.emit && store.emit('media', { id: mediaId, what: 'image' }), { once: true });
+    }
+    return img || null;
+  }
+  // Start loading every texture the project's materials use (so the first frame / an export has them).
+  function preloadMaterialImages() {
+    if (!materialsMod) return;
+    for (const m of store.project.materials || []) {
+      for (const n of m.nodes || []) if (n.params && n.params.texture) materialImage(n.params.texture);
+    }
   }
   function materialImageTexture(img) {
     if (!img || !(img.naturalWidth || img.width)) return null;
@@ -1391,7 +1424,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
   }
 
   // Returns { tex, rt (owned or null), sw, sh } or null if not drawable.
-  // `frameTex`: for adjustment clips, the frame composited so far (canvas-sized) is the source.
+  // `frameTex`: for adjustment and material clips, the frame composited so far (canvas-sized) is the source.
   // Pan & Zoom: clip.panZoom = { enabled, start: {x,y,w,h}, end: {x,y,w,h}, ease } in source fractions
   // (y down). Returns the rectangle at time t in GL uv (y up), or null when off / full frame.
   function panZoomRect(clip, t) {
@@ -1413,7 +1446,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     let srcTex, sw, sh;
     if (clip.type === 'color') { srcTex = colorTexture(clip.fill || '#2a6df4'); sw = W; sh = H; }
     else if (clip.type === 'adjustment') { if (!frameTex) return null; srcTex = frameTex; sw = W; sh = H; }
-    else if (clip.type === 'material') { srcTex = transparentTex; sw = W; sh = H; }
+    else if (clip.type === 'material') { srcTex = frameTex || transparentTex; sw = W; sh = H; } // u_src = everything below the clip
     else {
       let frame = null;
       try { frame = sources.getFrame(clip); } catch (e) { frame = null; }
@@ -1499,8 +1532,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
         for (const tx of info.textures || []) {
           const loc = pr.loc(tx.uniform);
           if (!loc) continue;
-          const img = mediaRuntime && mediaRuntime.get(tx.mediaId)?.image;
-          bindTex(unit, materialImageTexture(img) || transparentTex);
+          bindTex(unit, materialImageTexture(materialImage(tx.mediaId)) || transparentTex);
           gl.uniform1i(loc, unit);
           unit++;
         }
@@ -1654,10 +1686,10 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
   const clipOpacity = clip => Math.max(0, Math.min(1, clip.transform?.opacity ?? 1));
 
   // Render one clip fully processed + transformed into a transparent frame-sized RT.
-  function layerToFrameRT(clip, t) {
+  function layerToFrameRT(clip, t, frameTex = null) {
     const out = acquire(canvasW, canvasH);
     let layer = null;
-    if (clip) layer = processLayer(clip, t);
+    if (clip) layer = processLayer(clip, t, clip.type === 'material' ? frameTex : null);
     const inv = layer && inverseFor(clip, layer.sw, layer.sh);
     if (layer && inv) {
       composite(layer.tex, inv, glCrop(clip), clipOpacity(clip), -1, null, out);
@@ -1702,8 +1734,8 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
           composite(layer.tex, identityInv(), [0, 0, 1, 1], strength, mode, frameA.tex, frameB);
           release(layer.rt);
         } else if (tr && TRANSITION_INDEX.has(tr.type)) {
-          const rtB = layerToFrameRT(clip, t);
-          const rtA = layerToFrameRT(tr.other, t);
+          const rtB = layerToFrameRT(clip, t, frameA.tex);
+          const rtA = layerToFrameRT(tr.other, t, frameA.tex);
           const rtT = acquire(canvasW, canvasH);
           const ti = TRANSITION_INDEX.get(tr.type);
           pass(ti >= TRANSITION_V2 ? P.transition2 : P.transition, rtT, pr => {
@@ -1718,7 +1750,7 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
           composite(rtT.tex, identityInv(), [0, 0, 1, 1], 1, mode, frameA.tex, frameB);
           release(rtT);
         } else {
-          const layer = processLayer(clip, t);
+          const layer = processLayer(clip, t, clip.type === 'material' ? frameA.tex : null);
           if (!layer) continue;
           const inv = inverseFor(clip, layer.sw, layer.sh);
           if (inv) composite(layer.tex, inv, glCrop(clip), clipOpacity(clip), mode, frameA.tex, frameB);
@@ -1761,12 +1793,16 @@ export function createRenderer({ canvas, store, sources, mediaRuntime }) {
     gl.deleteTexture(transparentTex);
     for (const k in P) gl.deleteProgram(P[k].p);
     gl.deleteBuffer(vbo); gl.deleteVertexArray(vao);
+    // Free the context now: browsers keep ~16 alive and kill the OLDEST (the editor's own preview)
+    // when throw-away renderers (export dialog thumbnail, export, snapshot) pile up before a GC.
+    try { gl.getExtension('WEBGL_lose_context')?.loseContext(); } catch (e) { /* ignore */ }
   }
 
   // Kick off the materials module; re-render once it arrives if a material is in use.
   loadMaterials().then(m => {
     if (!m || disposed) return;
     clearMaterials();
+    preloadMaterialImages();
     if (store.project.clips.some(c => c.materialId || c.type === 'material')) render(lastT);
   });
 

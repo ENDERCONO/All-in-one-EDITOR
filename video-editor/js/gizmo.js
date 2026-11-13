@@ -61,12 +61,17 @@ export function createGizmo({ layer, canvas, store, renderer }) {
     const cr = canvas.getBoundingClientRect();
     const lr = layer.getBoundingClientRect();
     const { width: W, height: H } = store.project.settings;
-    const sx = cr.width / W, sy = cr.height / H;
-    const ox = cr.left - lr.left + cr.width / 2, oy = cr.top - lr.top + cr.height / 2;
+    // The layer sits inside #previewStage, which the preview zoom scales with a CSS transform:
+    // getBoundingClientRect() is in zoomed screen px, while the SVG draws in the layer's own px.
+    // k converts between them (1 when the preview isn't zoomed).
+    const kx = layer.offsetWidth ? lr.width / layer.offsetWidth || 1 : 1;
+    const ky = layer.offsetHeight ? lr.height / layer.offsetHeight || 1 : 1;
+    const sx = cr.width / kx / W, sy = cr.height / ky / H;
+    const ox = (cr.left - lr.left + cr.width / 2) / kx, oy = (cr.top - lr.top + cr.height / 2) / ky;
     return {
-      W, H, sx, sy, lr, cr,
+      W, H, sx, sy, lr, cr, kx, ky,
       toScreen: p => ({ x: ox + p.x * sx, y: oy + p.y * sy }),
-      toProject: (clientX, clientY) => ({ x: (clientX - lr.left - ox) / sx, y: (clientY - lr.top - oy) / sy }),
+      toProject: (clientX, clientY) => ({ x: ((clientX - lr.left) / kx - ox) / sx, y: ((clientY - lr.top) / ky - oy) / sy }),
     };
   }
 
@@ -86,8 +91,8 @@ export function createGizmo({ layer, canvas, store, renderer }) {
   function refresh() {
     rafPending = false;
     const m = mapping();
-    svg.setAttribute('width', Math.max(1, m.lr.width));
-    svg.setAttribute('height', Math.max(1, m.lr.height));
+    svg.setAttribute("width", Math.max(1, m.lr.width / m.kx));
+    svg.setAttribute("height", Math.max(1, m.lr.height / m.ky));
     const clip = drag ? store.getClip(drag.clipId) : selectedVisible();
     if (!clip || !renderer) { box.style.display = 'none'; current = null; if (!drag) clearGuides(); return; }
     let quad;

@@ -135,7 +135,9 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
     placeBall();
   }
 
+  let volDragging = null;
   function renderHeads() {
+    if (volDragging) return; // don't replace the slider under the pointer mid-drag
     headsInner.innerHTML = layout.map(r => {
       const t = r.track, v = t.kind === 'video';
       const num = (t.name.match(/\d+$/) || [r.idxInKind + 1])[0];
@@ -146,6 +148,7 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
           <button class="tl-hbtn${t.muted ? ' on' : ''}" data-hact="mute" title="${t.muted ? 'Unmute' : 'Mute'} track">${icon(t.muted ? 'mute' : 'volume', 14)}</button>
           ${v ? `<button class="tl-hbtn${t.hidden ? ' on' : ''}" data-hact="hide" title="${t.hidden ? 'Show' : 'Hide'} track">${icon(t.hidden ? 'eyeOff' : 'eye', 14)}</button>` : ''}
         </div>
+        <input class="tl-tvol" type="range" min="-40" max="12" step="0.5" value="${Math.max(-40, Math.min(12, +t.volume || 0))}" data-tvol title="${trackVolTitle(t)}" aria-label="Track volume"${t.locked ? ' disabled' : ''}>
       </div>`;
     }).join('') + (layout.length ? `<div class="tl-head-top" style="height:${topPad}px"></div>` : '');
   }
@@ -1295,6 +1298,24 @@ export function createTimeline({ root, store, mediaRuntime, ops }) {
   }
 
   // ---------------------------------------------------------------- track headers
+  // Track volume slider (Filmora-style): drag = live, one undo step per drag; double-click = 0 dB.
+  const trackVolTitle = t => `Track volume ${(+t.volume || 0) <= -40 ? '-∞' : ((+t.volume || 0) > 0 ? '+' : '') + (+t.volume || 0).toFixed(1)} dB · double-click to reset`;
+  const setTrackVol = (id, db) => store.update('Track volume', pj => {
+    const t = pj.tracks.find(x => x.id === id); if (!t) return;
+    if (db) t.volume = db <= -40 ? -120 : db; else delete t.volume;
+  }, { coalesce: 'trackvol:' + id });
+  headsInner.addEventListener('input', ev => {
+    const s = ev.target.closest('[data-tvol]'); if (!s) return;
+    const id = s.closest('.tl-head').dataset.track;
+    volDragging = id; setTrackVol(id, +s.value);
+    const t = store.getTrack(id); if (t) s.title = trackVolTitle(t);
+  });
+  headsInner.addEventListener('change', ev => { if (ev.target.closest('[data-tvol]')) { volDragging = null; renderHeads(); } });
+  headsInner.addEventListener('dblclick', ev => {
+    const s = ev.target.closest('[data-tvol]'); if (!s) return;
+    ev.stopPropagation(); volDragging = null; setTrackVol(s.closest('.tl-head').dataset.track, 0);
+  }, true);
+  headsInner.addEventListener('pointerdown', ev => { if (ev.target.closest('[data-tvol]')) ev.stopPropagation(); }, true);
   headsInner.addEventListener('click', ev => {
     const b = ev.target.closest('[data-hact]'); if (!b) return;
     const id = b.closest('.tl-head').dataset.track;

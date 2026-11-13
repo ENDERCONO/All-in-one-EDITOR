@@ -520,13 +520,13 @@ export function createLibrary({ store, ops, audio, materials }) {
           title: `${m.name}\nDouble-click to edit · click with a clip selected to apply · drag to the timeline to add as a clip`,
           onClick: () => {
             const c = selClip();
-            if (c && c.type !== 'audio') { store.transact('Apply material', p => { p.clips.find(x => x.id === c.id).materialId = m.id; }); toast(`${m.name} applied to ${c.name}`); }
+            if (c && c.type !== 'audio') { store.transact('Apply material', p => { const x = p.clips.find(y => y.id === c.id); if (x.materialId !== m.id) x.materialParams = {}; x.materialId = m.id; }); toast(`${m.name} applied to ${c.name}`); }
           },
           onDbl: () => materials?.openMaterialEditor?.({ store, mediaRuntime, materialId: m.id }),
           onAdd: () => ops.addMaterialClip({ time: store.playhead, materialId: m.id }),
           onCtx: e => ctxMenu(e, [
             { label: 'Edit material…', run: () => materials?.openMaterialEditor?.({ store, mediaRuntime, materialId: m.id }) },
-            { label: 'Apply to selected clip', run: () => { const c = selClip(); if (c) store.transact('Apply material', p => { p.clips.find(x => x.id === c.id).materialId = m.id; }); } },
+            { label: 'Apply to selected clip', run: () => { const c = selClip(); if (c) store.transact('Apply material', p => { const x = p.clips.find(y => y.id === c.id); if (x.materialId !== m.id) x.materialParams = {}; x.materialId = m.id; }); } },
             { label: 'Add as a clip at playhead', run: () => ops.addMaterialClip({ time: store.playhead, materialId: m.id }) },
             { label: 'Duplicate', run: () => store.transact('Duplicate material', p => { const n = JSON.parse(JSON.stringify(m)); n.id = uid('mat'); n.name += ' copy'; p.materials.push(n); }) },
             { sep: true },

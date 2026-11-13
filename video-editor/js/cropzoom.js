@@ -56,6 +56,7 @@ export function openCropZoom({ store, mediaRuntime, clipId, tab = 'crop', onAppl
       <label>Ratio:</label><select class="cz-ratio">${RATIOS.map(r => `<option value="${r.id}">${esc(r.label || r.id)}</option>`).join('')}</select>
       <input type="number" class="cz-wi" min="1" step="1"><span>×</span><input type="number" class="cz-hi" min="1" step="1">
       <label class="cz-pzon"><input type="checkbox" class="cz-enable"> Pan &amp; Zoom on</label>
+      <label class="cz-keep" title="After cropping, enlarge the clip so the cropped part fills the space the clip took before (like Filmora). Off = just hide the cropped edges."><input type="checkbox" class="cz-fill" checked> Enlarge to fill</label>
       <span class="cz-spacer"></span>
       <span class="cz-pzbtns">
         <button class="icon-btn" data-pz="zin" title="Zoom in (end closer)">${ic('zin')}</button>
@@ -214,6 +215,7 @@ export function openCropZoom({ store, mediaRuntime, clipId, tab = 'crop', onAppl
     $('.cz-ratio').disabled = cur === 'pan';
     $('.cz-enable').checked = pzOn;
     $('.cz-pzon').hidden = cur !== 'pan';
+    $('.cz-keep').hidden = cur !== 'crop';
     $('.cz-pzbtns').hidden = cur !== 'pan';
     back.querySelectorAll('.cz-tab').forEach(x => x.classList.toggle('active', x.dataset.t === cur));
     imgBox.classList.toggle('pz-off', cur === 'pan' && !pzOn);
@@ -276,8 +278,28 @@ export function openCropZoom({ store, mediaRuntime, clipId, tab = 'crop', onAppl
     const r6 = v => Math.round(v * 1e6) / 1e6;
     Object.keys(c).forEach(k => { c[k] = r6(c[k]); });
     const pz = pzOn ? { enabled: true, start: { ...pzStart }, end: { ...pzEnd }, ease: clip0.panZoom?.ease || 'smooth' } : null;
+    const fill = $('.cz-fill').checked;
     store.transact('Crop and Zoom', p => {
       const x = p.clips.find(y => y.id === clipId); if (!x) return;
+      // Enlarge to fill: scale the clip so the new cropped part fits the box the old visible part
+      // took (same centre, no stretching), instead of leaving a smaller picture.
+      const o = { l: 0, t: 0, r: 0, b: 0, ...x.crop };
+      const ow = Math.max(1e-4, 1 - o.l - o.r), oh = Math.max(1e-4, 1 - o.t - o.b);
+      const nw = Math.max(1e-4, 1 - c.l - c.r), nh = Math.max(1e-4, 1 - c.t - c.b);
+      const changed = ['l', 't', 'r', 'b'].some(k => Math.abs(o[k] - c[k]) > 1e-6);
+      if (fill && changed) {
+        const tr = x.transform = x.transform || {};
+        const s0 = tr.scale ?? 1, k = Math.min(ow / nw, oh / nh);
+        const f = Math.min(S.width / sw, S.height / sh);
+        const dw = sw * f * s0 * (tr.scaleX ?? 1), dh = sh * f * s0 * (tr.scaleY ?? 1); // full source, on screen
+        let dx = (o.l + ow / 2 - 0.5) * dw - (c.l + nw / 2 - 0.5) * dw * k;
+        let dy = (o.t + oh / 2 - 0.5) * dh - (c.t + nh / 2 - 0.5) * dh * k;
+        if (tr.flipH) dx = -dx; if (tr.flipV) dy = -dy;
+        const th = (tr.rotation || 0) * Math.PI / 180, co = Math.cos(th), si = Math.sin(th);
+        tr.scale = Math.round(s0 * k * 1e4) / 1e4;
+        tr.x = Math.round(((tr.x || 0) + dx * co - dy * si) * 100) / 100;
+        tr.y = Math.round(((tr.y || 0) + dx * si + dy * co) * 100) / 100;
+      }
       x.crop = c;
       if (pz) x.panZoom = pz; else delete x.panZoom;
       delete x.zoomSpot;

@@ -63,3 +63,12 @@ Last updated by the build session that created the editor.
 python3 -m http.server 8099   # from the repo root
 node video-editor/tests/smoke.mjs <dir with clip.webm green.png tone.wav> <screenshot dir>
 ```
+
+## 2026-11-13
+
+* **Track volume**: slider on every track header (`track.volume`, dB, double-click = 0 dB); applied in `audio.js` `scheduleClip` (playback + export mixdown).
+* **Crop and Zoom → Apply** enlarges the clip so the cropped part fills the box the clip took before ("Enlarge to fill" checkbox in the window, on by default).
+* **Match project to media**: the first video put on the timeline with a different size than the project opens a Match to media / Keep project settings prompt (`ve.matchMedia` in localStorage remembers "Don't ask again").
+* **Gizmo with preview zoom**: the selection box was scaled twice when the preview was zoomed (Ctrl+wheel), so handles didn't match the picture and drags distorted the clip. `gizmo.js` `mapping()` now converts between zoomed screen px and the layer's own px.
+* **Materials**: (1) `material` clips now get the frame below them as `u_src` (like adjustment layers); before, the source was transparent and most materials drew nothing. (2) Texture Sample images load from `rt.url` after opening a project (were black). (3) `renderer.dispose()` releases its WebGL context: export / snapshot renderers used to push the main preview's context out (preview went dead). (4) A material that fails to compile shows a toast (`materialError` event); the clip still renders without it. (5) Applying a different material resets `materialParams`. Test: `node video-editor/tests/materials.mjs`.
+* Open: export may start before material textures decode; no `webglcontextrestored` handling; unconnected Output → Opacity is 1 (alpha clips become opaque rectangles).

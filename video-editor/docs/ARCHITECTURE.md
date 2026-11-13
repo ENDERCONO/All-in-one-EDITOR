@@ -44,7 +44,8 @@ needed.
               sampleRate: 48000, channels: 2, masterVolume: 0 /* dB */ },
   media: [ { id, name, kind: 'video'|'image'|'audio', mime, duration /* s, images: 0 */,
              width, height, hasAudio, size } ],
-  tracks: [ { id, kind: 'video'|'audio', name, muted: false, hidden: false, locked: false } ],
+  tracks: [ { id, kind: 'video'|'audio', name, muted: false, hidden: false, locked: false,
+             volume /* optional, dB: track header slider; multiplies every clip on the track (-120 = silent) */ } ],
   clips:  [ Clip ],
   materials: [ Material ],
   markers: [ { id, time, color: '#ffcc00', label: '' } ]

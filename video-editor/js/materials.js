@@ -232,7 +232,7 @@ export const NODE_TYPES = {
     inputs: [uvIn()],
     outputs: [...channelOuts(), { name: 'a', label: 'A', type: 'float' }, { name: 'rgba', label: 'RGBA', type: 'vec4' }],
     params: [{ name: 'texture', label: 'Texture', type: 'media', default: '' }],
-    desc: 'Samples the clip\'s own frame (Source) or an image from the project.',
+    desc: 'Samples the clip\'s own frame (Source; on a material clip that is everything below it) or an image from the project.',
     subtitle: (n, media) => n.params.texture ? (media(n.params.texture)?.name || 'Missing image') : 'Source (clip frame)',
     glsl(c) {
       const tex = c.p('texture') ? c.texture(c.p('texture')) : 'u_src';
@@ -329,7 +329,8 @@ export const NODE_TYPES = {
     titleOf: n => n.params.name || 'Color',
     subtitle: () => 'Vector Param',
     glsl(c) {
-      const u = c.uniform('vec4', [...hexToRgb(c.p('color')), +c.p('alpha')], c.p('name') || 'Color', 0, 1);
+      const alpha = Number(c.p('alpha'));
+      const u = c.uniform('vec4', [...hexToRgb(c.p('color')), isFinite(alpha) ? alpha : 1], c.p('name') || 'Color', 0, 1);
       return { rgb: u + '.rgb', r: u + '.r', g: u + '.g', b: u + '.b', a: u + '.a', rgba: u };
     },
   },
@@ -694,7 +695,7 @@ function compileInner(material) {
   // input key -> link (validated)
   const linkTo = new Map();
   for (const l of material.links || []) {
-    const a = nodes.get(l.from?.node), b = nodes.get(l.to?.node);
+    const a = nodes.get(l?.from?.node), b = nodes.get(l?.to?.node);
     if (!a || !b) continue;
     if (!NODE_TYPES[a.type].outputs.some(p => p.name === l.from.pin)) continue;
     if (!NODE_TYPES[b.type].inputs.some(p => p.name === l.to.pin)) continue;
@@ -2075,14 +2076,19 @@ function createPreview(canvas, { store, mediaRuntime, onGlError }) {
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
   };
   const srcTex = newTex();
+  const missingTex = newTex(); // stand-in for a missing image
   const mediaTex = new Map(); // mediaId -> tex
   function mediaTexture(mid) {
     if (mediaTex.has(mid)) return mediaTex.get(mid);
-    const tex = newTex(); mediaTex.set(mid, tex);
     const rt = mediaRuntime?.get?.(mid);
     const img = rt?.image;
+    if (!(img && img.complete && img.naturalWidth) && !rt?.url) return missingTex; // not available (yet): try again next frame
+    const tex = newTex(); mediaTex.set(mid, tex);
+    // project images tile, like in the renderer
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
     if (img && img.complete && img.naturalWidth) upload(tex, img);
-    else if (rt?.url) { const im = new Image(); im.onload = () => upload(tex, im); im.src = rt.url; }
+    else { const im = new Image(); im.onload = () => { if (!gl.isContextLost()) upload(tex, im); }; im.src = rt.url; }
     return tex;
   }
   function setSource(key) {

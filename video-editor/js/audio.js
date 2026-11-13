@@ -838,7 +838,9 @@ export function createAudioEngine({ store, mediaRuntime }) {
     const fin = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
     const volAnim = hasAnim(clip, 'audio.volume'), panAnim = hasAnim(clip, 'audio.pan');
     const toGain = db => Math.max(0, Math.min(16, dbToGain(Math.max(-120, Math.min(24, fin(db))))));
-    const base = volAnim ? 1 : toGain(a.volume); // animated volume is applied by its own automation node below
+    // Track volume (the slider on the track header, dB) multiplies every clip on that track.
+    const trackGain = toGain(store.getTrack(clip.trackId)?.volume);
+    const base = (volAnim ? 1 : toGain(a.volume)) * trackGain; // animated volume is applied by its own automation node below
     const fi = Math.max(0, fin(a.fadeIn), fin(span.xin)), fo = Math.max(0, fin(a.fadeOut), fin(span.xout));
     const cEnd = span.end;
     const env = t => base * Math.max(0, Math.min(1, fi > 0 ? (t - cs) / fi : 1, fo > 0 ? (cEnd - t) / fo : 1));

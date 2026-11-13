@@ -155,3 +155,15 @@
 /* keyframe diamonds on clips */
 .tl-kf { position: absolute; bottom: 3px; width: 10px; height: 10px; margin-left: -5px; background: #ffb020; border: 1px solid #000; transform: rotate(45deg); z-index: 3; cursor: ew-resize; box-shadow: 0 0 0 1px #ffb02055; }
 .tl-kf:hover { background: #ffd060; }
+
+/* Track volume slider on the track header */
+.tl-tvol { -webkit-appearance: none; appearance: none; width: 100%; max-width: 120px; height: 12px; margin: 0; background: none; cursor: ew-resize; }
+.tl-head.audio .tl-tvol { flex: 0 1 44px; min-width: 26px; margin: 0 2px; }
+.tl-head.audio .tl-head-name { flex: 1 1 0; }
+.tl-head.audio .tl-head-btns { flex: none; }
+.tl-tvol::-webkit-slider-runnable-track { height: 3px; border-radius: 2px; background: var(--panel-3, #333); }
+.tl-tvol::-webkit-slider-thumb { -webkit-appearance: none; width: 9px; height: 9px; margin-top: -3px; border-radius: 50%; background: var(--text-dim); border: 0; }
+.tl-tvol:hover::-webkit-slider-thumb, .tl-tvol:active::-webkit-slider-thumb { background: var(--accent); }
+.tl-tvol::-moz-range-track { height: 3px; border-radius: 2px; background: var(--panel-3, #333); }
+.tl-tvol::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50%; background: var(--text-dim); border: 0; }
+.tl-tvol:disabled { opacity: .35; cursor: default; }
