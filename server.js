@@ -1213,12 +1213,12 @@ app.get('/api/dl/expand', async (req, res) => {
         let u = /^https?:\/\//i.test(e.url || '') ? e.url : e.webpage_url;
         if (!u && e.url && e.ie_key === 'Youtube') u = 'https://www.youtube.com/watch?v=' + e.url;
         if (!u && e.id && /youtube/i.test(j.extractor_key || '')) u = 'https://www.youtube.com/watch?v=' + e.id;
-        if (u && /^https?:\/\//i.test(u)) entries.push({ url: u, title: e.title || e.id || u });
+        if (u && /^https?:\/\//i.test(u)) entries.push({ url: u, title: e.title || e.id || u, id: e.id || '', duration: e.duration || 0, uploader: e.uploader || e.channel || '' });
       }
     };
     if (Array.isArray(j.entries)) walk(j.entries);
-    else entries.push({ url: j.webpage_url || url, title: j.title || url });
-    res.json({ title: j.title || '', playlist: Array.isArray(j.entries), entries });
+    else entries.push({ url: j.webpage_url || url, title: j.title || url, id: j.id || '', duration: j.duration || 0, uploader: j.uploader || j.channel || '' });
+    res.json({ title: j.title || '', uploader: j.uploader || j.channel || '', playlist: Array.isArray(j.entries), entries });
   } catch (e) {
     res.status(500).json({ error: friendlyDlError(e.message) });
   } finally {

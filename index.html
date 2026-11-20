@@ -1884,6 +1884,8 @@
   .srv-text code { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text); }
   .srv-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
   .srv-row .dl-btn { min-width: 0; }
+  .srv-helper { display: inline-flex; text-decoration: none; min-width: 0; }
+  .srv-box details summary { cursor: pointer; }
   .vdl-status { font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.5; color: var(--text-dim); word-break: break-word; }
   .job-list { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; max-height: 460px; overflow-y: auto; }
   .job-row {
@@ -1905,6 +1907,21 @@
   .job-acts button.x { padding: 5px 8px; }
   .job-bar { grid-column: 1; height: 3px; border-radius: 99px; background: var(--bg-2); overflow: hidden; }
   .job-bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--r), #ff8ea2); transition: width 0.2s; }
+  /* Playlist → MP3 */
+  #ypPanel { display: flex; flex-direction: column; gap: 14px; }
+  #ypPanel[hidden] { display: none; }
+  .yp-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+  .yp-title { font-size: 16px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+  .yp-sel { display: flex; gap: 6px; }
+  .yp-sel .dl-btn { min-width: 0; padding: 6px 12px; font-size: 11px; }
+  .yp-list { max-height: 560px; }
+  .yp-list .job-row { grid-template-columns: auto auto 1fr auto; }
+  .yp-list .job-row > .yp-cb { grid-row: 1 / span 2; grid-column: 1; accent-color: var(--r); width: 15px; height: 15px; cursor: pointer; }
+  .yp-list .job-row > .yp-thumb { grid-row: 1 / span 2; grid-column: 2; width: 64px; height: 36px; border-radius: 4px; object-fit: cover; background: var(--bg-2); }
+  .yp-list .job-row > .job-name, .yp-list .job-row > .job-sub, .yp-list .job-row > .job-bar { grid-column: 3; }
+  .yp-list .job-row > .job-acts { grid-column: 4; }
+  .yp-list .job-row.off { opacity: 0.45; }
+  .yp-num { color: var(--text-faint); margin-right: 6px; }
   .convert-card {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -6043,6 +6060,12 @@
         <span class="sb-label">Converter</span>
       </button>
 
+      <!-- ===== YOUTUBE PLAYLIST → MP3 (single) ===== -->
+      <button class="sb-tab" data-tab="ytplaylist" title="Playlist → MP3 — paste a YouTube playlist, get every song as MP3, one by one, saved individually or as one ZIP">
+        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h12M3 11h12M3 16h7"/><path d="M18 5v10"/><circle cx="16" cy="16" r="2.4"/><path d="M18 5l3 1.5"/></svg></span>
+        <span class="sb-label">Playlist → MP3</span>
+      </button>
+
       <!-- ===== VIDEO EDITOR (single) ===== -->
       <button class="sb-tab" data-tab="videoeditor" title="Video Editor — Filmora-style multi-track editor: timeline, transitions, filters, green screen, materials, export MP4 / WebM / WAV / MP3">
         <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="11" rx="2"/><path d="m10 7.5 4 2-4 2z" fill="currentColor"/><path d="M2 19h8M14 19h8"/><path d="M10 17v4M14 17v4"/></svg></span>
@@ -8066,16 +8089,21 @@
         <div id="vdlStatus" hidden class="vdl-status"></div>
 
         <div class="srv-box" id="vdlServerBox" hidden>
-          <div class="srv-title">No download server answered</div>
-          <div class="srv-text">This page is hosted on GitHub Pages, which can only serve files — downloading needs a server. Either one works:</div>
+          <div class="srv-title">Start the downloader on your PC</div>
+          <div class="srv-text">This site can't download YouTube by itself (browsers block it), so a small helper on your own PC does it — using your home connection, which YouTube accepts.</div>
           <ol class="srv-text">
-            <li><b>Online server:</b> paste its address (your Render service, e.g. <code>https://your-app.onrender.com</code>) and hit Connect. Deploy one for free on Render with this repo — the included <code>render.yaml</code> sets it up.</li>
-            <li><b>Your PC:</b> run <code>START-SERVER.bat</code> in the site folder and hit Connect — best for YouTube, since it uses your home connection.</li>
+            <li><a class="dl-btn srv-helper" href="downloader-helper/AIOE-Downloader.bat" download>⬇ Download the helper (Windows)</a></li>
+            <li>Double-click <code>AIOE-Downloader.bat</code>. If Windows says "protected your PC", click <b>More info → Run anyway</b>. The first run fetches its tools (~200 MB, once). Keep its window open.</li>
+            <li>If your browser asks to allow access to <b>devices on your local network</b>, click <b>Allow</b>.</li>
           </ol>
-          <div class="srv-row">
-            <input type="text" id="vdlServerUrl" class="color-input cv-select" placeholder="https://your-app.onrender.com" spellcheck="false">
-            <button class="dl-btn" id="vdlServerGo">Connect</button>
-          </div>
+          <div class="srv-text" id="vdlHelperWait">This page connects by itself as soon as the helper is running.</div>
+          <details class="srv-text"><summary>Other options</summary>
+            Running the full site with <code>START-SERVER.bat</code> works too, or paste the address of your own online server:
+            <div class="srv-row" style="margin-top:8px">
+              <input type="text" id="vdlServerUrl" class="color-input cv-select" placeholder="https://your-app.onrender.com" spellcheck="false">
+              <button class="dl-btn" id="vdlServerGo">Connect</button>
+            </div>
+          </details>
         </div>
 
         <div class="job-list" id="vdlList" hidden></div>
@@ -8087,6 +8115,110 @@
           <button class="dl-btn" id="vdlClear">Clear list</button>
         </div>
         <div class="vdl-engine" id="vdlEngine"></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ================= YOUTUBE PLAYLIST → MP3 ================= -->
+  <main data-mode="ytplaylist" hidden>
+    <header class="mode-header">
+      <div>
+        <div class="eyebrow">Audio · YouTube</div>
+        <h1>Playlist <em>→ MP3</em></h1>
+        <p>Paste a YouTube playlist link. Every video is turned into an MP3 (title tags + cover art), one after another — save them one by one or all in one ZIP.</p>
+      </div>
+    </header>
+
+    <div class="converter-grid">
+      <section class="convert-card" style="grid-column: 1 / -1">
+        <h3>YouTube playlist downloader</h3>
+        <p class="desc">Works with <strong>playlist links</strong> (<code>youtube.com/playlist?list=…</code>), a <strong>video link from inside a playlist</strong> (<code>watch?v=…&amp;list=…</code>), <strong>channels</strong>, <strong>YouTube Music</strong> albums, or a single video. Downloads run on <strong>your own PC</strong> through the small downloader helper (yt-dlp) — no third-party sites.</p>
+
+        <div class="srv-row">
+          <input type="text" id="ypUrl" class="color-input cv-select" placeholder="https://www.youtube.com/playlist?list=…" spellcheck="false">
+          <button class="dl-btn" id="ypLoad">Load playlist</button>
+        </div>
+        <div class="vdl-detect" id="ypEngine"></div>
+        <div id="ypStatus" hidden class="vdl-status"></div>
+
+        <div class="srv-box" id="ypServerBox" hidden>
+          <div class="srv-title">Start the downloader on your PC</div>
+          <div class="srv-text">This site can't download YouTube by itself (browsers block it), so a small helper on your own PC does it — using your home connection, which YouTube accepts.</div>
+          <ol class="srv-text">
+            <li><a class="dl-btn srv-helper" href="downloader-helper/AIOE-Downloader.bat" download>⬇ Download the helper (Windows)</a></li>
+            <li>Double-click <code>AIOE-Downloader.bat</code>. If Windows says "protected your PC", click <b>More info → Run anyway</b>. The first run fetches its tools (~200 MB, once). Keep its window open.</li>
+            <li>If your browser asks to allow access to <b>devices on your local network</b>, click <b>Allow</b>.</li>
+          </ol>
+          <div class="srv-text" id="ypHelperWait">This page connects by itself as soon as the helper is running.</div>
+          <details class="srv-text"><summary>Other options</summary>
+            Running the full site with <code>START-SERVER.bat</code> works too, or paste the address of your own online server:
+            <div class="srv-row" style="margin-top:8px">
+              <input type="text" id="ypServerUrl" class="color-input cv-select" placeholder="https://your-app.onrender.com" spellcheck="false">
+              <button class="dl-btn" id="ypServerGo">Connect</button>
+            </div>
+          </details>
+        </div>
+
+        <div id="ypPanel" hidden>
+          <div class="yp-head">
+            <div>
+              <div class="yp-title" id="ypTitle">Playlist</div>
+              <div class="vdl-detect" id="ypCount"></div>
+            </div>
+            <div class="yp-sel">
+              <button class="dl-btn" id="ypAll">Select all</button>
+              <button class="dl-btn" id="ypNone">Select none</button>
+            </div>
+          </div>
+
+          <div class="convert-settings">
+            <div class="export-sliders">
+              <div class="export-slider">
+                <div class="slabel"><span>MP3 quality</span></div>
+                <select id="ypBitrate" class="color-input cv-select">
+                  <option value="128">128 kbps · small</option>
+                  <option value="192" selected>192 kbps · good</option>
+                  <option value="256">256 kbps · great</option>
+                  <option value="320">320 kbps · best</option>
+                </select>
+              </div>
+              <div class="export-slider">
+                <div class="slabel"><span>Speed</span></div>
+                <select id="ypPar" class="color-input cv-select">
+                  <option value="1" selected>One video at a time</option>
+                  <option value="2">2 at once</option>
+                  <option value="3">3 at once</option>
+                </select>
+              </div>
+              <div class="export-slider">
+                <div class="slabel"><span>Saving</span></div>
+                <div class="channel-toggle">
+                  <input type="radio" name="ypSave" id="ypSaveZip" value="zip" checked>
+                  <label for="ypSaveZip" title="Keep every MP3 here, then save them all as one ZIP (or any one of them on its own)">ZIP at the end</label>
+                  <input type="radio" name="ypSave" id="ypSaveEach" value="each">
+                  <label for="ypSaveEach" title="Save each MP3 to your Downloads as soon as it's ready (your browser may ask once to allow multiple downloads)">Save each now</label>
+                </div>
+              </div>
+            </div>
+            <label class="vdl-check"><input type="checkbox" id="ypNumber" checked> Number the files in playlist order (01 - Title.mp3)</label>
+            <button class="apply-btn" id="ypGo">⬇ Download selected as MP3</button>
+          </div>
+
+          <div class="progress-row" id="ypProgressRow" hidden>
+            <div class="progress-bar"><div class="progress-fill" id="ypFill"></div></div>
+            <div class="progress-text" id="ypText">0%</div>
+          </div>
+
+          <div class="job-list yp-list" id="ypList"></div>
+
+          <div class="export-buttons" style="justify-content:flex-start">
+            <button class="dl-btn" id="ypZip" hidden>Save all as ZIP <span class="tag" id="ypZipSize">—</span></button>
+            <button class="dl-btn" id="ypSaveAll" hidden>Save all individually</button>
+            <button class="dl-btn" id="ypRetry" hidden>Retry failed</button>
+            <button class="dl-btn" id="ypStop" hidden>Stop</button>
+            <button class="dl-btn" id="ypClear">Clear</button>
+          </div>
+        </div>
       </section>
     </div>
   </main>
@@ -17561,6 +17693,20 @@ window.resolveApiBase = function(onStatus) {
   return window._apiBasePromise;
 };
 
+// While a "start the helper" box is showing, look for a server on this PC every
+// few seconds and call onFound(base) once it answers (the helper / START-SERVER.bat).
+window.waitForLocalServer = function(onFound, isWanted) {
+  if (window._localWait) return;
+  window._localWait = setInterval(async () => {
+    if (isWanted && !isWanted()) { clearInterval(window._localWait); window._localWait = null; return; }
+    const base = await window.findLocalApiBase();
+    if (base === null || !window._localWait) return;
+    clearInterval(window._localWait); window._localWait = null;
+    window._apiBase = base;
+    onFound(base);
+  }, 3000);
+};
+
 // Wake the free online server as soon as the site opens (it sleeps when unused), so it
 // is awake by the time someone pastes a link. Fire-and-forget: sends nothing but the ping.
 if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
@@ -18060,6 +18206,13 @@ window.escHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').rep
     serverBox.hidden = false;
     serverUrl.value = window.getSavedApiBase();
     engineEl.textContent = '';
+    window.waitForLocalServer(base => {
+      apiBase = base;
+      serverBox.hidden = true;
+      showEngine();
+      toast('Downloader helper found — ready');
+      if (parseLinks(urlInput.value).length) start();
+    }, () => !serverBox.hidden);
   }
   async function showEngine() {
     if (apiBase === null) return;
@@ -18100,6 +18253,406 @@ window.escHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').rep
   if (tab) tab.addEventListener('click', warmUp);
   if (typeof currentMode !== 'undefined' && currentMode === 'convert') warmUp();
   updateDetect();
+})();
+
+/* ============================================================
+   PLAYLIST → MP3 — paste a YouTube playlist, every video becomes
+   an MP3, downloaded one by one (or 2–3 at once) through this
+   site's own server (/api/dl/expand + /api/dl/start, yt-dlp).
+   Finished files stay here so they can be saved one at a time or
+   all together in one ZIP; "Save each now" saves as they finish.
+   ============================================================ */
+(function setupPlaylistMp3() {
+  const $ = id => document.getElementById(id);
+  const urlInput = $('ypUrl');
+  if (!urlInput) return;
+  const loadBtn = $('ypLoad'), engineEl = $('ypEngine'), statusEl = $('ypStatus');
+  const serverBox = $('ypServerBox'), serverUrl = $('ypServerUrl'), serverGo = $('ypServerGo');
+  const panel = $('ypPanel'), titleEl = $('ypTitle'), countEl = $('ypCount'), listEl = $('ypList');
+  const bitrate = $('ypBitrate'), par = $('ypPar'), numberBox = $('ypNumber'), goBtn = $('ypGo');
+  const progressRow = $('ypProgressRow'), fill = $('ypFill'), text = $('ypText');
+  const zipBtn = $('ypZip'), zipSize = $('ypZipSize'), saveAllBtn = $('ypSaveAll');
+  const retryBtn = $('ypRetry'), stopBtn = $('ypStop'), clearBtn = $('ypClear');
+  const esc = window.escHtml;
+  const fmtBytes = window.fmtBytes;
+
+  let apiBase = null;
+  let listTitle = '', zipTitle = '';
+  let items = [];   // { n, url, id, title, duration, on, state, pct, info, jobId, blob, filename, error, cancelled }
+  let stopped = true;
+  let zipBlob = null;
+  const ACTIVE = ['starting', 'queued', 'setup', 'updating', 'downloading', 'processing', 'saving'];
+  const isActive = it => ACTIVE.includes(it.state);
+  const saveMode = () => (document.querySelector('input[name="ypSave"]:checked') || {}).value || 'zip';
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  try {
+    const p = JSON.parse(localStorage.getItem('ypPrefs') || 'null');
+    if (p) {
+      if (p.br && bitrate.querySelector(`option[value="${p.br}"]`)) bitrate.value = p.br;
+      if (p.par && par.querySelector(`option[value="${p.par}"]`)) par.value = p.par;
+      const sv = document.querySelector(`input[name="ypSave"][value="${p.save}"]`); if (sv) sv.checked = true;
+      numberBox.checked = p.num !== false;
+    }
+  } catch (e) {}
+  function remember() {
+    try { localStorage.setItem('ypPrefs', JSON.stringify({ br: bitrate.value, par: par.value, save: saveMode(), num: numberBox.checked })); } catch (e) {}
+  }
+  [bitrate, par, numberBox, ...document.querySelectorAll('input[name="ypSave"]')].forEach(el =>
+    el.addEventListener('change', () => { remember(); render(); }));
+  par.addEventListener('change', () => pump());
+
+  function setStatus(msg, isError) {
+    statusEl.hidden = !msg;
+    statusEl.textContent = msg || '';
+    statusEl.style.color = isError ? 'var(--r)' : 'var(--text-dim)';
+  }
+  async function getJson(url, opts) {
+    const r = await fetch(url, opts);
+    let j = null;
+    try { j = await r.json(); } catch (e) {}
+    if (!r.ok) throw new Error((j && j.error) || ('Server error ' + r.status));
+    return j;
+  }
+  const fmtDur = s => {
+    s = Math.round(s || 0);
+    if (!s) return '';
+    const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, sec = String(s % 60).padStart(2, '0');
+    return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+  };
+  const ytId = it => (it.id && /^[A-Za-z0-9_-]{11}$/.test(it.id)) ? it.id
+    : ((it.url.match(/(?:youtu\.be\/|[?&]v=|\/shorts\/)([A-Za-z0-9_-]{11})/) || [])[1] || '');
+  const pad = n => String(n).padStart(String(items.length).length < 2 ? 2 : String(items.length).length, '0');
+  function outName(it) {
+    const name = it.filename || ((it.title || 'track').replace(/[\\/:*?"<>|]+/g, '_') + '.mp3');
+    return numberBox.checked ? `${pad(it.n)} - ${name}` : name;
+  }
+
+  /* ---------- rendering ---------- */
+  let renderQueued = false;
+  function render() {
+    if (renderQueued) return;
+    renderQueued = true;
+    requestAnimationFrame(() => { renderQueued = false; renderNow(); });
+  }
+  function renderNow() {
+    panel.hidden = !items.length;
+    if (!items.length) return;
+    const chosen = items.filter(i => i.on);
+    const done = chosen.filter(i => i.state === 'done').length;
+    const failed = chosen.filter(i => i.state === 'error').length;
+    const active = items.filter(isActive).length;
+    const pending = items.filter(i => i.state === 'pending').length;
+    const blobs = items.filter(i => i.blob);
+    const totalDur = chosen.reduce((s, i) => s + (i.duration || 0), 0);
+
+    titleEl.textContent = listTitle || 'Playlist';
+    countEl.textContent = `${items.length} video${items.length === 1 ? '' : 's'} · ${chosen.length} selected`
+      + (totalDur ? ' · ' + fmtDur(totalDur) + ' total' : '');
+    goBtn.disabled = active > 0 || pending > 0;
+    goBtn.textContent = active || pending ? 'Downloading…' : done && done === chosen.length ? '⬇ Download again' : '⬇ Download selected as MP3';
+    zipBtn.hidden = !blobs.length;
+    saveAllBtn.hidden = blobs.length < 2;
+    zipSize.textContent = blobs.length + ' file' + (blobs.length === 1 ? '' : 's') + ' · ' + fmtBytes(blobs.reduce((s, i) => s + i.blob.size, 0));
+    retryBtn.hidden = !failed || active > 0;
+    stopBtn.hidden = !(active || pending);
+
+    listEl.innerHTML = items.map(it => {
+      const cls = [it.state === 'error' ? 'err' : it.state === 'done' ? 'ok' : '', it.on ? '' : 'off'].join(' ');
+      let sub;
+      switch (it.state) {
+        case 'idle': sub = fmtDur(it.duration) || ' '; break;
+        case 'pending': sub = 'waiting…'; break;
+        case 'starting': sub = 'resolving…'; break;
+        case 'queued': sub = 'queued on the server'; break;
+        case 'setup': sub = it.info || 'one-time setup…'; break;
+        case 'updating': sub = 'updating the downloader, then retrying…'; break;
+        case 'downloading': sub = `${Math.round(it.pct)}%` + (it.info ? ' · ' + it.info : ''); break;
+        case 'processing': sub = 'converting to MP3 + tags + cover…'; break;
+        case 'saving': sub = 'fetching the MP3…'; break;
+        case 'done': sub = '✓ ' + outName(it) + (it.blob ? ' · ' + fmtBytes(it.blob.size) : ' · in your Downloads'); break;
+        case 'error': sub = it.error || 'failed'; break;
+        case 'stopped': sub = 'stopped'; break;
+        default: sub = it.state;
+      }
+      let acts = '';
+      if (it.blob) acts += `<button data-act="save" data-n="${it.n}">Save</button>`;
+      if (it.state === 'error' || it.state === 'stopped') acts += `<button data-act="retry" data-n="${it.n}">Retry</button>`;
+      if (isActive(it) || it.state === 'pending') acts += `<button class="x" data-act="skip" data-n="${it.n}" title="Skip this one">✕</button>`;
+      const id = ytId(it);
+      const thumb = id ? `<img class="yp-thumb" loading="lazy" alt="" src="https://i.ytimg.com/vi/${id}/mqdefault.jpg">` : '<span class="yp-thumb"></span>';
+      const bar = isActive(it) ? `<div class="job-bar"><i style="width:${it.state === 'processing' || it.state === 'saving' ? 100 : Math.max(2, it.pct || 0)}%"></i></div>` : '';
+      return `<div class="job-row ${cls}"><input type="checkbox" class="yp-cb" data-n="${it.n}" ${it.on ? 'checked' : ''} ${isActive(it) ? 'disabled' : ''}>${thumb}`
+        + `<div class="job-name" title="${esc(it.title)}"><span class="yp-num">${pad(it.n)}</span>${esc(it.title || it.url)}</div>`
+        + `<div class="job-acts">${acts}</div>${bar}<div class="job-sub" title="${esc(sub)}">${esc(sub)}</div></div>`;
+    }).join('');
+
+    const counted = chosen.filter(i => i.state !== 'idle' && i.state !== 'stopped');
+    progressRow.hidden = !counted.length;
+    if (counted.length) {
+      const sum = counted.reduce((s, i) => s + (i.state === 'done' || i.state === 'error' ? 100 : (i.pct || 0)), 0);
+      fill.style.width = Math.round(sum / counted.length) + '%';
+      const parts = [`${done}/${counted.length} done`];
+      if (failed) parts.push(`${failed} failed`);
+      if (active) parts.push(`${active} downloading`);
+      if (pending) parts.push(`${pending} waiting`);
+      text.textContent = parts.join(' · ');
+    }
+  }
+
+  listEl.addEventListener('change', e => {
+    const cb = e.target.closest('.yp-cb');
+    if (!cb) return;
+    const it = items.find(i => i.n === +cb.dataset.n);
+    if (!it) return;
+    it.on = cb.checked;
+    if (!it.on && it.state === 'pending') it.state = 'idle';
+    render();
+  });
+  listEl.addEventListener('click', e => {
+    const b = e.target.closest('button[data-act]');
+    if (!b) return;
+    const it = items.find(i => i.n === +b.dataset.n);
+    if (!it) return;
+    if (b.dataset.act === 'save' && it.blob) window.saveBlobAs(it.blob, outName(it));
+    else if (b.dataset.act === 'retry') { reset(it); it.on = true; it.state = 'pending'; stopped = false; pump(); }
+    else if (b.dataset.act === 'skip') { cancelJob(it); it.state = 'stopped'; render(); pump(); }
+  });
+  $('ypAll').addEventListener('click', () => { items.forEach(i => { i.on = true; }); render(); });
+  $('ypNone').addEventListener('click', () => { items.forEach(i => { if (!isActive(i)) { i.on = false; if (i.state === 'pending') i.state = 'idle'; } }); render(); });
+
+  function reset(it) {
+    Object.assign(it, { state: 'idle', pct: 0, info: '', error: null, jobId: null, cancelled: false });
+  }
+  function cancelJob(it) {
+    it.cancelled = true;
+    if (it.jobId && apiBase !== null) fetch(apiBase + '/api/dl/cancel/' + it.jobId, { method: 'POST' }).catch(() => {});
+  }
+
+  /* ---------- loading the playlist ---------- */
+  async function connect() {
+    if (apiBase !== null) return true;
+    apiBase = await window.resolveApiBase(msg => setStatus(msg));
+    if (apiBase === null) { showServerBox(); setStatus(''); return false; }
+    serverBox.hidden = true;
+    showEngine();
+    return true;
+  }
+  function showServerBox() {
+    serverBox.hidden = false;
+    serverUrl.value = window.getSavedApiBase();
+    window.waitForLocalServer(base => {
+      apiBase = base;
+      serverBox.hidden = true;
+      showEngine();
+      toast('Downloader helper found — ready');
+      if (urlInput.value.trim()) load();
+    }, () => !serverBox.hidden);
+  }
+  async function load() {
+    let url = urlInput.value.trim();
+    if (!url) { setStatus('Paste a YouTube playlist link first', true); urlInput.focus(); return; }
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+    if (!/^https?:\/\/\S+$/i.test(url)) { setStatus('That does not look like a link', true); return; }
+    if (items.some(isActive) && !confirm('Stop the current downloads and load a new playlist?')) return;
+    stopAll();
+    loadBtn.disabled = true;
+    setStatus('Connecting…');
+    try {
+      if (!(await connect())) return;
+      setStatus('Reading the playlist… (big playlists take a few seconds)');
+      const r = await getJson(apiBase + '/api/dl/expand?max=1000&url=' + encodeURIComponent(url));
+      const entries = r.entries || [];
+      if (!entries.length) throw new Error('No videos found at that link');
+      zipTitle = listTitle = r.title || (entries.length === 1 ? entries[0].title : 'Playlist');
+      if (r.uploader && r.playlist) listTitle += ' · ' + r.uploader;
+      items = entries.map((e, i) => ({ n: i + 1, url: e.url, id: e.id || '', title: e.title || '', duration: e.duration || 0, on: true, state: 'idle', pct: 0 }));
+      zipBlob = null;
+      setStatus(r.playlist ? '' : 'That link is a single video (no playlist found) — it will still download as MP3.');
+      render();
+    } catch (e) {
+      setStatus('Could not read the playlist: ' + (e.message || e), true);
+    } finally {
+      loadBtn.disabled = false;
+    }
+  }
+  loadBtn.addEventListener('click', load);
+  urlInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); load(); } });
+  urlInput.addEventListener('paste', () => setTimeout(() => { if (/youtu/i.test(urlInput.value) && !items.some(isActive)) load(); }, 0));
+
+  /* ---------- downloading ---------- */
+  function startDownloads() {
+    const chosen = items.filter(i => i.on);
+    if (!chosen.length) { toast('Select at least one video'); return; }
+    stopped = false;
+    zipBlob = null;
+    for (const it of chosen) {
+      if (it.state === 'done' && it.blob) continue; // already have it
+      reset(it);
+      it.state = 'pending';
+    }
+    pump();
+  }
+  goBtn.addEventListener('click', startDownloads);
+
+  function pump() {
+    if (stopped) return;
+    const limit = +par.value || 1;
+    let running = items.filter(isActive).length;
+    for (const it of items) {
+      if (running >= limit) break;
+      if (it.state !== 'pending' || !it.on) continue;
+      running++;
+      it.state = 'starting';
+      it.cancelled = false;
+      runItem(it).finally(() => { render(); pump(); maybeFinish(); });
+    }
+    render();
+  }
+
+  async function runItem(it) {
+    try {
+      const q = new URLSearchParams({ url: it.url, kind: 'audio', format: 'mp3', quality: bitrate.value });
+      const { id } = await getJson(apiBase + '/api/dl/start?' + q);
+      it.jobId = id;
+      let misses = 0;
+      while (!it.cancelled) {
+        await sleep(700);
+        if (it.cancelled) return;
+        let p;
+        try { p = await getJson(apiBase + '/api/dl/progress/' + id); misses = 0; }
+        catch (e) { if (++misses > 15) throw new Error('Lost contact with the server'); continue; }
+        if (p.title && !it.title) it.title = p.title;
+        if (p.state === 'error' || p.error) throw new Error(p.error || 'Download failed');
+        it.state = p.state;
+        it.pct = p.pct || 0;
+        if (p.state === 'setup') {
+          const what = p.setupPhase === 'ffmpeg' ? 'ffmpeg (~170 MB, only ever happens once)' : 'the downloader';
+          it.info = `one-time setup: fetching ${what}… ${p.setupPct || 0}%`;
+          it.pct = 0;
+        } else {
+          it.info = [p.speed && ('at ' + p.speed), p.eta && ('ETA ' + p.eta)].filter(Boolean).join(' · ');
+        }
+        render();
+        if (p.state === 'done') { await deliver(it, p.filename); return; }
+      }
+    } catch (e) {
+      if (it.cancelled) return;
+      it.state = 'error';
+      it.error = String(e && e.message || e);
+    }
+  }
+
+  let lastSave = 0;
+  async function deliver(it, filename) {
+    it.state = 'saving';
+    it.filename = filename || null;
+    render();
+    const r = await fetch(apiBase + '/api/dl/file/' + it.jobId);
+    if (!r.ok) throw new Error('Could not fetch the finished MP3');
+    const blob = await r.blob();
+    if (it.cancelled) return;
+    it.blob = blob;
+    it.state = 'done';
+    it.pct = 100;
+    if (saveMode() === 'each') {
+      // browsers drop downloads fired too close together
+      const wait = lastSave + 700 - Date.now();
+      lastSave = Math.max(Date.now(), lastSave + 700);
+      if (wait > 0) await sleep(wait);
+      window.saveBlobAs(it.blob, outName(it));
+    }
+  }
+
+  function maybeFinish() {
+    if (items.some(i => isActive(i) || i.state === 'pending')) return;
+    const chosen = items.filter(i => i.on);
+    const done = chosen.filter(i => i.state === 'done').length;
+    const failed = chosen.filter(i => i.state === 'error').length;
+    if (!done && !failed) return;
+    if (saveMode() === 'zip' && done > 1 && !zipBlob && !stopped) saveZip();
+    else if (saveMode() === 'zip' && done === 1 && !stopped) { const it = chosen.find(i => i.blob); if (it) window.saveBlobAs(it.blob, outName(it)); }
+    toast(`${done} MP3${done === 1 ? '' : 's'} ready` + (failed ? ` · ${failed} failed (hit Retry failed)` : ''));
+  }
+
+  async function saveZip() {
+    const ready = items.filter(i => i.blob);
+    if (!ready.length) return;
+    zipBtn.disabled = true;
+    try {
+      const safe = (zipTitle || 'playlist').replace(/[\\/:*?"<>|·]+/g, '_').replace(/\s+/g, ' ').trim().slice(0, 80) || 'playlist';
+      zipBlob = await window.zipBlobs(ready.map(i => ({ name: outName(i), blob: i.blob })), safe + '.zip');
+    } catch (e) { toast('ZIP failed: ' + (e.message || e)); }
+    zipBtn.disabled = false;
+  }
+  zipBtn.addEventListener('click', saveZip);
+  saveAllBtn.addEventListener('click', async () => {
+    for (const it of items.filter(i => i.blob)) {
+      window.saveBlobAs(it.blob, outName(it));
+      await sleep(700);
+    }
+  });
+  retryBtn.addEventListener('click', () => {
+    items.filter(i => i.on && (i.state === 'error' || i.state === 'stopped')).forEach(i => { reset(i); i.state = 'pending'; });
+    stopped = false;
+    pump();
+  });
+  function stopAll() {
+    stopped = true;
+    items.forEach(it => { if (isActive(it) || it.state === 'pending') { cancelJob(it); it.state = 'stopped'; } });
+    render();
+  }
+  stopBtn.addEventListener('click', stopAll);
+  clearBtn.addEventListener('click', () => {
+    stopAll();
+    items = [];
+    zipBlob = null;
+    listTitle = '';
+    setStatus('');
+    render();
+  });
+
+  /* ---------- server ---------- */
+  function serverLabel(base) {
+    if (base === '') return /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? "this PC's server" : "this site's server";
+    if (/^http:\/\/(localhost|127\.0\.0\.1):/.test(base)) return "this PC's server";
+    return 'online server ' + base.replace(/^https?:\/\//, '');
+  }
+  async function showEngine() {
+    if (apiBase === null) return;
+    try {
+      const p = await getJson(apiBase + '/api/dl/ping');
+      engineEl.textContent = 'Using ' + serverLabel(apiBase) + ' · '
+        + (p.version ? `yt-dlp ${p.version}, updates itself` : 'downloader installs on the first download');
+    } catch (e) {}
+  }
+  serverGo.addEventListener('click', async () => {
+    const url = window.setSavedApiBase(serverUrl.value);
+    serverGo.disabled = true;
+    engineEl.textContent = url ? 'Connecting to ' + url + '…' : 'Looking for a server…';
+    apiBase = await window.resolveApiBase(msg => { engineEl.textContent = msg; });
+    serverGo.disabled = false;
+    if (apiBase === null) {
+      engineEl.textContent = url ? 'No answer from ' + url + ' — check the address.' : 'Still no server found.';
+      return;
+    }
+    serverBox.hidden = true;
+    showEngine();
+    toast('Connected to ' + serverLabel(apiBase));
+    if (urlInput.value.trim()) load();
+  });
+  serverUrl.addEventListener('keydown', e => { if (e.key === 'Enter') serverGo.click(); });
+
+  async function warmUp() {
+    if (apiBase !== null) return showEngine();
+    engineEl.textContent = 'Looking for a download server…';
+    apiBase = await window.resolveApiBase(msg => { engineEl.textContent = msg; });
+    if (apiBase === null) { engineEl.textContent = ''; showServerBox(); }
+    else showEngine();
+  }
+  const tab = document.querySelector('[data-tab="ytplaylist"]');
+  if (tab) tab.addEventListener('click', warmUp);
+  if (typeof currentMode !== 'undefined' && currentMode === 'ytplaylist') warmUp();
 })();
 
 setCurrentColor([255, 0, 0]);

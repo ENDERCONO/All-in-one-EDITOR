@@ -17,3 +17,4 @@ Start with `video-editor/docs/PLAN.md` and `video-editor/docs/ARCHITECTURE.md` (
 * Mutate project data only through `store.transact` / `store.update`.
 * Only `js/app.js` adds global key listeners.
 * Test: `node server.js` then open `http://localhost:3000/video-editor/` (or the Playwright smoke test `video-editor/tests/smoke.mjs`).
+* `downloader-helper/AIOE-Downloader.bat` is a no-install Windows helper (batch + embedded PowerShell 5.1): fetches yt-dlp/ffmpeg/Deno into `%LOCALAPPDATA%\AIOE-Downloader` and serves the `/api/dl/*` subset (ping, expand, start, progress, file, cancel) on `localhost:3000`, so the GitHub Pages site can download without `server.js`. Keep it in sync with the `/api/dl` contract; it is stored with CRLF (`.gitattributes`). The **Playlist → MP3** tab (`data-tab="ytplaylist"`) uses the same API.
