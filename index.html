@@ -5834,6 +5834,13 @@
   body:has(main[data-mode="videoeditor"]:not([hidden])) #siteLogo { display:none; }
   #videoEditorFrame { flex:1; width:100%; height:100%; border:0; display:block; background:#0b0d10; }
 
+  /* ============ IMAGE EDITOR (iframe, see image-editor/) ============ */
+  main[data-mode="imageeditor"] { display:flex; position:fixed; top:0; left:60px; right:0; bottom:0; z-index:50; padding:0; margin:0; overflow:hidden; background:#0b0b0f; }
+  body:has(main[data-mode="imageeditor"]:not([hidden])) { overflow:hidden; }
+  body:has(main[data-mode="imageeditor"]:not([hidden])) footer { display:none; }
+  body:has(main[data-mode="imageeditor"]:not([hidden])) #siteLogo { display:none; }
+  #imageEditorFrame { flex:1; width:100%; height:100%; border:0; display:block; background:#0b0b0f; }
+
   /* ============ REMOTE (iframe, see remote/web/) ============ */
   main[data-mode="remote"] { display:flex; position:fixed; top:0; left:60px; right:0; bottom:0; z-index:50; padding:0; margin:0; overflow:hidden; background:#0b0d10; }
   body:has(main[data-mode="remote"]:not([hidden])) { overflow:hidden; }
@@ -6070,6 +6077,12 @@
       <button class="sb-tab" data-tab="videoeditor" title="Video Editor — Filmora-style multi-track editor: timeline, transitions, filters, green screen, materials, export MP4 / WebM / WAV / MP3">
         <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="11" rx="2"/><path d="m10 7.5 4 2-4 2z" fill="currentColor"/><path d="M2 19h8M14 19h8"/><path d="M10 17v4M14 17v4"/></svg></span>
         <span class="sb-label">Video Editor</span>
+      </button>
+
+      <!-- ===== IMAGE EDITOR (single) ===== -->
+      <button class="sb-tab" data-tab="imageeditor" title="Image Editor — paint, pixel art, shapes, text, effects, crop and magic select; exports Tower Cards art">
+        <span class="sb-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4.5l5 5-8.5 8.5-5-5z"/><path d="M6 13c-2 1-2.5 3-2.5 6.5C7 19.5 9 19 10 17"/></svg></span>
+        <span class="sb-label">Image Editor</span>
       </button>
 
       <!-- ===== REMOTE (single) ===== -->
@@ -9046,6 +9059,20 @@
     })();
   </script>
 
+  <!-- ================= IMAGE EDITOR ================= -->
+  <!-- Its own app in image-editor/ (one self-contained file, works from disk). The iframe keeps its shortcuts separate. Loaded on first open. -->
+  <main data-mode="imageeditor" hidden>
+    <iframe id="imageEditorFrame" title="Image Editor" allow="clipboard-read; clipboard-write"></iframe>
+  </main>
+  <script>
+    (function () {
+      const main = document.querySelector('main[data-mode="imageeditor"]');
+      const frame = document.getElementById('imageEditorFrame');
+      const load = () => { if (!main.hidden && !frame.src) frame.src = 'image-editor/index.html'; if (!main.hidden) setTimeout(() => frame.contentWindow && frame.focus(), 50); };
+      new MutationObserver(load).observe(main, { attributes: true, attributeFilter: ['hidden'] });
+    })();
+  </script>
+
   <!-- ================= REMOTE ================= -->
   <!-- GlobalRemoteControl browser client (remote/web/), loaded on first open. -->
   <main data-mode="remote" hidden>
@@ -9373,6 +9400,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return true;
       } catch (e) { return false; } // file:// pages can't reach into the frame — drop files inside the editor instead
     }
+    if (currentMode === 'imageeditor') { // postMessage works across origins, so this also works from file://
+      const w = document.getElementById('imageEditorFrame')?.contentWindow;
+      if (!w) return false;
+      w.postMessage({ type: 'ie:open', files }, '*');
+      return true;
+    }
     const first = files[0];
     let inputs = inputsFor(currentMode, first);
     if (!inputs.length) {
@@ -9495,6 +9528,7 @@ document.getElementById('sidebarToggle').addEventListener('click', () => {
     gradblur:   ['gradient blur', 'blur', 'tilt shift', 'tilt-shift', 'fade blur', 'gaussian', 'box blur', 'motion blur', 'radial blur', 'zoom blur', 'spin blur', 'vignette', 'depth of field', 'soften'],
     audio:      ['audio tools', 'sound', 'music', 'wav', 'mp3', 'trim audio', 'volume', 'pitch', 'voice'],
     remote:     ['remote', 'remote desktop', 'control pc', 'screen share', 'rdp', 'teamviewer', 'remote control', 'my computer'],
+    imageeditor: ['image editor', 'paint', 'paint 3d', 'draw', 'drawing', 'pixel art', 'sprite', 'icon', 'brush', 'pencil', 'eraser', 'fill bucket', 'magic select', 'sticker', 'card art', 'photo editor'],
     videoeditor: ['video editor', 'timeline', 'audio timeline', 'audio editor', 'multitrack', 'multi track', 'mix audio', 'clips', 'tracks', 'sequence', 'cut video', 'arrange', 'filmora', 'keyframes', 'subtitles'],
     normalmix:  ['normal mix', 'normal map', 'normals', 'bump map', 'blend normals', 'material'],
     model3d:    ['3d model', 'displacement', 'height map', 'heightmap', 'plane', 'mesh', 'depth', 'relief'],
