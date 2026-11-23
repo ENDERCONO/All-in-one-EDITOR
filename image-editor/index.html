@@ -65,7 +65,25 @@
   /* ── stage ── */
   .stage { position: fixed; top: calc(var(--top) + var(--sub)); left: 0; right: var(--side); bottom: 26px; background: var(--stage); overflow: hidden;
     background-image: radial-gradient(rgba(255, 255, 255, .045) 1px, transparent 1px); background-size: 22px 22px; }
+  #scene { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform .35s cubic-bezier(.2, .8, .2, 1); }
   #view { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+  /* 3D objects: real DOM planes with CSS 3D transforms over the canvas */
+  #objs { position: absolute; inset: 0; pointer-events: none; transform-style: preserve-3d; }
+  .obj { position: absolute; left: 0; top: 0; pointer-events: auto; transform-origin: 50% 50%; cursor: move; touch-action: none; }
+  .obj canvas { width: 100%; height: 100%; display: block; }
+  .obj.px canvas { image-rendering: pixelated; }
+  .obj.sel { outline: 1.5px solid var(--accent); outline-offset: 3px; }
+  .obj .h { position: absolute; width: 13px; height: 13px; border-radius: 50%; background: var(--accent); border: 2px solid #111; display: none; z-index: 1; }
+  .obj.sel .h { display: block; }
+  .obj .h.se { right: -10px; bottom: -10px; cursor: nwse-resize; }
+  .obj .h.rot { left: 50%; top: -30px; margin-left: -6.5px; cursor: grab; }
+  .obj .h.rot::after { content: ""; position: absolute; left: 3.5px; top: 11px; width: 2px; height: 17px; background: var(--accent); }
+  .objlist { display: flex; flex-direction: column; gap: 4px; }
+  .objlist button { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; background: var(--panel2); border: 1px solid transparent; color: var(--muted); text-align: left; }
+  .objlist button.cur { border-color: var(--accent); color: var(--text); }
+  .objlist canvas { width: 28px; height: 28px; border-radius: 5px; background: #2a2a31; image-rendering: pixelated; }
+  .btn.danger:hover { border-color: var(--danger); color: #fecdd3; }
+  .btn:disabled, .sb:disabled { opacity: .4; cursor: default; }
   .status { position: fixed; left: 0; right: var(--side); bottom: 0; height: 26px; display: flex; align-items: center; gap: 18px; padding: 0 12px;
     background: var(--panel); border-top: 1px solid var(--line); color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
   .status b { color: var(--text); font-weight: 600; }
@@ -173,6 +191,7 @@
   <div class="cats" id="cats">
     <button class="tb" data-cat="brushes" title="Brushes (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4.5l5 5-8.5 8.5-5-5z"/><path d="M6 13c-2 1-2.5 3-2.5 6.5C7 19.5 9 19 10 17"/></svg><span>Brushes</span></button>
     <button class="tb" data-cat="shapes" title="2D shapes (U)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3.5" y="10" width="10" height="10" rx="1.5"/><circle cx="15.5" cy="8.5" r="5"/></svg><span>2D shapes</span></button>
+    <button class="tb" data-cat="3d" title="3D objects (K makes the selection 3D)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg><span>3D</span></button>
     <button class="tb" data-cat="text" title="Text (T)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 6h14M12 6v13M9 19h6"/></svg><span>Text</span></button>
     <button class="tb" data-cat="effects" title="Effects"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="3.5"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/></svg><span>Effects</span></button>
     <button class="tb" data-cat="canvas" title="Canvas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M7 3v14h14"/><path d="M3 7h14v14"/></svg><span>Canvas</span></button>
@@ -191,7 +210,9 @@
   <button class="sb" data-tool="crop" title="Crop (C)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6 2v16h16"/><path d="M2 6h16v16"/></svg>Crop</button>
   <button class="sb" data-tool="magic" title="Magic select (W)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20L15 9"/><path d="M15 3v3M18.5 4.5l-2 2M21 9h-3M12 6.5l-2-2"/></svg>Magic select</button>
   <button class="sb" data-tool="picker" title="Eyedropper (I)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M14 4l6 6-2 2-6-6z"/><path d="M13 7l-8.5 8.5L4 20l4.5-.5L17 11"/></svg>Eyedropper</button>
+  <button class="sb" id="make3dBtn" title="Make 3D: turn the selection or pasted image into a 3D object (K)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg>Make 3D</button>
   <div class="grow"></div>
+  <button class="sb" id="view3dBtn" title="3D view: tilt the camera to see 3D objects. Drag to orbit (V)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M3 15l9 5 9-5-9-5z"/><path d="M12 10V3M9 5.5L12 3l3 2.5"/></svg>3D view</button>
   <div class="zoom">
     <button class="iconbtn" id="zoomOut" title="Zoom out (-)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
     <input type="range" id="zoomRange" min="0" max="1000" step="1">
@@ -206,7 +227,7 @@
   <button class="iconbtn" id="moreBtn" title="View options"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
 </nav>
 
-<main class="stage" id="stage"><canvas id="view"></canvas></main>
+<main class="stage" id="stage"><div id="scene"><canvas id="view"></canvas><div id="objs"></div></div></main>
 <footer class="status"><span id="stSize"></span><span id="stPos"></span><span id="stSel"></span><span style="margin-left:auto" id="stTool"></span></footer>
 
 <aside class="side">
@@ -285,12 +306,17 @@ const S = {
   bgLevel: store.get('bgLevel', 22),     // 0 = black … 100 = white
   bgAuto: store.get('bgAuto', false),    // inverse of the image's average colour
   bgChecker: store.get('bgChecker', false),
+  lastBrush: 'pixel',   // what B goes back to (any brush except the eraser)
+  objects: [],          // 3D objects floating above the image (see the 3D section)
+  objSel: null,         // id of the selected 3D object
+  view3d: false,        // camera tilted to show the objects in depth
 };
 const SIZES = { brush: 8, pixel: 1 };
 
 // ─────────────────────────── history ───────────────────────────
 const H = { list: [], i: -1, max: 60 };
-function snapshot() { return { w: art.width, h: art.height, t: S.transparent, data: actx.getImageData(0, 0, art.width, art.height) }; }
+// A history step stores the pixels plus the 3D objects (their canvases never change once made, so sharing them is safe).
+function snapshot() { return { w: art.width, h: art.height, t: S.transparent, data: actx.getImageData(0, 0, art.width, art.height), objs: S.objects.map(o => ({ ...o })) }; }
 function commit(label) {
   H.list.length = H.i + 1;
   H.list.push({ label, snap: snapshot() });
@@ -305,6 +331,8 @@ function restore(i) {
   const s = H.list[i].snap;
   if (art.width !== s.w || art.height !== s.h) { art.width = s.w; art.height = s.h; }
   actx.putImageData(s.data, 0, 0); S.transparent = s.t; H.i = i; S.sel = null;
+  S.objects = (s.objs || []).map(o => ({ ...o })); if (!S.objects.some(o => o.id === S.objSel)) S.objSel = null;
+  if (S.cat === '3d') renderPanel();
   updateUndo(); autosave(); measureAverage(); if (S.cat === 'history' || S.cat === 'canvas') renderPanel(); draw();
 }
 // Undo while pixels are floating cancels the move/paste: the last snapshot is the image before it.
@@ -314,7 +342,7 @@ function updateUndo() { $('#undoBtn').disabled = H.i <= 0 && !S.float; $('#redoB
 
 function newDoc(w, h, transparent = true, label = 'New image') {
   dropFloat(false);
-  art.width = w; art.height = h; S.transparent = transparent; S.sel = null;
+  art.width = w; art.height = h; S.transparent = transparent; S.sel = null; S.objects = []; S.objSel = null;
   actx.clearRect(0, 0, w, h);
   if (!transparent) { actx.fillStyle = '#ffffff'; actx.fillRect(0, 0, w, h); }
   H.list = []; H.i = -1; commit(label); fit(); renderPanel();
@@ -323,7 +351,7 @@ function loadImageToDoc(img, label = 'Open image') {
   dropFloat(false);
   art.width = img.naturalWidth || img.width; art.height = img.naturalHeight || img.height;
   actx.clearRect(0, 0, art.width, art.height); actx.drawImage(img, 0, 0);
-  S.transparent = true; S.sel = null; H.list = []; H.i = -1; commit(label); fit(); renderPanel();
+  S.transparent = true; S.sel = null; S.objects = []; S.objSel = null; H.list = []; H.i = -1; commit(label); fit(); renderPanel();
 }
 
 // ─────────────────────────── view ───────────────────────────
@@ -447,7 +475,8 @@ function draw() {
     ants(x + c.x * z, y + c.y * z, c.w * z, c.h * z, true);
   }
   // brush cursor
-  if (hover && ['brush', 'eraser'].includes(S.tool) && !panning) {
+  renderObjects();
+  if (hover && ['brush', 'eraser'].includes(S.tool) && !panning && !S.view3d) {
     const [hx, hy] = hover, s = brushSize();
     vctx.save(); vctx.strokeStyle = 'rgba(255,255,255,.9)'; vctx.lineWidth = 1; vctx.setLineDash([]);
     if (isSquareBrush()) { const px = Math.floor(hx - (s - 1) / 2), py = Math.floor(hy - (s - 1) / 2); vctx.strokeRect(x + px * z + .5, y + py * z + .5, s * z - 1, s * z - 1); vctx.strokeStyle = 'rgba(0,0,0,.6)'; vctx.strokeRect(x + px * z - .5, y + py * z - .5, s * z + 1, s * z + 1); }
@@ -552,6 +581,7 @@ function beginStroke(x, y) {
   strokeLayer.width = art.width; strokeLayer.height = art.height;
   sctx.clearRect(0, 0, art.width, art.height); sctx.fillStyle = S.tool === 'eraser' ? '#000' : S.color; sctx.strokeStyle = S.color;
   strokeActive = true; last = [x, y]; spacingAcc = 0; seed = (Date.now() % 100000) + 1;
+  if (eHold) eHold.used = true;   // painted while holding E: spring back to the previous tool on release
   if (S.tool === 'brush' && brushDef().kind === 'pixel') stampSquare(x, y, S.size);
   else if (S.tool === 'brush' && brushDef().kind === 'round') { sctx.beginPath(); sctx.arc(x, y, S.size / 2, 0, Math.PI * 2); sctx.fill(); }
   else stamp(x, y);
@@ -738,6 +768,7 @@ function applyCrop(r) {
   r.w = clamp(r.w, 1, art.width - r.x); r.h = clamp(r.h, 1, art.height - r.y);
   const old = document.createElement('canvas'); old.width = art.width; old.height = art.height; old.getContext('2d').drawImage(art, 0, 0);
   art.width = r.w; art.height = r.h; actx.drawImage(old, -r.x, -r.y);
+  for (const o of S.objects) { o.cx -= r.x; o.cy -= r.y; }   // 3D objects stay where they were on the picture
   cropRect = null; S.sel = null; commit('Crop'); fit(); setTool('brush'); renderPanel();
 }
 
@@ -890,13 +921,28 @@ function renderPanel() {
       <button class="btn" id="cardFolder" style="width:100%;margin-top:6px">${cardDir ? 'Folder: ' + cardDir.name : 'Choose the userart folder…'}</button>
       <h3>Start pixel art</h3><div class="btns"><button class="btn" data-qs="16x16" data-pixel>New 16 × 16</button><button class="btn" data-qs="32x32" data-pixel>New 32 × 32</button></div>
       <div class="hint">8-bit PNG with a transparent background, the format the card generator reads.</div>`;
+  } else if (S.cat === '3d') {
+    const o = selObj(), n = S.objects.length;
+    const s3 = (k, label, val, min, max, unit) => `<div class="row"><label for="o3${k}">${label}</label><input class="num" id="o3${k}N" value="${val}${unit}" data-unit="${unit}" data-o3="${k}"></div><input type="range" id="o3${k}" data-o3="${k}" min="${min}" max="${max}" step="1" value="${val}">`;
+    h = `<h2>3D</h2>
+      <div class="btns"><button class="btn primary" id="o3Make"${S.sel || S.float ? '' : ' disabled'}>Make 3D</button><button class="btn" id="o3Insert">Insert image</button></div>
+      ${toggle('o3View', '3D view (tilt the camera)', S.view3d)}
+      <div class="hint">Select or paste (Ctrl+V) something, then Make 3D (K). Drag an object to move it, the round handle to spin it, the corner to resize.</div>`;
+    if (o) h += `<h3>Selected object</h3>
+      ${s3('rx', 'Tilt forward', o.rx, -85, 85, '°')}${s3('ry', 'Turn sideways', o.ry, -85, 85, '°')}${s3('rz', 'Spin', Math.round(o.rz), -180, 180, '°')}
+      ${s3('lift', 'Lift off canvas', Math.round(o.lift), 0, Math.max(100, Math.round(Math.max(art.width, art.height) * .6)), 'px')}${s3('size', 'Size', Math.round(o.w / o.canvas.width * 100), 5, 800, '%')}${s3('op', 'Opacity', o.opacity, 5, 100, '%')}
+      <div class="btns" style="margin-top:12px"><button class="btn" id="o3Reset">Reset 3D</button><button class="btn" id="o3Dup">Duplicate</button><button class="btn" id="o3Fwd">Bring forward</button><button class="btn" id="o3Back">Send back</button><button class="btn" id="o3Flat">Flatten onto image</button><button class="btn danger" id="o3Del">Delete</button></div>`;
+    h += `<h3>Objects${n ? ` (${n})` : ''}</h3><div class="objlist">${n ? S.objects.slice().reverse().map(x => `<button data-obj="${x.id}" class="${x.id === S.objSel ? 'cur' : ''}"><canvas data-thumb="${x.id}" width="28" height="28"></canvas>Object ${x.id}<span style="margin-left:auto;color:var(--dim)">${Math.round(x.w)}×${Math.round(x.h)}</span></button>`).join('') : '<div class="hint">No 3D objects yet.</div>'}</div>
+      ${n ? '<button class="btn" id="o3FlatAll" style="width:100%;margin-top:8px">Flatten all onto image</button><div class="hint">Saving and Export to card always include the 3D objects.</div>' : ''}`;
   } else if (S.cat === 'history') {
     h = `<h2>History</h2><div class="hist">${H.list.map((e, i) => `<button data-h="${i}" class="${i === H.i ? 'cur' : i > H.i ? 'future' : ''}"><span>${e.label}</span><span style="color:var(--dim)">${i + 1}</span></button>`).reverse().join('')}</div><div class="hint">Click a step to go back to it.</div>`;
   }
   p.innerHTML = h;
+  p.querySelectorAll('canvas[data-thumb]').forEach(c => { const o = S.objects.find(x => x.id === +c.dataset.thumb); if (!o) return; const x = c.getContext('2d'), k = Math.min(28 / o.canvas.width, 28 / o.canvas.height); x.imageSmoothingEnabled = !isPixelObj(o); x.drawImage(o.canvas, (28 - o.canvas.width * k) / 2, (28 - o.canvas.height * k) / 2, o.canvas.width * k, o.canvas.height * k); });
   p.querySelectorAll('input[type=range]').forEach(r => { const set = () => r.style.setProperty('--p', ((r.value - r.min) / (r.max - r.min) * 100) + '%'); set(); r.addEventListener('input', set); });
   $$('.tb[data-cat]').forEach(b => b.classList.toggle('on', b.dataset.cat === S.cat));
   $('#colorsBox').style.display = ['brushes', 'shapes', 'text', 'effects'].includes(S.cat) ? '' : 'none';
+  $('#view3dBtn').classList.toggle('on', S.view3d);
 }
 const CARD_NAMES = ['Skeleton', 'Knight', 'Archers', 'Miner', 'Mega Bat', 'Wizard', 'Prince', 'Hog Rider', 'Cannon', 'Fort Knight', 'Tesla', 'Void'];
 let cardDir = null;
@@ -908,7 +954,7 @@ function bindSlider(id, get, set) {
 }
 $('#panel').addEventListener('click', e => {
   const t = e.target.closest('button'); if (!t) return;
-  if (t.dataset.brush) { S.brush = t.dataset.brush; setTool(S.brush === 'eraser' ? 'eraser' : S.brush === 'fill' ? 'fill' : 'brush');
+  if (t.dataset.brush) { S.brush = t.dataset.brush; if (S.brush !== 'eraser') S.lastBrush = S.brush; setTool(S.brush === 'eraser' ? 'eraser' : S.brush === 'fill' ? 'fill' : 'brush');
     if (S.brush === 'pixel') { S.size = clamp(S.size, 1, 8); if (S.size > 4) S.size = 1; } renderPanel(); }
   if (t.dataset.shape) { S.shape = t.dataset.shape; setTool('shape'); renderPanel(); }
   if (t.dataset.fx) applyPixels(EFFECTS.find(f => f.id === t.dataset.fx).f, EFFECTS.find(f => f.id === t.dataset.fx).name);
@@ -922,6 +968,19 @@ $('#panel').addEventListener('click', e => {
   if (t.dataset.qs) { const [w, hh] = t.dataset.qs.split('x').map(Number); newDoc(w, hh, true, `New ${w} × ${hh}`); if (t.dataset.pixel != null || w <= 64) { S.brush = 'pixel'; S.size = 1; S.cat = S.cat === 'card' ? 'card' : 'brushes'; setTool('brush'); renderPanel(); } }
   if (t.id === 'cApply') { const w = parseInt($('#cW').value), hh = parseInt($('#cH').value); if (w > 0 && hh > 0) { resizeCanvas(w, hh, $('#cScale').checked); renderPanel(); } }
   if (t.dataset.h) restore(+t.dataset.h);
+  // 3D panel
+  if (t.id === 'o3Make') make3D();
+  if (t.id === 'o3Insert') { insertAs3d = true; $('#fileInsert').click(); }
+  if (t.dataset.obj) { S.objSel = +t.dataset.obj; renderPanel(); draw(); }
+  const o3 = selObj();
+  if (o3) {
+    if (t.id === 'o3Reset') { Object.assign(o3, { rx: 0, ry: 0, rz: 0 }); commit('Reset 3D'); renderPanel(); draw(); }
+    if (t.id === 'o3Dup') duplicateObject(o3);
+    if (t.id === 'o3Del') deleteObject(o3);
+    if (t.id === 'o3Flat') flattenObjects([o3]);
+    if (t.id === 'o3Fwd' || t.id === 'o3Back') { const i = S.objects.indexOf(o3), j = clamp(i + (t.id === 'o3Fwd' ? 1 : -1), 0, S.objects.length - 1); if (i !== j) { S.objects.splice(i, 1); S.objects.splice(j, 0, o3); commit(t.id === 'o3Fwd' ? 'Bring forward' : 'Send back'); renderPanel(); draw(); } }
+  }
+  if (t.id === 'o3FlatAll') flattenObjects([...S.objects]);
   if (t.id === 'cardFolder') chooseCardDir();
   if (t.id === 'cardSave') exportCard();
 });
@@ -933,11 +992,18 @@ $('#panel').addEventListener('change', e => {
   if (t.id === 'font') S.font = t.value;
   if (t.id === 'cardName') store.set('card', t.value);
   if (t.id === 'cShow') { S.showCanvas = t.checked; draw(); }
+  if (t.id === 'o3View') setView3d(t.checked);
+  if (t.dataset.o3 && t.type === 'range') commit('3D ' + t.dataset.o3);       // slider released
+  if (t.dataset.o3 && t.type !== 'range') { const r = $('#o3' + t.dataset.o3), v = clamp(parseFloat(t.value) || 0, +r.min, +r.max); setObjProp(t.dataset.o3, v); commit('3D ' + t.dataset.o3); syncObjPanel(); }
   if (t.id === 'cBgAuto') { setBg({ bgAuto: t.checked, bgChecker: t.checked ? false : S.bgChecker }); renderPanel(); }
   if (t.id === 'cBgChecker') { setBg({ bgChecker: t.checked, bgAuto: t.checked ? false : S.bgAuto }); renderPanel(); }
   if (t.id === 'cTrans') { S.transparent = t.checked; if (!S.transparent) { const t2 = document.createElement('canvas'); t2.width = art.width; t2.height = art.height; const c2 = t2.getContext('2d'); c2.fillStyle = '#fff'; c2.fillRect(0, 0, t2.width, t2.height); c2.drawImage(art, 0, 0); actx.clearRect(0, 0, art.width, art.height); actx.drawImage(t2, 0, 0); } commit(S.transparent ? 'Transparent canvas' : 'White canvas'); draw(); }
   if (t.id === 'cW' && $('#cLock').checked) $('#cH').value = Math.max(1, Math.round(parseInt(t.value) * art.height / art.width));
   if (t.id === 'cH' && $('#cLock').checked) $('#cW').value = Math.max(1, Math.round(parseInt(t.value) * art.width / art.height));
+});
+$('#panel').addEventListener('input', e => {   // 3D sliders update the object live (history step on release)
+  const t = e.target; if (!t.dataset.o3 || t.type !== 'range') return;
+  setObjProp(t.dataset.o3, +t.value); const n = $('#o3' + t.dataset.o3 + 'N'); n.value = t.value + n.dataset.unit;
 });
 const panelObserver = new MutationObserver(() => {
   bindSlider('size', () => S.size, v => S.size = v); bindSlider('opa', () => S.opacity, v => S.opacity = v);
@@ -962,22 +1028,24 @@ function setTool(t) {
   S.tool = t;
   $$('.sb[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
   // The cursor always stays visible (crosshair while painting); the brush-size outline is drawn around it.
-  view.style.cursor = { select: 'default', text: 'text' }[t] || 'crosshair';
+  view.style.cursor = S.view3d ? 'grab' : { select: 'default', text: 'text' }[t] || 'crosshair';
   draw();
 }
 
 // ─────────────────────────── pointer ───────────────────────────
-let hover = null, panning = null, spaceDown = false, pointerDown = false, prevTool = null;
+let hover = null, panning = null, orbit = null, spaceDown = false, pointerDown = false, prevTool = null;
 view.addEventListener('pointerdown', e => {
-  view.setPointerCapture(e.pointerId);
+  try { view.setPointerCapture(e.pointerId); } catch {}
   const r = view.getBoundingClientRect(), cx = e.clientX - r.left, cy = e.clientY - r.top, [dx, dy] = toDoc(cx, cy);
-  if (e.button === 1 || spaceDown || (e.button === 0 && e.altKey && S.tool !== 'picker')) { panning = { x: e.clientX, y: e.clientY, ox: S.ox, oy: S.oy }; view.style.cursor = 'grabbing'; return; }
+  if (e.button === 1 || spaceDown) { panning = { x: e.clientX, y: e.clientY, ox: S.ox, oy: S.oy }; view.style.cursor = 'grabbing'; return; }
+  if (S.view3d) { orbit = { x: e.clientX, y: e.clientY, rx: cam.rx, ry: cam.ry }; view.style.cursor = 'grabbing'; return; }   // 3D view: drag orbits the camera
+  if (S.objSel != null && e.button === 0) { S.objSel = null; if (S.cat === '3d') renderPanel(); }
   if (e.button === 2) { pickAt(dx, dy); return; }
   pointerDown = true;
   const t = S.tool;
   if (t === 'brush' || t === 'eraser') beginStroke(dx, dy);
   else if (t === 'fill') fillAt(dx, dy);
-  else if (t === 'picker') { pickAt(dx, dy); setTool(prevTool || 'brush'); }
+  else if (t === 'picker') { pickAt(dx, dy); if (!altPick) setTool(prevTool || 'brush'); }   // held Alt stays in the eyedropper
   else if (t === 'shape') { shapeStart = [dx, dy]; shapeEnd = [dx, dy]; strokeLayer.width = art.width; strokeLayer.height = art.height; }
   else if (t === 'text') startText(Math.round(dx), Math.round(dy));
   else if (t === 'crop') cropDrag = { x0: dx, y0: dy };
@@ -999,6 +1067,7 @@ view.addEventListener('pointerdown', e => {
 view.addEventListener('pointermove', e => {
   const r = view.getBoundingClientRect(), cx = e.clientX - r.left, cy = e.clientY - r.top, [dx, dy] = toDoc(cx, cy);
   hover = [dx, dy];
+  if (orbit) { cam.ry = clamp(orbit.ry + (e.clientX - orbit.x) * .3, -70, 70); cam.rx = clamp(orbit.rx - (e.clientY - orbit.y) * .3, 0, 72); renderObjects(); return; }
   if (panning) { S.ox = panning.ox + e.clientX - panning.x; S.oy = panning.oy + e.clientY - panning.y; draw(); return; }
   if ((S.tool === 'select' || S.tool === 'magic') && !selDrag) view.style.cursor = handleAt(cx, cy) ? 'nwse-resize' : ((S.float || S.sel) && dx >= (S.float || S.sel).x && dy >= (S.float || S.sel).y && dx < (S.float || S.sel).x + (S.float || S.sel).w && dy < (S.float || S.sel).y + (S.float || S.sel).h) ? 'move' : (S.tool === 'magic' ? 'crosshair' : 'default');
   if (!pointerDown) { draw(); return; }
@@ -1026,6 +1095,7 @@ view.addEventListener('pointermove', e => {
 });
 function pointerUp() {
   pointerDown = false;
+  if (orbit) { orbit = null; setTool(S.tool); return; }
   if (panning) { panning = null; setTool(S.tool); return; }
   if (strokeActive) endStroke();
   if (S.tool === 'shape' && shapeStart) {
@@ -1047,6 +1117,158 @@ view.addEventListener('wheel', e => {
 }, { passive: false });
 
 // ─────────────────────────── files ───────────────────────────
+// ─────────────────────────── 3D objects ───────────────────────────
+// A 3D object is a flat picture (a "sticker") floating above the image. It can move, resize, spin (Z),
+// tilt (X/Y) and lift off the canvas. On screen it is a DOM plane with a CSS 3D transform; when saving
+// or flattening, bakeObjects() renders the same maths with WebGL so the file matches what you see.
+let objUid = 1;
+const cam = { rx: 38, ry: -18 };
+const selObj = () => S.objects.find(o => o.id === S.objSel);
+const objPersp = o => Math.max(o.w, o.h) * 2.2;            // perspective distance, in image pixels
+const isPixelObj = o => o.canvas.width <= 256 && o.canvas.height <= 256;
+function snapObj(o) { if (!isPixelObj(o)) return; o.w = Math.max(1, Math.round(o.w)); o.h = Math.max(1, Math.round(o.h)); o.cx = Math.round(o.cx - o.w / 2) + o.w / 2; o.cy = Math.round(o.cy - o.h / 2) + o.h / 2; }
+function make3D() {
+  if (S.view3d) setView3d(false);
+  if (!S.float && S.sel) liftSelection();
+  if (!S.float) { toast('Select or paste something first, then Make 3D'); return; }
+  const f = S.float; S.float = null;
+  const o = { id: objUid++, canvas: f.canvas, cx: f.x + f.w / 2, cy: f.y + f.h / 2, w: f.w, h: f.h, rx: 0, ry: 0, rz: 0, lift: Math.round(Math.max(f.w, f.h) * .12), opacity: 100 };
+  S.objects.push(o); S.objSel = o.id; commit('Make 3D'); setCat('3d'); draw(); toast('3D object: drag to move, round handle spins, corner resizes');
+}
+function duplicateObject(o) {
+  if (!o) return; const c = document.createElement('canvas'); c.width = o.canvas.width; c.height = o.canvas.height; c.getContext('2d').drawImage(o.canvas, 0, 0);
+  const n = { ...o, id: objUid++, canvas: c, cx: o.cx + Math.max(1, Math.round(o.w * .1)), cy: o.cy + Math.max(1, Math.round(o.h * .1)) };
+  S.objects.push(n); S.objSel = n.id; commit('Duplicate 3D object'); renderPanel(); draw();
+}
+function deleteObject(o) { if (!o) return; S.objects = S.objects.filter(x => x !== o); S.objSel = null; commit('Delete 3D object'); renderPanel(); draw(); }
+function flattenObjects(list) {
+  if (!list.length) return;
+  bakeObjects(actx, art.width, art.height, list);
+  S.objects = S.objects.filter(o => !list.includes(o)); S.objSel = null;
+  commit(list.length > 1 ? 'Flatten all 3D objects' : 'Flatten 3D object'); renderPanel(); draw();
+}
+function setView3d(on) {
+  if (on) { finishText(); dropFloat(true); cropRect = null; if (strokeActive) endStroke(); }
+  S.view3d = on; $('#view3dBtn').classList.toggle('on', on); setTool(S.tool);
+  if (S.cat === '3d') renderPanel();
+  draw(); if (on) toast('3D view: drag to orbit. Press 3D view again to go back.');
+}
+function objTransform(o) {
+  const z = S.zoom, W = o.w * z, Hh = o.h * z, sx = S.ox + o.cx * z, sy = S.oy + o.cy * z;
+  return `translate3d(${sx - W / 2}px, ${sy - Hh / 2}px, ${o.lift * z}px) perspective(${objPersp(o) * z}px) rotateX(${o.rx}deg) rotateY(${o.ry}deg) rotateZ(${o.rz}deg)`;
+}
+const objEls = new Map();
+function renderObjects() {
+  const layer = $('#objs'), seen = new Set(), z = S.zoom;
+  for (const o of S.objects) {
+    let el = objEls.get(o.id);
+    if (!el || el._canvas !== o.canvas) {
+      if (el) el.remove();
+      el = document.createElement('div'); el.className = 'obj'; el.dataset.id = o.id;
+      const shown = document.createElement('canvas'); shown.width = o.canvas.width; shown.height = o.canvas.height; shown.getContext('2d').drawImage(o.canvas, 0, 0);
+      el.appendChild(shown); el.insertAdjacentHTML('beforeend', '<i class="h se" data-h="scale" title="Resize (Shift: free)"></i><i class="h rot" data-h="rotate" title="Spin (Shift: 15° steps)"></i>');
+      el._canvas = o.canvas; objEls.set(o.id, el);
+    }
+    layer.appendChild(el);   // keeps the stacking order = list order
+    el.style.width = o.w * z + 'px'; el.style.height = o.h * z + 'px'; el.style.transform = objTransform(o); el.style.opacity = o.opacity / 100;
+    el.classList.toggle('sel', o.id === S.objSel); el.classList.toggle('px', isPixelObj(o) && o.w * z >= o.canvas.width);
+    el.style.filter = o.lift > 0 ? `drop-shadow(0 ${(o.lift * z * .22).toFixed(1)}px ${Math.max(2, o.lift * z * .28).toFixed(1)}px rgba(0,0,0,.5))` : '';
+    seen.add(o.id);
+  }
+  for (const [id, el] of objEls) if (!seen.has(id)) { el.remove(); objEls.delete(id); }
+  const scene = $('#scene');
+  if (S.view3d) { scene.style.transformOrigin = `${S.ox + art.width * z / 2}px ${S.oy + art.height * z / 2}px`; scene.style.transform = `perspective(1600px) rotateX(${cam.rx}deg) rotateY(${cam.ry}deg)`; }
+  else scene.style.transform = '';
+  $('#make3dBtn').disabled = !(S.sel || S.float);
+}
+let objDrag = null;
+$('#objs').addEventListener('pointerdown', e => {
+  const el = e.target.closest('.obj'); if (!el || e.button !== 0) return;
+  e.stopPropagation(); e.preventDefault();
+  const o = S.objects.find(x => x.id === +el.dataset.id); if (!o) return;
+  if (S.tool === 'picker') { // eyedropper works on objects too
+    const r = el.getBoundingClientRect(), p = o.canvas.getContext('2d').getImageData(clamp(Math.floor((e.clientX - r.left) / r.width * o.canvas.width), 0, o.canvas.width - 1), clamp(Math.floor((e.clientY - r.top) / r.height * o.canvas.height), 0, o.canvas.height - 1), 1, 1).data;
+    if (p[3]) setColor(rgbToHex(p[0], p[1], p[2]), true); if (!altPick) setTool(prevTool || 'brush'); return;
+  }
+  dropFloat(true); finishText();
+  S.objSel = o.id; if (S.cat !== '3d') setCat('3d'); else renderPanel();
+  try { el.setPointerCapture(e.pointerId); } catch {}
+  const r = view.getBoundingClientRect(), cx = r.left + S.ox + o.cx * S.zoom, cy = r.top + S.oy + o.cy * S.zoom;
+  objDrag = { o, mode: e.target.dataset.h || 'move', x: e.clientX, y: e.clientY, start: { ...o }, cx, cy, ang: Math.atan2(e.clientY - cy, e.clientX - cx), dist: Math.max(1, Math.hypot(e.clientX - cx, e.clientY - cy)), moved: false };
+  draw();
+});
+addEventListener('pointermove', e => {
+  if (!objDrag) return;
+  const d = objDrag, o = d.o, s = d.start; d.moved = true;
+  if (d.mode === 'move') { o.cx = s.cx + (e.clientX - d.x) / S.zoom; o.cy = s.cy + (e.clientY - d.y) / S.zoom; }
+  else if (d.mode === 'scale') { const k = Math.max(.02, Math.hypot(e.clientX - d.cx, e.clientY - d.cy) / d.dist); o.w = s.w * k; o.h = s.h * k; }
+  else if (d.mode === 'rotate') { let a = s.rz + (Math.atan2(e.clientY - d.cy, e.clientX - d.cx) - d.ang) * 180 / Math.PI; if (e.shiftKey) a = Math.round(a / 15) * 15; o.rz = ((a % 360) + 540) % 360 - 180; }
+  if (!e.shiftKey || d.mode !== 'scale') snapObj(o);
+  renderObjects(); syncObjPanel();
+});
+addEventListener('pointerup', () => {
+  if (!objDrag) return; const d = objDrag; objDrag = null;
+  if (d.moved) commit({ move: 'Move 3D object', scale: 'Resize 3D object', rotate: 'Spin 3D object' }[d.mode]);
+});
+// WebGL bake: same transform as the CSS (rotateX·rotateY·rotateZ, then perspective about the object's centre).
+let glc = null;
+function bakeObjects(ctx, W, H, list) {
+  if (!list.length) return;
+  if (!glc) {
+    const c = document.createElement('canvas'), gl = c.getContext('webgl', { premultipliedAlpha: true, preserveDrawingBuffer: true, antialias: true, alpha: true });
+    if (gl) {
+      const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+      const p = gl.createProgram();
+      gl.attachShader(p, sh(gl.VERTEX_SHADER, 'attribute vec4 a_p; attribute vec2 a_uv; varying vec2 v; void main(){ gl_Position = a_p; v = a_uv; }'));
+      gl.attachShader(p, sh(gl.FRAGMENT_SHADER, 'precision mediump float; uniform sampler2D t; uniform float u_a; varying vec2 v; void main(){ gl_FragColor = texture2D(t, v) * u_a; }'));
+      gl.linkProgram(p); glc = { c, gl, p, buf: gl.createBuffer(), tex: gl.createTexture() };
+    } else glc = { c: null };
+  }
+  if (!glc.gl) { // no WebGL: flat fallback (spin only)
+    for (const o of list) { ctx.save(); ctx.globalAlpha = o.opacity / 100; ctx.translate(o.cx, o.cy); ctx.rotate(o.rz * Math.PI / 180); ctx.imageSmoothingEnabled = !isPixelObj(o); ctx.drawImage(o.canvas, -o.w / 2, -o.h / 2, o.w, o.h); ctx.restore(); }
+    return;
+  }
+  const { c, gl, p, buf, tex } = glc; c.width = W; c.height = H;
+  gl.viewport(0, 0, W, H); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.useProgram(p); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  const aP = gl.getAttribLocation(p, 'a_p'), aUV = gl.getAttribLocation(p, 'a_uv');
+  gl.enableVertexAttribArray(aP); gl.enableVertexAttribArray(aUV);
+  gl.vertexAttribPointer(aP, 4, gl.FLOAT, false, 24, 0); gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, 24, 16);
+  gl.bindTexture(gl.TEXTURE_2D, tex); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+  for (const o of list) {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, o.canvas);
+    const near = isPixelObj(o) ? gl.NEAREST : gl.LINEAR;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, near); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, near);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.uniform1f(gl.getUniformLocation(p, 'u_a'), o.opacity / 100);
+    const rad = Math.PI / 180, ax = o.rx * rad, ay = o.ry * rad, az = o.rz * rad, d = objPersp(o), v = [];
+    for (const [u, t] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+      let x = (u - .5) * o.w, y = (t - .5) * o.h, zz = 0;
+      [x, y] = [x * Math.cos(az) - y * Math.sin(az), x * Math.sin(az) + y * Math.cos(az)];          // rotateZ
+      [x, zz] = [x * Math.cos(ay) + zz * Math.sin(ay), -x * Math.sin(ay) + zz * Math.cos(ay)];      // rotateY
+      [y, zz] = [y * Math.cos(ax) - zz * Math.sin(ax), y * Math.sin(ax) + zz * Math.cos(ax)];       // rotateX
+      const wq = Math.max(.05, 1 - zz / d), sx = o.cx + x / wq, sy = o.cy + y / wq;                 // perspective(d)
+      v.push((sx / W * 2 - 1) * wq, (1 - sy / H * 2) * wq, 0, wq, u, t);
+    }
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(v), gl.DYNAMIC_DRAW); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+  ctx.save(); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.imageSmoothingEnabled = false; ctx.drawImage(c, 0, 0); ctx.restore();
+}
+function syncObjPanel() {
+  const o = selObj(); if (!o || S.cat !== '3d') return;
+  const vals = { rx: o.rx, ry: o.ry, rz: Math.round(o.rz), lift: Math.round(o.lift), size: Math.round(o.w / o.canvas.width * 100), op: o.opacity };
+  for (const [k, val] of Object.entries(vals)) { const r = $('#o3' + k), n = $('#o3' + k + 'N'); if (r && document.activeElement !== n) { r.value = val; r.style.setProperty('--p', ((val - r.min) / (r.max - r.min) * 100) + '%'); n.value = val + n.dataset.unit; } }
+}
+function setObjProp(k, val) {
+  const o = selObj(); if (!o) return;
+  if (k === 'size') { const k2 = val / 100; o.w = o.canvas.width * k2; o.h = o.canvas.height * k2; snapObj(o); }
+  else if (k === 'op') o.opacity = val; else o[k] = val;
+  renderObjects();
+}
+$('#make3dBtn').addEventListener('click', make3D);
+$('#view3dBtn').addEventListener('click', () => setView3d(!S.view3d));
+
 function readImage(file) {
   return new Promise((res, rej) => { const url = URL.createObjectURL(file), img = new Image(); img.onload = () => { res(img); setTimeout(() => URL.revokeObjectURL(url), 1000); }; img.onerror = rej; img.src = url; });
 }
@@ -1057,7 +1279,8 @@ async function openFile(file, insert) {
 }
 let docName = 'image';
 function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
-function flatCanvas(bg) { const c = document.createElement('canvas'); c.width = art.width; c.height = art.height; const x = c.getContext('2d'); if (bg) { x.fillStyle = bg; x.fillRect(0, 0, c.width, c.height); } x.drawImage(art, 0, 0); return c; }
+// The image as it will be saved: pixels plus the 3D objects baked in with their perspective.
+function flatCanvas(bg) { const c = document.createElement('canvas'); c.width = art.width; c.height = art.height; const x = c.getContext('2d'); if (bg) { x.fillStyle = bg; x.fillRect(0, 0, c.width, c.height); } x.drawImage(art, 0, 0); bakeObjects(x, c.width, c.height, S.objects); return c; }
 async function savePng() { dropFloat(true); const b = await new Promise(r => flatCanvas(S.transparent ? null : '#fff').toBlob(r, 'image/png')); download(b, docName + '.png'); toast('Saved ' + docName + '.png'); }
 async function saveJpg() { dropFloat(true); const b = await new Promise(r => flatCanvas('#fff').toBlob(r, 'image/jpeg', .92)); download(b, docName + '.jpg'); toast('Saved ' + docName + '.jpg'); }
 async function copyImage() { dropFloat(true); try { const b = await new Promise(r => flatCanvas(null).toBlob(r, 'image/png')); await navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]); toast('Image copied'); } catch { toast('Clipboard not available here'); } }
@@ -1075,7 +1298,8 @@ async function exportCard() {
   download(blob, name + '.png'); toast(`Downloaded ${name}.png: move it to TowerCards\\userart`);
 }
 $('#fileOpen').addEventListener('change', e => { openFile(e.target.files[0]); e.target.value = ''; });
-$('#fileInsert').addEventListener('change', e => { openFile(e.target.files[0], true); e.target.value = ''; });
+let insertAs3d = false;   // "Insert image" from the 3D panel turns the image into a 3D object right away
+$('#fileInsert').addEventListener('change', async e => { const as3d = insertAs3d; insertAs3d = false; await openFile(e.target.files[0], true); e.target.value = ''; if (as3d && S.float) make3D(); });
 let dragDepth = 0;
 addEventListener('dragenter', e => { if ([...e.dataTransfer.types].includes('Files')) { dragDepth++; $('#dropzone').classList.add('show'); } });
 addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('#dropzone').classList.remove('show'); } });
@@ -1095,14 +1319,27 @@ addEventListener('message', e => { const d = e.data; if (d && d.type === 'ie:ope
 
 // autosave the last image in this browser (per-viewer convenience only)
 let saveTimer = 0;
-function autosave() { clearTimeout(saveTimer); saveTimer = setTimeout(() => { try { if (art.width * art.height > 4e6) return; localStorage.setItem('ie:doc', JSON.stringify({ src: art.toDataURL('image/png'), t: S.transparent, name: docName })); } catch {} }, 600); }
+function autosave() { clearTimeout(saveTimer); saveTimer = setTimeout(() => { try {
+  if (art.width * art.height > 4e6) return;
+  const objs = S.objects.map(o => { const { canvas, ...rest } = o; return { ...rest, src: canvas.toDataURL('image/png') }; });
+  localStorage.setItem('ie:doc', JSON.stringify({ src: art.toDataURL('image/png'), t: S.transparent, name: docName, objs }));
+} catch {} }, 600); }
+const loadImg = src => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+async function restoreObjects(list) {
+  for (const s of list || []) {
+    try { const img = await loadImg(s.src), c = document.createElement('canvas'); c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0);
+      const { src, ...rest } = s; S.objects.push({ ...rest, canvas: c }); objUid = Math.max(objUid, (s.id || 0) + 1); } catch {}
+  }
+  if (H.list.length) H.list[H.i].snap = snapshot();   // the restored step includes the objects
+  draw();
+}
 
 // ─────────────────────────── menus, keys ───────────────────────────
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2200); }
 const closePops = () => $$('.menu-pop').forEach(m => m.classList.remove('open'));
 $('#menuBtn').addEventListener('click', e => { e.stopPropagation(); const o = $('#menuPop').classList.contains('open'); closePops(); if (!o) $('#menuPop').classList.add('open'); });
 $('#moreBtn').addEventListener('click', e => { e.stopPropagation(); const o = $('#morePop').classList.contains('open'); closePops(); if (!o) $('#morePop').classList.add('open'); });
-addEventListener('click', e => { if (!e.target.closest('.menu-pop')) closePops(); });
+addEventListener('click', e => { if (!(e.target.closest && e.target.closest('.menu-pop'))) closePops(); });
 $$('.menu-pop').forEach(m => m.addEventListener('click', e => { const b = e.target.closest('button[data-act]'); if (!b) return; closePops(); act(b.dataset.act); }));
 function act(a) {
   ({ new: openNew, open: () => $('#fileOpen').click(), insert: () => $('#fileInsert').click(), save: savePng, savejpg: saveJpg, copyimg: copyImage,
@@ -1124,7 +1361,8 @@ $('#newOk').addEventListener('click', () => {
 $$('[data-close]').forEach(b => b.addEventListener('click', () => b.closest('.modal').classList.remove('open')));
 $$('.modal').forEach(m => m.addEventListener('pointerdown', e => { if (e.target === m) m.classList.remove('open'); }));
 $('#keysList').innerHTML = [['Ctrl+N / O / S', 'New, open, save PNG'], ['Ctrl+Z / Ctrl+Y', 'Undo / redo'], ['Ctrl+C / X / V', 'Copy, cut, paste'], ['Ctrl+A', 'Select all'], ['Delete', 'Delete selection'],
-  ['Enter / Esc', 'Finish / cancel selection or crop'], ['B, E, G, P', 'Brush, eraser, fill, pixel pen'], ['M, W, C, I', 'Select, magic select, crop, eyedropper'], ['U, T', '2D shapes, text'],
+  ['Enter / Esc', 'Finish / cancel selection or crop'], ['B', 'Back to your last brush'], ['E', 'Tap: eraser. Hold: erase only while held'], ['Hold Alt', 'Eyedropper while held'], ['G, P', 'Fill, pixel pen'], ['M, W, C, I', 'Select, magic select, crop, eyedropper'], ['U, T', '2D shapes, text'],
+  ['K', 'Make 3D from the selection / pasted image'], ['V', '3D view on / off (drag to orbit)'], ['Ctrl+D', 'Duplicate 3D object'],
   ['[ / ]', 'Thinner / thicker'], ['+ / - / 0 / 1', 'Zoom in, out, fit, actual size'], ['Space + drag', 'Pan (or middle mouse)'], ['Right click', 'Pick colour'], ['Shift', 'Square shapes, 45° lines'], ['G (with Ctrl)', 'Toggle pixel grid']]
   .map(([k, v]) => `<kbd style="color:var(--text);font:600 12px 'Segoe UI'">${k}</kbd><span>${v}</span>`).join('');
 
@@ -1132,6 +1370,13 @@ addEventListener('keydown', e => {
   if (e.target && e.target.closest && e.target.closest('input, textarea, select') && !(e.key === 'Escape')) { if (e.key === 'Enter' && e.target.closest('.modal')) $('#newOk').click(); return; }
   const k = e.key.toLowerCase(), ctrl = e.ctrlKey || e.metaKey;
   if (e.code === 'Space') { if (!spaceDown) { spaceDown = true; view.style.cursor = 'grab'; } e.preventDefault(); return; }
+  if (e.key === 'Alt') { e.preventDefault(); if (!altPick && !strokeActive && !S.view3d && !ctrl) { altPick = { tool: S.tool }; setTool('picker'); } return; }
+  if (ctrl && S.objSel != null && (k === 'c' || k === 'x' || k === 'd')) {
+    e.preventDefault(); const o = selObj();
+    if (k === 'd') duplicateObject(o);
+    else { clip = o.canvas; try { o.canvas.toBlob(b => navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]).catch(() => {})); } catch {} if (k === 'x') deleteObject(o); toast(k === 'x' ? 'Cut 3D object' : 'Copied 3D object'); }
+    return;
+  }
   if (ctrl) {
     if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
     else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
@@ -1144,6 +1389,8 @@ addEventListener('keydown', e => {
     else if (k === 'g') { e.preventDefault(); act('grid'); }
     return;
   }
+  if (e.key === 'Escape' && S.objSel != null) { S.objSel = null; renderPanel(); draw(); return; }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && S.objSel != null) { deleteObject(selObj()); return; }
   if (e.key === 'Escape') { $$('.modal').forEach(m => m.classList.remove('open')); closePops(); if (cropRect) { cropRect = null; setTool('brush'); } else if (S.float) dropFloat(true); else S.sel = null; draw(); return; }
   if (e.key === 'Enter') { if (cropRect) applyCrop(normRect(cropRect)); else if (S.float) dropFloat(true); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelection(); return; }
@@ -1153,12 +1400,36 @@ addEventListener('keydown', e => {
   if (e.key === '-') { setZoom(S.zoom / 1.25); return; }
   if (e.key === '0') { fit(); return; }
   if (e.key === '1') { setZoom(1); return; }
-  const brushKey = { b: 'marker', p: 'pixel', e: 'eraser', g: 'fill' }[k];
-  if (brushKey) { S.brush = brushKey; S.cat = 'brushes'; setTool(brushKey === 'eraser' ? 'eraser' : brushKey === 'fill' ? 'fill' : 'brush'); if (brushKey === 'pixel') S.size = 1; renderPanel(); return; }
+  // E: tap = switch to the eraser and stay; hold (and paint) = erase only while held, then back.
+  if (k === 'e') { if (e.repeat || eHold || S.view3d) return; eHold = { tool: S.tool, brush: S.brush, cat: S.cat, t: performance.now(), used: false }; useBrush('eraser'); return; }
+  // B: back to the last brush you picked (never the eraser).
+  if (k === 'b') { useBrush(S.lastBrush || 'marker'); return; }
+  if (k === 'p') { useBrush('pixel'); S.size = 1; renderPanel(); return; }
+  if (k === 'g') { useBrush('fill'); return; }
   if (k === 'm') setTool('select'); if (k === 'w') setTool('magic'); if (k === 'c') setTool('crop'); if (k === 'i') { prevTool = S.tool; setTool('picker'); }
   if (k === 'u') setCat('shapes'); if (k === 't') setCat('text');
+  if (k === 'k') make3D(); if (k === 'v') setView3d(!S.view3d);
 });
-addEventListener('keyup', e => { if (e.code === 'Space') { spaceDown = false; setTool(S.tool); } });
+addEventListener('keyup', e => {
+  if (e.code === 'Space') { spaceDown = false; setTool(S.tool); }
+  if (e.key === 'Alt') { e.preventDefault(); endAltPick(); }
+  if (e.key.toLowerCase() === 'e' && eHold) {
+    const h = eHold; eHold = null;
+    if (h.used || performance.now() - h.t > 400) {        // it was held: spring back
+      if (strokeActive) endStroke();
+      S.brush = h.brush; S.cat = h.cat; setTool(h.tool); renderPanel();
+    }                                                      // a quick tap keeps the eraser
+  }
+});
+// Hold Alt = eyedropper while held (click to pick, release to go back).
+let altPick = null, eHold = null;
+function endAltPick() { if (!altPick) return; const t = altPick.tool; altPick = null; setTool(t); }
+addEventListener('blur', () => { endAltPick(); if (eHold) { const h = eHold; eHold = null; if (h.used) { S.brush = h.brush; setTool(h.tool); renderPanel(); } } spaceDown = false; });
+// Pick a brush tile by id (same as clicking it).
+function useBrush(id) {
+  S.brush = id; if (id !== 'eraser') S.lastBrush = id;
+  S.cat = 'brushes'; setTool(id === 'eraser' ? 'eraser' : id === 'fill' ? 'fill' : 'brush'); renderPanel();
+}
 
 // toolbar wiring
 $$('.tb[data-cat]').forEach(b => b.addEventListener('click', () => setCat(b.dataset.cat)));
@@ -1185,11 +1456,11 @@ document.addEventListener('pointerdown', e => { if (textBox && !e.target.closest
 renderColors(); resizeView(); syncBgUI();
 (() => {
   let saved = null; try { saved = JSON.parse(localStorage.getItem('ie:doc') || 'null'); } catch {}
-  if (saved && saved.src) { const img = new Image(); img.onload = () => { loadImageToDoc(img, 'Restored image'); S.transparent = saved.t !== false; docName = saved.name || 'image'; if (img.width <= 64 && img.height <= 64) { S.brush = 'pixel'; S.size = 1; } setCat('brushes'); }; img.onerror = () => newDoc(16, 16); img.src = saved.src; }
+  if (saved && saved.src) { const img = new Image(); img.onload = () => { loadImageToDoc(img, 'Restored image'); S.transparent = saved.t !== false; docName = saved.name || 'image'; if (img.width <= 64 && img.height <= 64) { S.brush = 'pixel'; S.size = 1; } setCat('brushes'); restoreObjects(saved.objs); }; img.onerror = () => newDoc(16, 16); img.src = saved.src; }
   else { newDoc(16, 16, true); S.brush = 'pixel'; S.size = 1; }
   setCat('brushes');
 })();
-window.__ie = { S, art, H, newDoc, commit, act, setCat, setTool, undo, redo };
+window.__ie = { S, art, H, newDoc, commit, act, setCat, setTool, undo, redo, make3D, setView3d, flatCanvas, bakeObjects, cam };
 })();
 </script>
 </body>
